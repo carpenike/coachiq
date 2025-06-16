@@ -142,6 +142,7 @@
             # Database dependencies
             pythonPackages.sqlalchemy
             pythonPackages.aiosqlite
+            pythonPackages.aiofiles
             pythonPackages.asyncpg
             pythonPackages.alembic
             # Notification system dependencies
