@@ -192,6 +192,16 @@ class SecuritySettings(BaseSettings):
     rate_limit_enabled: bool = Field(default=True, description="Enable rate limiting")
     rate_limit_requests: int = Field(default=100, description="Rate limit requests per minute")
 
+    # TLS/HTTPS Configuration
+    tls_termination_is_external: bool = Field(
+        default=False,
+        description=(
+            "When True, the application assumes it's behind a TLS-terminating reverse proxy. "
+            "The proxy is responsible for HTTP->HTTPS redirection and HSTS headers. "
+            "The application MUST be run with --proxy-headers for this to be secure."
+        )
+    )
+
     @field_validator("allowed_ips", mode="before")
     @classmethod
     def parse_ips(cls, v):
@@ -1710,6 +1720,11 @@ class Settings(BaseSettings):
             "access_log": self.server.access_log,
             "log_level": self.logging.level.lower(),
         }
+
+        # Automatically enable proxy headers when external TLS termination is configured
+        # This ensures proper handling of X-Forwarded-Proto, X-Forwarded-For, etc.
+        if self.security.tls_termination_is_external:
+            config["proxy_headers"] = True
 
         # Add reload directories to prevent PermissionError on protected directories
         if allow_reload:

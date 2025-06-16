@@ -16,6 +16,7 @@ import {
   IconSettings,
   IconShield,
   IconTerminal2,
+  IconTool,
   IconWifi,
 } from "@tabler/icons-react"
 import * as React from "react"
@@ -54,6 +55,11 @@ const data = {
       icon: IconWifi,
     },
     {
+      title: "CAN Tools",
+      url: "/can-tools",
+      icon: IconTool,
+    },
+    {
       title: "Network Map",
       url: "/network-map",
       icon: IconMapPin,
@@ -77,6 +83,11 @@ const data = {
       title: "Analytics Dashboard",
       url: "/analytics-dashboard",
       icon: IconAnalyze,
+    },
+    {
+      title: "Security Dashboard",
+      url: "/security",
+      icon: IconShield,
     },
   ],
   navDiagnostics: [

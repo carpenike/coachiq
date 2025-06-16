@@ -1,5 +1,6 @@
 import { AppLayout } from '@/components/app-layout';
 import { MFAManagement, MFASetup } from '@/components/mfa';
+import { PINManagementCard, SecurityStatusCard } from '@/components/pin-management';
 import { Badge } from '@/components/ui/badge';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Separator } from '@/components/ui/separator';
@@ -49,7 +50,7 @@ const SettingsPage: React.FC = () => {
         </div>
 
         <Tabs defaultValue="profile" className="space-y-6">
-        <TabsList className="grid grid-cols-3 lg:grid-cols-4 w-full lg:w-auto">
+        <TabsList className="grid grid-cols-4 lg:grid-cols-5 w-full lg:w-auto">
           <TabsTrigger value="profile" className="flex items-center gap-2">
             <User className="h-4 w-4" />
             Profile
@@ -58,13 +59,17 @@ const SettingsPage: React.FC = () => {
             <Shield className="h-4 w-4" />
             Security
           </TabsTrigger>
+          <TabsTrigger value="pins" className="flex items-center gap-2">
+            <Lock className="h-4 w-4" />
+            PIN Security
+          </TabsTrigger>
           <TabsTrigger value="notifications" className="flex items-center gap-2">
             <Bell className="h-4 w-4" />
             Notifications
           </TabsTrigger>
           {isAdmin && (
             <TabsTrigger value="admin" className="flex items-center gap-2">
-              <Lock className="h-4 w-4" />
+              <Settings className="h-4 w-4" />
               Admin
             </TabsTrigger>
           )}
@@ -161,6 +166,25 @@ const SettingsPage: React.FC = () => {
               </div>
             </CardContent>
           </Card>
+        </TabsContent>
+
+        <TabsContent value="pins" className="space-y-6">
+          <div className="grid gap-6">
+            {/* Security Status for User */}
+            <SecurityStatusCard
+              autoRefresh
+              refreshInterval={30000}
+              isAdminView={false}
+            />
+
+            {/* PIN Management for Current User */}
+            <PINManagementCard
+              isAdminView={false}
+              onPINAction={(action, pinType) => {
+                console.log(`User PIN action: ${action} on ${pinType}`);
+              }}
+            />
+          </div>
         </TabsContent>
 
         <TabsContent value="notifications" className="space-y-6">

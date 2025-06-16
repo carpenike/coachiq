@@ -59,7 +59,7 @@ export const HealthProvider: React.FC<HealthProviderProps> = ({ children }) => {
     // Check for new critical failures
     if (curr.issues?.critical?.failed && prev?.issues?.critical?.failed) {
       const newCriticals = curr.issues.critical.failed.filter(
-        (f: string) => !prev.issues!.critical!.failed!.includes(f)
+        (f: string) => !prev.issues!.critical.failed.includes(f)
       );
 
       if (newCriticals.length > 0) {
@@ -77,7 +77,7 @@ export const HealthProvider: React.FC<HealthProviderProps> = ({ children }) => {
     // Check for new warnings
     if (curr.issues?.warning?.failed && prev?.issues?.warning?.failed) {
       const newWarnings = curr.issues.warning.failed.filter(
-        (f: string) => !prev.issues!.warning!.failed!.includes(f)
+        (f: string) => !prev.issues!.warning.failed.includes(f)
       );
 
       if (newWarnings.length > 0) {

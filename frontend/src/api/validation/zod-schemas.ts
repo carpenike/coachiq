@@ -40,7 +40,7 @@ interface JsonSchema {
 
 /** Schema cache with versioning support */
 class SchemaCache {
-  private cache = new Map<string, z.ZodSchema>();
+  private readonly cache = new Map<string, z.ZodSchema>();
   private lastFetch: Date | null = null;
   private version: string | null = null;
   private readonly CACHE_TTL = 60 * 60 * 1000; // 1 hour

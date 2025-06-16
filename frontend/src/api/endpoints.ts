@@ -99,6 +99,9 @@ import type {
     OperationResultSchema
 } from './types/domains';
 
+// Import PIN authentication functions
+export * from './pin-auth';
+
 //
 // ===== ENTITIES API (/api/v2/entities) =====
 //
@@ -442,12 +445,12 @@ export async function fetchHealthStatus(): Promise<HealthStatus> {
     // Fetch rich system status from Domain API v2
     const systemStatus = await apiGet<{
       overall_status: string;
-      services: Array<{
+      services: {
         name: string;
         status: string;
         enabled: boolean;
         last_check: number;
-      }>;
+      }[];
       total_services: number;
       healthy_services: number;
       timestamp: number;
@@ -483,7 +486,7 @@ export async function fetchHealthStatus(): Promise<HealthStatus> {
                    systemStatus.overall_status === 'degraded' ? 'degraded' : 'failed';
 
     const healthStatus: HealthStatus = {
-      status: status as "healthy" | "degraded" | "failed",
+      status: status,
       features,
       ...(Object.keys(unhealthyFeatures).length > 0 && { unhealthy_features: unhealthyFeatures }),
       all_features: features,
@@ -764,7 +767,7 @@ export async function fetchBackendComputedAPIPerformance(): Promise<Record<strin
  */
 export async function fetchBackendComputedDTCs(filters?: DTCFilters): Promise<DTCCollection> {
   const queryString = filters ? buildQueryString(filters as Record<string, unknown>) : '';
-  const url = queryString ? `/api/diagnostics/dtcs?${queryString}` : '/api/diagnostics/dtcs';
+  const url = queryString ? `/api/v2/diagnostics/dtcs?${queryString}` : '/api/v2/diagnostics/dtcs';
 
   logApiRequest('GET', url, filters);
   const result = await apiGet<DTCCollection>(url);
@@ -791,7 +794,7 @@ export async function fetchActiveDTCs(filters?: DTCFilters): Promise<DTCCollecti
 
   // Fallback: Use basic endpoint with frontend aggregation (legacy approach)
   const queryString = filters ? buildQueryString(filters as Record<string, unknown>) : '';
-  const url = queryString ? `/api/diagnostics/dtcs?${queryString}` : '/api/diagnostics/dtcs';
+  const url = queryString ? `/api/v2/diagnostics/dtcs?${queryString}` : '/api/v2/diagnostics/dtcs';
 
   logApiRequest('GET', url, filters);
   const rawResult = await apiGet<DiagnosticTroubleCode[]>(url);
@@ -828,12 +831,12 @@ export async function resolveDTC(
   code: number,
   sourceAddress = 0
 ): Promise<DTCResolutionResponse> {
-  const url = '/api/diagnostics/dtc';
+  const url = '/api/v2/diagnostics/dtcs/resolve';
   const request = { protocol, code, source_address: sourceAddress };
 
-  logApiRequest('DELETE', url, request);
+  logApiRequest('POST', url, request);
   const result = await fetch(`${API_BASE}${url}`, {
-    method: 'DELETE',
+    method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(request)
   });
@@ -862,7 +865,7 @@ export async function resolveDTC(
  */
 export async function fetchFaultCorrelations(timeWindowSeconds?: number): Promise<FaultCorrelation[]> {
   const queryString = timeWindowSeconds ? buildQueryString({ time_window_seconds: timeWindowSeconds }) : '';
-  const url = queryString ? `/api/diagnostics/correlations?${queryString}` : '/api/diagnostics/correlations';
+  const url = queryString ? `/api/v2/diagnostics/correlations?${queryString}` : '/api/v2/diagnostics/correlations';
 
   logApiRequest('GET', url, { timeWindowSeconds });
   const result = await apiGet<FaultCorrelation[]>(url);
@@ -879,7 +882,7 @@ export async function fetchFaultCorrelations(timeWindowSeconds?: number): Promis
  */
 export async function fetchMaintenancePredictions(timeHorizonDays = 90): Promise<MaintenancePrediction[]> {
   const queryString = buildQueryString({ time_horizon_days: timeHorizonDays });
-  const url = `/api/diagnostics/predictions?${queryString}`;
+  const url = `/api/v2/diagnostics/predictions?${queryString}`;
 
   logApiRequest('GET', url, { timeHorizonDays });
   const result = await apiGet<MaintenancePrediction[]>(url);
@@ -894,12 +897,38 @@ export async function fetchMaintenancePredictions(timeHorizonDays = 90): Promise
  * @returns Promise resolving to backend-computed diagnostic statistics
  */
 export async function fetchBackendComputedDiagnosticStatistics(): Promise<DiagnosticStats> {
-  const url = '/api/diagnostics/statistics/computed';
+  const url = '/api/v2/diagnostics/statistics';
 
   logApiRequest('GET', url);
-  const result = await apiGet<DiagnosticStats>(url);
-  logApiResponse(url, result);
+  // Transform v2 response to frontend format
+  const response = await apiGet<{
+    metrics: {
+      total_dtcs: number;
+      active_dtcs: number;
+      resolved_dtcs: number;
+      processing_rate: number;
+      system_health_trend: 'improving' | 'stable' | 'degrading';
+    };
+    correlation: {
+      accuracy: number;
+    };
+    prediction: {
+      accuracy: number;
+    };
+  }>(url);
 
+  const result: DiagnosticStats = {
+    total_dtcs: response.metrics.total_dtcs,
+    active_dtcs: response.metrics.active_dtcs,
+    resolved_dtcs: response.metrics.resolved_dtcs,
+    processing_rate: response.metrics.processing_rate,
+    correlation_accuracy: response.correlation.accuracy,
+    prediction_accuracy: response.prediction.accuracy,
+    system_health_trend: response.metrics.system_health_trend,
+    last_updated: new Date().toISOString(),
+  };
+
+  logApiResponse(url, result);
   return result;
 }
 
@@ -919,22 +948,27 @@ export async function fetchDiagnosticStatistics(): Promise<DiagnosticStats> {
   }
 
   // Fallback: Use basic endpoint with field mapping (legacy approach)
-  const url = '/api/diagnostics/statistics';
+  const url = '/api/v2/diagnostics/statistics';
   logApiRequest('GET', url);
-  const rawResult = await apiGet<Record<string, unknown>>(url);
+  const rawResult = await apiGet<{
+    metrics: Record<string, unknown>;
+    correlation: Record<string, unknown>;
+    prediction: Record<string, unknown>;
+  }>(url);
   logApiResponse(url, rawResult);
 
   // Transform the backend response to our expected DiagnosticStats format (field mapping)
-  const diagnostics = rawResult.diagnostics as Record<string, unknown> || {};
-  const predictive = rawResult.predictive as Record<string, unknown> || {};
+  const diagnostics = rawResult.metrics || {};
+  const correlation = rawResult.correlation || {};
+  const prediction = rawResult.prediction || {};
 
   const result: DiagnosticStats = {
     total_dtcs: (diagnostics.total_dtcs as number) || 0,
     active_dtcs: (diagnostics.active_dtcs as number) || 0,
     resolved_dtcs: (diagnostics.resolved_dtcs as number) || 0,
     processing_rate: (diagnostics.processing_rate as number) || 0,
-    correlation_accuracy: (predictive.correlation_accuracy as number) || 0,
-    prediction_accuracy: (predictive.prediction_accuracy as number) || 0,
+    correlation_accuracy: (correlation.accuracy as number) || 0,
+    prediction_accuracy: (prediction.accuracy as number) || 0,
     system_health_trend: (diagnostics.system_health_trend as "improving" | "stable" | "degrading") || "stable",
     last_updated: new Date().toISOString()
   };
@@ -948,7 +982,7 @@ export async function fetchDiagnosticStatistics(): Promise<DiagnosticStats> {
  * @returns Promise resolving to diagnostics status
  */
 export async function fetchDiagnosticsStatus(): Promise<Record<string, unknown>> {
-  const url = '/api/diagnostics/status';
+  const url = '/api/v2/diagnostics/health';
 
   logApiRequest('GET', url);
   const result = await apiGet<Record<string, unknown>>(url);
@@ -1948,6 +1982,291 @@ export async function executeGroupOperation(
 
   logApiRequest('POST', url, payload);
   const result = await apiPost<BulkOperationResponse>(url, payload);
+  logApiResponse(url, result);
+
+  return result;
+}
+
+//
+// ===== SECURITY DASHBOARD API (/api/security) =====
+//
+
+/**
+ * Get security dashboard data including recent events and statistics
+ *
+ * @param limit - Maximum number of recent events to return
+ * @returns Promise resolving to security dashboard data
+ */
+export async function fetchSecurityDashboardData(limit = 20): Promise<{
+  recent_events: {
+    event_id: string;
+    event_uuid: string;
+    timestamp: number;
+    event_type: string;
+    severity: string;
+    source_component: string;
+    title: string;
+    description: string;
+    payload: Record<string, unknown>;
+    metadata?: Record<string, unknown>;
+    acknowledged: boolean;
+  }[];
+  statistics: {
+    total_events: number;
+    events_by_type: Record<string, number>;
+    events_by_severity: Record<string, number>;
+    events_by_component: Record<string, number>;
+    recent_rate: number;
+  };
+  anomaly_config: {
+    rate_limit: {
+      enabled: boolean;
+      tokens_per_second: number;
+      burst_size: number;
+    };
+    access_control: {
+      enabled: boolean;
+      mode: string;
+    };
+    broadcast_storm: {
+      enabled: boolean;
+      threshold_multiplier: number;
+    };
+  };
+}> {
+  const url = `/api/security/dashboard/data?limit=${limit}`;
+
+  logApiRequest('GET', url);
+  const result = await apiGet<{
+    recent_events: {
+      event_id: string;
+      event_uuid: string;
+      timestamp: number;
+      event_type: string;
+      severity: string;
+      source_component: string;
+      title: string;
+      description: string;
+      payload: Record<string, unknown>;
+      metadata?: Record<string, unknown>;
+      acknowledged: boolean;
+    }[];
+    statistics: {
+      total_events: number;
+      events_by_type: Record<string, number>;
+      events_by_severity: Record<string, number>;
+      events_by_component: Record<string, number>;
+      recent_rate: number;
+    };
+    anomaly_config: {
+      rate_limit: {
+        enabled: boolean;
+        tokens_per_second: number;
+        burst_size: number;
+      };
+      access_control: {
+        enabled: boolean;
+        mode: string;
+      };
+      broadcast_storm: {
+        enabled: boolean;
+        threshold_multiplier: number;
+      };
+    };
+  }>(url);
+  logApiResponse(url, result);
+
+  return result;
+}
+
+/**
+ * Get security configuration for anomaly detection
+ *
+ * @returns Promise resolving to security configuration
+ */
+export async function fetchSecurityConfiguration(): Promise<{
+  anomaly_detection: {
+    enabled: boolean;
+    rate_limit: {
+      enabled: boolean;
+      default_tokens_per_second: number;
+      default_burst_size: number;
+    };
+    access_control: {
+      enabled: boolean;
+      mode: string;
+      whitelist: number[];
+      blacklist: number[];
+    };
+    broadcast_storm: {
+      enabled: boolean;
+      threshold_multiplier: number;
+      window_seconds: number;
+    };
+  };
+  persistence: {
+    enabled: boolean;
+    batch_size: number;
+    batch_timeout: number;
+  };
+}> {
+  const url = '/api/security/config';
+
+  logApiRequest('GET', url);
+  const result = await apiGet<{
+    anomaly_detection: {
+      enabled: boolean;
+      rate_limit: {
+        enabled: boolean;
+        default_tokens_per_second: number;
+        default_burst_size: number;
+      };
+      access_control: {
+        enabled: boolean;
+        mode: string;
+        whitelist: number[];
+        blacklist: number[];
+      };
+      broadcast_storm: {
+        enabled: boolean;
+        threshold_multiplier: number;
+        window_seconds: number;
+      };
+    };
+    persistence: {
+      enabled: boolean;
+      batch_size: number;
+      batch_timeout: number;
+    };
+  }>(url);
+  logApiResponse(url, result);
+
+  return result;
+}
+
+/**
+ * Update security configuration
+ *
+ * @param config - Partial security configuration to update
+ * @returns Promise resolving to updated configuration
+ */
+export async function updateSecurityConfiguration(config: {
+  anomaly_detection?: {
+    enabled?: boolean;
+    rate_limit?: {
+      enabled?: boolean;
+      default_tokens_per_second?: number;
+      default_burst_size?: number;
+    };
+    access_control?: {
+      enabled?: boolean;
+      mode?: string;
+      whitelist?: number[];
+      blacklist?: number[];
+    };
+    broadcast_storm?: {
+      enabled?: boolean;
+      threshold_multiplier?: number;
+      window_seconds?: number;
+    };
+  };
+}): Promise<{ message: string; updated: Record<string, unknown> }> {
+  const url = '/api/security/config';
+
+  logApiRequest('POST', url, config);
+  const result = await apiPost<{ message: string; updated: Record<string, unknown> }>(url, config);
+  logApiResponse(url, result);
+
+  return result;
+}
+
+/**
+ * Acknowledge a security event
+ *
+ * @param eventId - The event ID to acknowledge
+ * @returns Promise resolving to acknowledgment confirmation
+ */
+export async function acknowledgeSecurityEvent(eventId: string): Promise<{
+  success: boolean;
+  message: string;
+  event_id: string;
+  acknowledged_by: string;
+  acknowledged_at: number;
+}> {
+  const url = `/api/security/events/${eventId}/acknowledge`;
+
+  logApiRequest('POST', url);
+  const result = await apiPost<{
+    success: boolean;
+    message: string;
+    event_id: string;
+    acknowledged_by: string;
+    acknowledged_at: number;
+  }>(url, {});
+  logApiResponse(url, result);
+
+  return result;
+}
+
+/**
+ * Get security event history with filtering
+ *
+ * @param params - Query parameters for filtering events
+ * @returns Promise resolving to filtered security events
+ */
+export async function fetchSecurityEvents(params?: {
+  limit?: number;
+  offset?: number;
+  severity?: string;
+  event_type?: string;
+  source_component?: string;
+  start_time?: number;
+  end_time?: number;
+  acknowledged?: boolean;
+}): Promise<{
+  events: {
+    event_id: string;
+    event_uuid: string;
+    timestamp: number;
+    event_type: string;
+    severity: string;
+    source_component: string;
+    title: string;
+    description: string;
+    payload: Record<string, unknown>;
+    metadata?: Record<string, unknown>;
+    acknowledged: boolean;
+    acknowledged_by?: string;
+    acknowledged_at?: number;
+  }[];
+  total: number;
+  offset: number;
+  limit: number;
+}> {
+  const queryString = params ? buildQueryString(params) : '';
+  const url = queryString ? `/api/security/events?${queryString}` : '/api/security/events';
+
+  logApiRequest('GET', url, params);
+  const result = await apiGet<{
+    events: {
+      event_id: string;
+      event_uuid: string;
+      timestamp: number;
+      event_type: string;
+      severity: string;
+      source_component: string;
+      title: string;
+      description: string;
+      payload: Record<string, unknown>;
+      metadata?: Record<string, unknown>;
+      acknowledged: boolean;
+      acknowledged_by?: string;
+      acknowledged_at?: number;
+    }[];
+    total: number;
+    offset: number;
+    limit: number;
+  }>(url);
   logApiResponse(url, result);
 
   return result;

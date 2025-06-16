@@ -72,12 +72,12 @@ interface DashboardMetrics {
   notifications_per_hour: number;
   channel_stats: Record<string, any>;
   level_distribution: Record<string, number>;
-  hourly_volume: Array<{
+  hourly_volume: {
     hour: string;
     total: number;
     successful: number;
     failed: number;
-  }>;
+  }[];
 }
 
 interface QueueStatistics {
@@ -116,7 +116,7 @@ const fetchDashboardHealth = async (): Promise<DashboardHealth> => {
   return response.json();
 };
 
-const fetchDashboardMetrics = async (hours: number = 24): Promise<DashboardMetrics> => {
+const fetchDashboardMetrics = async (hours = 24): Promise<DashboardMetrics> => {
   const response = await fetch(`/api/notifications/dashboard/metrics?hours=${hours}`);
   if (!response.ok) throw new Error('Failed to fetch metrics');
   return response.json();

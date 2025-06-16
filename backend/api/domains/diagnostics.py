@@ -229,6 +229,143 @@ def create_diagnostics_router() -> APIRouter:
             logger.error(f"Error getting system status: {e}")
             raise HTTPException(status_code=500, detail=f"Failed to get system status: {e!s}")
 
+    @router.get("/dtcs")
+    async def get_dtcs(
+        request: Request,
+        system_type: Optional[str] = Query(None, description="Filter by system type"),
+        severity: Optional[str] = Query(None, description="Filter by severity"),
+        protocol: Optional[str] = Query(None, description="Filter by protocol"),
+        feature=Depends(get_diagnostics_feature)
+    ) -> Dict[str, Any]:
+        """Get diagnostic trouble codes"""
+        try:
+            # Get DTCs from diagnostics feature
+            dtc_dicts = []
+            if hasattr(feature, "handler") and feature.handler:
+                dtcs = feature.handler.get_active_dtcs()
+                dtc_dicts = [dtc.to_dict() for dtc in dtcs]
+
+            # Apply filters
+            filtered_dtcs = dtc_dicts
+            if system_type:
+                filtered_dtcs = [dtc for dtc in filtered_dtcs if dtc.get("system_type") == system_type]
+            if severity:
+                filtered_dtcs = [dtc for dtc in filtered_dtcs if dtc.get("severity") == severity]
+            if protocol:
+                filtered_dtcs = [dtc for dtc in filtered_dtcs if dtc.get("protocol") == protocol]
+
+            # Return DTCCollection format expected by frontend
+            active_count = len([dtc for dtc in filtered_dtcs if not dtc.get("resolved", False)])
+
+            by_severity = {}
+            by_protocol = {}
+            for dtc in filtered_dtcs:
+                sev = dtc.get("severity", "unknown")
+                proto = dtc.get("protocol", "unknown")
+                by_severity[sev] = by_severity.get(sev, 0) + 1
+                by_protocol[proto] = by_protocol.get(proto, 0) + 1
+
+            return {
+                "dtcs": filtered_dtcs,
+                "total_count": len(filtered_dtcs),
+                "active_count": active_count,
+                "by_severity": by_severity,
+                "by_protocol": by_protocol
+            }
+        except Exception as e:
+            logger.error(f"Error getting DTCs: {e}")
+            raise HTTPException(status_code=500, detail=f"Failed to get DTCs: {e!s}")
+
+    @router.post("/dtcs/resolve")
+    async def resolve_dtc(
+        request: Request,
+        body: Dict[str, Any],
+        feature=Depends(get_diagnostics_feature)
+    ) -> Dict[str, bool]:
+        """Resolve a diagnostic trouble code"""
+        try:
+            protocol = body.get("protocol")
+            code = body.get("code")
+            source_address = body.get("source_address", 0)
+
+            # Resolve via diagnostics feature
+            resolved = False
+            if hasattr(feature, "handler") and feature.handler:
+                resolved = feature.handler.resolve_dtc(protocol, code, source_address)
+
+            return {"resolved": resolved}
+        except Exception as e:
+            logger.error(f"Error resolving DTC: {e}")
+            raise HTTPException(status_code=500, detail=f"Failed to resolve DTC: {e!s}")
+
+    @router.get("/statistics")
+    async def get_statistics(
+        request: Request,
+        feature=Depends(get_diagnostics_feature)
+    ) -> Dict[str, Any]:
+        """Get diagnostic statistics"""
+        try:
+            status = feature.get_status()
+            stats = status.get("statistics", {})
+
+            # Return in v2 format expected by frontend
+            return {
+                "metrics": {
+                    "total_dtcs": stats.get("total_dtcs", 0),
+                    "active_dtcs": stats.get("active_dtcs", 0),
+                    "resolved_dtcs": stats.get("resolved_dtcs", 0),
+                    "processing_rate": stats.get("processing_rate", 0.0),
+                    "system_health_trend": stats.get("system_health_trend", "stable")
+                },
+                "correlation": {
+                    "accuracy": stats.get("correlation_accuracy", 0.0)
+                },
+                "prediction": {
+                    "accuracy": stats.get("prediction_accuracy", 0.0)
+                }
+            }
+        except Exception as e:
+            logger.error(f"Error getting statistics: {e}")
+            raise HTTPException(status_code=500, detail=f"Failed to get statistics: {e!s}")
+
+    @router.get("/correlations")
+    async def get_correlations(
+        request: Request,
+        time_window_seconds: Optional[float] = Query(60.0, description="Time window for correlation analysis"),
+        feature=Depends(get_diagnostics_feature)
+    ) -> List[Dict[str, Any]]:
+        """Get fault correlations"""
+        try:
+            # Get correlations from diagnostics feature
+            correlations = []
+            if hasattr(feature, "handler") and feature.handler:
+                raw_correlations = feature.handler.get_fault_correlations(time_window_seconds)
+                correlations = [corr.to_dict() for corr in raw_correlations]
+
+            return correlations
+        except Exception as e:
+            logger.error(f"Error getting correlations: {e}")
+            raise HTTPException(status_code=500, detail=f"Failed to get correlations: {e!s}")
+
+    @router.get("/predictions")
+    async def get_predictions(
+        request: Request,
+        time_horizon_days: int = Query(90, description="Time horizon for predictions in days"),
+        feature=Depends(get_diagnostics_feature)
+    ) -> List[Dict[str, Any]]:
+        """Get maintenance predictions"""
+        try:
+            # Get predictions from diagnostics feature
+            predictions = []
+            if hasattr(feature, "handler") and feature.handler:
+                raw_predictions = feature.handler.get_maintenance_predictions(time_horizon_days)
+                predictions = [pred.to_dict() for pred in raw_predictions]
+
+            return predictions
+        except Exception as e:
+            logger.error(f"Error getting predictions: {e}")
+            raise HTTPException(status_code=500, detail=f"Failed to get predictions: {e!s}")
+
     return router
 
 @register_domain_router("diagnostics")

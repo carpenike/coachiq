@@ -12,6 +12,9 @@ from backend.integrations.analytics.registration import (
     register_performance_analytics_feature,
 )
 from backend.integrations.auth.registration import register_authentication_feature
+from backend.integrations.can.can_tools_registration import (
+    register_can_tools_features,
+)
 from backend.integrations.can.multi_network_registration import (
     register_multi_network_feature,
 )
@@ -55,6 +58,12 @@ def _create_app_state_feature(**kwargs):
     return AppState(**kwargs)
 
 
+def _create_security_event_manager_feature(**kwargs):
+    """Factory function for SecurityEventManager feature."""
+    from backend.services.security_event_manager import initialize_security_event_manager
+    return initialize_security_event_manager(**kwargs)
+
+
 # Note: persistence feature factory is registered in backend.services.feature_manager
 
 # Register custom feature factories
@@ -62,6 +71,7 @@ def _create_app_state_feature(**kwargs):
 FeatureManager.register_feature_factory("websocket", _create_websocket_feature)
 FeatureManager.register_feature_factory("can_feature", _create_can_feature)
 FeatureManager.register_feature_factory("app_state", _create_app_state_feature)
+FeatureManager.register_feature_factory("security_event_manager", _create_security_event_manager_feature)
 FeatureManager.register_feature_factory("rvc", register_rvc_feature)
 FeatureManager.register_feature_factory("j1939", register_j1939_feature)
 FeatureManager.register_feature_factory("multi_network_can", register_multi_network_feature)
@@ -81,15 +91,25 @@ FeatureManager.register_feature_factory("firefly", register_firefly_feature)
 FeatureManager.register_feature_factory("spartan_k2", register_spartan_k2_feature)
 
 
-def register_custom_features() -> None:
+def register_custom_features(feature_manager: FeatureManager | None = None) -> None:
     """
     Register all custom features with the feature manager.
 
     This function is called during application startup to register
     any custom feature implementations that aren't loaded automatically
     from the feature_flags.yaml file.
+
+    Args:
+        feature_manager: Optional feature manager instance for direct registrations
     """
     logger.info("Registering custom feature implementations")
     # All feature factory registrations are done at module import time above
     # This function exists to provide a clear entry point during startup
     # and to allow for any additional dynamic registrations in the future
+
+    # Register CAN tools if feature manager provided
+    if feature_manager:
+        try:
+            register_can_tools_features(feature_manager)
+        except Exception as e:
+            logger.error("Failed to register CAN tools features: %s", e)

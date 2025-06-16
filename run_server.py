@@ -65,6 +65,16 @@ def create_argument_parser():
         action="store_true",
         help="Show current configuration and exit",
     )
+    parser.add_argument(
+        "--proxy-headers",
+        action="store_true",
+        help="Enable proxy headers (X-Forwarded-For, X-Forwarded-Proto) - overrides configuration",
+    )
+    parser.add_argument(
+        "--no-proxy-headers",
+        action="store_true",
+        help="Disable proxy headers - overrides configuration",
+    )
 
     return parser
 
@@ -96,6 +106,15 @@ def override_settings_from_args(settings, args):
         logging_config.level = args.log_level.upper()
         settings.logging = logging_config
 
+    # Override proxy headers setting if provided via CLI
+    if args.proxy_headers or args.no_proxy_headers:
+        security_config = settings.security.model_copy()
+        if args.proxy_headers:
+            security_config.tls_termination_is_external = True
+        elif args.no_proxy_headers:
+            security_config.tls_termination_is_external = False
+        settings.security = security_config
+
     return settings
 
 
@@ -116,21 +135,27 @@ def show_configuration(settings):
     print(f"  Debug: {settings.server.debug}")
     print(f"  Root Path: {settings.server.root_path or '(none)'}")
     print(f"  Access Log: {settings.server.access_log}")
-    print(f"  Keep Alive Timeout: {settings.server.timeout_keep_alive}s")
+    print(f"  Keep Alive Timeout: {settings.server.keep_alive_timeout}s")
     print(f"  Graceful Shutdown Timeout: {settings.server.timeout_graceful_shutdown}s")
     print()
 
+    print("Security Configuration:")
+    print(f"  External TLS Termination: {settings.security.tls_termination_is_external}")
+    print(f"  Proxy Headers: {'Enabled' if settings.security.tls_termination_is_external else 'Disabled'}")
+    print(f"  Rate Limiting: {settings.security.rate_limit_enabled}")
+    print()
+
     print("CORS Configuration:")
-    print(f"  Allowed Origins: {', '.join(settings.cors.allowed_origins)}")
-    print(f"  Allow Credentials: {settings.cors.allowed_credentials}")
-    print(f"  Allowed Methods: {', '.join(settings.cors.allowed_methods)}")
-    print(f"  Allowed Headers: {', '.join(settings.cors.allowed_headers)}")
+    print(f"  Allowed Origins: {', '.join(settings.cors.allow_origins) if isinstance(settings.cors.allow_origins, list) else settings.cors.allow_origins}")
+    print(f"  Allow Credentials: {settings.cors.allow_credentials}")
+    print(f"  Allowed Methods: {', '.join(settings.cors.allow_methods) if isinstance(settings.cors.allow_methods, list) else settings.cors.allow_methods}")
+    print(f"  Allowed Headers: {', '.join(settings.cors.allow_headers) if isinstance(settings.cors.allow_headers, list) else settings.cors.allow_headers}")
     print()
 
     print("CAN Bus Configuration:")
-    print(f"  Bus Type: {settings.canbus.bustype}")
-    print(f"  Channels: {', '.join(settings.canbus.channels)}")
-    print(f"  Bitrate: {settings.canbus.bitrate}")
+    print(f"  Bus Type: {settings.can.bustype}")
+    print(f"  Interfaces: {', '.join(settings.can.interfaces) if isinstance(settings.can.interfaces, list) else settings.can.interfaces}")
+    print(f"  Bitrate: {settings.can.bitrate}")
     print()
 
     print("Logging Configuration:")
@@ -200,6 +225,10 @@ if __name__ == "__main__":
             logger.info("SSL/TLS enabled - server will run on HTTPS")
         else:
             logger.info("SSL/TLS not configured - server will run on HTTP")
+
+        # Log proxy headers status
+        if uvicorn_config.get("proxy_headers", False):
+            logger.info("Proxy headers enabled - server configured for reverse proxy deployment")
 
         logger.info(f"Server starting on {uvicorn_config['host']}:{uvicorn_config['port']}")
 

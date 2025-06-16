@@ -490,8 +490,8 @@ function SystemHealthBreakdownCard() {
  * Main Predictive Maintenance Page
  */
 export default function PredictiveMaintenancePage() {
-  const [systemFilter, setSystemFilter] = useState<string>("")
-  const [recommendationFilter, setRecommendationFilter] = useState<string>("")
+  const [systemFilter, setSystemFilter] = useState<string>("all")
+  const [recommendationFilter, setRecommendationFilter] = useState<string>("all")
   const { refresh, isLoading } = usePredictiveMaintenance()
 
   return (
@@ -542,7 +542,7 @@ export default function PredictiveMaintenancePage() {
                   <SelectValue placeholder="All Systems" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="">All Systems</SelectItem>
+                  <SelectItem value="all">All Systems</SelectItem>
                   <SelectItem value="battery">Battery</SelectItem>
                   <SelectItem value="generator">Generator</SelectItem>
                   <SelectItem value="hvac">HVAC</SelectItem>
@@ -554,7 +554,7 @@ export default function PredictiveMaintenancePage() {
                 </SelectContent>
               </Select>
             </div>
-            {systemFilter ? (
+            {systemFilter && systemFilter !== 'all' ? (
               <ComponentHealthList systemType={systemFilter} />
             ) : (
               <ComponentHealthList />
@@ -569,14 +569,14 @@ export default function PredictiveMaintenancePage() {
                   <SelectValue placeholder="All Levels" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="">All Levels</SelectItem>
+                  <SelectItem value="all">All Levels</SelectItem>
                   <SelectItem value="alert">Alert</SelectItem>
                   <SelectItem value="advise">Advise</SelectItem>
                   <SelectItem value="watch">Watch</SelectItem>
                 </SelectContent>
               </Select>
             </div>
-            {recommendationFilter ? (
+            {recommendationFilter && recommendationFilter !== 'all' ? (
               <MaintenanceRecommendationsList level={recommendationFilter} />
             ) : (
               <MaintenanceRecommendationsList />

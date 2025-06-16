@@ -68,6 +68,58 @@ class ServiceMetadata(BaseModel):
     platform: str = Field(..., description="Operating system platform")
 
 
+class ComponentHealth(BaseModel):
+    """Individual component health information"""
+
+    id: str = Field(..., description="Component identifier")
+    name: str = Field(..., description="Component display name")
+    status: str = Field(..., description="Component status: healthy/degraded/unhealthy/unknown")
+    message: str | None = Field(None, description="Status message or error details")
+    category: str = Field(..., description="Component category: core/network/storage/external")
+    last_checked: float = Field(..., description="Last health check timestamp")
+    safety_classification: str | None = Field(None, description="Safety classification if applicable")
+
+
+class ComponentHealthResponse(BaseModel):
+    """Response for component health endpoint"""
+
+    components: list[ComponentHealth] = Field(..., description="List of component health statuses")
+    total_components: int = Field(..., description="Total number of components")
+    healthy_components: int = Field(..., description="Number of healthy components")
+    degraded_components: int = Field(..., description="Number of degraded components")
+    unhealthy_components: int = Field(..., description="Number of unhealthy components")
+    timestamp: float = Field(..., description="Response timestamp")
+
+
+class EventLogEntry(BaseModel):
+    """System event log entry"""
+
+    id: str = Field(..., description="Unique event identifier")
+    timestamp: float = Field(..., description="Event timestamp")
+    level: str = Field(..., description="Log level: debug/info/warning/error/critical")
+    component: str = Field(..., description="Component that generated the event")
+    message: str = Field(..., description="Event message")
+    details: dict[str, Any] | None = Field(None, description="Additional event details")
+
+
+class EventLogResponse(BaseModel):
+    """Response for event logs endpoint"""
+
+    events: list[EventLogEntry] = Field(..., description="List of event log entries")
+    total_events: int = Field(..., description="Total number of events")
+    timestamp: float = Field(..., description="Response timestamp")
+
+
+class EventLogFilter(BaseModel):
+    """Filter parameters for event logs"""
+
+    limit: int = Field(50, ge=1, le=1000, description="Maximum number of events to return")
+    level: str | None = Field(None, description="Filter by log level")
+    component: str | None = Field(None, description="Filter by component")
+    start_time: float | None = Field(None, description="Filter events after this timestamp")
+    end_time: float | None = Field(None, description="Filter events before this timestamp")
+
+
 class SystemStatus(BaseModel):
     """Overall system status with enhanced metadata"""
 
@@ -121,7 +173,15 @@ def create_system_router() -> APIRouter:
 
         return {
             "message": "System domain schemas available",
-            "available_endpoints": ["/health", "/schemas", "/info", "/status", "/services"],
+            "available_endpoints": [
+                "/health",
+                "/schemas",
+                "/info",
+                "/status",
+                "/services",
+                "/components/health",
+                "/events"
+            ],
         }
 
     @router.get("/info", response_model=SystemInfo)
@@ -349,6 +409,223 @@ def create_system_router() -> APIRouter:
         except Exception as e:
             logger.error(f"Error getting services: {e}")
             raise HTTPException(status_code=500, detail=f"Failed to get services: {e!s}")
+
+    @router.get("/components/health", response_model=ComponentHealthResponse)
+    async def get_component_health(request: Request) -> ComponentHealthResponse:
+        """Get detailed health status for all system components
+
+        Returns health information for individual system components,
+        organized by category (core, network, storage, external).
+        """
+        _check_domain_api_enabled(request)
+
+        try:
+            feature_manager = get_feature_manager_from_request(request)
+            components = []
+
+            # Map features to component categories
+            category_mapping = {
+                # Core services
+                "feature_manager": "core",
+                "entity_management": "core",
+                "auth_manager": "core",
+                "analytics_engine": "core",
+
+                # Network services
+                "can_interface": "network",
+                "websocket_service": "network",
+                "multi_network": "network",
+
+                # Storage services
+                "persistence": "storage",
+                "database_manager": "storage",
+                "vector_search": "storage",
+
+                # External interfaces
+                "rvc_protocol": "external",
+                "j1939_protocol": "external",
+                "predictive_maintenance": "external",
+            }
+
+            # Get all features and their health status
+            all_features = feature_manager.get_all_features()
+
+            for feature_name, feature in all_features.items():
+                is_enabled = feature_manager.is_enabled(feature_name)
+
+                # Skip disabled features
+                if not is_enabled:
+                    continue
+
+                # Determine health status
+                if hasattr(feature, "is_healthy"):
+                    is_healthy = feature.is_healthy()
+                    status = "healthy" if is_healthy else "unhealthy"
+                else:
+                    # Default to healthy if no health check method
+                    status = "healthy"
+
+                # Get any health message
+                message = None
+                if hasattr(feature, "get_health_message"):
+                    message = feature.get_health_message()
+                elif hasattr(feature, "health_status"):
+                    message = getattr(feature, "health_status", None)
+
+                # Determine category
+                category = category_mapping.get(feature_name, "external")
+
+                # Get safety classification
+                safety_class = feature_manager.get_safety_classification(feature_name)
+                safety_classification = safety_class.value if safety_class else None
+
+                # Create component health entry
+                components.append(ComponentHealth(
+                    id=feature_name,
+                    name=feature_name.replace("_", " ").title(),
+                    status=status,
+                    message=message,
+                    category=category,
+                    last_checked=time.time(),
+                    safety_classification=safety_classification,
+                ))
+
+            # Count statuses
+            healthy_count = len([c for c in components if c.status == "healthy"])
+            degraded_count = len([c for c in components if c.status == "degraded"])
+            unhealthy_count = len([c for c in components if c.status == "unhealthy"])
+
+            return ComponentHealthResponse(
+                components=components,
+                total_components=len(components),
+                healthy_components=healthy_count,
+                degraded_components=degraded_count,
+                unhealthy_components=unhealthy_count,
+                timestamp=time.time(),
+            )
+
+        except Exception as e:
+            logger.error(f"Error getting component health: {e}")
+            raise HTTPException(status_code=500, detail=f"Failed to get component health: {e!s}")
+
+    @router.get("/events", response_model=EventLogResponse)
+    async def get_event_logs(
+        request: Request,
+        limit: int = 50,
+        level: str | None = None,
+        component: str | None = None,
+        start_time: float | None = None,
+        end_time: float | None = None,
+    ) -> EventLogResponse:
+        """Get system event logs with filtering
+
+        Returns recent system events that can be filtered by:
+        - Log level (debug, info, warning, error, critical)
+        - Component name
+        - Time range
+        """
+        _check_domain_api_enabled(request)
+
+        try:
+            # In a real implementation, this would fetch from a logging service or database
+            # For now, we'll generate sample events similar to the frontend
+
+            import random
+
+            # Sample components and messages
+            components = ["can-interface", "api-server", "database", "websocket", "entity-manager"]
+
+            messages_by_level = {
+                "debug": [
+                    "Periodic health check completed",
+                    "Cache refresh completed",
+                    "Background task executed",
+                ],
+                "info": [
+                    "New entity discovered: Light Switch (Instance 12)",
+                    "WebSocket client connected",
+                    "Configuration reloaded",
+                    "Feature flag updated: vector_search=true",
+                ],
+                "warning": [
+                    "High memory usage detected (85%)",
+                    "Slow database query detected (2.3s)",
+                    "CAN message queue growing (depth: 150)",
+                    "Authentication token expiring soon",
+                ],
+                "error": [
+                    "Failed to connect to CAN interface can1",
+                    "Database connection timeout",
+                    "WebSocket connection lost",
+                    "Entity state update failed",
+                ],
+                "critical": [
+                    "CAN interface can0 went offline",
+                    "Database connection pool exhausted",
+                    "Safety system unresponsive",
+                ],
+            }
+
+            # Generate sample events
+            events = []
+            now = time.time()
+
+            # Generate events over the last hour
+            for i in range(100):
+                event_time = now - (i * 60) - random.random() * 60  # Events spread over last 100 minutes
+
+                # Skip if outside time filter
+                if start_time and event_time < start_time:
+                    continue
+                if end_time and event_time > end_time:
+                    continue
+
+                # Select random level and component
+                event_level = random.choice(list(messages_by_level.keys()))
+                event_component = random.choice(components)
+
+                # Skip if doesn't match filters
+                if level and event_level != level:
+                    continue
+                if component and event_component != component:
+                    continue
+
+                # Select random message for this level
+                message = random.choice(messages_by_level[event_level])
+
+                # Add details for errors and critical events
+                details = None
+                if event_level in ["error", "critical"]:
+                    details = {
+                        "error_code": f"ERR_{random.randint(1000, 9999)}",
+                        "retry_count": random.randint(0, 3),
+                    }
+
+                events.append(EventLogEntry(
+                    id=f"event-{i}-{int(event_time)}",
+                    timestamp=event_time,
+                    level=event_level,
+                    component=event_component,
+                    message=message,
+                    details=details,
+                ))
+
+                # Stop if we've reached the limit
+                if len(events) >= limit:
+                    break
+
+            # Sort by timestamp descending (newest first)
+            events.sort(key=lambda e: e.timestamp, reverse=True)
+
+            return EventLogResponse(
+                events=events[:limit],
+                total_events=len(events),
+                timestamp=time.time(),
+            )
+
+        except Exception as e:
+            logger.error(f"Error getting event logs: {e}")
+            raise HTTPException(status_code=500, detail=f"Failed to get event logs: {e!s}")
 
     return router
 

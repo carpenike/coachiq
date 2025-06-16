@@ -5,7 +5,8 @@
  * optimistic updates, bulk operations, error handling, and state management.
  */
 
-import { renderHook, waitFor, act } from '@testing-library/react';
+import { renderHook, act } from '@testing-library/react';
+import { waitFor } from '@testing-library/dom';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import type { ReactNode } from 'react';
 import { vi, describe, it, expect, beforeEach, afterEach } from 'vitest';

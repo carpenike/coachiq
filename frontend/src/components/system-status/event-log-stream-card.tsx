@@ -4,9 +4,11 @@ import { Badge } from '@/components/ui/badge';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Button } from '@/components/ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Skeleton } from '@/components/ui/skeleton';
 import { IconTerminal, IconFilter, IconRefresh } from '@tabler/icons-react';
 import { AlertCircle, Info, AlertTriangle, Zap } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { useEventLogs } from '@/hooks/useEventLogs';
 
 type LogLevel = 'debug' | 'info' | 'warning' | 'error' | 'critical';
 
@@ -16,7 +18,7 @@ interface LogEntry {
   level: LogLevel;
   component: string;
   message: string;
-  details?: Record<string, any>;
+  details?: Record<string, any> | undefined;
 }
 
 /**
@@ -24,11 +26,25 @@ interface LogEntry {
  * Provides immediate context for alerts and system changes
  */
 export function EventLogStreamCard() {
-  const [logs, setLogs] = useState<LogEntry[]>([]);
   const [levelFilter, setLevelFilter] = useState<LogLevel | 'all'>('all');
   const [isAutoScrolling, setIsAutoScrolling] = useState(true);
 
-  // Generate sample log entries
+  // Use real API data
+  const { data, isLoading, error, refetch } = useEventLogs(
+    levelFilter === 'all' ? { limit: 50 } : { limit: 50, level: levelFilter }
+  );
+
+  // Map API response to component format
+  const apiLogs: LogEntry[] = data?.events.map(event => ({
+    id: event.id,
+    timestamp: new Date(event.timestamp * 1000),
+    level: event.level,
+    component: event.component,
+    message: event.message,
+    details: event.details ?? undefined,
+  })) || [];
+
+  // Generate sample log entries for fallback
   const generateSampleLogs = (): LogEntry[] => {
     const components = ['can-interface', 'api-server', 'database', 'websocket', 'entity-manager'];
     const levels: LogLevel[] = ['info', 'warning', 'error', 'debug', 'critical'];
@@ -89,23 +105,18 @@ export function EventLogStreamCard() {
     }).sort((a, b) => b.timestamp.getTime() - a.timestamp.getTime());
   };
 
+  // Use real logs if available, otherwise use sample data
+  const [sampleLogs, setSampleLogs] = useState<LogEntry[]>([]);
+
   useEffect(() => {
-    // Initialize with sample data
-    setLogs(generateSampleLogs());
+    // Only use sample data if API is not available
+    if (!data && !isLoading) {
+      setSampleLogs(generateSampleLogs());
+    }
+  }, [data, isLoading]);
 
-    // Simulate real-time updates
-    const interval = setInterval(() => {
-      const newLog = generateSampleLogs()[0];
-      if (newLog) {
-        newLog.id = `log-${Date.now()}`;
-        newLog.timestamp = new Date();
-
-        setLogs(prevLogs => [newLog, ...prevLogs.slice(0, 49)]); // Keep last 50 logs
-      }
-    }, 5000 + Math.random() * 10000); // Random interval 5-15 seconds
-
-    return () => clearInterval(interval);
-  }, []);
+  // Combine API logs with any simulated updates
+  const displayLogs = apiLogs.length > 0 ? apiLogs : sampleLogs;
 
   const getLevelIcon = (level: LogLevel) => {
     switch (level) {
@@ -148,9 +159,7 @@ export function EventLogStreamCard() {
     return variants[level];
   };
 
-  const filteredLogs = levelFilter === 'all'
-    ? logs
-    : logs.filter(log => log.level === levelFilter);
+  const filteredLogs = displayLogs;
 
   const formatTimestamp = (date: Date) => {
     return date.toLocaleTimeString('en-US', {
@@ -162,8 +171,28 @@ export function EventLogStreamCard() {
   };
 
   const refreshLogs = () => {
-    setLogs(generateSampleLogs());
+    refetch();
   };
+
+  if (isLoading && displayLogs.length === 0) {
+    return (
+      <Card>
+        <CardHeader className="pb-3">
+          <CardTitle className="flex items-center gap-2">
+            <IconTerminal className="h-5 w-5" />
+            <span>Event Stream</span>
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="space-y-2">
+            {Array.from({ length: 5 }).map((_, i) => (
+              <Skeleton key={i} className="h-16 w-full" />
+            ))}
+          </div>
+        </CardContent>
+      </Card>
+    );
+  }
 
   return (
     <Card>
@@ -177,7 +206,12 @@ export function EventLogStreamCard() {
             </Badge>
           </CardTitle>
           <div className="flex items-center gap-2">
-            <Select value={levelFilter} onValueChange={(value) => setLevelFilter(value as LogLevel | 'all')}>
+            <Select
+              value={levelFilter}
+              onValueChange={(value) => {
+                setLevelFilter(value as LogLevel | 'all');
+              }}
+            >
               <SelectTrigger className="w-24 h-8">
                 <SelectValue />
               </SelectTrigger>

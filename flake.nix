@@ -842,6 +842,12 @@ EOF
                 default = 30;
                 description = "JWT token expiration in minutes";
               };
+
+              tlsTerminationIsExternal = lib.mkOption {
+                type = lib.types.bool;
+                default = false;
+                description = "When true, the application assumes it's behind a TLS-terminating reverse proxy. The proxy is responsible for HTTP->HTTPS redirection and HSTS headers. The application MUST be run with --proxy-headers for this to be secure.";
+              };
             };
 
             # Logging settings
@@ -2577,6 +2583,7 @@ EOF
 
               # Security - only if provided
               COACHIQ_SECURITY__SECRET_KEY = lib.mkIf (config.coachiq.settings.security.secretKey != null) config.coachiq.settings.security.secretKey;
+              COACHIQ_SECURITY__TLS_TERMINATION_IS_EXTERNAL = lib.mkIf config.coachiq.settings.security.tlsTerminationIsExternal "true";
 
               # Logging - only if explicitly set
               COACHIQ_LOGGING__LEVEL = lib.mkIf (config.coachiq.settings.logging.level != "INFO") config.coachiq.settings.logging.level;

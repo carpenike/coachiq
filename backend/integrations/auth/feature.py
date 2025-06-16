@@ -80,9 +80,18 @@ class AuthenticationFeature(Feature):
             self.auth_repository = auth_repository
             self.logger.info("Auth repository initialized with core database manager")
 
+            # Apply feature flags to authentication settings
+            auth_settings = self.settings.auth
+            if feature_manager.is_enabled("multi_factor_authentication"):
+                auth_settings.enable_mfa = True
+                self.logger.info("MFA enabled via multi_factor_authentication feature flag")
+            else:
+                auth_settings.enable_mfa = False
+                self.logger.debug("MFA disabled - multi_factor_authentication feature flag not enabled")
+
             # Initialize auth manager
             self.auth_manager = AuthManager(
-                auth_settings=self.settings.auth,
+                auth_settings=auth_settings,
                 notification_manager=notification_manager,
                 auth_repository=auth_repository,
             )

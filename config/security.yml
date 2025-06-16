@@ -1,0 +1,91 @@
+# Security Configuration for RV-C Vehicle Control System
+# This file contains all security policies and settings
+
+config_version: "1.0"
+last_updated: "2025-01-13T10:00:00Z"
+updated_by: "system"
+security_mode: "standard"
+rv_deployment_mode: true
+
+# PIN Security Policy
+pin_policy:
+  min_pin_length: 4
+  max_pin_length: 8
+  require_numeric_only: true
+  emergency_session_timeout_minutes: 5
+  override_session_timeout_minutes: 15
+  maintenance_session_timeout_minutes: 30
+  max_concurrent_sessions_per_user: 2
+  max_failed_attempts: 3
+  lockout_duration_minutes: 15
+  progressive_lockout_enabled: true
+  enable_pin_rotation: true
+  pin_rotation_days: 30
+  require_pin_confirmation: true
+  force_rotation_on_breach: true
+
+# Rate Limiting Policy
+rate_limiting:
+  general_requests_per_minute: 60
+  burst_limit: 10
+  safety_operations_per_minute: 5
+  emergency_operations_per_hour: 3
+  pin_attempts_per_minute: 3
+  max_failed_operations_per_hour: 10
+  trusted_networks:
+    - "192.168.0.0/16"
+    - "10.0.0.0/8"
+    - "172.16.0.0/12"
+  blocked_networks: []
+  admin_rate_multiplier: 2.0
+  service_account_multiplier: 5.0
+
+# Authentication Policy
+authentication:
+  session_timeout_minutes: 480  # 8 hours
+  admin_session_timeout_minutes: 120  # 2 hours
+  remember_me_days: 30
+  require_mfa_for_admin: false
+  require_pin_for_safety: true
+  require_auth_for_read: true
+  token_rotation_enabled: true
+  api_key_expiration_days: 90
+  max_login_attempts: 5
+  login_lockout_minutes: 15
+
+# Audit Policy
+audit:
+  log_all_authentication: true
+  log_safety_operations: true
+  log_admin_operations: true
+  log_failed_operations: true
+  audit_retention_days: 365
+  compliance_retention_days: 2555  # 7 years
+  suspicious_activity_threshold: 5
+  brute_force_threshold: 5
+  real_time_monitoring_enabled: true
+  threat_detection_enabled: true
+
+# Network Security Policy
+network:
+  require_https: true
+  min_tls_version: "1.2"
+  enable_ip_whitelist: false
+  whitelist_networks: []
+  enable_geoip_blocking: false
+  blocked_countries: []
+  enable_ddos_protection: true
+  connection_limit_per_ip: 10
+  request_size_limit_mb: 10
+  enable_security_headers: true
+  enable_csp: true
+  enable_hsts: true
+
+  # RV-specific network security settings
+  safety_whitelist_only: false
+  trusted_rv_networks:
+    - "192.168.1.0/24"   # Common RV internal network
+    - "172.20.0.0/16"    # Mobile hotspot range
+  block_duration_minutes: 60
+  threat_detection_enabled: true
+  auto_block_enabled: true

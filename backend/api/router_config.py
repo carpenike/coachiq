@@ -10,26 +10,38 @@ from typing import Any
 
 from fastapi import FastAPI
 
+from backend.api.domains import register_all_domain_routers
 from backend.api.routers import (
     analytics_dashboard,
     auth,
     can,
+    can_analyzer,
+    can_filter,
+    can_recorder,
+    can_tools,
     config,
     dashboard,
+    dbc,
     device_discovery,
     docs,
     logs,
     migration,
     multi_network,
+    network_security,
     notification_analytics,
     notification_dashboard,
+    pattern_analysis,
     performance_analytics,
+    pin_auth,
     predictive_maintenance,
+    safety,
     schemas,
+    security_config,
+    security_dashboard,
+    security_monitoring,
 )
-from backend.websocket.routes import router as websocket_router
 from backend.core.dependencies import get_feature_manager_from_app
-from backend.api.domains import register_all_domain_routers
+from backend.websocket.routes import router as websocket_router
 
 logger = logging.getLogger(__name__)
 
@@ -47,10 +59,15 @@ def configure_routers(app: FastAPI) -> None:
     logger.info("Configuring API routers with dependency injection")
 
     # Include all routers - they will use dependency injection internally
-    app.include_router(auth.router, prefix="/api")
+    app.include_router(auth.router)
     app.include_router(can.router)
+    app.include_router(can_tools.router)
+    app.include_router(can_recorder.router)
+    app.include_router(can_analyzer.router)
+    app.include_router(can_filter.router)
     app.include_router(config.router)
     app.include_router(dashboard.router)
+    app.include_router(dbc.router)
     app.include_router(docs.router)
     app.include_router(logs.router)
     app.include_router(multi_network.router)
@@ -62,10 +79,21 @@ def configure_routers(app: FastAPI) -> None:
     app.include_router(predictive_maintenance.router)
     app.include_router(schemas.router)
     app.include_router(migration.router)
+    app.include_router(safety.router)
+    app.include_router(pin_auth.router)
+    app.include_router(security_config.router)
+    app.include_router(security_dashboard.router)
+    app.include_router(network_security.router)
 
     # Include notification routers
     app.include_router(notification_dashboard.router)
     app.include_router(notification_analytics.router)
+
+    # Include pattern analysis router
+    app.include_router(pattern_analysis.router)
+
+    # Include security monitoring router
+    app.include_router(security_monitoring.router)
 
     # Include WebSocket routes that integrate with feature manager
     app.include_router(websocket_router)
@@ -79,7 +107,7 @@ def configure_routers(app: FastAPI) -> None:
         else:
             logger.info("Domain API v2 disabled - skipping domain router registration")
     except Exception as e:
-        logger.warning(f"Failed to register domain routers: {e}")
+        logger.warning("Failed to register domain routers: %s", e)
 
     logger.info("All API routers configured successfully")
 
@@ -97,6 +125,7 @@ def get_router_info() -> dict[str, Any]:
             {"prefix": "/api", "tags": ["can"], "name": "can"},
             {"prefix": "/api", "tags": ["config"], "name": "config"},
             {"prefix": "/api/dashboard", "tags": ["dashboard"], "name": "dashboard"},
+            {"prefix": "/api/dbc", "tags": ["dbc"], "name": "dbc"},
             {"prefix": "/api", "tags": ["docs"], "name": "docs"},
             {"prefix": "/api", "tags": ["logs"], "name": "logs"},
             {"prefix": "/api/multi-network", "tags": ["multi-network"], "name": "multi_network"},
@@ -117,11 +146,20 @@ def get_router_info() -> dict[str, Any]:
             },
             {"prefix": "/api/schemas", "tags": ["schemas"], "name": "schemas"},
             {"prefix": "/api/migration", "tags": ["migration"], "name": "migration"},
-            {"prefix": "/api/notifications/dashboard", "tags": ["notification-dashboard"], "name": "notification_dashboard"},
-            {"prefix": "/api/notification-analytics", "tags": ["notification-analytics"], "name": "notification_analytics"},
+            {"prefix": "/api/safety", "tags": ["safety"], "name": "safety"},
+            {
+                "prefix": "/api/notifications/dashboard",
+                "tags": ["notification-dashboard"],
+                "name": "notification_dashboard",
+            },
+            {
+                "prefix": "/api/notification-analytics",
+                "tags": ["notification-analytics"],
+                "name": "notification_analytics",
+            },
             {"prefix": "/ws", "tags": ["websocket"], "name": "websocket"},
         ],
-        "total_routers": 15,
+        "total_routers": 17,
         "dependency_injection": True,
         "domain_api_v2": True,
     }

@@ -108,6 +108,12 @@ class CANBusFeature(Feature):
         # BAM handler for multi-packet messages
         self.bam_handler: BAMHandler | None = None
 
+        # Pattern recognition engine for unknown messages
+        self.pattern_engine = None
+
+        # Anomaly detector for security monitoring
+        self.anomaly_detector = None
+
     async def startup(self) -> None:
         """
         Start CAN bus listeners and message processing.
@@ -125,6 +131,26 @@ class CANBusFeature(Feature):
 
         # Initialize BAM handler for multi-packet message support
         self.bam_handler = BAMHandler(session_timeout=30.0, max_concurrent_sessions=50)
+
+        # Initialize pattern recognition engine for unknown message analysis
+        try:
+            from backend.integrations.can.pattern_recognition_engine import get_pattern_recognition_engine
+            self.pattern_engine = get_pattern_recognition_engine()
+            await self.pattern_engine.start()
+            logger.info("Pattern recognition engine started")
+        except Exception as e:
+            logger.warning(f"Failed to initialize pattern recognition engine: {e}")
+            self.pattern_engine = None
+
+        # Initialize anomaly detector for security monitoring
+        try:
+            from backend.integrations.can.anomaly_detector import get_anomaly_detector
+            self.anomaly_detector = get_anomaly_detector()
+            await self.anomaly_detector.start()
+            logger.info("CAN anomaly detector started")
+        except Exception as e:
+            logger.warning(f"Failed to initialize anomaly detector: {e}")
+            self.anomaly_detector = None
 
         # Load RVC decoder configuration
         try:
@@ -318,6 +344,50 @@ class CANBusFeature(Feature):
                         # Process the received message
                         await self._process_received_message(message, interface_name)
 
+                        # Send to CAN recorder if available
+                        if self.feature_manager:
+                            recorder = self.feature_manager.get_feature("can_bus_recorder")
+                            if recorder and hasattr(recorder, 'recording_state') and recorder.recording_state.value == "recording":
+                                await recorder.record_message(
+                                    can_id=message.arbitration_id,
+                                    data=message.data,
+                                    interface=interface_name,
+                                    is_extended=message.is_extended_id,
+                                    is_error=message.is_error_frame,
+                                    is_remote=message.is_remote_frame,
+                                )
+
+                            # Send to protocol analyzer if available
+                            analyzer = self.feature_manager.get_feature("can_protocol_analyzer")
+                            if analyzer:
+                                await analyzer.analyze_message(
+                                    can_id=message.arbitration_id,
+                                    data=message.data,
+                                    interface=interface_name,
+                                )
+
+                            # Send to message filter if available
+                            message_filter = self.feature_manager.get_feature("can_message_filter")
+                            if message_filter:
+                                # Prepare message dict for filter
+                                filter_msg = {
+                                    "can_id": message.arbitration_id,
+                                    "data": message.data,
+                                    "interface": interface_name,
+                                    "timestamp": time.time(),
+                                    "is_extended": message.is_extended_id,
+                                }
+
+                                # Process through filter
+                                should_pass = await message_filter.process_message(filter_msg)
+
+                                # If message is blocked, don't process further
+                                if not should_pass:
+                                    logger.debug(
+                                        f"Message {message.arbitration_id:08X} blocked by filter"
+                                    )
+                                    continue
+
                 except Exception as e:
                     if self._is_running:  # Only log errors if we're still supposed to be running
                         logger.error(f"Error receiving CAN message on {interface_name}: {e}")
@@ -368,6 +438,28 @@ class CANBusFeature(Feature):
                 "is_extended": message.is_extended_id,
             }
 
+            # Run anomaly detection first (security check)
+            if self.anomaly_detector:
+                try:
+                    anomaly_result = await self.anomaly_detector.analyze_message(
+                        message.arbitration_id,
+                        message.data,
+                        msg_dict["timestamp"]
+                    )
+
+                    # Check if message should be blocked due to security concerns
+                    if "message_blocked" in anomaly_result.get("actions_taken", []):
+                        logger.warning(f"Blocked message due to security policy: {message.arbitration_id:08X}")
+                        return  # Don't process blocked messages further
+
+                    # Log any anomalies detected
+                    if anomaly_result.get("anomalies_detected"):
+                        logger.debug(f"Anomalies detected in message {message.arbitration_id:08X}: "
+                                   f"{len(anomaly_result['anomalies_detected'])} alerts")
+
+                except Exception as e:
+                    logger.debug(f"Error in anomaly detection: {e}")
+
             # Process the message through the RV-C decoder
             await self._process_message(msg_dict)
 
@@ -413,6 +505,22 @@ class CANBusFeature(Feature):
             self._simulation_task.cancel()
             with contextlib.suppress(asyncio.CancelledError):
                 await self._simulation_task
+
+        # Stop pattern recognition engine
+        if self.pattern_engine:
+            try:
+                await self.pattern_engine.stop()
+                logger.info("Pattern recognition engine stopped")
+            except Exception as e:
+                logger.error(f"Error stopping pattern recognition engine: {e}")
+
+        # Stop anomaly detector
+        if self.anomaly_detector:
+            try:
+                await self.anomaly_detector.stop()
+                logger.info("CAN anomaly detector stopped")
+            except Exception as e:
+                logger.error(f"Error stopping anomaly detector: {e}")
 
         # Writer task cleanup is handled by CANService
 
@@ -731,11 +839,29 @@ class CANBusFeature(Feature):
                                 )
                         else:
                             logger.debug(f"Unmapped device: {dgn_hex}:{instance}")
+                            # Analyze unmapped but decodable message for patterns
+                            if self.pattern_engine:
+                                try:
+                                    pattern_analysis = await self.pattern_engine.analyze_message(
+                                        arbitration_id, data, msg.get("timestamp", time.time())
+                                    )
+                                    logger.debug(f"Pattern analysis for unmapped {dgn_hex}:{instance}: {pattern_analysis}")
+                                except Exception as pattern_error:
+                                    logger.debug(f"Pattern analysis error: {pattern_error}")
 
                 except Exception as decode_error:
                     logger.error(f"Error decoding CAN message: {decode_error}")
             else:
                 logger.debug(f"No decoder found for arbitration ID 0x{arbitration_id:x}")
+                # Analyze completely unknown message for patterns
+                if self.pattern_engine:
+                    try:
+                        pattern_analysis = await self.pattern_engine.analyze_message(
+                            arbitration_id, data, msg.get("timestamp", time.time())
+                        )
+                        logger.debug(f"Pattern analysis for unknown 0x{arbitration_id:X}: {pattern_analysis}")
+                    except Exception as pattern_error:
+                        logger.debug(f"Pattern analysis error: {pattern_error}")
 
         except Exception as e:
             logger.error(f"Error processing CAN message: {e}")

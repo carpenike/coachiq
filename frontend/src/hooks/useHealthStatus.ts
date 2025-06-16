@@ -36,7 +36,7 @@ export const useSystemHealthStatus = () => {
  * Hook to fetch health monitoring data.
  * Only fetches when enabled (e.g., in technician mode).
  */
-export const useHealthMonitoring = (enabled: boolean = false) => {
+export const useHealthMonitoring = (enabled = false) => {
   return useQuery({
     queryKey: ['healthMonitoring'],
     queryFn: async () => {
@@ -52,7 +52,7 @@ export const useHealthMonitoring = (enabled: boolean = false) => {
  * Hook to check system readiness.
  * Uses the /readyz endpoint for comprehensive dependency checking.
  */
-export const useReadinessCheck = (includeDetails: boolean = false) => {
+export const useReadinessCheck = (includeDetails = false) => {
   return useQuery({
     queryKey: ['readiness', includeDetails],
     queryFn: async () => {

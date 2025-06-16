@@ -88,6 +88,9 @@ class User(Base):
     mfa: Mapped["UserMFA | None"] = relationship(
         "UserMFA", back_populates="user", cascade="all, delete-orphan", uselist=False
     )
+    pins: Mapped[list["UserPIN"]] = relationship(
+        "UserPIN", back_populates="user", cascade="all, delete-orphan"
+    )
 
     def __repr__(self) -> str:
         return f"<User(id={self.id}, email={self.email}, role={self.role})>"
@@ -350,6 +353,144 @@ class UserMFABackupCode(Base):
 
     def __repr__(self) -> str:
         return f"<UserMFABackupCode(id={self.id}, used={self.is_used})>"
+
+
+class UserPIN(Base):
+    """PIN-based authorization for safety-critical operations."""
+
+    __tablename__ = "user_pins"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    user_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("users.id"), nullable=False, index=True
+    )
+
+    # PIN configuration
+    pin_type: Mapped[str] = mapped_column(
+        String(20), nullable=False, index=True
+    )  # emergency, override, maintenance
+    pin_hash: Mapped[str] = mapped_column(String(255), nullable=False)
+    salt: Mapped[str] = mapped_column(String(255), nullable=False)
+
+    # PIN metadata
+    description: Mapped[str | None] = mapped_column(Text, nullable=True)
+    expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+    # PIN status
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    max_uses: Mapped[int | None] = mapped_column(Integer, nullable=True)  # None = unlimited
+    use_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+
+    # Security settings
+    lockout_after_failures: Mapped[int] = mapped_column(Integer, default=5, nullable=False)
+    lockout_duration_minutes: Mapped[int] = mapped_column(Integer, default=15, nullable=False)
+
+    # Audit fields
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(UTC), nullable=False
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=lambda: datetime.now(UTC),
+        onupdate=lambda: datetime.now(UTC),
+        nullable=False,
+    )
+    last_used_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+    # Relationships
+    user: Mapped[User] = relationship("User", back_populates="pins")
+    sessions: Mapped[list["PINSession"]] = relationship(
+        "PINSession", back_populates="user_pin", cascade="all, delete-orphan"
+    )
+    attempts: Mapped[list["PINAttempt"]] = relationship(
+        "PINAttempt", back_populates="user_pin", cascade="all, delete-orphan"
+    )
+
+    def __repr__(self) -> str:
+        return f"<UserPIN(id={self.id}, user_id={self.user_id}, type={self.pin_type})>"
+
+
+class PINSession(Base):
+    """Active PIN authorization sessions for safety operations."""
+
+    __tablename__ = "pin_sessions"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    user_pin_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("user_pins.id"), nullable=False, index=True
+    )
+    session_id: Mapped[str] = mapped_column(String(255), unique=True, nullable=False, index=True)
+
+    # Session metadata
+    created_by_user_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("users.id"), nullable=False, index=True
+    )
+    ip_address: Mapped[str | None] = mapped_column(String(45), nullable=True)
+    user_agent: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+    # Session configuration
+    max_duration_minutes: Mapped[int] = mapped_column(Integer, default=60, nullable=False)
+    max_operations: Mapped[int | None] = mapped_column(Integer, nullable=True)  # None = unlimited
+    operation_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+
+    # Session status
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+    # Audit fields
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(UTC), nullable=False
+    )
+    last_used_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(UTC), nullable=False
+    )
+    terminated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+    # Relationships
+    user_pin: Mapped[UserPIN] = relationship("UserPIN", back_populates="sessions")
+    created_by: Mapped[User] = relationship("User", foreign_keys=[created_by_user_id])
+
+    def __repr__(self) -> str:
+        return f"<PINSession(id={self.id}, session_id={self.session_id}, active={self.is_active})>"
+
+
+class PINAttempt(Base):
+    """PIN validation attempts for security monitoring."""
+
+    __tablename__ = "pin_attempts"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    user_pin_id: Mapped[str | None] = mapped_column(
+        String(36), ForeignKey("user_pins.id"), nullable=True, index=True
+    )
+
+    # Attempt metadata
+    attempted_by_user_id: Mapped[str | None] = mapped_column(
+        String(36), ForeignKey("users.id"), nullable=True, index=True
+    )
+    ip_address: Mapped[str | None] = mapped_column(String(45), nullable=True)
+    user_agent: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+    # Attempt details
+    pin_type: Mapped[str] = mapped_column(String(20), nullable=False, index=True)
+    success: Mapped[bool] = mapped_column(Boolean, nullable=False, index=True)
+    failure_reason: Mapped[str | None] = mapped_column(String(100), nullable=True)
+
+    # Security context
+    session_id: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    operation_context: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+    # Audit fields
+    attempted_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(UTC), nullable=False, index=True
+    )
+
+    # Relationships
+    user_pin: Mapped[UserPIN | None] = relationship("UserPIN", back_populates="attempts")
+    attempted_by: Mapped[User | None] = relationship("User", foreign_keys=[attempted_by_user_id])
+
+    def __repr__(self) -> str:
+        return f"<PINAttempt(id={self.id}, type={self.pin_type}, success={self.success})>"
 
 
 class AdminSettings(Base):

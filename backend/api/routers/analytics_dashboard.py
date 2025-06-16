@@ -408,16 +408,19 @@ async def get_analytics_status(
     _check_analytics_enabled(request)
 
     try:
+        # Get storage statistics from the storage service
+        storage_stats = await service.storage.get_storage_stats()
+
         # Get basic status information
         status = {
             "service_status": "operational",
             "feature_enabled": True,
-            "data_retention_hours": service.history_retention_hours,
+            "data_retention_hours": service.analytics_settings.memory_retention_hours,
             "insight_generation_interval": service.insight_generation_interval,
             "pattern_analysis_interval": service.pattern_analysis_interval,
-            "metrics_tracked": len(service.metric_history),
-            "insights_cached": len(service.insights_cache),
-            "patterns_detected": len(service.pattern_cache),
+            "metrics_tracked": storage_stats.get("metric_types", 0),
+            "insights_cached": storage_stats.get("insights_stored", 0),
+            "patterns_detected": storage_stats.get("patterns_stored", 0),
             "background_tasks": {
                 "insight_generation": service._insight_task is not None
                 and not service._insight_task.done(),
@@ -465,6 +468,15 @@ async def analytics_health_check(
     logger.debug("GET /analytics/health - Analytics health check")
 
     try:
+        # Get storage statistics
+        storage_stats = await service.storage.get_storage_stats()
+
+        # Get recent insights count
+        recent_insights = await service.storage.get_insights(
+            categories=None, min_severity="low", limit=100
+        )
+        recent_count = len([i for i in recent_insights if (time.time() - i.created_at) < 3600])
+
         health = {
             "status": "healthy",
             "service_running": service._running,
@@ -483,19 +495,16 @@ async def analytics_health_check(
                 "data_storage": "operational",
             },
             "data_quality": {
-                "metrics_available": len(service.metric_history) > 0,
-                "insights_recent": len(
-                    [i for i in service.insights_cache if (time.time() - i.created_at) < 3600]
-                )
-                > 0,
-                "patterns_detected": len(service.pattern_cache) > 0,
+                "metrics_available": storage_stats.get("metric_types", 0) > 0,
+                "insights_recent": recent_count > 0,
+                "patterns_detected": storage_stats.get("patterns_stored", 0) > 0,
             },
         }
 
         # Determine overall health
         if not service._running:
             health["status"] = "degraded"
-        elif len(service.metric_history) == 0:
+        elif storage_stats.get("metric_types", 0) == 0:
             health["status"] = "limited"
 
         return health

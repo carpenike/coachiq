@@ -45,7 +45,13 @@ from backend.services.entity_service import EntityService
 from backend.services.feature_manager import get_feature_manager
 from backend.services.predictive_maintenance_service import PredictiveMaintenanceService
 from backend.services.rvc_service import RVCService
+from backend.services.safety_service import SafetyService
 from backend.services.vector_service import VectorService
+from backend.services.pin_manager import PINManager, PINConfig
+from backend.services.security_audit_service import SecurityAuditService, RateLimitConfig
+from backend.services.security_config_service import SecurityConfigService
+from backend.services.network_security_service import NetworkSecurityService
+from backend.middleware.network_security import NetworkSecurityMiddleware, NetworkSecurityConfig
 from backend.monitoring import record_health_probe, get_health_monitoring_summary
 
 # Set up early logging before anything else
@@ -55,7 +61,6 @@ logger = logging.getLogger(__name__)
 
 # Store startup time for health checks
 SERVER_START_TIME = time.time()
-
 
 
 @asynccontextmanager
@@ -105,9 +110,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         entity_manager_feature = feature_manager.get_feature("entity_manager")
         if not app_state or not websocket_manager or not entity_manager_feature:
             msg = "Required features (app_state, websocket, entity_manager) failed to initialize"
-            raise RuntimeError(
-                msg
-            )
+            raise RuntimeError(msg)
 
         # Update logging configuration to include WebSocket handler now that manager is available
         from backend.core.logging_config import update_websocket_logging
@@ -125,15 +128,46 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         docs_service = DocsService()
         vector_service = VectorService() if settings.features.enable_vector_search else None
         can_interface_service = CANInterfaceService()
-        predictive_maintenance_service = PredictiveMaintenanceService(core_services.database_manager)
+        predictive_maintenance_service = PredictiveMaintenanceService(
+            core_services.database_manager
+        )
         device_discovery_service = DeviceDiscoveryService(can_service)
         analytics_dashboard_service = AnalyticsDashboardService()
+
+        # Initialize Security Configuration Service for centralized security management
+        security_config_service = SecurityConfigService()
+        logger.info("Security Configuration Service initialized")
+
+        # Initialize PIN Manager for enhanced security using centralized config
+        pin_config_dict = security_config_service.get_pin_config()
+        pin_config = PINConfig(**pin_config_dict)
+        pin_manager = PINManager(pin_config)
+        logger.info("PIN Manager initialized for RV safety operations with centralized config")
+
+        # Initialize Security Audit Service for enhanced logging and rate limiting using centralized config
+        rate_limit_config_dict = security_config_service.get_rate_limit_config()
+        rate_limit_config = RateLimitConfig(**rate_limit_config_dict)
+        security_audit_service = SecurityAuditService(rate_limit_config)
+        logger.info("Security Audit Service initialized for RV safety monitoring with centralized config")
+
+        # Initialize Network Security Service for comprehensive network protection
+        network_security_service = NetworkSecurityService(security_config_service)
+        logger.info("Network Security Service initialized for RV network protection")
+
+        # Initialize SafetyService for ISO 26262-compliant safety monitoring
+        safety_service = SafetyService(
+            feature_manager,
+            health_check_interval=5.0,  # Check health every 5 seconds
+            watchdog_timeout=15.0,  # Watchdog timeout at 15 seconds
+            pin_manager=pin_manager,  # Enhanced security integration
+            security_audit_service=security_audit_service,  # Security audit integration
+        )
         logger.info("Backend services initialized")
 
         # CAN service initialization is handled by the can_feature in the feature manager
 
         # Register custom features with the feature manager
-        register_custom_features()
+        register_custom_features(feature_manager)
         logger.info("Custom features registered")
 
         # Authentication middleware will be configured dynamically via the middleware itself
@@ -159,9 +193,18 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         app.state.predictive_maintenance_service = predictive_maintenance_service
         app.state.device_discovery_service = device_discovery_service
         app.state.analytics_dashboard_service = analytics_dashboard_service
+        app.state.safety_service = safety_service
+        app.state.pin_manager = pin_manager
+        app.state.security_audit_service = security_audit_service
+        app.state.security_config_service = security_config_service
+        app.state.network_security_service = network_security_service
 
         # Start analytics dashboard service
         await analytics_dashboard_service.start()
+
+        # Start safety monitoring
+        await safety_service.start_monitoring()
+        logger.info("Safety monitoring started")
 
         logger.info("Backend services initialized successfully")
 
@@ -174,6 +217,11 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         # Cleanup
         logger.info("Shutting down coachiq backend application")
 
+        # Stop safety monitoring
+        if hasattr(app.state, "safety_service"):
+            await app.state.safety_service.stop_monitoring()
+            logger.info("Safety monitoring stopped")
+
         # Stop analytics dashboard service
         if hasattr(app.state, "analytics_dashboard_service"):
             await app.state.analytics_dashboard_service.stop()
@@ -184,6 +232,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
 
         # Shut down core services (AFTER features)
         from backend.core.services import shutdown_core_services
+
         await shutdown_core_services()
 
         logger.info("Backend services stopped")
@@ -209,16 +258,70 @@ def create_app() -> FastAPI:
     # Configure CORS middleware using settings
     configure_cors(app)
 
+    # Add network security middleware for RV-C protection (FIRST for security)
+    # Configuration will be loaded from security config service during runtime
+    settings = get_settings()
+
+    # Determine HTTPS configuration based on environment and explicit settings
+    is_dev_mode = settings.is_development()
+    is_behind_trusted_proxy = settings.security.tls_termination_is_external
+
+    # The proxy will handle the redirect, or we're in dev mode
+    disable_https_redirect = is_dev_mode or is_behind_trusted_proxy
+
+    # Require HTTPS validation for defense-in-depth, except in development mode
+    # In production with external TLS, this protects against requests that bypass the proxy
+    # In development mode, allow HTTP for convenience
+    require_https_validation = not is_dev_mode
+
+    network_security_config = NetworkSecurityConfig(
+        # Default settings - will be overridden by security config service
+        require_https=require_https_validation,
+        https_redirect=(not disable_https_redirect),
+        enable_ddos_protection=True,
+        enable_security_headers=True,
+        safety_whitelist_only=False,  # Can be overridden per deployment
+    )
+    # Log security configuration for audit trail
+    if is_behind_trusted_proxy:
+        logger.warning(
+            "Security Configuration: External TLS termination enabled. "
+            "Operator is responsible for HTTPS redirection and HSTS. "
+            "Application MUST be run with proxy headers support enabled.",
+            extra={
+                "event": "security_configuration",
+                "tls_termination": "external",
+                "https_redirect": "disabled",
+                "proxy_headers_required": True
+            }
+        )
+    else:
+        mode = "development" if is_dev_mode else "production"
+        logger.info(
+            f"Security Configuration: Application is self-enforcing HTTPS in {mode} mode.",
+            extra={
+                "event": "security_configuration",
+                "tls_termination": "internal",
+                "https_redirect": "enabled" if not disable_https_redirect else "disabled",
+                "mode": mode
+            }
+        )
+
+    network_security_middleware = NetworkSecurityMiddleware(app, network_security_config)
+    app.add_middleware(NetworkSecurityMiddleware, config=network_security_config)
+
     # Configure authentication middleware
     # The middleware will obtain the auth manager from app state at runtime
     app.add_middleware(AuthenticationMiddleware)
 
     # Add runtime validation middleware for safety-critical operations
-    app.add_middleware(RuntimeValidationMiddleware, validate_requests=True, validate_responses=False)
+    app.add_middleware(
+        RuntimeValidationMiddleware, validate_requests=True, validate_responses=False
+    )
 
     # Add rate limiting middleware
     app.state.limiter = limiter
-    app.add_exception_handler(RateLimitExceeded, rate_limit_exceeded_handler)
+    app.add_exception_handler(RateLimitExceeded, rate_limit_exceeded_handler)  # type: ignore[attr-defined]
 
     # Add custom exception handler for account lockout
     @app.exception_handler(AccountLockedError)
@@ -333,6 +436,7 @@ async def healthz(request: Request) -> Response:
 
         # 2. Check if event loop is responsive (basic async health)
         import asyncio
+
         try:
             # Simple async operation to verify event loop isn't blocked
             await asyncio.sleep(0)
@@ -355,7 +459,7 @@ async def healthz(request: Request) -> Response:
             "timestamp": datetime.now(UTC).isoformat(),
             "checks": {
                 "process": {"status": "pass" if process_alive else "fail"},
-                "event_loop": {"status": "pass" if event_loop_responsive else "fail"}
+                "event_loop": {"status": "pass" if event_loop_responsive else "fail"},
             },
             "response_time_ms": response_time_ms,
         }
@@ -374,12 +478,14 @@ async def healthz(request: Request) -> Response:
             endpoint="healthz",
             response_time_ms=response_time_ms,
             status_code=status_code,
-            status=ietf_status
+            status=ietf_status,
         )
 
         # Log only on failure or if response is slow (>5ms)
         if not is_alive:
-            logger.warning(f"Liveness check failed - process_alive: {process_alive}, event_loop: {event_loop_responsive}")
+            logger.warning(
+                f"Liveness check failed - process_alive: {process_alive}, event_loop: {event_loop_responsive}"
+            )
         elif response_time_ms > 5.0:
             logger.warning(f"Liveness check slow - {response_time_ms}ms (target: <5ms)")
         else:
@@ -403,7 +509,7 @@ async def healthz(request: Request) -> Response:
             response_time_ms=error_response_time,
             status_code=503,
             status="fail",
-            error=str(e)
+            error=str(e),
         )
 
         error_response = {
@@ -469,7 +575,9 @@ async def startupz(request: Request) -> Response:
             "version": "1",
             "releaseId": version,
             "serviceId": "coachiq-startup",
-            "description": "Hardware initialization complete" if startup_ready else "Waiting for CAN transceiver initialization",
+            "description": "Hardware initialization complete"
+            if startup_ready
+            else "Waiting for CAN transceiver initialization",
             "timestamp": datetime.now(UTC).isoformat(),
             "checks": {
                 "can_interface": {"status": "pass" if can_interface_ready else "fail"},
@@ -498,8 +606,8 @@ async def startupz(request: Request) -> Response:
             status=ietf_status,
             details={
                 "can_interface_ready": can_interface_ready,
-                "can_feature_ready": can_feature_ready
-            }
+                "can_feature_ready": can_feature_ready,
+            },
         )
 
         logger.info(
@@ -526,7 +634,7 @@ async def startupz(request: Request) -> Response:
             response_time_ms=error_response_time,
             status_code=503,
             status="fail",
-            error=str(e)
+            error=str(e),
         )
 
         # Return a minimal failure response even if feature manager fails
@@ -575,10 +683,7 @@ async def readyz(request: Request, details: bool = False) -> Response:
         hardware_ready = can_interface_ready and can_feature_ready
         readiness_checks["hardware_initialization"] = {
             "status": "pass" if hardware_ready else "fail",
-            "details": {
-                "can_interface": can_interface_ready,
-                "can_feature": can_feature_ready
-            }
+            "details": {"can_interface": can_interface_ready, "can_feature": can_feature_ready},
         }
         if not hardware_ready:
             critical_failures.append("hardware_initialization")
@@ -593,8 +698,8 @@ async def readyz(request: Request, details: bool = False) -> Response:
             "details": {
                 "entity_manager": entity_manager_ready,
                 "app_state": app_state_ready,
-                "websocket": websocket_ready
-            }
+                "websocket": websocket_ready,
+            },
         }
         if not core_services_ready:
             critical_failures.append("core_services")
@@ -604,10 +709,7 @@ async def readyz(request: Request, details: bool = False) -> Response:
         entities_discovered = entity_count > 0
         readiness_checks["entity_discovery"] = {
             "status": "pass" if entities_discovered else "fail",
-            "details": {
-                "entity_count": entity_count,
-                "discovery_complete": entities_discovered
-            }
+            "details": {"entity_count": entity_count, "discovery_complete": entities_discovered},
         }
         if not entities_discovered:
             warning_failures.append("entity_discovery")
@@ -617,13 +719,15 @@ async def readyz(request: Request, details: bool = False) -> Response:
         protocol_health = {}
         if rvc_ready:
             rvc_feature = feature_manager.get_feature("rvc")
-            rvc_healthy = rvc_feature.is_healthy() if hasattr(rvc_feature, 'is_healthy') else True
+            rvc_healthy = rvc_feature.is_healthy() if hasattr(rvc_feature, "is_healthy") else True
             protocol_health["rvc"] = rvc_healthy
 
         j1939_ready = feature_manager.is_enabled("j1939")
         if j1939_ready:
             j1939_feature = feature_manager.get_feature("j1939")
-            j1939_healthy = j1939_feature.is_healthy() if hasattr(j1939_feature, 'is_healthy') else True
+            j1939_healthy = (
+                j1939_feature.is_healthy() if hasattr(j1939_feature, "is_healthy") else True
+            )
             protocol_health["j1939"] = j1939_healthy
 
         protocols_healthy = all(protocol_health.values()) if protocol_health else rvc_ready
@@ -632,8 +736,8 @@ async def readyz(request: Request, details: bool = False) -> Response:
             "details": {
                 "rvc_enabled": rvc_ready,
                 "j1939_enabled": j1939_ready,
-                "protocol_health": protocol_health
-            }
+                "protocol_health": protocol_health,
+            },
         }
         if not protocols_healthy:
             critical_failures.append("protocol_systems")
@@ -642,20 +746,22 @@ async def readyz(request: Request, details: bool = False) -> Response:
         brake_safety_ready = True
         if feature_manager.is_enabled("brake_safety_monitoring"):
             brake_feature = feature_manager.get_feature("brake_safety_monitoring")
-            brake_safety_ready = brake_feature.is_healthy() if hasattr(brake_feature, 'is_healthy') else True
+            brake_safety_ready = (
+                brake_feature.is_healthy() if hasattr(brake_feature, "is_healthy") else True
+            )
 
         auth_ready = True
         if feature_manager.is_enabled("authentication"):
             auth_feature = feature_manager.get_feature("authentication")
-            auth_ready = auth_feature.is_healthy() if hasattr(auth_feature, 'is_healthy') else True
+            auth_ready = auth_feature.is_healthy() if hasattr(auth_feature, "is_healthy") else True
 
         safety_systems_ready = brake_safety_ready and auth_ready
         readiness_checks["safety_systems"] = {
             "status": "pass" if safety_systems_ready else "fail",
             "details": {
                 "brake_safety_monitoring": brake_safety_ready,
-                "authentication": auth_ready
-            }
+                "authentication": auth_ready,
+            },
         }
         if not safety_systems_ready:
             critical_failures.append("safety_systems")
@@ -666,10 +772,7 @@ async def readyz(request: Request, details: bool = False) -> Response:
         api_systems_ready = domain_api_ready and entities_api_ready
         readiness_checks["api_systems"] = {
             "status": "pass" if api_systems_ready else "fail",
-            "details": {
-                "domain_api_v2": domain_api_ready,
-                "entities_api_v2": entities_api_ready
-            }
+            "details": {"domain_api_v2": domain_api_ready, "entities_api_v2": entities_api_ready},
         }
         if not api_systems_ready:
             warning_failures.append("api_systems")
@@ -708,7 +811,9 @@ async def readyz(request: Request, details: bool = False) -> Response:
             "serviceId": "coachiq-readiness",
             "description": description,
             "timestamp": datetime.now(UTC).isoformat(),
-            "checks": {name: {"status": check["status"]} for name, check in readiness_checks.items()},
+            "checks": {
+                name: {"status": check["status"]} for name, check in readiness_checks.items()
+            },
             "response_time_ms": response_time_ms,
         }
 
@@ -723,10 +828,7 @@ async def readyz(request: Request, details: bool = False) -> Response:
 
         # Add failure categorization for safety-aware orchestration
         if critical_failures or warning_failures:
-            response_data["issues"] = {
-                "critical": critical_failures,
-                "warning": warning_failures
-            }
+            response_data["issues"] = {"critical": critical_failures, "warning": warning_failures}
 
         # Add detailed check information if requested
         if details:
@@ -735,8 +837,13 @@ async def readyz(request: Request, details: bool = False) -> Response:
             # Add system metrics
             response_data["metrics"] = {
                 "entity_count": entity_count,
-                "enabled_features": len([f for f in feature_manager.get_all_features().values()
-                                       if feature_manager.is_enabled(getattr(f, 'name', ''))]),
+                "enabled_features": len(
+                    [
+                        f
+                        for f in feature_manager.get_all_features().values()
+                        if feature_manager.is_enabled(getattr(f, "name", ""))
+                    ]
+                ),
                 "critical_systems_healthy": len(critical_failures) == 0,
                 "warning_systems_healthy": len(warning_failures) == 0,
             }
@@ -756,8 +863,8 @@ async def readyz(request: Request, details: bool = False) -> Response:
                 "warning_failures": warning_failures,
                 "hardware_ready": hardware_ready,
                 "core_services_ready": core_services_ready,
-                "safety_systems_ready": safety_systems_ready
-            }
+                "safety_systems_ready": safety_systems_ready,
+            },
         )
 
         logger.info(
@@ -791,7 +898,7 @@ async def readyz(request: Request, details: bool = False) -> Response:
             response_time_ms=error_response_time,
             status_code=503,
             status="fail",
-            error=str(e)
+            error=str(e),
         )
 
         # Return a minimal failure response
@@ -845,8 +952,8 @@ async def health_monitoring(request: Request) -> JSONResponse:
             content={
                 "monitoring_summary": monitoring_summary,
                 "timestamp": datetime.now(UTC).isoformat(),
-                "description": "Health probe monitoring data"
-            }
+                "description": "Health probe monitoring data",
+            },
         )
 
     except Exception as e:
@@ -856,11 +963,9 @@ async def health_monitoring(request: Request) -> JSONResponse:
             content={
                 "error": "monitoring_error",
                 "message": f"Failed to retrieve monitoring data: {e}",
-                "timestamp": datetime.now(UTC).isoformat()
-            }
+                "timestamp": datetime.now(UTC).isoformat(),
+            },
         )
-
-
 
 
 def main():

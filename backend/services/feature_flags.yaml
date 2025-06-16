@@ -19,6 +19,16 @@
 # Core infrastructure features
 # NOTE: persistence is now managed by CoreServices and is not configurable via feature flags
 
+security_event_manager:
+  enabled: true
+  safety_classification: "operational"
+  safe_state_action: "continue_operation"
+  maintain_state_on_failure: true
+  core: true
+  depends_on: []
+  description: "Security event management and distribution system for CAN bus anomaly detection"
+  friendly_name: "Security Event Manager"
+
 entity_manager:
   enabled: true
   safety_classification: "critical"
@@ -427,7 +437,7 @@ authentication:
   rate_limit_window_minutes: 15
 
 multi_factor_authentication:
-  enabled: false
+  enabled: true
   safety_classification: "operational"
   safe_state_action: "continue_operation"
   maintain_state_on_failure: true
@@ -493,6 +503,53 @@ log_streaming:
   depends_on: [websocket]
   description: "WebSocket log streaming endpoints and handlers (buffering, filtering, rate limiting)"
   friendly_name: "Log Streaming"
+
+# CAN bus tools and utilities
+can_message_injector:
+  enabled: true
+  safety_classification: "safety_related"
+  safe_state_action: "stop_operation"
+  maintain_state_on_failure: false
+  depends_on: [can_interface]
+  description: "Safe CAN message injection tool for testing and diagnostics"
+  friendly_name: "CAN Message Injector"
+  safety_level: "moderate"  # strict, moderate, permissive
+  audit_enabled: true
+
+can_bus_recorder:
+  enabled: true
+  safety_classification: "safety_related"
+  safe_state_action: "continue_operation"
+  maintain_state_on_failure: true
+  depends_on: [can_interface]
+  description: "Record and replay CAN bus traffic for testing and analysis"
+  friendly_name: "CAN Bus Recorder"
+  buffer_size: 100000
+  auto_save_interval: 60.0
+  max_file_size_mb: 100.0
+
+can_protocol_analyzer:
+  enabled: true
+  safety_classification: "operational"
+  safe_state_action: "continue_operation"
+  maintain_state_on_failure: true
+  depends_on: [can_interface]
+  description: "Deep packet inspection and protocol analysis for CAN messages"
+  friendly_name: "CAN Protocol Analyzer"
+  buffer_size: 10000
+  pattern_window_ms: 5000.0
+
+can_message_filter:
+  enabled: true
+  safety_classification: "operational"
+  safe_state_action: "continue_operation"
+  maintain_state_on_failure: true
+  depends_on: [can_interface]
+  description: "Advanced filtering and monitoring rules for CAN messages"
+  friendly_name: "CAN Message Filter"
+  max_rules: 100
+  capture_buffer_size: 10000
+  enable_alerts: true
 
 # Enhanced dashboard and analytics features
 dashboard_aggregation:
@@ -735,7 +792,7 @@ entities_api_v2:
   enable_state_verification: true
 
 diagnostics_api_v2:
-  enabled: false
+  enabled: true
   safety_classification: "safety_related"
   safe_state_action: "continue_operation"
   maintain_state_on_failure: true

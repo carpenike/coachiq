@@ -115,7 +115,7 @@ export function SystemStatusIndicator() {
 
   // Group components by status
   const groupedComponents = React.useMemo(() => {
-    const groups: Record<ComponentStatus, Array<{ name: string; status: ComponentStatus }>> = {
+    const groups: Record<ComponentStatus, { name: string; status: ComponentStatus }[]> = {
       critical: [],
       warning: [],
       ok: [],

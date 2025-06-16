@@ -9,6 +9,7 @@ import { Separator } from "@/components/ui/separator"
 import { Switch } from "@/components/ui/switch"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { useAuth } from "@/contexts"
+import { PINManagementCard, SecurityStatusCard } from "@/components/pin-management"
 import {
     IconAlertTriangle,
     IconDatabase,
@@ -60,6 +61,10 @@ export default function AdminSettingsPage() {
           <TabsTrigger value="auth" className="flex items-center gap-2">
             <IconLock className="h-4 w-4" />
             Authentication
+          </TabsTrigger>
+          <TabsTrigger value="security" className="flex items-center gap-2">
+            <IconShield className="h-4 w-4" />
+            PIN Security
           </TabsTrigger>
           <TabsTrigger value="system" className="flex items-center gap-2">
             <IconSettings className="h-4 w-4" />
@@ -192,6 +197,30 @@ export default function AdminSettingsPage() {
               </div>
             </CardContent>
           </Card>
+        </TabsContent>
+
+        {/* PIN Security Tab */}
+        <TabsContent value="security" className="space-y-6">
+          <div className="grid gap-6">
+            {/* Security Status Overview */}
+            <SecurityStatusCard
+              autoRefresh
+              refreshInterval={30000}
+              isAdminView
+              onSessionAction={(action, sessionId) => {
+                console.log(`Admin session action: ${action} on ${sessionId}`);
+              }}
+            />
+
+            {/* PIN Management for Current Admin */}
+            <PINManagementCard
+              userId={user?.user_id}
+              isAdminView
+              onPINAction={(action, pinType) => {
+                console.log(`Admin PIN action: ${action} on ${pinType}`);
+              }}
+            />
+          </div>
         </TabsContent>
 
         {/* System Settings Tab */}

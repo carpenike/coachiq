@@ -7,6 +7,7 @@ import { WebSocketProvider } from "@/contexts/websocket-provider";
 import { HealthProvider } from "@/contexts/health-context";
 import AnalyticsDashboardPage from "@/pages/analytics-dashboard";
 import CanSniffer from "@/pages/can-sniffer";
+import CanTools from "@/pages/can-tools";
 import ConfigurationPage from "@/pages/config";
 import Dashboard from "@/pages/dashboard";
 import DemoDashboard from "@/pages/demo-dashboard";
@@ -23,6 +24,8 @@ import ProfilePage from "@/pages/profile";
 import AdminSettingsPage from "@/pages/admin-settings";
 import SettingsPage from "@/pages/settings";
 import HealthDashboard from "@/pages/health-dashboard";
+import MaintenancePage from "@/pages/maintenance";
+import SecurityDashboard from "@/pages/security-dashboard";
 
 import { Toaster } from "@/components/ui/toaster";
 import RVCSpec from "@/pages/rvc-spec";
@@ -67,8 +70,10 @@ createRoot(document.getElementById("root")!).render(
               <Route path="/lights" element={<AuthGuard><Lights /></AuthGuard>} />
               <Route path="/device-mapping" element={<AuthGuard><DeviceMapping /></AuthGuard>} />
               <Route path="/can-sniffer" element={<AuthGuard><CanSniffer /></AuthGuard>} />
+              <Route path="/can-tools" element={<AuthGuard><CanTools /></AuthGuard>} />
               <Route path="/network-map" element={<AuthGuard><NetworkMap /></AuthGuard>} />
               <Route path="/diagnostics" element={<AuthGuard><DiagnosticsPage /></AuthGuard>} />
+              <Route path="/maintenance" element={<AuthGuard><MaintenancePage /></AuthGuard>} />
               <Route path="/unknown-pgns" element={<AuthGuard><UnknownPGNs /></AuthGuard>} />
               <Route path="/unmapped-entries" element={<AuthGuard><UnmappedEntries /></AuthGuard>} />
               <Route path="/config" element={<AuthGuard><ConfigurationPage /></AuthGuard>} />
@@ -78,6 +83,7 @@ createRoot(document.getElementById("root")!).render(
               <Route path="/health" element={<AuthGuard><HealthDashboard /></AuthGuard>} />
               <Route path="/performance" element={<AuthGuard><PerformancePage /></AuthGuard>} />
               <Route path="/analytics-dashboard" element={<AuthGuard><AnalyticsDashboardPage /></AuthGuard>} />
+              <Route path="/security" element={<AuthGuard><SecurityDashboard /></AuthGuard>} />
               <Route path="/settings" element={<AuthGuard><SettingsPage /></AuthGuard>} />
               <Route path="/profile" element={<AuthGuard><ProfilePage /></AuthGuard>} />
               <Route path="/admin-settings" element={<AuthGuard><AdminSettingsPage /></AuthGuard>} />

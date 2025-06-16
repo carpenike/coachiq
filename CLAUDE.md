@@ -521,6 +521,26 @@ poetry install
 
 This applies to **ALL** Python scripts, development tools, tests, and any other Python-based operations.
 
+### Using Playwright for Development
+
+When building React pages, use Playwright MCP tools to verify your work interactively:
+
+```bash
+# Start your dev environment first
+cd frontend && npm run dev  # Frontend on http://localhost:5173
+poetry run python run_server.py --reload  # Backend on http://localhost:8080
+```
+
+Then use these MCP commands to interact with the UI:
+- `browser_navigate(url="http://localhost:5173")` - Open the app
+- `browser_snapshot()` - See current page structure and accessibility tree
+- `browser_click(element="Button text", ref="button")` - Test buttons and links
+- `browser_type(element="Input label", ref="input", text="test")` - Fill forms
+- `browser_take_screenshot()` - Visual verification
+- `browser_console_messages()` - Check for JavaScript errors
+
+This helps verify that components work correctly during development without manual testing. Always take a snapshot first to understand the current page state before performing actions.
+
 ## MCP Tools Integration
 
 **IMPORTANT**: Always default to `@context7` for any library or framework questions before falling back to LLM-generated answers. This ensures you get current, correct API information rather than outdated or hallucinated answers.

@@ -14,6 +14,7 @@ from fastapi.exceptions import HTTPException
 from backend.core.state import AppState
 from backend.services.feature_manager import get_feature_manager
 from backend.websocket.handlers import WebSocketManager
+from backend.websocket.security_handler import get_security_websocket_handler
 
 logger = logging.getLogger(__name__)
 
@@ -129,3 +130,29 @@ async def features_ws_endpoint(websocket: WebSocket) -> None:
     """
     ws_manager = get_websocket_manager_from_feature()
     await ws_manager.handle_features_status_connection(websocket)
+
+
+@router.websocket("/ws/security")
+async def security_ws_endpoint(websocket: WebSocket) -> None:
+    """
+    WebSocket endpoint for security monitoring dashboard.
+
+    Args:
+        websocket (WebSocket): The WebSocket connection.
+
+    Example:
+        Connect to ws://<host>/ws/security to receive real-time security events.
+    """
+    security_handler = get_security_websocket_handler()
+    await security_handler.connect_client(websocket)
+
+    try:
+        while True:
+            # Listen for client messages
+            message = await websocket.receive_text()
+            await security_handler.handle_client_message(websocket, message)
+
+    except Exception as e:
+        logger.error(f"Security WebSocket error: {e}")
+    finally:
+        await security_handler.disconnect_client(websocket)

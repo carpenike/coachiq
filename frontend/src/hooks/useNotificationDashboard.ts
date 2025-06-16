@@ -41,12 +41,12 @@ interface DashboardMetrics {
   notifications_per_hour: number;
   channel_stats: Record<string, any>;
   level_distribution: Record<string, number>;
-  hourly_volume: Array<{
+  hourly_volume: {
     hour: string;
     total: number;
     successful: number;
     failed: number;
-  }>;
+  }[];
 }
 
 interface QueueStatistics {
@@ -125,7 +125,7 @@ const fetchDashboardHealth = async (): Promise<DashboardHealth> => {
   return response.json();
 };
 
-const fetchDashboardMetrics = async (hours: number = 24): Promise<DashboardMetrics> => {
+const fetchDashboardMetrics = async (hours = 24): Promise<DashboardMetrics> => {
   const response = await fetch(`/api/notifications/dashboard/metrics?hours=${hours}`);
   if (!response.ok) {
     throw new Error(`Failed to fetch metrics: ${response.statusText}`);
@@ -168,7 +168,7 @@ const triggerTestNotifications = async (channels?: string[]): Promise<any> => {
   return response.json();
 };
 
-const exportMetrics = async (format: string = 'json', hours: number = 24): Promise<any> => {
+const exportMetrics = async (format = 'json', hours = 24): Promise<any> => {
   const response = await fetch(`/api/notifications/dashboard/export/metrics?format=${format}&hours=${hours}`);
   if (!response.ok) {
     throw new Error(`Failed to export metrics: ${response.statusText}`);
@@ -293,7 +293,7 @@ export const useNotificationDashboard = (options: DashboardOptions = {}) => {
   }, [fetchAllData, onError]);
 
   // Export metrics function
-  const exportDashboardMetrics = useCallback(async (format: string = 'json'): Promise<any> => {
+  const exportDashboardMetrics = useCallback(async (format = 'json'): Promise<any> => {
     try {
       return await exportMetrics(format, timeRange);
     } catch (error) {

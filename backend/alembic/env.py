@@ -12,6 +12,9 @@ from backend.models import auth  # noqa: F401
 # Import analytics models to include them in metadata
 from backend.models import analytics  # noqa: F401
 
+# Import security events models to include them in metadata
+from backend.models import security_events_db  # noqa: F401
+
 # Import our database models and engine
 from backend.models.database import Base
 from backend.services.database_engine import DatabaseSettings

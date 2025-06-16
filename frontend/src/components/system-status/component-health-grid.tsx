@@ -2,9 +2,11 @@ import React from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { ScrollArea } from '@/components/ui/scroll-area';
+import { Skeleton } from '@/components/ui/skeleton';
 import { IconShield, IconServer, IconDatabase, IconWifi, IconCpu, IconSettings } from '@tabler/icons-react';
 import { CheckCircleIcon, AlertTriangleIcon, XCircleIcon, Clock } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { useComponentHealth } from '@/hooks/useComponentHealth';
 
 type ComponentStatus = 'healthy' | 'degraded' | 'unhealthy' | 'unknown';
 
@@ -12,9 +14,9 @@ interface Component {
   id: string;
   name: string;
   status: ComponentStatus;
-  message?: string;
+  message?: string | undefined;
   category: 'core' | 'network' | 'storage' | 'external';
-  lastChecked?: Date;
+  lastChecked?: Date | undefined;
 }
 
 /**
@@ -22,9 +24,20 @@ interface Component {
  * Provides immediate visibility into which components are healthy/unhealthy
  */
 export function ComponentHealthGrid() {
-  // In a real implementation, this would come from a useComponentHealth hook
-  // that fetches from /api/system/components/health endpoint
-  const components: Component[] = [
+  const { data, isLoading, error } = useComponentHealth();
+
+  // Map API response to component format
+  const components: Component[] = data?.components.map(comp => ({
+    id: comp.id,
+    name: comp.name,
+    status: comp.status as ComponentStatus,
+    message: comp.message ?? undefined,
+    category: comp.category,
+    lastChecked: comp.last_checked ? new Date(comp.last_checked * 1000) : undefined,
+  })) || [];
+
+  // Fallback data for when API is unavailable
+  const fallbackComponents: Component[] = [
     {
       id: 'api-server',
       name: 'API Server',
@@ -83,6 +96,9 @@ export function ComponentHealthGrid() {
     },
   ];
 
+  // Use real data if available, otherwise use fallback
+  const displayComponents = components.length > 0 ? components : (error ? [] : fallbackComponents);
+
   const getStatusIcon = (status: ComponentStatus) => {
     switch (status) {
       case 'healthy':
@@ -133,8 +149,28 @@ export function ComponentHealthGrid() {
     return `${hours}h ago`;
   };
 
+  if (isLoading) {
+    return (
+      <Card>
+        <CardHeader className="pb-3">
+          <CardTitle className="flex items-center gap-2">
+            <IconShield className="h-5 w-5" />
+            <span>Component Health</span>
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="space-y-2">
+            {Array.from({ length: 4 }).map((_, i) => (
+              <Skeleton key={i} className="h-12 w-full" />
+            ))}
+          </div>
+        </CardContent>
+      </Card>
+    );
+  }
+
   // Group by category and sort by status (unhealthy first)
-  const groupedComponents = components.reduce((acc, component) => {
+  const groupedComponents = displayComponents.reduce((acc, component) => {
     if (!acc[component.category]) acc[component.category] = [];
     acc[component.category]!.push(component);
     return acc;
@@ -147,7 +183,7 @@ export function ComponentHealthGrid() {
   });
 
   // Count status types
-  const statusCounts = components.reduce((acc, comp) => {
+  const statusCounts = displayComponents.reduce((acc, comp) => {
     acc[comp.status] = (acc[comp.status] || 0) + 1;
     return acc;
   }, {} as Record<ComponentStatus, number>);

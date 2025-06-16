@@ -6,25 +6,14 @@ CAN messages, supporting single-frame and multi-frame (BAM) transmissions.
 """
 
 import logging
-from dataclasses import dataclass
 from typing import Any
 
 from backend.core.config import get_settings
 from backend.integrations.rvc.decode import load_config_data
+from backend.models.can_message import CANMessage
 from backend.models.entity import ControlCommand
 
 logger = logging.getLogger(__name__)
-
-
-@dataclass
-class CANMessage:
-    """Represents a CAN message to be transmitted."""
-
-    can_id: int
-    data: bytes
-    extended: bool = True
-    is_bam: bool = False
-    target_pgn: int | None = None  # For BAM messages
 
 
 class EncodingError(Exception):

@@ -8,7 +8,8 @@ from FastAPI's dependency injection system.
 import logging
 from typing import Any
 
-from fastapi import Request
+from fastapi import HTTPException, Request
+from backend.middleware.auth import require_authentication
 
 logger = logging.getLogger(__name__)
 
@@ -350,8 +351,6 @@ def get_notification_manager(request: Request = None) -> Any:
     return notification_feature.get_notification_manager()
 
 
-
-
 def get_predictive_maintenance_service(request: Request) -> Any:
     """
     Get the predictive maintenance service from the FastAPI application state.
@@ -387,6 +386,7 @@ def get_feature_manager_from_app(app) -> Any:
     if not hasattr(app.state, "feature_manager"):
         # Fallback to global feature manager if not in app state
         from backend.services.feature_manager import get_feature_manager
+
         return get_feature_manager()
     return app.state.feature_manager
 
@@ -427,7 +427,10 @@ def get_feature_manager(request: Request = None) -> Any:
         return get_feature_manager_from_request(request)
     else:
         # Fallback to global feature manager
-        from backend.services.feature_manager import get_feature_manager as get_global_feature_manager
+        from backend.services.feature_manager import (
+            get_feature_manager as get_global_feature_manager,
+        )
+
         return get_global_feature_manager()
 
 
@@ -490,6 +493,25 @@ def get_entity_domain_service(request: Request) -> Any:
         raise RuntimeError(msg)
 
 
+def get_safety_service(request: Request) -> Any:
+    """
+    Get the safety service from the FastAPI application state.
+
+    Args:
+        request: The FastAPI request object
+
+    Returns:
+        The safety service
+
+    Raises:
+        RuntimeError: If the safety service is not initialized
+    """
+    if not hasattr(request.app.state, "safety_service"):
+        msg = "Safety service not initialized"
+        raise RuntimeError(msg)
+    return request.app.state.safety_service
+
+
 def get_analytics_service(request: Request) -> Any:
     """
     Get the notification analytics service from the FastAPI application state.
@@ -513,6 +535,7 @@ def get_analytics_service(request: Request) -> Any:
 
             # Start the service
             import asyncio
+
             loop = asyncio.get_event_loop()
             loop.create_task(analytics_service.start())
 
@@ -552,6 +575,7 @@ def get_reporting_service(request: Request) -> Any:
 
             # Start the service
             import asyncio
+
             loop = asyncio.get_event_loop()
             loop.create_task(reporting_service.start())
 
@@ -564,3 +588,58 @@ def get_reporting_service(request: Request) -> Any:
             raise RuntimeError(msg)
 
     return request.app.state.notification_reporting_service
+
+
+def get_authenticated_user(request: Request) -> dict:
+    """
+    Get authenticated user from request state.
+
+    This dependency ensures that the request is authenticated and returns
+    the user information that was set by the authentication middleware.
+
+    Args:
+        request: The FastAPI request object
+
+    Returns:
+        dict: User information with user_id, username, email, role, authenticated
+
+    Raises:
+        HTTPException: If the request is not authenticated (401)
+    """
+    user = require_authentication(request)
+    return user
+
+
+def get_authenticated_admin(request: Request) -> dict:
+    """
+    Get authenticated admin user from request state.
+
+    This dependency ensures that the request is authenticated with admin privileges.
+
+    Args:
+        request: The FastAPI request object
+
+    Returns:
+        dict: Admin user information
+
+    Raises:
+        HTTPException: If not authenticated (401) or not admin (403)
+    """
+    from backend.middleware.auth import require_admin_role
+    admin_user = require_admin_role(request)
+    return admin_user
+
+
+def get_security_audit_service(request: Request):
+    """
+    Get the security audit service from the FastAPI application state.
+
+    Args:
+        request: The FastAPI request object
+
+    Returns:
+        The security audit service or None if not available
+    """
+    if hasattr(request.app.state, "security_audit_service"):
+        return request.app.state.security_audit_service
+    return None

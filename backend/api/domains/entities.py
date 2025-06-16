@@ -22,6 +22,8 @@ from backend.core.dependencies import (
     get_entity_domain_service,
     get_entity_service,
     get_feature_manager_from_request,
+    get_authenticated_user,
+    get_authenticated_admin,
 )
 from backend.models.entity import ControlCommand
 
@@ -108,6 +110,20 @@ def create_entities_router() -> APIRouter:
         tags=["entities-v2"],
         dependencies=[Depends(_check_domain_api_enabled)]  # Apply to all routes
     )
+
+    def _categorize_entities(entities: dict) -> dict:
+        """Helper to categorize entities for debugging"""
+        categories = {}
+        for entity_id, entity_data in entities.items():
+            device_type = entity_data.get('device_type', 'unknown')
+            if device_type not in categories:
+                categories[device_type] = []
+            categories[device_type].append(entity_id)
+
+        return {
+            device_type: {"count": len(entity_list), "examples": entity_list[:3]}
+            for device_type, entity_list in categories.items()
+        }
 
     @router.get("/health")
     async def health_check(request: Request) -> dict[str, Any]:
@@ -236,7 +252,7 @@ def create_entities_router() -> APIRouter:
                 },
 
                 "rv_status": {
-                    "entities_by_type": self._categorize_entities(entities),
+                    "entities_by_type": _categorize_entities(entities),
                     "safety_summary": safety_status,
                     "feature_flags": {
                         flag: feature_manager.is_enabled(flag)
@@ -263,20 +279,6 @@ def create_entities_router() -> APIRouter:
         except Exception as e:
             logger.error(f"Debug info failed: {e}")
             return {"error": str(e), "message": "Debug info collection failed"}
-
-    def _categorize_entities(self, entities: dict) -> dict:
-        """Helper to categorize entities for debugging"""
-        categories = {}
-        for entity_id, entity_data in entities.items():
-            device_type = entity_data.get('device_type', 'unknown')
-            if device_type not in categories:
-                categories[device_type] = []
-            categories[device_type].append(entity_id)
-
-        return {
-            device_type: {"count": len(entity_list), "examples": entity_list[:3]}
-            for device_type, entity_list in categories.items()
-        }
 
     @router.get("", response_model=EntityCollectionV2)
     async def get_entities(
@@ -476,7 +478,8 @@ def create_entities_router() -> APIRouter:
     async def control_entity(
         request: Request,
         entity_id: str,
-        command: ControlCommandV2
+        command: ControlCommandV2,
+        user: dict = Depends(get_authenticated_user)
     ) -> dict:
         """Control a single entity with safety validation (v2) - Pi optimized"""
         try:
@@ -508,7 +511,8 @@ def create_entities_router() -> APIRouter:
     @router.post("/bulk-control", response_model=dict)
     async def bulk_control_entities(
         request: Request,
-        bulk_request: BulkControlRequestV2
+        bulk_request: BulkControlRequestV2,
+        user: dict = Depends(get_authenticated_user)
     ) -> dict:
         """Execute bulk control operations with safety validation (v2) - Pi optimized"""
         try:
@@ -547,24 +551,42 @@ def create_entities_router() -> APIRouter:
             raise HTTPException(status_code=500, detail=f"Bulk operation failed: {e!s}")
 
     @router.post("/emergency-stop")
-    async def emergency_stop(request: Request) -> dict:
-        """Emergency stop - immediately halt all entity operations"""
+    async def emergency_stop(
+        request: Request,
+        admin_user: dict = Depends(get_authenticated_admin)
+    ) -> dict:
+        """Emergency stop - immediately halt all entity operations (Admin Only)"""
 
         try:
             domain_service = get_entity_domain_service(request)
+
+            # Log the admin user who triggered emergency stop for audit trail
+            triggered_by = f"{admin_user.get('username', admin_user.get('user_id', 'unknown'))}"
+            logger.warning(f"Domain API emergency stop triggered by admin user {triggered_by}")
+
             result = await domain_service.emergency_stop()
+            result["triggered_by"] = triggered_by
             return result
         except Exception as e:
             logger.error(f"Emergency stop failed: {e}")
             raise HTTPException(status_code=500, detail=f"Emergency stop failed: {e!s}")
 
     @router.post("/clear-emergency-stop")
-    async def clear_emergency_stop(request: Request) -> dict:
-        """Clear emergency stop condition"""
+    async def clear_emergency_stop(
+        request: Request,
+        admin_user: dict = Depends(get_authenticated_admin)
+    ) -> dict:
+        """Clear emergency stop condition (Admin Only)"""
 
         try:
             domain_service = get_entity_domain_service(request)
+
+            # Log the admin user who cleared emergency stop for audit trail
+            cleared_by = f"{admin_user.get('username', admin_user.get('user_id', 'unknown'))}"
+            logger.warning(f"Domain API emergency stop cleared by admin user {cleared_by}")
+
             result = await domain_service.clear_emergency_stop()
+            result["cleared_by"] = cleared_by
             return result
         except Exception as e:
             logger.error(f"Clear emergency stop failed: {e}")

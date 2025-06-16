@@ -9,8 +9,10 @@
 // Entities Domain (includes both regular and validation-enhanced functions)
 export * from './entities';
 
+// Diagnostics Domain
+export * from './diagnostics';
+
 // Future domains (placeholders for Phase 3+)
-// export * from './diagnostics';
 // export * from './analytics';
 
 //

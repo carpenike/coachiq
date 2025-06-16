@@ -36,7 +36,7 @@ export function ApplicationHealthSummaryCard() {
 
   // Group components by category
   const groupedComponents = useMemo(() => {
-    const groups: Record<string, Array<{ name: string; status: ComponentStatus }>> = {
+    const groups: Record<string, { name: string; status: ComponentStatus }[]> = {
       'Core Services': [],
       'Protocol Systems': [],
       'Safety Systems': [],
@@ -77,7 +77,7 @@ export function ApplicationHealthSummaryCard() {
 
     // Remove empty groups
     Object.keys(groups).forEach(key => {
-      const typedKey = key as keyof typeof groups;
+      const typedKey = key;
       if (groups[typedKey] && groups[typedKey].length === 0) {
         delete groups[typedKey];
       }

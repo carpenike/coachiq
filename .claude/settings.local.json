@@ -72,7 +72,14 @@
       "Bash(/Users/ryan/src/rvc2api/virtual_can_validation.sh)",
       "mcp__zen__thinkdeep",
       "mcp__zen__chat",
-      "Bash(poetry show:*)"
+      "Bash(poetry show:*)",
+      "mcp__zen__codereview",
+      "Bash(sqlite3:*)",
+      "Bash(COACHIQ_SECURITY__TLS_TERMINATION_IS_EXTERNAL=true poetry run python -c \"\nfrom backend.core.config import get_settings\nsettings = get_settings()\nprint('With env var:', settings.security.tls_termination_is_external)\n\n# Test config generation\nconfig = settings.get_uvicorn_config()\nprint('Proxy headers in config:', config.get('proxy_headers', False))\n\")",
+      "Bash(COACHIQ_SECURITY__TLS_TERMINATION_IS_EXTERNAL=true poetry run python -c \"\nimport asyncio\nimport logging\nfrom backend.main import create_app\n\n# Configure logging to see our security messages\nlogging.basicConfig(level=logging.INFO)\n\n# Create the app to trigger configuration logging\napp = create_app()\nprint(''Testing external TLS mode with automatic proxy headers!'')\n\" 2 >& 1)",
+      "Bash(COACHIQ_SECURITY__TLS_TERMINATION_IS_EXTERNAL=true poetry run python run_server.py --config 2 >& 1)",
+      "Bash(COACHIQ_SECURITY__TLS_TERMINATION_IS_EXTERNAL=true poetry run python -m backend.cli --config 2 >& 1)",
+      "Bash(COACHIQ_SECURITY__TLS_TERMINATION_IS_EXTERNAL=true poetry run coachiq-daemon --config 2 >& 1)"
     ]
   },
   "enableAllProjectMcpServers": true,
