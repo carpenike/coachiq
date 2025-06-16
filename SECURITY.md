@@ -13,6 +13,7 @@ CoachIQ supports two operational modes for TLS/HTTPS handling:
 In this mode, the CoachIQ application handles all TLS termination, HTTPS redirection, and security headers directly.
 
 **Configuration:**
+
 ```bash
 # Default - no configuration needed
 # OR explicitly set:
@@ -20,6 +21,7 @@ COACHIQ_SECURITY__TLS_TERMINATION_IS_EXTERNAL=false
 ```
 
 **Characteristics:**
+
 - ✅ **Secure by default** - No additional infrastructure required
 - ✅ **Simple deployment** - Single application handles everything
 - ✅ **Full HTTPS enforcement** - Automatic HTTP to HTTPS redirection
@@ -33,6 +35,7 @@ COACHIQ_SECURITY__TLS_TERMINATION_IS_EXTERNAL=false
 In this mode, CoachIQ operates behind a trusted reverse proxy (like Nginx, Traefik, or AWS ALB) that handles TLS termination.
 
 **Configuration:**
+
 ```bash
 COACHIQ_SECURITY__TLS_TERMINATION_IS_EXTERNAL=true
 ```
@@ -41,6 +44,7 @@ COACHIQ_SECURITY__TLS_TERMINATION_IS_EXTERNAL=true
 When enabling external TLS mode, you **MUST** ensure:
 
 1. **Reverse Proxy Configuration:**
+
    - [ ] Reverse proxy terminates TLS (handles SSL certificates)
    - [ ] Reverse proxy redirects all HTTP traffic to HTTPS
    - [ ] Reverse proxy sends `Strict-Transport-Security` (HSTS) header
@@ -57,31 +61,33 @@ When enabling external TLS mode, you **MUST** ensure:
 
 ### Environment Variables
 
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `COACHIQ_ENVIRONMENT` | `development` | Application environment (`development`, `production`, `testing`) |
-| `COACHIQ_SECURITY__TLS_TERMINATION_IS_EXTERNAL` | `false` | Enable external TLS termination mode |
+| Variable                                        | Default       | Description                                                      |
+| ----------------------------------------------- | ------------- | ---------------------------------------------------------------- |
+| `COACHIQ_ENVIRONMENT`                           | `development` | Application environment (`development`, `production`, `testing`) |
+| `COACHIQ_SECURITY__TLS_TERMINATION_IS_EXTERNAL` | `false`       | Enable external TLS termination mode                             |
 
 ### Security Behavior Matrix
 
 | Environment | TLS External | HTTPS Required | HTTPS Redirect | HSTS Headers |
-|-------------|--------------|----------------|----------------|--------------|
-| Development | `false` | ❌ | ❌ | ❌ |
-| Development | `true` | ❌ | ❌ | ❌ |
-| Production | `false` | ✅ | ✅ | ✅ |
-| Production | `true` | ✅ | ❌* | ❌* |
+| ----------- | ------------ | -------------- | -------------- | ------------ |
+| Development | `false`      | ❌             | ❌             | ❌           |
+| Development | `true`       | ❌             | ❌             | ❌           |
+| Production  | `false`      | ✅             | ✅             | ✅           |
+| Production  | `true`       | ✅             | ❌\*           | ❌\*         |
 
-*\* Handled by reverse proxy*
+_\* Handled by reverse proxy_
 
 ## External TLS Mode - Operator Checklist
 
 When using `COACHIQ_SECURITY__TLS_TERMINATION_IS_EXTERNAL=true`, complete this checklist:
 
 ### Infrastructure Requirements
+
 - [ ] **Reverse Proxy Deployed** - Nginx, Traefik, HAProxy, or cloud load balancer
 - [ ] **TLS Certificates Installed** - Valid SSL certificates in the reverse proxy
 - [ ] **HTTPS Redirection Configured** - All HTTP traffic redirected to HTTPS
 - [ ] **Security Headers Configured** - Reverse proxy sends appropriate headers:
+
   ```
   Strict-Transport-Security: max-age=31536000; includeSubDomains; preload
   X-Forwarded-Proto: https
@@ -89,6 +95,7 @@ When using `COACHIQ_SECURITY__TLS_TERMINATION_IS_EXTERNAL=true`, complete this c
   ```
 
 ### Application Requirements
+
 - [ ] **Proxy Headers Enabled** - Application started with `--proxy-headers` flag
 - [ ] **Network Security** - Application only accessible through reverse proxy
 - [ ] **Health Check Validation** - Verify `request.url.scheme` reports `https` correctly
@@ -96,6 +103,7 @@ When using `COACHIQ_SECURITY__TLS_TERMINATION_IS_EXTERNAL=true`, complete this c
 ### Example Configurations
 
 #### Nginx Configuration
+
 ```nginx
 server {
     listen 80;
@@ -123,6 +131,7 @@ server {
 ```
 
 #### Caddy Configuration
+
 ```caddyfile
 your-domain.com {
     # Automatic HTTPS with Let's Encrypt
@@ -137,17 +146,28 @@ your-domain.com {
         X-Content-Type-Options nosniff
         X-Frame-Options DENY
         X-XSS-Protection "1; mode=block"
+        Content-Security-Policy "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: connect-src 'self' ws: wss:;"
     }
 }
 ```
 
 #### Docker Compose with Traefik
+
 ```yaml
-version: '3.8'
+version: "3.8"
 services:
   coachiq:
     image: coachiq:latest
-    command: ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000", "--proxy-headers"]
+    command:
+      [
+        "uvicorn",
+        "main:app",
+        "--host",
+        "0.0.0.0",
+        "--port",
+        "8000",
+        "--proxy-headers",
+      ]
     environment:
       - COACHIQ_SECURITY__TLS_TERMINATION_IS_EXTERNAL=true
     labels:
@@ -158,8 +178,9 @@ services:
 ```
 
 #### Docker Compose with Caddy
+
 ```yaml
-version: '3.8'
+version: "3.8"
 services:
   caddy:
     image: caddy:2-alpine
@@ -175,7 +196,16 @@ services:
 
   coachiq:
     image: coachiq:latest
-    command: ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000", "--proxy-headers"]
+    command:
+      [
+        "uvicorn",
+        "main:app",
+        "--host",
+        "0.0.0.0",
+        "--port",
+        "8000",
+        "--proxy-headers",
+      ]
     environment:
       - COACHIQ_SECURITY__TLS_TERMINATION_IS_EXTERNAL=true
     expose:
@@ -187,6 +217,7 @@ volumes:
 ```
 
 #### Application Startup
+
 ```bash
 # Correct - with proxy headers
 uvicorn main:app --host 0.0.0.0 --port 8000 --proxy-headers
@@ -200,12 +231,14 @@ uvicorn main:app --host 0.0.0.0 --port 8000
 This security configuration approach aligns with:
 
 ### ISO/SAE 21434 (Automotive Cybersecurity)
+
 - ✅ **Risk-based approach** - Security decisions based on deployment context
 - ✅ **Defense in depth** - Multiple security validation layers
 - ✅ **Explicit configuration** - Clear, auditable security settings
 - ✅ **Lifecycle coverage** - Security from development through production
 
 ### NIST SP 800-82 (Industrial Control Systems)
+
 - ✅ **System integrity** - Prevents unauthorized modifications
 - ✅ **Access control** - Strict HTTPS enforcement in production
 - ✅ **Explicit configuration** - Deliberate security decisions
@@ -216,6 +249,7 @@ This security configuration approach aligns with:
 CoachIQ automatically logs security configuration decisions at startup:
 
 ### Internal TLS Mode
+
 ```json
 {
   "level": "INFO",
@@ -228,6 +262,7 @@ CoachIQ automatically logs security configuration decisions at startup:
 ```
 
 ### External TLS Mode
+
 ```json
 {
   "level": "WARNING",
@@ -242,11 +277,13 @@ CoachIQ automatically logs security configuration decisions at startup:
 ## Security Validation
 
 ### Runtime Validation
+
 - **HTTPS Enforcement**: Application validates `request.url.scheme` on every request
 - **Proxy Header Validation**: When external TLS is enabled, validates proxy headers are working
 - **Defense in Depth**: Multiple validation layers prevent security bypasses
 
 ### Testing Security Configuration
+
 ```bash
 # Test HTTPS enforcement (should redirect or require HTTPS)
 curl -v http://your-domain.com/api/auth/status
@@ -269,6 +306,7 @@ curl -D - https://your-domain.com/api/auth/status | grep -i strict-transport
 ## Support and Questions
 
 For security-related questions or concerns:
+
 1. Review this documentation thoroughly
 2. Check application logs for security configuration messages
 3. Validate your infrastructure meets the requirements checklist
