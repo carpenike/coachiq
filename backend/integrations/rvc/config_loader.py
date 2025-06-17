@@ -10,6 +10,7 @@ import json
 import logging
 import os
 import pathlib
+from functools import lru_cache
 from typing import Any
 
 import yaml
@@ -68,9 +69,12 @@ def validate_spec_entry(entry: dict[str, Any], pgn_name: str) -> None:
                 )
 
 
+@lru_cache(maxsize=1)
 def load_rvc_spec(spec_path: str) -> dict[str, Any]:
     """
     Load and validate the RVC specification JSON file.
+
+    Cached to prevent duplicate loading during startup.
 
     Args:
         spec_path: Path to the RVC spec JSON file
@@ -117,9 +121,12 @@ def load_rvc_spec(spec_path: str) -> dict[str, Any]:
     return rvc_spec
 
 
+@lru_cache(maxsize=1)
 def load_device_mapping(mapping_path: str) -> dict[str, Any]:
     """
     Load the device mapping YAML file.
+
+    Cached to prevent duplicate loading during startup.
 
     Args:
         mapping_path: Path to the device mapping YAML file
@@ -152,9 +159,12 @@ def load_device_mapping(mapping_path: str) -> dict[str, Any]:
     return device_mapping
 
 
+@lru_cache(maxsize=1)
 def get_default_paths() -> tuple[str, str]:
     """
     Determine default paths for the RVC spec and device mapping files.
+
+    Cached to prevent duplicate path resolution during startup.
 
     Returns:
         Tuple of (rvc_spec_path, device_mapping_path)

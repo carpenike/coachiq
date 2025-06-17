@@ -11,7 +11,7 @@ from typing import Annotated, Any
 from fastapi import APIRouter, Depends, HTTPException
 from starlette import status
 
-from backend.core.dependencies import (
+from backend.core.dependencies_v2 import (
     get_config_repository,
     get_dashboard_repository,
     get_persistence_service,

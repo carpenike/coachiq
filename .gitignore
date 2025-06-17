@@ -262,3 +262,5 @@ alembic/logs/
 .env.production
 
 /.mcp.json
+
+prompt.txt

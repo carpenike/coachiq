@@ -9,7 +9,7 @@ import logging
 from typing import Any
 
 from backend.core.config import get_settings
-from backend.integrations.rvc.decode import load_config_data
+from backend.integrations.rvc.decode import load_config_data_v2
 from backend.models.can_message import CANMessage
 from backend.models.entity import ControlCommand
 
@@ -53,25 +53,26 @@ class RVCEncoder:
             if self.settings.rvc_coach_mapping_path:
                 map_path_override = str(self.settings.rvc_coach_mapping_path)
 
-            # Load configuration using the existing decode module
-            (
-                self.dgn_dict,
-                self.spec_meta,
-                self.mapping_dict,
-                self.entity_map,
-                self.entity_ids,
-                self.inst_map,
-                self.unique_instances,
-                self.pgn_hex_to_name_map,
-                self.dgn_pairs,
-                self.coach_info,
-            ) = load_config_data(
+            # Load configuration using the new structured version
+            self.rvc_config = load_config_data_v2(
                 rvc_spec_path_override=spec_path_override,
                 device_mapping_path_override=map_path_override,
             )
 
+            # For backward compatibility with existing methods
+            self.dgn_dict = self.rvc_config.dgn_dict
+            self.spec_meta = self.rvc_config.spec_meta
+            self.mapping_dict = self.rvc_config.mapping_dict
+            self.entity_map = self.rvc_config.entity_map
+            self.entity_ids = self.rvc_config.entity_ids
+            self.inst_map = self.rvc_config.inst_map
+            self.unique_instances = self.rvc_config.unique_instances
+            self.pgn_hex_to_name_map = self.rvc_config.pgn_hex_to_name_map
+            self.dgn_pairs = self.rvc_config.dgn_pairs
+            self.coach_info = self.rvc_config.coach_info
+
             self._config_loaded = True
-            logger.info(f"RVC encoder configuration loaded - coach: {self.coach_info}")
+            logger.info(f"RVC encoder configuration loaded - coach: {self.rvc_config.coach_info}")
 
         except Exception as e:
             logger.error(f"Failed to load RVC encoder configuration: {e}")

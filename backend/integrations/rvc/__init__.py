@@ -32,6 +32,7 @@ from backend.integrations.rvc.decode import (
     get_bits,
     get_missing_dgns,
     load_config_data,
+    load_config_data_v2,
     record_missing_dgn,
 )
 
@@ -52,5 +53,6 @@ __all__ = [
     "get_bits",
     "get_missing_dgns",
     "load_config_data",
+    "load_config_data_v2",
     "record_missing_dgn",
 ]

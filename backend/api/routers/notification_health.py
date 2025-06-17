@@ -4,10 +4,10 @@ Health check endpoint for the lightweight notification system.
 Provides performance metrics and health status suitable for monitoring.
 """
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter
 from typing import Dict, Any
 
-from backend.core.dependencies import get_settings
+from backend.core.dependencies_v2 import get_settings
 from backend.services.notification_lightweight import LightweightNotificationManager
 
 
@@ -15,9 +15,7 @@ router = APIRouter(prefix="/api/notifications", tags=["notifications"])
 
 
 @router.get("/health")
-async def get_notification_health(
-    settings=Depends(get_settings)
-) -> Dict[str, Any]:
+async def get_notification_health() -> Dict[str, Any]:
     """
     Get health status and performance metrics for the notification system.
 
@@ -33,6 +31,7 @@ async def get_notification_health(
     """
     # Get notification manager instance
     # In production, this would be injected via dependency
+    settings = get_settings()
     manager = LightweightNotificationManager(settings.notifications)
 
     # Get health information
@@ -45,8 +44,7 @@ async def get_notification_health(
 async def test_notification(
     message: str = "Test notification",
     level: str = "info",
-    channels: list[str] = ["webhook"],
-    settings=Depends(get_settings)
+    channels: list[str] = ["webhook"]
 ) -> Dict[str, Any]:
     """
     Send a test notification to verify the system is working.
@@ -61,6 +59,7 @@ async def test_notification(
     """
     import time
 
+    settings = get_settings()
     manager = LightweightNotificationManager(settings.notifications)
     await manager.initialize()
 

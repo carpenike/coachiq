@@ -13,7 +13,7 @@ from typing import Any
 
 from fastapi import FastAPI
 
-from backend.core.state import app_state
+# app_state global removed - AppState accessed via dependency injection
 from backend.services.feature_manager import FeatureManager
 from backend.websocket.handlers import (
     WebSocketLogHandler,
@@ -29,6 +29,7 @@ def setup_websocket(
     app: FastAPI,
     feature_manager: FeatureManager,
     config: dict[str, Any] | None = None,
+    app_state: Any | None = None,
 ) -> WebSocketManager:
     """
     Set up WebSocket functionality for the FastAPI application.
@@ -42,6 +43,7 @@ def setup_websocket(
         app (FastAPI): The FastAPI application instance.
         feature_manager (FeatureManager): The feature manager instance.
         config (dict[str, Any] | None): Optional configuration dictionary.
+        app_state (Any | None): Optional app state instance.
 
     Returns:
         WebSocketManager: The initialized WebSocketManager instance.
@@ -50,7 +52,7 @@ def setup_websocket(
         >>> ws_manager = setup_websocket(app, feature_manager)
     """
     ws_manager = initialize_websocket_manager(
-        app_state=app_state,  # Use the global app_state singleton
+        app_state=app_state,  # Pass app_state from caller
         feature_manager=feature_manager,
         config=config or {},
     )

@@ -15,10 +15,11 @@ import logging
 import time
 from typing import Any, Dict, List, Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Request, status
+from fastapi import APIRouter, Depends, HTTPException, Request
+from starlette import status
 from pydantic import BaseModel, Field
 
-from backend.core.dependencies import get_authenticated_admin, get_security_audit_service
+from backend.core.dependencies_v2 import get_authenticated_admin, get_security_audit_service
 from backend.services.network_security_service import NetworkSecurityService, SecurityEvent
 
 logger = logging.getLogger(__name__)

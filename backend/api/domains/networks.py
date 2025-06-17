@@ -12,12 +12,13 @@ This router integrates with existing network services.
 
 import logging
 import time
-from typing import Dict, Any, List
+from typing import Any, Dict, List
+
 from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel, Field
 
-from backend.core.dependencies import get_feature_manager_from_request
 from backend.api.domains import register_domain_router
+from backend.core.dependencies_v2 import get_feature_manager
 
 logger = logging.getLogger(__name__)
 
@@ -37,7 +38,7 @@ class NetworkSummary(BaseModel):
     active_interfaces: int = Field(..., description="Active interfaces")
     total_messages: int = Field(..., description="Total messages across all interfaces")
     total_errors: int = Field(..., description="Total errors across all interfaces")
-    networks: List[NetworkStatus] = Field(..., description="Individual network status")
+    networks: list[NetworkStatus] = Field(..., description="Individual network status")
     timestamp: float = Field(..., description="Summary timestamp")
 
 def create_networks_router() -> APIRouter:
@@ -46,7 +47,7 @@ def create_networks_router() -> APIRouter:
 
     def _check_domain_api_enabled(request: Request) -> None:
         """Check if networks API v2 is enabled"""
-        feature_manager = get_feature_manager_from_request(request)
+        feature_manager = get_feature_manager(request)
         if not feature_manager.is_enabled("domain_api_v2"):
             raise HTTPException(
                 status_code=404,
@@ -55,7 +56,7 @@ def create_networks_router() -> APIRouter:
         # Note: networks_api_v2 feature flag doesn't exist yet, so we skip that check
 
     @router.get("/health")
-    async def health_check(request: Request) -> Dict[str, Any]:
+    async def health_check(request: Request) -> dict[str, Any]:
         """Health check endpoint for networks domain API"""
         _check_domain_api_enabled(request)
 
@@ -72,7 +73,7 @@ def create_networks_router() -> APIRouter:
         }
 
     @router.get("/schemas")
-    async def get_schemas(request: Request) -> Dict[str, Any]:
+    async def get_schemas(request: Request) -> dict[str, Any]:
         """Export schemas for networks domain"""
         _check_domain_api_enabled(request)
 
@@ -122,7 +123,7 @@ def create_networks_router() -> APIRouter:
             raise HTTPException(status_code=500, detail=f"Failed to get network status: {e!s}")
 
     @router.get("/interfaces")
-    async def get_network_interfaces(request: Request) -> List[NetworkStatus]:
+    async def get_network_interfaces(request: Request) -> list[NetworkStatus]:
         """Get detailed information about network interfaces"""
         _check_domain_api_enabled(request)
 

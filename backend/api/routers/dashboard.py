@@ -21,10 +21,10 @@ from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 
-from backend.core.dependencies import (
+from backend.core.dependencies_v2 import (
     get_can_service,
     get_entity_service,
-    get_feature_manager_from_request,
+    get_feature_manager,
     get_websocket_manager,
 )
 from backend.models.dashboard import (
@@ -50,7 +50,7 @@ _dashboard_service: DashboardService | None = None
 
 def _check_dashboard_aggregation_enabled(request: Request) -> None:
     """Check if dashboard_aggregation feature is enabled, raise 404 if disabled."""
-    feature_manager = get_feature_manager_from_request(request)
+    feature_manager = get_feature_manager(request)
     if not feature_manager.is_enabled("dashboard_aggregation"):
         raise HTTPException(status_code=404, detail="dashboard_aggregation feature is disabled")
 
@@ -237,7 +237,7 @@ async def bulk_control_entities(
     )
 
     # Check if bulk operations feature is enabled
-    feature_manager = get_feature_manager_from_request(request)
+    feature_manager = get_feature_manager(request)
     if not feature_manager.is_enabled("bulk_operations"):
         raise HTTPException(status_code=404, detail="bulk_operations feature is disabled")
 
@@ -277,7 +277,7 @@ async def get_system_analytics(
     logger.debug("GET /dashboard/analytics - Retrieving system analytics")
 
     # Check if system analytics feature is enabled
-    feature_manager = get_feature_manager_from_request(request)
+    feature_manager = get_feature_manager(request)
     if not feature_manager.is_enabled("system_analytics"):
         raise HTTPException(status_code=404, detail="system_analytics feature is disabled")
 
@@ -309,7 +309,7 @@ async def acknowledge_alert(
     logger.info(f"POST /dashboard/alerts/{alert_id}/acknowledge - Acknowledging alert")
 
     # Check if system analytics feature is enabled
-    feature_manager = get_feature_manager_from_request(request)
+    feature_manager = get_feature_manager(request)
     if not feature_manager.is_enabled("system_analytics"):
         raise HTTPException(status_code=404, detail="system_analytics feature is disabled")
 

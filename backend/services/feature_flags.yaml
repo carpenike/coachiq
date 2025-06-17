@@ -20,7 +20,7 @@
 # NOTE: persistence is now managed by CoreServices and is not configurable via feature flags
 
 security_event_manager:
-  enabled: true
+  enabled: false  # Now managed by ServiceRegistry - see backend/main.py _init_security_event_manager
   safety_classification: "operational"
   safe_state_action: "continue_operation"
   maintain_state_on_failure: true
@@ -663,7 +663,7 @@ analytics_dashboard:
   sqlite_batch_size: 100
 
 device_discovery:
-  enabled: true
+  enabled: false  # Now managed by ServiceRegistry - see backend/main.py _init_device_discovery_service
   safety_classification: "operational"
   safe_state_action: "continue_operation"
   maintain_state_on_failure: true
@@ -844,3 +844,21 @@ system_api_v2:
   enable_service_monitoring: true
   enable_configuration_api: true
   enable_system_health: true
+
+startup_monitoring:
+  enabled: true
+  safety_classification: "maintenance"
+  safe_state_action: "continue_operation"
+  maintain_state_on_failure: true
+  core: false
+  depends_on: []
+  description: "Startup performance monitoring and metrics collection for optimization analysis"
+  friendly_name: "Startup Monitoring"
+  enable_phase_tracking: true
+  enable_service_timing: true
+  enable_health_validation: true
+  enable_baseline_comparison: true
+  baseline_startup_time_ms: 500.0
+  baseline_service_registry_time_ms: 120.0
+  performance_warning_threshold_ms: 600.0
+  performance_error_threshold_ms: 1000.0

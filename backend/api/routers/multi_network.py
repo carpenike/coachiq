@@ -9,7 +9,7 @@ from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, HTTPException
 
-from backend.core.dependencies import get_feature_manager_from_request
+from backend.core.dependencies_v2 import get_feature_manager
 from backend.services.feature_manager import FeatureManager
 
 logger = logging.getLogger(__name__)
@@ -19,7 +19,7 @@ router = APIRouter(prefix="/api/multi-network", tags=["multi-network"])
 
 @router.get("/status")
 async def get_multi_network_status(
-    feature_manager: Annotated[FeatureManager, Depends(get_feature_manager_from_request)],
+    feature_manager: Annotated[FeatureManager, Depends(get_feature_manager)],
 ) -> dict[str, Any]:
     """
     Get the status of multi-network CAN management.
@@ -49,7 +49,7 @@ async def get_multi_network_status(
 
 @router.get("/bridge-status")
 async def get_bridge_status(
-    feature_manager: Annotated[FeatureManager, Depends(get_feature_manager_from_request)],
+    feature_manager: Annotated[FeatureManager, Depends(get_feature_manager)],
 ) -> dict[str, Any]:
     """
     Get the status of protocol bridges between different CAN networks.
@@ -133,7 +133,7 @@ async def get_bridge_status(
 
 @router.get("/networks")
 async def get_networks(
-    feature_manager: Annotated[FeatureManager, Depends(get_feature_manager_from_request)],
+    feature_manager: Annotated[FeatureManager, Depends(get_feature_manager)],
 ) -> dict[str, Any]:
     """
     Get information about all registered CAN networks.
@@ -173,7 +173,7 @@ async def get_networks(
 
 @router.get("/health")
 async def get_multi_network_health(
-    feature_manager: Annotated[FeatureManager, Depends(get_feature_manager_from_request)],
+    feature_manager: Annotated[FeatureManager, Depends(get_feature_manager)],
 ) -> dict[str, Any]:
     """
     Get comprehensive health status of the multi-network system.

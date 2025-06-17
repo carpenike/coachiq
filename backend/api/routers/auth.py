@@ -18,7 +18,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request, status
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 from pydantic import BaseModel, EmailStr
 
-from backend.core.dependencies import get_auth_manager, get_notification_manager
+from backend.core.dependencies_v2 import get_auth_manager, get_notification_manager
 from backend.middleware.rate_limiting import (
     admin_api_rate_limit,
     auth_rate_limit,
@@ -879,7 +879,7 @@ async def accept_user_invitation(
             )
 
         # Validate the magic token and get user info
-        from backend.core.dependencies import get_auth_manager
+        from backend.core.dependencies_v2 import get_auth_manager
 
         auth_manager = get_auth_manager()
         user_info = await auth_manager.validate_magic_link(magic_token)

@@ -12,7 +12,7 @@ from typing import Annotated, Any
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from pydantic import BaseModel, Field
 
-from backend.core.dependencies import get_feature_manager_from_request
+from backend.core.dependencies_v2 import get_feature_manager, get_analytics_dashboard_service
 from backend.services.analytics_dashboard_service import AnalyticsDashboardService
 
 logger = logging.getLogger(__name__)
@@ -76,16 +76,13 @@ class MetricsAggregationParams(BaseModel):
 
 def _check_analytics_enabled(request: Request) -> None:
     """Check if analytics features are enabled, raise 404 if disabled."""
-    feature_manager = get_feature_manager_from_request(request)
+    feature_manager = get_feature_manager(request)
     if not feature_manager.is_enabled("performance_analytics"):
         raise HTTPException(status_code=404, detail="Analytics features are disabled")
 
 
-def get_analytics_dashboard_service(request: Request) -> AnalyticsDashboardService:
-    """Get the analytics dashboard service from app state."""
-    if not hasattr(request.app.state, "analytics_dashboard_service"):
-        raise HTTPException(status_code=500, detail="Analytics dashboard service not available")
-    return request.app.state.analytics_dashboard_service
+# Service dependency is now imported from dependencies_v2
+# This eliminates the local app.state access pattern
 
 
 @router.get(

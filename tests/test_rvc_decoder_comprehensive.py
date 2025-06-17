@@ -424,8 +424,9 @@ class TestSignalDecoding:
     def test_decode_payload_with_known_data(self):
         """Test payload decoding with known good data."""
         # Load config to get a known entry
-        config_data = load_config_data()
-        dgn_dict = config_data[0]
+        from backend.integrations.rvc.decode import load_config_data_v2
+        config = load_config_data_v2()
+        dgn_dict = config.dgn_dict
 
         # Find DC_DIMMER_STATUS_3 entry
         test_dgn = 0x0019FEDA
@@ -704,7 +705,21 @@ class TestEndToEndFunctionality:
     @pytest.fixture
     def config_data(self):
         """Load configuration data."""
-        return load_config_data()
+        from backend.integrations.rvc.decode import load_config_data_v2
+        config = load_config_data_v2()
+        # Return as tuple for backward compatibility with test expectations
+        return (
+            config.dgn_dict,
+            config.pgn_hex_to_name_map,
+            config.decoder_map,
+            config.inst_map,
+            config.unique_instances,
+            config.entity_map,
+            config.entity_ids,
+            config.mapping_dict,
+            config.raw_device_mapping,
+            config.coach_info
+        )
 
     def test_complete_decoding_workflow(self, config_data):
         """Test complete decoding workflow from CAN data to entities."""

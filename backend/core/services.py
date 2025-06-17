@@ -249,7 +249,12 @@ _core_services_instance: CoreServices | None = None
 
 def get_core_services() -> CoreServices:
     """
-    Get the global CoreServices instance.
+    Get the CoreServices instance.
+
+    This function is deprecated. CoreServices is managed by ServiceRegistry.
+    Use dependency injection to access services:
+    - get_persistence_service() from backend.core.dependencies
+    - get_database_manager() from backend.core.dependencies
 
     Returns:
         The initialized CoreServices instance
@@ -257,6 +262,21 @@ def get_core_services() -> CoreServices:
     Raises:
         RuntimeError: If core services haven't been initialized
     """
+    # Try to get from ServiceRegistry first
+    try:
+        from backend.main import app
+        if hasattr(app.state, 'service_registry') and app.state.service_registry is not None:
+            # Get individual services from registry
+            persistence = app.state.service_registry.get_service('persistence_service')
+            db_manager = app.state.service_registry.get_service('database_manager')
+            if persistence and db_manager:
+                # Return the global instance that wraps these services
+                if _core_services_instance is not None:
+                    return _core_services_instance
+    except (ImportError, AttributeError, RuntimeError):
+        pass
+
+    # Fall back to global instance
     if _core_services_instance is None:
         msg = "Core services not initialized. Call initialize_core_services() first."
         raise RuntimeError(msg)
@@ -265,7 +285,11 @@ def get_core_services() -> CoreServices:
 
 async def initialize_core_services() -> CoreServices:
     """
-    Initialize the global CoreServices instance.
+    Initialize the CoreServices instance.
+
+    Note: CoreServices is now managed by ServiceRegistry. This function
+    maintains backward compatibility but the services are registered
+    individually with ServiceRegistry.
 
     This should be called once during application startup.
 
@@ -284,13 +308,21 @@ async def initialize_core_services() -> CoreServices:
     _core_services_instance = CoreServices()
     await _core_services_instance.startup()
 
+    logger.info("CoreServices initialized (legacy pattern - services are managed by ServiceRegistry)")
+
     return _core_services_instance
 
 
 async def shutdown_core_services() -> None:
-    """Shutdown the global CoreServices instance."""
+    """
+    Shutdown the CoreServices instance.
+
+    Note: Individual services are now managed by ServiceRegistry
+    which handles their shutdown. This maintains backward compatibility.
+    """
     global _core_services_instance
 
     if _core_services_instance is not None:
         await _core_services_instance.shutdown()
         _core_services_instance = None
+        logger.info("CoreServices shutdown (legacy pattern)")

@@ -24,6 +24,7 @@ from backend.api.routers import (
     dbc,
     device_discovery,
     docs,
+    health,
     logs,
     migration,
     multi_network,
@@ -39,8 +40,9 @@ from backend.api.routers import (
     security_config,
     security_dashboard,
     security_monitoring,
+    startup_monitoring,
 )
-from backend.core.dependencies import get_feature_manager_from_app
+from backend.core.dependencies_v2 import get_feature_manager_from_app
 from backend.websocket.routes import router as websocket_router
 
 logger = logging.getLogger(__name__)
@@ -69,6 +71,7 @@ def configure_routers(app: FastAPI) -> None:
     app.include_router(dashboard.router)
     app.include_router(dbc.router)
     app.include_router(docs.router)
+    app.include_router(health.router)
     app.include_router(logs.router)
     app.include_router(multi_network.router)
     app.include_router(
@@ -94,6 +97,9 @@ def configure_routers(app: FastAPI) -> None:
 
     # Include security monitoring router
     app.include_router(security_monitoring.router)
+
+    # Include startup monitoring router
+    app.include_router(startup_monitoring.router)
 
     # Include WebSocket routes that integrate with feature manager
     app.include_router(websocket_router)
@@ -127,6 +133,7 @@ def get_router_info() -> dict[str, Any]:
             {"prefix": "/api/dashboard", "tags": ["dashboard"], "name": "dashboard"},
             {"prefix": "/api/dbc", "tags": ["dbc"], "name": "dbc"},
             {"prefix": "/api", "tags": ["docs"], "name": "docs"},
+            {"prefix": "/api/health", "tags": ["health", "monitoring"], "name": "health"},
             {"prefix": "/api", "tags": ["logs"], "name": "logs"},
             {"prefix": "/api/multi-network", "tags": ["multi-network"], "name": "multi_network"},
             {
@@ -159,7 +166,7 @@ def get_router_info() -> dict[str, Any]:
             },
             {"prefix": "/ws", "tags": ["websocket"], "name": "websocket"},
         ],
-        "total_routers": 17,
+        "total_routers": 18,
         "dependency_injection": True,
         "domain_api_v2": True,
     }

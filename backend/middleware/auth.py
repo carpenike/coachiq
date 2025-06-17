@@ -97,14 +97,28 @@ class AuthenticationMiddleware(BaseHTTPMiddleware):
         Raises:
             HTTPException: If authentication is required but fails
         """
-        # Get auth manager from request state if not provided during init
+        # Get auth manager from ServiceRegistry if not provided during init
         if not self.auth_manager:
             try:
-                feature_manager = getattr(request.app.state, "feature_manager", None)
-                if feature_manager:
-                    auth_feature = feature_manager.get_feature("authentication")
-                    if auth_feature:
-                        self.auth_manager = auth_feature.get_auth_manager()
+                # Try ServiceRegistry first
+                if hasattr(request.app.state, "service_registry"):
+                    service_registry = request.app.state.service_registry
+                    if service_registry.has_service("auth_manager"):
+                        self.auth_manager = service_registry.get_service("auth_manager")
+                    else:
+                        # Fallback to feature manager pattern
+                        if service_registry.has_service("feature_manager"):
+                            feature_manager = service_registry.get_service("feature_manager")
+                            auth_feature = feature_manager.get_feature("authentication")
+                            if auth_feature:
+                                self.auth_manager = auth_feature.get_auth_manager()
+                else:
+                    # Legacy fallback to app.state
+                    feature_manager = getattr(request.app.state, "feature_manager", None)
+                    if feature_manager:
+                        auth_feature = feature_manager.get_feature("authentication")
+                        if auth_feature:
+                            self.auth_manager = auth_feature.get_auth_manager()
             except Exception as e:
                 self.logger.debug(f"Could not get auth manager: {e}")
 

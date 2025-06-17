@@ -765,6 +765,14 @@ def initialize_websocket_manager(
     """
     Initialize the WebSocket manager singleton.
 
+    NOTE: This global singleton pattern is deprecated. New code should register
+    WebSocketManager as a Feature with FeatureManager, which will automatically
+    register it with ServiceRegistry for proper lifecycle management.
+
+    Example of preferred pattern:
+        websocket_manager = WebSocketManager(...)
+        feature_manager.register_feature(websocket_manager)
+
     Args:
         app_state (AppState | None): The application state instance
         feature_manager (Any | None): The feature manager instance
@@ -785,12 +793,22 @@ def initialize_websocket_manager(
         )
         if feature_manager:
             feature_manager.register_feature(websocket_manager)
+            logger.info("WebSocketManager registered with FeatureManager (preferred pattern)")
+        else:
+            logger.warning(
+                "WebSocketManager initialized with global singleton pattern (deprecated). "
+                "Consider registering with FeatureManager for proper lifecycle management."
+            )
     return websocket_manager
 
 
 def get_websocket_manager() -> WebSocketManager:
     """
-    Get the WebSocket manager singleton instance.
+    Get the WebSocket manager instance.
+
+    This function follows the enhanced singleton pattern that checks modern
+    locations (app.state, ServiceRegistry) before falling back to the global
+    instance for backward compatibility.
 
     Returns:
         WebSocketManager: The WebSocketManager instance
@@ -798,6 +816,31 @@ def get_websocket_manager() -> WebSocketManager:
     Raises:
         RuntimeError: If the WebSocketManager has not been initialized
     """
+    # Try to get from app.state first (ServiceRegistry/FeatureManager integration)
+    try:
+        # Try to access the global app instance if available
+        import backend.main
+        if hasattr(backend.main, 'app'):
+            app = backend.main.app
+            # Check if registered as a feature
+            if hasattr(app.state, 'feature_manager'):
+                feature_manager = app.state.feature_manager
+                websocket_feature = feature_manager.get_feature('websocket')
+                if isinstance(websocket_feature, WebSocketManager):
+                    return websocket_feature
+
+            # Check ServiceRegistry
+            if hasattr(app.state, 'service_registry'):
+                service_registry = app.state.service_registry
+                if service_registry.has_service('websocket'):
+                    service = service_registry.get_service('websocket')
+                    if isinstance(service, WebSocketManager):
+                        return service
+    except Exception:
+        # Continue to fallback
+        pass
+
+    # Fall back to global singleton for backward compatibility
     if websocket_manager is None:
         msg = "WebSocketManager not initialized. Call initialize_websocket_manager first."
         raise RuntimeError(msg)

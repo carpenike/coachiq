@@ -59,9 +59,11 @@ def _create_app_state_feature(**kwargs):
 
 
 def _create_security_event_manager_feature(**kwargs):
-    """Factory function for SecurityEventManager feature."""
-    from backend.services.security_event_manager import initialize_security_event_manager
-    return initialize_security_event_manager(**kwargs)
+    """Factory function for SecurityEventManager feature (DEPRECATED - now managed by ServiceRegistry)."""
+    # SecurityEventManager is now managed by ServiceRegistry, not FeatureManager
+    # This factory is kept for compatibility but should not be called since enabled=false
+    from backend.services.security_event_manager import SecurityEventManager
+    return SecurityEventManager(**kwargs)
 
 
 # Note: persistence feature factory is registered in backend.services.feature_manager

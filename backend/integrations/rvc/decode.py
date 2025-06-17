@@ -29,12 +29,14 @@ from backend.integrations.rvc.config_loader import (
 )
 from backend.integrations.rvc.decoder_core import decode_payload as _decode_payload
 from backend.integrations.rvc.decoder_core import get_bits as _get_bits
+from backend.integrations.rvc.decoder_core import DecodedValue, DecodeError
 from backend.integrations.rvc.missing_dgns import (
     clear_missing_dgns,
     get_missing_dgns,
     record_missing_dgn,
 )
 from backend.models.common import CoachInfo
+from backend.models.rvc_config import RVCConfiguration, RVCSpecMeta
 
 logger = logging.getLogger(__name__)
 
@@ -51,6 +53,7 @@ __all__ = [
     "get_bits",
     "get_missing_dgns",
     "load_config_data",
+    "load_config_data_v2",
     "record_missing_dgn",
 ]
 
@@ -58,6 +61,7 @@ __all__ = [
 def clear_config_cache() -> None:
     """Clear the configuration cache to force reloading."""
     load_config_data.cache_clear()
+    load_config_data_v2.cache_clear()
     logger.debug("Configuration cache cleared")
 
 
@@ -85,8 +89,21 @@ def decode_payload_safe(
 
     try:
         entry = dgn_dict[dgn_id]
-        decoded, raw_values = decode_payload(entry, data_bytes)
-        return decoded, raw_values, True
+        results, errors = decode_payload(entry, data_bytes)
+
+        # Convert to the expected format for backward compatibility
+        decoded = {}
+        raw_values = {}
+
+        for signal_name, result in results.items():
+            if isinstance(result, DecodedValue):
+                decoded[signal_name] = str(result.value)
+                if result.raw_value is not None:
+                    raw_values[signal_name] = int(result.raw_value)
+            elif isinstance(result, DecodeError):
+                decoded[signal_name] = f"<error: {result.message}>"
+
+        return decoded, raw_values, len(errors) == 0
     except Exception as e:
         logger.error(f"Error decoding DGN {dgn_id:X}: {e}")
         record_missing_dgn(dgn_id, context=f"decode_error: {e!s}")
@@ -112,6 +129,11 @@ def load_config_data(
     """
     Load and parse RVC spec and device mapping data.
 
+    DEPRECATED: This function returns a complex 10-element tuple that makes code
+    difficult to maintain and test. Use load_config_data_v2() instead, which returns
+    a structured RVCConfiguration object with proper type hints and convenient
+    access methods.
+
     This function uses @functools.cache to automatically cache the loaded data
     and avoid redundant file I/O and parsing when the same configuration is
     requested multiple times during startup.
@@ -133,6 +155,16 @@ def load_config_data(
             - dgn_pairs: Dictionary mapping DGNs to useful metadata for faster lookups
             - coach_info: CoachInfo object with detected coach metadata
     """
+    # Log deprecation warning
+    import warnings
+
+    warnings.warn(
+        "load_config_data() is deprecated and returns a complex 10-element tuple. "
+        "Use load_config_data_v2() instead for a structured RVCConfiguration object.",
+        DeprecationWarning,
+        stacklevel=2,
+    )
+
     # Get default paths if not overridden
     rvc_spec_path, device_mapping_path = get_default_paths()
     if rvc_spec_path_override:
@@ -218,7 +250,7 @@ def load_config_data(
                 entity_id = device.get("entity_id")
                 if entity_id:
                     entity_ids.add(entity_id)
-                    entity_map[(dgn_hex, instance_id)] = device
+                    entity_map[(dgn_hex, str(instance_id))] = device
                     inst_map[entity_id] = {
                         "dgn_hex": dgn_hex,
                         "instance": instance_id,
@@ -235,4 +267,64 @@ def load_config_data(
         pgn_hex_to_name_map,
         dgn_pairs,
         coach_info,
+    )
+
+
+@functools.cache
+def load_config_data_v2(
+    rvc_spec_path_override: str | None = None,
+    device_mapping_path_override: str | None = None,
+) -> RVCConfiguration:
+    """
+    Load and parse RVC spec and device mapping data into a structured object.
+
+    This is the new version that returns a properly typed RVCConfiguration object
+    instead of a complex tuple. It provides the same functionality with better
+    type safety and easier access patterns.
+
+    Args:
+        rvc_spec_path_override: Optional path override for RVC spec JSON
+        device_mapping_path_override: Optional path override for device mapping YAML
+
+    Returns:
+        RVCConfiguration object containing all loaded configuration data
+    """
+    # Load the data using the existing function
+    (
+        dgn_dict,
+        spec_meta,
+        mapping_dict,
+        entity_map,
+        entity_ids,
+        inst_map,
+        unique_instances,
+        pgn_hex_to_name_map,
+        dgn_pairs,
+        coach_info,
+    ) = load_config_data(rvc_spec_path_override, device_mapping_path_override)
+
+    # Convert inst_map to use RVCEntityMapping objects
+    inst_map_structured = {}
+    for entity_id, mapping in inst_map.items():
+        inst_map_structured[entity_id] = mapping  # Keep as dict for now for compatibility
+
+    # Create structured spec metadata
+    spec_meta_structured = RVCSpecMeta(
+        version=spec_meta.get("version", "unknown"),
+        source=spec_meta.get("source", "unknown"),
+        rvc_version=spec_meta.get("rvc_verison", "unknown"),  # Note: typo in original
+    )
+
+    # Return structured configuration
+    return RVCConfiguration(
+        dgn_dict=dgn_dict,
+        spec_meta=spec_meta_structured,
+        mapping_dict=mapping_dict,
+        entity_map=entity_map,
+        entity_ids=entity_ids,
+        inst_map=inst_map_structured,
+        unique_instances=unique_instances,
+        pgn_hex_to_name_map=pgn_hex_to_name_map,
+        dgn_pairs=dgn_pairs,
+        coach_info=coach_info,
     )

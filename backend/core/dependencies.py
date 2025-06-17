@@ -8,7 +8,7 @@ from FastAPI's dependency injection system.
 import logging
 from typing import Any
 
-from fastapi import HTTPException, Request
+from fastapi import Request
 from backend.middleware.auth import require_authentication
 
 logger = logging.getLogger(__name__)
@@ -145,6 +145,44 @@ def get_vector_service(request: Request) -> Any:
         msg = "Vector service not initialized"
         raise RuntimeError(msg)
     return request.app.state.vector_service
+
+
+def get_security_event_manager(request: Request) -> Any:
+    """
+    Get the security event manager from the FastAPI application state.
+
+    Args:
+        request: The FastAPI request object
+
+    Returns:
+        The security event manager
+
+    Raises:
+        RuntimeError: If the security event manager is not initialized
+    """
+    if not hasattr(request.app.state, "security_event_manager"):
+        msg = "Security event manager not initialized"
+        raise RuntimeError(msg)
+    return request.app.state.security_event_manager
+
+
+def get_security_websocket_handler(request: Request) -> Any:
+    """
+    Get the security WebSocket handler from the FastAPI application state.
+
+    Args:
+        request: The FastAPI request object
+
+    Returns:
+        The security WebSocket handler
+
+    Raises:
+        RuntimeError: If the security WebSocket handler is not initialized
+    """
+    if not hasattr(request.app.state, "security_websocket_handler"):
+        msg = "Security WebSocket handler not initialized"
+        raise RuntimeError(msg)
+    return request.app.state.security_websocket_handler
 
 
 def get_github_update_checker(request: Request) -> Any:
@@ -643,3 +681,214 @@ def get_security_audit_service(request: Request):
     if hasattr(request.app.state, "security_audit_service"):
         return request.app.state.security_audit_service
     return None
+
+
+def get_entity_state_repository(request: Request) -> Any:
+    """
+    Get the entity state repository from the service registry or app state.
+
+    This supports Phase 2R.3 migration by allowing repository access
+    independent of AppState.
+
+    Args:
+        request: The FastAPI request object
+
+    Returns:
+        The entity state repository
+
+    Raises:
+        RuntimeError: If the repository is not available
+    """
+    # First try to get from service registry
+    if hasattr(request.app.state, "service_registry"):
+        service_registry = request.app.state.service_registry
+        if service_registry.has_service("entity_state_repository"):
+            return service_registry.get_service("entity_state_repository")
+
+    # Fallback to get from AppState
+    app_state = get_app_state(request)
+    if hasattr(app_state, "_entity_state_repo"):
+        return app_state._entity_state_repo
+
+    msg = "Entity state repository not initialized"
+    raise RuntimeError(msg)
+
+
+def get_rvc_config_repository(request: Request) -> Any:
+    """
+    Get the RVC config repository from the service registry or app state.
+
+    This supports Phase 2R.3 migration by allowing repository access
+    independent of AppState.
+
+    Args:
+        request: The FastAPI request object
+
+    Returns:
+        The RVC config repository
+
+    Raises:
+        RuntimeError: If the repository is not available
+    """
+    # First try to get from service registry
+    if hasattr(request.app.state, "service_registry"):
+        service_registry = request.app.state.service_registry
+        if service_registry.has_service("rvc_config_repository"):
+            return service_registry.get_service("rvc_config_repository")
+
+    # Fallback to get from AppState
+    app_state = get_app_state(request)
+    if hasattr(app_state, "_rvc_config_repo"):
+        return app_state._rvc_config_repo
+
+    msg = "RVC config repository not initialized"
+    raise RuntimeError(msg)
+
+
+def get_can_tracking_repository(request: Request) -> Any:
+    """
+    Get the CAN tracking repository from the service registry or app state.
+
+    This supports Phase 2R.3 migration by allowing repository access
+    independent of AppState.
+
+    Args:
+        request: The FastAPI request object
+
+    Returns:
+        The CAN tracking repository
+
+    Raises:
+        RuntimeError: If the repository is not available
+    """
+    # First try to get from service registry
+    if hasattr(request.app.state, "service_registry"):
+        service_registry = request.app.state.service_registry
+        if service_registry.has_service("can_tracking_repository"):
+            return service_registry.get_service("can_tracking_repository")
+
+    # Fallback to get from AppState
+    app_state = get_app_state(request)
+    if hasattr(app_state, "_can_tracking_repo"):
+        return app_state._can_tracking_repo
+
+    msg = "CAN tracking repository not initialized"
+    raise RuntimeError(msg)
+
+
+def get_entity_service_v2(request: Request) -> Any:
+    """
+    Get the EntityServiceV2 with repository dependencies injected.
+
+    This is part of Phase 2R.3 migration pattern - services get repositories
+    directly instead of AppState.
+
+    Args:
+        request: The FastAPI request object
+
+    Returns:
+        The EntityServiceV2 instance
+
+    Raises:
+        RuntimeError: If required dependencies are not available
+    """
+    # Check if already cached
+    if hasattr(request.app.state, "entity_service_v2"):
+        return request.app.state.entity_service_v2
+
+    # Create with repository dependencies
+    from backend.services.entity_service_v2 import EntityServiceV2
+
+    websocket_manager = get_websocket_manager(request)
+    entity_state_repo = get_entity_state_repository(request)
+    rvc_config_repo = get_rvc_config_repository(request)
+
+    service = EntityServiceV2(
+        websocket_manager=websocket_manager,
+        entity_state_repository=entity_state_repo,
+        rvc_config_repository=rvc_config_repo,
+    )
+
+    # Cache for reuse
+    request.app.state.entity_service_v2 = service
+
+    return service
+
+
+def get_can_service_v2(request: Request) -> Any:
+    """
+    Get the CANServiceV2 with repository dependencies injected.
+
+    This is part of Phase 2R.3 migration pattern - services get repositories
+    directly instead of AppState.
+
+    Args:
+        request: The FastAPI request object
+
+    Returns:
+        The CANServiceV2 instance
+
+    Raises:
+        RuntimeError: If required dependencies are not available
+    """
+    # Check if already cached
+    if hasattr(request.app.state, "can_service_v2"):
+        return request.app.state.can_service_v2
+
+    # Create with repository dependencies
+    from backend.services.can_service_v2 import CANServiceV2
+
+    can_tracking_repo = get_can_tracking_repository(request)
+    rvc_config_repo = get_rvc_config_repository(request)
+
+    # Get controller source address from app state
+    app_state = get_app_state(request)
+    controller_addr = app_state.get_controller_source_addr()
+
+    service = CANServiceV2(
+        can_tracking_repository=can_tracking_repo,
+        rvc_config_repository=rvc_config_repo,
+        controller_source_addr=controller_addr,
+    )
+
+    # Cache for reuse
+    request.app.state.can_service_v2 = service
+
+    return service
+
+
+def get_rvc_service_v2(request: Request) -> Any:
+    """
+    Get the RVCServiceV2 with repository dependencies injected.
+
+    This is part of Phase 2R.3 migration pattern - services get repositories
+    directly instead of AppState.
+
+    Args:
+        request: The FastAPI request object
+
+    Returns:
+        The RVCServiceV2 instance
+
+    Raises:
+        RuntimeError: If required dependencies are not available
+    """
+    # Check if already cached
+    if hasattr(request.app.state, "rvc_service_v2"):
+        return request.app.state.rvc_service_v2
+
+    # Create with repository dependencies
+    from backend.services.rvc_service_v2 import RVCServiceV2
+
+    rvc_config_repo = get_rvc_config_repository(request)
+    can_tracking_repo = get_can_tracking_repository(request)
+
+    service = RVCServiceV2(
+        rvc_config_repository=rvc_config_repo,
+        can_tracking_repository=can_tracking_repo,  # Optional
+    )
+
+    # Cache for reuse
+    request.app.state.rvc_service_v2 = service
+
+    return service

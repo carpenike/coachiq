@@ -12,11 +12,16 @@ import logging
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
-    from backend.models.common import CoachInfo
     from backend.models.entity_model import EntityConfig
 
 from backend.core.entity_manager import EntityManager
 from backend.services.feature_base import Feature
+from backend.repositories import (
+    EntityStateRepository,
+    RVCConfigRepository,
+    CANTrackingRepository,
+    DiagnosticsRepository,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -57,27 +62,153 @@ class AppState(Feature):
         )
         self.controller_source_addr: int = controller_source_addr
 
-        # Entity manager for unified entity state management
-        self.entity_manager = EntityManager()
+        # Initialize internal repositories (Phase 2R.1)
+        # Try to get from ServiceRegistry first (Phase 2R.2), fallback to creating new
+        self._init_repositories()
 
-        # Configuration and mapping data
-        self.raw_device_mapping: dict[tuple[str, str], dict[str, Any]] = {}
-        self.pgn_hex_to_name_map: dict[str, str] = {}
-        self.coach_info: CoachInfo | None = None
+        # Legacy attributes maintained as properties for backward compatibility
         self.max_history_length: int = 1000
         self.history_duration: int = 24 * 3600  # 24 hours in seconds
-
-        # Non-entity state (these are not duplicated in EntityManager)
-        self.unmapped_entries: dict[str, Any] = {}
-        self.unknown_pgns: dict[str, Any] = {}
         self.config_data: dict[str, Any] = config or {}
         self.background_tasks: set[Any] = set()
-        self.pending_commands: list[Any] = []
-        self.observed_source_addresses: set[Any] = set()
-        self.known_command_status_pairs: dict[Any, Any] = {}
-        self.can_sniffer_grouped: list[Any] = []
-        self.last_seen_by_source_addr: dict[Any, Any] = {}
-        self.can_command_sniffer_log: list[Any] = []
+
+        # These will be delegated to repositories via properties
+        self._broadcast_can_sniffer_group = None
+
+    def _init_repositories(self) -> None:
+        """
+        Initialize repositories, preferring ServiceRegistry instances if available.
+
+        This supports Phase 2R.2 where repositories can be accessed independently
+        through ServiceRegistry while maintaining backward compatibility.
+        """
+        # Try to get from ServiceRegistry first
+        try:
+            import backend.main
+            if hasattr(backend.main, 'app') and hasattr(backend.main.app.state, 'service_registry'):
+                service_registry = backend.main.app.state.service_registry
+
+                # Try to get repositories from ServiceRegistry
+                if service_registry.has_service("entity_state_repository"):
+                    self._entity_state_repo = service_registry.get_service("entity_state_repository")
+                    # Share the entity manager
+                    self.entity_manager = self._entity_state_repo.entity_manager
+                    logger.info("Using EntityStateRepository from ServiceRegistry")
+                else:
+                    # Create new with backward compatibility
+                    self.entity_manager = EntityManager()
+                    self._entity_state_repo = EntityStateRepository(self.entity_manager)
+
+                if service_registry.has_service("rvc_config_repository"):
+                    self._rvc_config_repo = service_registry.get_service("rvc_config_repository")
+                    logger.info("Using RVCConfigRepository from ServiceRegistry")
+                else:
+                    self._rvc_config_repo = RVCConfigRepository()
+
+                if service_registry.has_service("can_tracking_repository"):
+                    self._can_tracking_repo = service_registry.get_service("can_tracking_repository")
+                    logger.info("Using CANTrackingRepository from ServiceRegistry")
+                else:
+                    self._can_tracking_repo = CANTrackingRepository()
+
+                if service_registry.has_service("diagnostics_repository"):
+                    self._diagnostics_repo = service_registry.get_service("diagnostics_repository")
+                    logger.info("Using DiagnosticsRepository from ServiceRegistry")
+                else:
+                    self._diagnostics_repo = DiagnosticsRepository()
+
+            else:
+                # No ServiceRegistry available, create new instances
+                self.entity_manager = EntityManager()
+                self._entity_state_repo = EntityStateRepository(self.entity_manager)
+                self._rvc_config_repo = RVCConfigRepository()
+                self._can_tracking_repo = CANTrackingRepository()
+                self._diagnostics_repo = DiagnosticsRepository()
+
+        except Exception as e:
+            logger.warning(f"Failed to get repositories from ServiceRegistry: {e}")
+            # Fallback to creating new instances
+            self.entity_manager = EntityManager()
+            self._entity_state_repo = EntityStateRepository(self.entity_manager)
+            self._rvc_config_repo = RVCConfigRepository()
+            self._can_tracking_repo = CANTrackingRepository()
+            self._diagnostics_repo = DiagnosticsRepository()
+
+    # Backward compatibility properties that delegate to repositories
+    @property
+    def unmapped_entries(self) -> dict[str, Any]:
+        """Legacy property - delegates to diagnostics repository."""
+        return self._diagnostics_repo.get_unmapped_entries()
+
+    @unmapped_entries.setter
+    def unmapped_entries(self, value: dict[str, Any]) -> None:
+        """Legacy setter - not recommended for new code."""
+        logger.warning("Direct assignment to unmapped_entries is deprecated")
+        self._diagnostics_repo.clear_unmapped_entries()
+        for k, v in value.items():
+            self._diagnostics_repo.add_unmapped_entry(k, v)
+
+    @property
+    def unknown_pgns(self) -> dict[str, Any]:
+        """Legacy property - delegates to diagnostics repository."""
+        return self._diagnostics_repo.get_unknown_pgns()
+
+    @unknown_pgns.setter
+    def unknown_pgns(self, value: dict[str, Any]) -> None:
+        """Legacy setter - not recommended for new code."""
+        logger.warning("Direct assignment to unknown_pgns is deprecated")
+        self._diagnostics_repo.clear_unknown_pgns()
+        for k, v in value.items():
+            self._diagnostics_repo.add_unknown_pgn(k, v)
+
+    @property
+    def raw_device_mapping(self) -> dict[tuple[str, str], Any]:
+        """Legacy property - delegates to RVC config repository."""
+        return self._rvc_config_repo.get_raw_device_mapping()
+
+    @property
+    def pgn_hex_to_name_map(self) -> dict[str, str]:
+        """Legacy property - returns from RVC config repository."""
+        if self._rvc_config_repo.is_loaded() and self._rvc_config_repo._config:
+            return self._rvc_config_repo._config.pgn_hex_to_name_map
+        return {}
+
+    @property
+    def coach_info(self) -> Any:
+        """Legacy property - delegates to RVC config repository."""
+        return self._rvc_config_repo.get_coach_info()
+
+    @property
+    def known_command_status_pairs(self) -> dict[Any, Any]:
+        """Legacy property - returns from RVC config repository."""
+        if self._rvc_config_repo.is_loaded() and self._rvc_config_repo._config:
+            return self._rvc_config_repo._config.known_command_status_pairs
+        return {}
+
+    @property
+    def pending_commands(self) -> list[Any]:
+        """Legacy property - returns from CAN tracking repository."""
+        return self._can_tracking_repo._pending_commands
+
+    @property
+    def observed_source_addresses(self) -> set[Any]:
+        """Legacy property - returns from CAN tracking repository."""
+        return self._can_tracking_repo._observed_source_addresses
+
+    @property
+    def can_sniffer_grouped(self) -> list[Any]:
+        """Legacy property - returns from CAN tracking repository."""
+        return self._can_tracking_repo.get_can_sniffer_grouped()
+
+    @property
+    def last_seen_by_source_addr(self) -> dict[Any, Any]:
+        """Legacy property - returns from CAN tracking repository."""
+        return self._can_tracking_repo._last_seen_by_source_addr
+
+    @property
+    def can_command_sniffer_log(self) -> list[Any]:
+        """Legacy property - returns from CAN tracking repository."""
+        return self._can_tracking_repo.get_can_sniffer_log()
 
     def __repr__(self) -> str:
         return (
@@ -87,25 +218,41 @@ class AppState(Feature):
             f"unknown_pgns={len(self.unknown_pgns)})>"
         )
 
-    async def startup(self) -> None:
-        """Initialize the state feature on startup."""
-        global app_state
-        app_state = self
+    async def startup(self, rvc_config_provider=None) -> None:
+        """
+        Initialize the state feature on startup.
+
+        Args:
+            rvc_config_provider: Optional RVCConfigProvider instance (for ServiceRegistry integration)
+        """
+        # Global assignment removed - AppState is managed by FeatureManager
+        # and accessed via app.state.app_state or dependency injection
         logger.info("Starting AppState feature")
 
         # Load entities from coach mapping file, similar to legacy system
         try:
             logger.info("Loading entity configuration from coach mapping files...")
 
-            # Get configuration paths from settings
-            from backend.core.config import get_settings
+            # Use shared config provider if available (ServiceRegistry integration)
+            if rvc_config_provider is not None:
+                logger.info("Using shared RVCConfigProvider (ServiceRegistry mode)")
 
-            settings = get_settings()
+                # Get configuration paths from provider
+                rvc_spec_path = str(rvc_config_provider._spec_path) if rvc_config_provider._spec_path else None
+                device_mapping_path = str(rvc_config_provider._device_mapping_path) if rvc_config_provider._device_mapping_path else None
 
-            rvc_spec_path = str(settings.rvc_spec_path) if settings.rvc_spec_path else None
-            device_mapping_path = (
-                str(settings.rvc_coach_mapping_path) if settings.rvc_coach_mapping_path else None
-            )
+            else:
+                logger.info("Using legacy configuration loading (fallback mode)")
+
+                # Get configuration paths from settings (legacy mode)
+                from backend.core.config import get_settings
+
+                settings = get_settings()
+
+                rvc_spec_path = str(settings.rvc_spec_path) if settings.rvc_spec_path else None
+                device_mapping_path = (
+                    str(settings.rvc_coach_mapping_path) if settings.rvc_coach_mapping_path else None
+                )
 
             logger.info(f"Using RV-C spec path: {rvc_spec_path}")
             logger.info(f"Using device mapping path: {device_mapping_path}")
@@ -121,6 +268,8 @@ class AppState(Feature):
     async def shutdown(self) -> None:
         """Clean up resources on shutdown."""
         logger.info("Shutting down AppState feature")
+
+        # Clean up background tasks
         for task in self.background_tasks:
             task.cancel()
             try:
@@ -130,6 +279,9 @@ class AppState(Feature):
             except Exception as e:
                 logger.error(f"Error during background task cancellation: {e}")
         self.background_tasks.clear()
+
+        # Clean up CAN tracking repository tasks
+        await self._can_tracking_repo.cleanup_background_tasks()
 
     @property
     def health(self) -> str:
@@ -141,143 +293,83 @@ class AppState(Feature):
         Set the function to broadcast CAN sniffer groups.
         """
         self._broadcast_can_sniffer_group = broadcast_func
+        self._can_tracking_repo.set_broadcast_function(broadcast_func)
 
     def get_observed_source_addresses(self) -> list[int]:
         """Returns a sorted list of all observed CAN source addresses."""
-        return sorted(self.observed_source_addresses)
+        return self._can_tracking_repo.get_observed_source_addresses()
 
     def add_pending_command(self, entry) -> None:
         """
         Add a pending command and clean up old entries.
         """
-        self.pending_commands.append(entry)
-        now = entry["timestamp"]
-        new_pending = []
-        for cmd in self.pending_commands:
-            if now - cmd["timestamp"] < 2.0:
-                new_pending.append(cmd)
-        self.pending_commands[:] = new_pending
+        self._can_tracking_repo.add_pending_command(entry)
 
     def try_group_response(self, response_entry) -> bool:
         """
         Try to group a response (RX) with a pending command (TX).
         """
-        now = response_entry["timestamp"]
-        instance = response_entry.get("instance")
-        dgn = response_entry.get("dgn_hex")
-
-        for cmd in self.pending_commands:
-            cmd_dgn = cmd.get("dgn_hex")
-            if (
-                cmd.get("instance") == instance
-                and isinstance(cmd_dgn, str)
-                and self.known_command_status_pairs.get(cmd_dgn) == dgn
-                and 0 <= now - cmd["timestamp"] < 1.0
-            ):
-                group = {
-                    "command": cmd,
-                    "response": response_entry,
-                    "confidence": "high",
-                    "reason": "mapping",
-                }
-                self.can_sniffer_grouped.append(group)
-                # Limit grouped entries to prevent memory buildup (keep last 500 groups)
-                if len(self.can_sniffer_grouped) > 500:
-                    self.can_sniffer_grouped.pop(0)
-                if self._broadcast_can_sniffer_group:
-                    task = asyncio.create_task(self._broadcast_can_sniffer_group(group))
-                    self.background_tasks.add(task)
-                    task.add_done_callback(self.background_tasks.discard)
-                self.pending_commands.remove(cmd)
-                return True
-
-        for cmd in self.pending_commands:
-            if cmd.get("instance") == instance and 0 <= now - cmd["timestamp"] < 0.5:
-                group = {
-                    "command": cmd,
-                    "response": response_entry,
-                    "confidence": "low",
-                    "reason": "heuristic",
-                }
-                self.can_sniffer_grouped.append(group)
-                # Limit grouped entries to prevent memory buildup (keep last 500 groups)
-                if len(self.can_sniffer_grouped) > 500:
-                    self.can_sniffer_grouped.pop(0)
-                if self._broadcast_can_sniffer_group:
-                    task = asyncio.create_task(self._broadcast_can_sniffer_group(group))
-                    self.background_tasks.add(task)
-                    task.add_done_callback(self.background_tasks.discard)
-                self.pending_commands.remove(cmd)
-                return True
-        return False
+        # Use async method synchronously - this is safe since we're not awaiting
+        # TODO: Consider making this method async in future refactoring
+        loop = asyncio.get_event_loop()
+        if loop.is_running():
+            # If we're already in an async context, schedule as a task
+            task = asyncio.create_task(
+                self._can_tracking_repo.try_group_response(
+                    response_entry,
+                    self.known_command_status_pairs
+                )
+            )
+            # Return False for now, the grouping will happen asynchronously
+            return False
+        else:
+            # Synchronous context - run the coroutine
+            return loop.run_until_complete(
+                self._can_tracking_repo.try_group_response(
+                    response_entry,
+                    self.known_command_status_pairs
+                )
+            )
 
     def get_can_sniffer_grouped(self) -> list:
         """Returns the list of grouped CAN sniffer entries."""
-        return list(self.can_sniffer_grouped)
+        return self._can_tracking_repo.get_can_sniffer_grouped()
 
     def update_last_seen_by_source_addr(self, entry) -> None:
         """
         Update the mapping of source address to the last-seen CAN sniffer entry.
         """
-        src = entry.get("source_addr")
-        if src is not None:
-            self.last_seen_by_source_addr[src] = entry
-            self.observed_source_addresses.add(src)
+        # This is handled internally by add_can_sniffer_entry now
+        pass
 
     def add_can_sniffer_entry(self, entry) -> None:
         """
         Adds a CAN command/control message entry to the sniffer log.
         """
-        self.can_command_sniffer_log.append(entry)
-        self.update_last_seen_by_source_addr(entry)
-        if len(self.can_command_sniffer_log) > 1000:
-            self.can_command_sniffer_log.pop(0)
+        self._can_tracking_repo.add_can_sniffer_entry(entry)
         self.notify_network_map_ws()
 
     def get_can_sniffer_log(self) -> list:
         """Returns the current CAN command/control sniffer log."""
-        return list(self.can_command_sniffer_log)
+        return self._can_tracking_repo.get_can_sniffer_log()
 
     def get_last_known_brightness(self, entity_id) -> int:
         """
         Retrieves the last known brightness for a given light entity.
         """
-        entity = self.entity_manager.get_entity(entity_id)
-        if entity and entity.last_known_brightness is not None:
-            return entity.last_known_brightness
-        return 100  # Default brightness
+        return self._entity_state_repo.get_last_known_brightness(entity_id)
 
     def set_last_known_brightness(self, entity_id, brightness) -> None:
         """
         Sets the last known brightness for a given light entity.
         """
-        entity = self.entity_manager.get_entity(entity_id)
-        if entity:
-            entity.last_known_brightness = brightness
+        self._entity_state_repo.set_last_known_brightness(entity_id, brightness)
 
     def update_entity_state_and_history(self, entity_id, payload_to_store) -> None:
         """
         Updates the state and history for a given entity using the EntityManager.
         """
-        # Update the entity in the EntityManager (this handles both state and history)
-        entity = self.entity_manager.get_entity(entity_id)
-        if entity:
-            entity.update_state(payload_to_store)
-        else:
-            # If entity doesn't exist in the EntityManager, try to register it
-            # This can happen during runtime when new entities are discovered
-            from backend.models.entity_model import EntityConfig
-
-            # Create a minimal config from the payload
-            config = EntityConfig(
-                device_type=payload_to_store.get("device_type", "unknown"),
-                suggested_area=payload_to_store.get("suggested_area", "Unknown"),
-                friendly_name=payload_to_store.get("friendly_name"),
-                capabilities=payload_to_store.get("capabilities", []),
-                groups=payload_to_store.get("groups", []),
-            )
-            entity = self.entity_manager.register_entity(entity_id, config)
-            entity.update_state(payload_to_store)
+        self._entity_state_repo.update_entity_state_and_history(entity_id, payload_to_store)
 
     def populate_app_state(
         self, rvc_spec_path=None, device_mapping_path=None, load_config_func=None
@@ -289,51 +381,71 @@ class AppState(Feature):
             f"populate_app_state: rvc_spec_path={rvc_spec_path}, device_mapping_path={device_mapping_path}, load_config_func={load_config_func}"
         )
         logger.info("populate_app_state: Starting entity/config loading...")
+
+        # Use the new structured config loader by default
         if load_config_func is None:
-            from backend.integrations.rvc.decode import load_config_data
+            from backend.integrations.rvc.decode import load_config_data_v2
 
-            load_config_func = load_config_data
+            # Load structured configuration
+            rvc_config = load_config_data_v2(rvc_spec_path, device_mapping_path)
 
-        logger.info(f"populate_app_state: Using load_config_func={load_config_func}")
+            # Extract values from structured config for compatibility
+            decoder_map_val = rvc_config.dgn_dict
+            spec_meta_val = dict(rvc_config.spec_meta.dict())
+            mapping_dict_val = rvc_config.mapping_dict
+            entity_map_val = rvc_config.entity_map
+            entity_ids_val = rvc_config.entity_ids
+            inst_map_val = rvc_config.inst_map
+            unique_instances_val = rvc_config.unique_instances
+            pgn_hex_to_name_map_val = rvc_config.pgn_hex_to_name_map
+            dgn_pairs_val = rvc_config.dgn_pairs
+            coach_info_val = rvc_config.coach_info
+
+            logger.info("populate_app_state: Using structured RVC configuration (load_config_data_v2)")
+        else:
+            # Support legacy tuple return for backward compatibility
+            logger.info(f"populate_app_state: Using custom load_config_func={load_config_func}")
+
+            try:
+                processed_data_tuple = load_config_func(rvc_spec_path, device_mapping_path)
+            except Exception as e:
+                logger.error(f"populate_app_state: load_config_func failed: {e}")
+                raise
+
+            (
+                decoder_map_val,
+                spec_meta_val,
+                mapping_dict_val,
+                entity_map_val,
+                entity_ids_val,
+                inst_map_val,
+                unique_instances_val,
+                pgn_hex_to_name_map_val,
+                dgn_pairs_val,
+                coach_info_val,
+            ) = processed_data_tuple
 
         # Clear previous state
-        self.unknown_pgns.clear()
-        self.unmapped_entries.clear()
+        self._diagnostics_repo.clear_unknown_pgns()
+        self._diagnostics_repo.clear_unmapped_entries()
         logger.info("populate_app_state: Cleared in-memory state.")
-
-        try:
-            processed_data_tuple = load_config_func(rvc_spec_path, device_mapping_path)
-        except Exception as e:
-            logger.error(f"populate_app_state: load_config_func failed: {e}")
-            raise
-
-        (
-            decoder_map_val,
-            spec_meta_val,
-            mapping_dict_val,
-            entity_map_val,
-            entity_ids_val,
-            inst_map_val,
-            unique_instances_val,
-            pgn_hex_to_name_map_val,
-            dgn_pairs_val,
-            coach_info_val,
-        ) = processed_data_tuple
 
         logger.info(f"populate_app_state: entity_map has {len(entity_map_val)} entries.")
         logger.info(f"populate_app_state: entity_ids has {len(entity_ids_val)} entries.")
 
-        # Store configuration data
-        self.raw_device_mapping = mapping_dict_val
-        self.pgn_hex_to_name_map = pgn_hex_to_name_map_val
-        self.coach_info = coach_info_val
-
-        if dgn_pairs_val:
-            self.known_command_status_pairs.clear()
-            for cmd_dgn, status_dgn in dgn_pairs_val.items():
-                # dgn_pairs_val contains command PGN -> status PGN string mappings from YAML
-                # Store the mapping of command DGN to status DGN for legacy compatibility
-                self.known_command_status_pairs[cmd_dgn.upper()] = status_dgn.upper()
+        # Load configuration into RVC repository
+        self._rvc_config_repo.load_configuration(
+            decoder_map=decoder_map_val,
+            spec_meta=spec_meta_val,
+            mapping_dict=mapping_dict_val,
+            entity_map=entity_map_val,
+            entity_ids=entity_ids_val,
+            inst_map=inst_map_val,
+            unique_instances=unique_instances_val,
+            pgn_hex_to_name_map=pgn_hex_to_name_map_val,
+            dgn_pairs=dgn_pairs_val,
+            coach_info=coach_info_val
+        )
 
         logger.info("Application state populated from configuration data.")
 
@@ -357,8 +469,8 @@ class AppState(Feature):
         )
         logger.info(f"Found {light_count} light entities in entity configs")
 
-        # Update the entity manager with loaded entities
-        self.entity_manager.bulk_load_entities(entity_configs)
+        # Update the entity repository with loaded entities
+        self._entity_state_repo.bulk_load_entities(entity_configs)
 
         # Initialize light states
         from backend.integrations.rvc.decode import decode_payload
@@ -379,15 +491,32 @@ class AppState(Feature):
 
     def get_health_status(self) -> dict:
         """
-        Return a mock health status for testing and API compatibility.
+        Return aggregated health status from all repositories.
         """
+        # Get health from each repository
+        entity_health = self._entity_state_repo.get_health_status()
+        rvc_health = self._rvc_config_repo.get_health_status()
+        can_health = self._can_tracking_repo.get_health_status()
+
+        # Aggregate health
+        all_healthy = (
+            entity_health.get("healthy", False) and
+            rvc_health.get("healthy", False) and
+            can_health.get("healthy", False)
+        )
+
         return {
-            "status": "healthy",
+            "status": "healthy" if all_healthy else "degraded",
             "components": {
-                "entities": len(self.entity_manager.get_entity_ids()),
-                "unmapped_entries": len(self.unmapped_entries),
-                "unknown_pgns": len(self.unknown_pgns),
+                "entities": entity_health.get("entity_count", 0),
+                "unmapped_entries": entity_health.get("unmapped_count", 0),
+                "unknown_pgns": rvc_health.get("unknown_pgns", 0),
             },
+            "repositories": {
+                "entity_state": entity_health,
+                "rvc_config": rvc_health,
+                "can_tracking": can_health,
+            }
         }
 
     def start_can_sniffer(self, interface_name: str) -> None:
@@ -464,65 +593,28 @@ class CANSniffer:
         pass
 
 
-app_state = None
+# Global app_state variable removed - use dependency injection instead
 
 
 def initialize_app_state(manager, config) -> AppState:
     """
-    Initialize the application state singleton.
-    """
-    global app_state
+    Initialize the application state and register with feature manager.
 
-    if app_state is None:
-        app_state = AppState(
-            name="app_state",
-            enabled=True,
-            core=True,
-            config=config,
-            dependencies=[],
-        )
-        manager.register_feature(app_state)
+    Note: The AppState instance is managed by FeatureManager and stored
+    in app.state. Access it via dependency injection or app.state.app_state.
+    """
+    # Check if already registered with manager
+    existing = manager.get_feature("app_state")
+    if existing:
+        return existing
+
+    app_state = AppState(
+        name="app_state",
+        enabled=True,
+        core=True,
+        config=config,
+        dependencies=[],
+    )
+    manager.register_feature(app_state)
 
     return app_state
-
-
-def get_state() -> dict:
-    """Get the current entity state dictionary."""
-    if app_state:
-        return app_state.entity_manager.to_api_response()
-    return {}
-
-
-def get_history() -> dict:
-    """Get the entity history dictionary."""
-    if app_state:
-        history_dict = {}
-        for entity_id, entity in app_state.entity_manager.get_all_entities().items():
-            history_dict[entity_id] = [state.model_dump() for state in entity.get_history()]
-        return history_dict
-    return {}
-
-
-def get_entity_by_id(entity_id) -> dict | None:
-    """
-    Get an entity by its ID.
-    """
-    if app_state:
-        entity = app_state.entity_manager.get_entity(entity_id)
-        if entity:
-            return entity.to_dict()
-    return None
-
-
-def get_entity_history(entity_id, count=None) -> list:
-    """
-    Get historical data for an entity.
-    """
-    if not app_state:
-        return []
-
-    entity = app_state.entity_manager.get_entity(entity_id)
-    if not entity:
-        return []
-
-    return [state.model_dump() for state in entity.get_history(count=count)]

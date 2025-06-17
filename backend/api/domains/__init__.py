@@ -18,14 +18,17 @@ Safety-Critical Implementation:
 """
 
 import logging
-from typing import Dict, Callable
+from collections.abc import Callable
+from typing import Dict
+
 from fastapi import FastAPI
+
 from backend.services.feature_manager import FeatureManager
 
 logger = logging.getLogger(__name__)
 
 # Registry of domain router registration functions
-DOMAIN_ROUTERS: Dict[str, Callable] = {}
+DOMAIN_ROUTERS: dict[str, Callable] = {}
 
 def register_domain_router(domain_name: str):
     """Decorator to register domain router factory functions"""
@@ -57,7 +60,7 @@ def register_all_domain_routers(app: FastAPI, feature_manager: FeatureManager) -
 
 # Import domain modules to trigger registration
 try:
-    from . import entities, diagnostics, networks, system
+    from . import diagnostics, entities, networks, system
     # Explicitly reference imported modules to satisfy linter
     _domain_modules = [entities, diagnostics, networks, system]
 except ImportError as e:

@@ -112,28 +112,32 @@ pending_commands = [cmd for cmd in pending_commands
 - **DiagnosticsHandler** (`backend/integrations/diagnostics/handler.py`): Cross-protocol diagnostics with fault correlation
 - **PerformanceAnalyticsFeature** (`backend/integrations/analytics/feature.py`): Performance monitoring with Prometheus metrics
 
-#### Service Access Pattern
+#### Service Access Pattern (UPDATED - Use dependencies_v2)
 ```python
-# ALWAYS access services through dependency injection
-from backend.core.dependencies import (
-    get_feature_manager_from_request, get_entity_service, get_app_state,
+# 🚨 CRITICAL: ALWAYS use dependencies_v2 for service access
+from backend.core.dependencies_v2 import (
+    get_feature_manager, get_entity_service, get_app_state,
     get_database_manager, get_persistence_service, get_config_service,
     get_can_service, get_can_interface_service, get_websocket_manager
 )
 
 # Multi-Protocol Service Dependencies (REQUIRED for advanced integrations)
-from backend.core.dependencies import (
+from backend.core.dependencies_v2 import (
     get_j1939_service, get_firefly_service, get_spartan_k2_service,
     get_multi_network_manager, get_diagnostics_handler, get_performance_analytics
 )
 
+# ALWAYS use type annotations with Depends()
+from typing import Annotated
+from fastapi import Depends
+
 @router.get("/entities")
 async def get_entities(
-    entity_service: EntityService = Depends(get_entity_service),
-    feature_manager: FeatureManager = Depends(get_feature_manager_from_request)
+    entity_service: Annotated[EntityService, Depends(get_entity_service)],
+    feature_manager: Annotated[FeatureManager, Depends(get_feature_manager)]
 ):
     """Use EntityService for entity operations, FeatureManager for feature access."""
-    entities = await entity_service.get_all_entities()
+    entities = await entity_service.list_entities()  # Note: method names may differ
     return entities
 
 # Cross-Protocol Diagnostics Pattern (NEW)

@@ -11,7 +11,7 @@ from typing import Any
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 
-from backend.core.dependencies import (
+from backend.core.dependencies_v2 import (
     get_authenticated_admin,
     get_authenticated_user,
     get_safety_service,

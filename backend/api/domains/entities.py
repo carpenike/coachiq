@@ -12,20 +12,21 @@ This router integrates with existing EntityService but provides v2 API patterns.
 """
 
 import logging
-from typing import Annotated, Any, Dict, List, Optional
+from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from pydantic import BaseModel, Field
 
 from backend.api.domains import register_domain_router
-from backend.core.dependencies import (
+from backend.core.dependencies_v2 import (
+    get_authenticated_admin,
+    get_authenticated_user,
     get_entity_domain_service,
     get_entity_service,
-    get_feature_manager_from_request,
-    get_authenticated_user,
-    get_authenticated_admin,
+    get_feature_manager,
 )
-from backend.models.entity import ControlCommand
+
+# ControlCommand import removed - not used in this file
 
 logger = logging.getLogger(__name__)
 
@@ -92,7 +93,7 @@ class EntitiesQueryParamsV2(BaseModel):
 
 def _check_domain_api_enabled(request: Request) -> None:
     """Check if domain API v2 is enabled, raise 404 if disabled"""
-    feature_manager = get_feature_manager_from_request(request)
+    feature_manager = get_feature_manager(request)
     if not feature_manager.is_enabled("domain_api_v2"):
         raise HTTPException(
             status_code=404,
@@ -115,7 +116,7 @@ def create_entities_router() -> APIRouter:
         """Helper to categorize entities for debugging"""
         categories = {}
         for entity_id, entity_data in entities.items():
-            device_type = entity_data.get('device_type', 'unknown')
+            device_type = entity_data.get("device_type", "unknown")
             if device_type not in categories:
                 categories[device_type] = []
             categories[device_type].append(entity_id)
@@ -129,10 +130,11 @@ def create_entities_router() -> APIRouter:
     async def health_check(request: Request) -> dict[str, Any]:
         """Comprehensive health check for Pi RV deployment debugging"""
         try:
-            import psutil
             import datetime
 
-            feature_manager = get_feature_manager_from_request(request)
+            import psutil
+
+            feature_manager = get_feature_manager(request)
             entity_service = get_entity_service(request)
             domain_service = get_entity_domain_service(request)
 
@@ -202,12 +204,13 @@ def create_entities_router() -> APIRouter:
     async def get_debug_info(request: Request) -> dict[str, Any]:
         """Comprehensive debug information for RV Pi troubleshooting"""
         try:
-            import platform
-            import psutil
             import datetime
             import os
+            import platform
 
-            feature_manager = get_feature_manager_from_request(request)
+            import psutil
+
+            feature_manager = get_feature_manager(request)
             entity_service = get_entity_service(request)
             domain_service = get_entity_domain_service(request)
 
@@ -218,7 +221,7 @@ def create_entities_router() -> APIRouter:
             # Network interfaces (important for RV CAN networks)
             network_interfaces = []
             for interface, addrs in psutil.net_if_addrs().items():
-                if interface.startswith('can') or 'can' in interface.lower():
+                if interface.startswith("can") or "can" in interface.lower():
                     network_interfaces.append({
                         "name": interface,
                         "addresses": [addr.address for addr in addrs]
@@ -241,8 +244,8 @@ def create_entities_router() -> APIRouter:
                 "resources": {
                     "cpu_count": psutil.cpu_count(),
                     "memory_total_gb": round(psutil.virtual_memory().total / 1024**3, 2),
-                    "disk_free_gb": round(psutil.disk_usage('/').free / 1024**3, 2),
-                    "load_average": os.getloadavg() if hasattr(os, 'getloadavg') else "N/A"
+                    "disk_free_gb": round(psutil.disk_usage("/").free / 1024**3, 2),
+                    "load_average": os.getloadavg() if hasattr(os, "getloadavg") else "N/A"
                 },
 
                 "can_networks": {
@@ -519,7 +522,7 @@ def create_entities_router() -> APIRouter:
             # For Pi deployment, always use the safe domain service
             from backend.services.entity_domain_service import (
                 BulkSafetyOperationRequestV2,
-                SafetyControlCommandV2
+                SafetyControlCommandV2,
             )
 
             domain_service = get_entity_domain_service(request)

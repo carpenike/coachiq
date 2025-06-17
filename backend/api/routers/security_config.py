@@ -15,10 +15,10 @@ import logging
 from typing import Any, Dict
 
 from fastapi import APIRouter, Depends, HTTPException, Request
-from fastapi import status
+from starlette import status
 from pydantic import BaseModel, Field
 
-from backend.core.dependencies import get_authenticated_admin, get_security_audit_service
+from backend.core.dependencies_v2 import get_authenticated_admin, get_security_audit_service
 from backend.services.security_config_service import (
     SecurityConfiguration,
     SecurityConfigService,

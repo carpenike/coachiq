@@ -13,49 +13,15 @@ from typing import Any
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from pydantic import BaseModel, Field
 
-from backend.core.dependencies import get_authenticated_admin, get_authenticated_user
+from backend.core.dependencies_v2 import get_authenticated_admin, get_authenticated_user, get_pin_manager, get_security_audit_service
 from backend.services.pin_manager import PINManager
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/pin", tags=["pin-authentication"])
 
-# Global PIN manager instance (will be initialized in main.py)
-_pin_manager: PINManager | None = None
-
-
-def get_pin_manager(request: Request | None = None) -> PINManager:
-    """Get the PIN manager instance."""
-    global _pin_manager
-    if _pin_manager is None:
-        if request and hasattr(request.app.state, "pin_manager"):
-            _pin_manager = request.app.state.pin_manager
-        else:
-            # Fallback for testing
-            from backend.services.pin_manager import PINConfig
-
-            _pin_manager = PINManager(PINConfig())
-
-    # Ensure we return a valid PINManager instance
-    if _pin_manager is None:
-        from backend.services.pin_manager import PINConfig
-
-        _pin_manager = PINManager(PINConfig())
-
-    return _pin_manager
-
-
-def get_security_audit_service(request: Request):
-    """Get security audit service for enhanced logging."""
-    if hasattr(request.app.state, "security_audit_service"):
-        return request.app.state.security_audit_service
-    return None
-
-
-def set_pin_manager(pin_manager: PINManager) -> None:
-    """Set the PIN manager instance (called from main.py)."""
-    global _pin_manager
-    _pin_manager = pin_manager
+# PIN manager and security audit service are now accessed via standardized dependencies
+# This eliminates global service variables and app.state access patterns
 
 
 # Request/Response Models
@@ -135,6 +101,8 @@ async def validate_pin(
     request: Request,
     pin_request: PINValidationRequest,
     user: dict = Depends(get_authenticated_user),
+    pin_manager: PINManager = Depends(get_pin_manager),
+    security_service = Depends(get_security_audit_service),
 ) -> PINValidationResponse:
     """
     Validate a PIN and create authorization session.
@@ -144,7 +112,6 @@ async def validate_pin(
     operations and multi-use for maintenance operations.
     """
     try:
-        pin_manager = get_pin_manager(request)
         user_id = user["user_id"]
 
         # Get client IP for logging
@@ -154,9 +121,6 @@ async def validate_pin(
                 client_ip = request.client.host  # type: ignore
         except AttributeError:
             client_ip = None
-
-        # Enhanced security logging
-        security_service = get_security_audit_service(request)
 
         # Validate PIN
         session_id = await pin_manager.validate_pin(
@@ -257,6 +221,7 @@ async def authorize_operation(
     request: Request,
     auth_request: OperationAuthorizationRequest,
     user: dict = Depends(get_authenticated_user),
+    pin_manager: PINManager = Depends(get_pin_manager),
 ) -> OperationAuthorizationResponse:
     """
     Authorize an operation using PIN session.
@@ -266,11 +231,10 @@ async def authorize_operation(
     operations (maintenance).
     """
     try:
-        pin_manager = get_pin_manager(request)
         user_id = user["user_id"]
 
         # Check if session exists and get info before authorization
-        session_info = pin_manager.get_session_info(auth_request.session_id)
+        session_info = await pin_manager.get_session_info(auth_request.session_id)
         if not session_info:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND, detail="PIN session not found or expired"
@@ -292,7 +256,7 @@ async def authorize_operation(
             )
 
         # Check if session was consumed
-        session_consumed = pin_manager.get_session_info(auth_request.session_id) is None
+        session_consumed = (await pin_manager.get_session_info(auth_request.session_id)) is None
 
         logger.info(f"Operation {auth_request.operation} authorized for user {user_id}")
 

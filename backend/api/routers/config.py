@@ -25,11 +25,11 @@ from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request
 from fastapi.responses import PlainTextResponse
 
 from backend.core.config import get_settings
-from backend.core.dependencies import (
+from backend.core.dependencies_v2 import (
     get_app_state,
     get_can_interface_service,
     get_config_service,
-    get_feature_manager_from_request,
+    get_feature_manager,
     get_github_update_checker,
 )
 from backend.models.github_update import GitHubUpdateStatus
@@ -241,7 +241,7 @@ async def get_feature_status(request: Request) -> dict[str, Any]:
     their health status, and configuration details.
     """
     logger.debug("GET /status/features - Feature status requested")
-    feature_manager = get_feature_manager_from_request(request)
+    feature_manager = get_feature_manager(request)
 
     all_features = feature_manager.get_all_features()
     enabled_features = feature_manager.get_enabled_features()
@@ -330,7 +330,7 @@ async def get_settings_overview():
 
 @router.get("/config/features")
 async def get_enhanced_feature_status(
-    feature_manager: Annotated[Any, Depends(get_feature_manager_from_request)],
+    feature_manager: Annotated[Any, Depends(get_feature_manager)],
 ):
     """Get current feature status and availability (enhanced version)."""
     all_features = feature_manager.get_all_features()

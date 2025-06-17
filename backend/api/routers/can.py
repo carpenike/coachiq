@@ -28,7 +28,7 @@ from fastapi import (
 )
 from pydantic import BaseModel, Field
 
-from backend.core.dependencies import get_can_service, get_feature_manager_from_request
+from backend.core.dependencies_v2 import get_can_service, get_feature_manager
 
 # Import buses from the old structure for compatibility
 from backend.integrations.can.manager import buses
@@ -59,7 +59,7 @@ canbus_scan_ws_clients: set[WebSocket] = set()
 
 def _check_can_interface_feature_enabled(request: Request) -> None:
     """Check if can_interface feature is enabled, raise 404 if disabled."""
-    feature_manager = get_feature_manager_from_request(request)
+    feature_manager = get_feature_manager(request)
     if not feature_manager.is_enabled("can_interface"):
         raise HTTPException(status_code=404, detail="can_interface feature is disabled")
 

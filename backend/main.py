@@ -26,7 +26,10 @@ from slowapi.errors import RateLimitExceeded
 
 from backend.api.router_config import configure_routers
 from backend.core.config import get_settings
-from backend.core.dependencies import get_app_state, get_feature_manager_from_request
+from backend.core.dependencies_v2 import get_app_state, get_feature_manager
+from backend.core.service_registry import ServiceStatus
+from backend.core.service_registry_v2 import EnhancedServiceRegistry
+from backend.core.service_dependency_resolver import DependencyType, ServiceDependency
 from backend.core.logging_config import configure_unified_logging, setup_early_logging
 from backend.core.metrics import initialize_backend_metrics
 from backend.integrations.registration import register_custom_features
@@ -37,14 +40,15 @@ from backend.middleware.validation import RuntimeValidationMiddleware
 from backend.services.analytics_dashboard_service import AnalyticsDashboardService
 from backend.services.auth_manager import AccountLockedError
 from backend.services.can_interface_service import CANInterfaceService
-from backend.services.can_service import CANService
+
+# CANService import removed - not used in this file
 from backend.services.config_service import ConfigService
-from backend.services.device_discovery_service import DeviceDiscoveryService
 from backend.services.docs_service import DocsService
-from backend.services.entity_service import EntityService
-from backend.services.feature_manager import get_feature_manager
+
+# EntityService import removed - not used in this file
 from backend.services.predictive_maintenance_service import PredictiveMaintenanceService
-from backend.services.rvc_service import RVCService
+
+# RVCService import removed - not used in this file
 from backend.services.safety_service import SafetyService
 from backend.services.vector_service import VectorService
 from backend.services.pin_manager import PINManager, PINConfig
@@ -63,41 +67,242 @@ logger = logging.getLogger(__name__)
 SERVER_START_TIME = time.time()
 
 
+async def _configure_service_startup_stages(service_registry):
+    """
+    Configure EnhancedServiceRegistry with rich service definitions and dependencies.
+
+    This function uses the enhanced service registry features to provide:
+    - Automatic dependency resolution and stage calculation
+    - Rich metadata for each service (tags, descriptions)
+    - Dependency types (REQUIRED, OPTIONAL, RUNTIME)
+    - Better error messages and circular dependency detection
+    """
+
+    # Define services with rich metadata using EnhancedServiceRegistry
+    # The registry will automatically calculate stages based on dependencies
+
+    # Core Configuration Services
+    service_registry.register_service(
+        name="app_settings",
+        init_func=_init_app_settings,
+        dependencies=[],  # No dependencies
+        description="Application configuration and settings",
+        tags={"core", "configuration"},
+        health_check=lambda s: {"healthy": True, "settings_loaded": s is not None},
+    )
+
+    service_registry.register_service(
+        name="rvc_config",
+        init_func=_init_rvc_config_provider,
+        dependencies=[],  # No dependencies
+        description="RV-C specification and device mapping configuration",
+        tags={"core", "configuration", "rvc"},
+        health_check=lambda p: {"healthy": p.initialized, "spec_loaded": p._spec_data is not None},
+    )
+
+    # Core Infrastructure Services
+    service_registry.register_service(
+        name="core_services",
+        init_func=_init_core_services,
+        dependencies=[ServiceDependency("app_settings", DependencyType.REQUIRED)],
+        description="Database and persistence infrastructure",
+        tags={"core", "infrastructure", "database"},
+        health_check=lambda cs: {"healthy": cs is not None, "database_connected": True},
+    )
+
+    # Security and Event Services
+    service_registry.register_service(
+        name="security_event_manager",
+        init_func=_init_security_event_manager,
+        dependencies=[ServiceDependency("core_services", DependencyType.REQUIRED)],
+        description="Security event logging and audit trail management",
+        tags={"security", "events", "audit"},
+        health_check=lambda sem: {"healthy": sem is not None, "audit_enabled": True},
+    )
+
+    service_registry.register_service(
+        name="device_discovery_service",
+        init_func=_init_device_discovery_service,
+        dependencies=[
+            ServiceDependency("rvc_config", DependencyType.REQUIRED),
+            ServiceDependency("can_service", DependencyType.OPTIONAL),  # Can start without CAN
+        ],
+        description="RV-C device discovery and network scanning",
+        tags={"discovery", "rvc", "network"},
+        health_check=lambda dds: {"healthy": dds is not None, "discovery_active": True},
+    )
+
+    # Add more service definitions that should be managed by ServiceRegistry
+    # Note: Feature-based services remain with FeatureManager for now
+
+    # Config service will be registered after FeatureManager initializes app_state
+    # This is a temporary measure until app_state is migrated to ServiceRegistry
+
+    service_registry.register_service(
+        name="security_config_service",
+        init_func=lambda: SecurityConfigService(),
+        dependencies=[],
+        description="Centralized security configuration management",
+        tags={"security", "configuration"},
+        health_check=lambda scs: {"healthy": scs is not None, "config_loaded": True},
+    )
+
+    service_registry.register_service(
+        name="pin_manager",
+        init_func=lambda: _init_pin_manager(
+            service_registry.get_service("security_config_service")
+        ),
+        dependencies=[ServiceDependency("security_config_service", DependencyType.REQUIRED)],
+        description="PIN-based authorization for safety operations",
+        tags={"security", "safety", "authentication"},
+        health_check=lambda pm: {"healthy": pm is not None, "pin_enabled": True},
+    )
+
+    service_registry.register_service(
+        name="security_audit_service",
+        init_func=lambda: _init_security_audit_service(
+            service_registry.get_service("security_config_service")
+        ),
+        dependencies=[ServiceDependency("security_config_service", DependencyType.REQUIRED)],
+        description="Security audit logging and rate limiting",
+        tags={"security", "audit", "monitoring"},
+        health_check=lambda sas: {"healthy": sas is not None, "audit_active": True},
+    )
+
+    service_registry.register_service(
+        name="network_security_service",
+        init_func=lambda: NetworkSecurityService(
+            service_registry.get_service("security_config_service")
+        ),
+        dependencies=[ServiceDependency("security_config_service", DependencyType.REQUIRED)],
+        description="Network security monitoring and protection",
+        tags={"security", "network", "protection"},
+        health_check=lambda nss: {"healthy": nss is not None, "monitoring_active": True},
+    )
+
+    # Register repositories (Phase 2R.2)
+    from backend.repositories.service_registration import (
+        register_repositories_with_service_registry,
+    )
+
+    register_repositories_with_service_registry(service_registry)
+    logger.info("Repositories registered with ServiceRegistry (Phase 2R.2)")
+
+
+async def _init_app_settings():
+    """Initialize application settings."""
+    settings = get_settings()
+    logger.info("Application settings loaded successfully")
+    return settings
+
+
+async def _init_rvc_config_provider():
+    """Initialize RVC configuration provider."""
+    from backend.core.config_provider import RVCConfigProvider
+
+    provider = RVCConfigProvider()
+    await provider.initialize()
+    return provider
+
+
+async def _init_core_services():
+    """Initialize core services (database, persistence)."""
+    from backend.core.services import initialize_core_services
+
+    core_services = await initialize_core_services()
+    logger.info("Core services initialized successfully")
+    return core_services
+
+
+async def _init_security_event_manager():
+    """Initialize security event manager."""
+    from backend.services.security_event_manager import SecurityEventManager
+
+    # Create a single SecurityEventManager instance for ServiceRegistry
+    manager = SecurityEventManager(name="security_event_manager", enabled=True, core=True)
+    await manager.startup()
+    logger.info("SecurityEventManager initialized via ServiceRegistry")
+    return manager
+
+
+async def _init_device_discovery_service():
+    """Initialize device discovery service."""
+    from backend.services.device_discovery_service import DeviceDiscoveryService
+
+    # Note: DeviceDiscoveryService requires CANService which is initialized later
+    # For now, create without CAN service dependency (will be injected later)
+    service = DeviceDiscoveryService(can_service=None)
+    logger.info("DeviceDiscoveryService initialized via ServiceRegistry")
+    return service
+
+
+def _init_pin_manager(security_config_service):
+    """Initialize PIN manager with centralized security config."""
+    pin_config_dict = security_config_service.get_pin_config()
+    pin_config = PINConfig(**pin_config_dict)
+    pin_manager = PINManager(pin_config)
+    logger.info("PIN Manager initialized via ServiceRegistry")
+    return pin_manager
+
+
+def _init_security_audit_service(security_config_service):
+    """Initialize security audit service with centralized config."""
+    rate_limit_config_dict = security_config_service.get_rate_limit_config()
+    rate_limit_config = RateLimitConfig(**rate_limit_config_dict)
+    security_audit_service = SecurityAuditService(rate_limit_config)
+    logger.info("Security Audit Service initialized via ServiceRegistry")
+    return security_audit_service
+
+
+# Feature manager will be initialized through the legacy path for now
+# This allows us to test the core ServiceRegistry functionality first
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     """
-    Application lifespan manager.
+    Application lifespan manager with ServiceRegistry integration.
 
-    Handles startup and shutdown logic for the FastAPI application,
-    including service initialization and cleanup.
+    Handles startup and shutdown logic using the new ServiceRegistry for
+    improved dependency management and orchestrated service lifecycle.
     """
     logger.info("Starting coachiq backend application")
+
+    # Initialize EnhancedServiceRegistry for advanced dependency management
+    service_registry = EnhancedServiceRegistry()
 
     # Initialize backend metrics FIRST to avoid collisions
     initialize_backend_metrics()
 
     try:
-        # PHASE 1: Initialize Core Services (persistence, database)
-        from backend.core.services import initialize_core_services
+        # Configure service startup stages with explicit dependencies
+        await _configure_service_startup_stages(service_registry)
 
-        logger.info("Initializing core services...")
-        core_services = await initialize_core_services()
-        logger.info("Core services initialized successfully")
+        # Execute orchestrated startup via EnhancedServiceRegistry
+        await service_registry.startup_all()
 
-        # Get application settings
-        settings = get_settings()
-        logger.info("Application settings loaded successfully")
+        # Get core services from registry
+        core_services = service_registry.get_service("core_services")
+        settings = service_registry.get_service("app_settings")
+        rvc_config_provider = service_registry.get_service("rvc_config")
+        security_event_manager = service_registry.get_service("security_event_manager")
+        device_discovery_service = service_registry.get_service("device_discovery_service")
 
-        # Note: Unified logging is already configured in run_server.py
-        # No need to reconfigure here to avoid overriding early setup
+        logger.info("ServiceRegistry startup completed successfully")
+        logger.info(f"RVC Config Summary: {rvc_config_provider.get_configuration_summary()}")
 
-        # PHASE 2: Initialize feature manager with core services
+        # Continue with legacy feature manager initialization
+        # (This will be migrated to ServiceRegistry in future phases)
+        from backend.services.feature_manager import get_feature_manager
+
         feature_manager = get_feature_manager()
         feature_manager.set_core_services(core_services)
         logger.info("Feature manager initialized with core services")
 
-        # Note: Features will be initialized from YAML configuration
-        # This ensures proper dependency resolution with entity_manager → app_state
+        # Integrate FeatureManager with ServiceRegistry for lifecycle events
+        feature_manager.integrate_with_service_registry(service_registry)
+        logger.info("FeatureManager integrated with ServiceRegistry for lifecycle events")
+
         logger.info("Features will be initialized from YAML configuration")
 
         # Start all enabled features (this will initialize entity_manager, app_state, websocket, etc.)
@@ -120,39 +325,52 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
 
         # Initialize services with correct constructor signatures
         config_service = ConfigService(app_state)
-        entity_service = EntityService(
-            websocket_manager, entity_manager_feature.get_entity_manager()
+
+        # Register config_service with ServiceRegistry now that app_state is available
+        # Use a lambda that returns the already-created instance
+        service_registry._services["config_service"] = config_service
+        logger.info("ConfigService registered with ServiceRegistry after app_state initialization")
+
+        # Use migration adapter for EntityService to support gradual migration to repositories
+        from backend.services.entity_service_migration_adapter import (
+            create_entity_service_with_migration,
         )
-        can_service = CANService(app_state)
-        rvc_service = RVCService(app_state)
+
+        entity_service = create_entity_service_with_migration(
+            websocket_manager=websocket_manager,
+            entity_manager=entity_manager_feature.get_entity_manager(),
+            service_registry=service_registry,
+        )
+        # Use migration adapter for CANService to support gradual migration to repositories
+        from backend.services.can_service_migration_adapter import create_can_service_with_migration
+
+        can_service = create_can_service_with_migration(
+            app_state=app_state,
+            service_registry=service_registry,
+        )
+        # Use migration adapter for RVCService to support gradual migration to repositories
+        from backend.services.rvc_service_migration_adapter import create_rvc_service_with_migration
+
+        rvc_service = create_rvc_service_with_migration(
+            app_state=app_state,
+            service_registry=service_registry,
+        )
         docs_service = DocsService()
         vector_service = VectorService() if settings.features.enable_vector_search else None
         can_interface_service = CANInterfaceService()
         predictive_maintenance_service = PredictiveMaintenanceService(
             core_services.database_manager
         )
-        device_discovery_service = DeviceDiscoveryService(can_service)
+        # Device discovery service now managed by ServiceRegistry
         analytics_dashboard_service = AnalyticsDashboardService()
 
-        # Initialize Security Configuration Service for centralized security management
-        security_config_service = SecurityConfigService()
-        logger.info("Security Configuration Service initialized")
+        # Get security services from ServiceRegistry (already initialized)
+        security_config_service = service_registry.get_service("security_config_service")
+        pin_manager = service_registry.get_service("pin_manager")
+        security_audit_service = service_registry.get_service("security_audit_service")
+        network_security_service = service_registry.get_service("network_security_service")
 
-        # Initialize PIN Manager for enhanced security using centralized config
-        pin_config_dict = security_config_service.get_pin_config()
-        pin_config = PINConfig(**pin_config_dict)
-        pin_manager = PINManager(pin_config)
-        logger.info("PIN Manager initialized for RV safety operations with centralized config")
-
-        # Initialize Security Audit Service for enhanced logging and rate limiting using centralized config
-        rate_limit_config_dict = security_config_service.get_rate_limit_config()
-        rate_limit_config = RateLimitConfig(**rate_limit_config_dict)
-        security_audit_service = SecurityAuditService(rate_limit_config)
-        logger.info("Security Audit Service initialized for RV safety monitoring with centralized config")
-
-        # Initialize Network Security Service for comprehensive network protection
-        network_security_service = NetworkSecurityService(security_config_service)
-        logger.info("Network Security Service initialized for RV network protection")
+        logger.info("Security services retrieved from ServiceRegistry")
 
         # Initialize SafetyService for ISO 26262-compliant safety monitoring
         safety_service = SafetyService(
@@ -173,12 +391,12 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         # Authentication middleware will be configured dynamically via the middleware itself
 
         # Store services in app state for dependency injection
+        app.state.service_registry = service_registry  # NEW: ServiceRegistry for modern DI
+        app.state.security_event_manager = (
+            security_event_manager  # NEW: SecurityEventManager from ServiceRegistry
+        )
         app.state.app_state = app_state
-        # --- Ensure global app_state is the same instance ---
-        import backend.core.state as core_state
-
-        core_state.app_state = app_state
-        # ---------------------------------------------------
+        # Note: Global app_state is deprecated - use app.state.app_state or ServiceRegistry
         app.state.core_services = core_services  # Add core services
         app.state.persistence_service = core_services.persistence  # For legacy dependencies
         app.state.database_manager = core_services.database_manager  # For legacy dependencies
@@ -199,6 +417,26 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         app.state.security_config_service = security_config_service
         app.state.network_security_service = network_security_service
 
+        # Initialize Security WebSocket Handler with dependency injection
+        # ARCHITECTURE NOTE: The SecurityWebSocketHandler is created as a singleton
+        # instance for the entire application lifespan. This ensures it can register
+        # its listeners with the SecurityEventManager at startup and not miss any
+        # events that occur before the first client connects.
+        #
+        # CRITICAL LIMITATION: This approach is only safe in a SINGLE-PROCESS
+        # environment. In a multi-process setup, each worker would have its own
+        # handler instance, and events would not be broadcast to clients connected
+        # to other workers.
+        #
+        # MIGRATION PATH: To support multiple workers, replace with a message broker
+        # backend (e.g., Redis Pub/Sub) using a library like encode/broadcaster.
+        from backend.websocket.security_handler import SecurityWebSocketHandler
+
+        security_websocket_handler = SecurityWebSocketHandler(event_manager=security_event_manager)
+        await security_websocket_handler.startup()
+        app.state.security_websocket_handler = security_websocket_handler
+        logger.info("Security WebSocket handler initialized with dependency injection")
+
         # Start analytics dashboard service
         await analytics_dashboard_service.start()
 
@@ -214,10 +452,10 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         logger.error("Error during application startup: %s", e)
         raise
     finally:
-        # Cleanup
+        # Cleanup with ServiceRegistry orchestration
         logger.info("Shutting down coachiq backend application")
 
-        # Stop safety monitoring
+        # Stop safety monitoring first (safety-critical)
         if hasattr(app.state, "safety_service"):
             await app.state.safety_service.stop_monitoring()
             logger.info("Safety monitoring stopped")
@@ -226,14 +464,27 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         if hasattr(app.state, "analytics_dashboard_service"):
             await app.state.analytics_dashboard_service.stop()
 
-        # Shut down all enabled features
-        if hasattr(app.state, "feature_manager"):
-            await app.state.feature_manager.shutdown()
+        # Shutdown Security WebSocket handler
+        if hasattr(app.state, "security_websocket_handler"):
+            await app.state.security_websocket_handler.shutdown()
+            logger.info("Security WebSocket handler shutdown complete")
 
-        # Shut down core services (AFTER features)
-        from backend.core.services import shutdown_core_services
+        # Use ServiceRegistry for orchestrated shutdown if available
+        if hasattr(app.state, "service_registry"):
+            logger.info("Using ServiceRegistry for orchestrated shutdown")
+            await app.state.service_registry.shutdown()
+        else:
+            # Fallback to legacy shutdown
+            logger.info("Using legacy shutdown (ServiceRegistry not available)")
 
-        await shutdown_core_services()
+            # Shut down all enabled features
+            if hasattr(app.state, "feature_manager"):
+                await app.state.feature_manager.shutdown()
+
+            # Shut down core services (AFTER features)
+            from backend.core.services import shutdown_core_services
+
+            await shutdown_core_services()
 
         logger.info("Backend services stopped")
 
@@ -292,8 +543,8 @@ def create_app() -> FastAPI:
                 "event": "security_configuration",
                 "tls_termination": "external",
                 "https_redirect": "disabled",
-                "proxy_headers_required": True
-            }
+                "proxy_headers_required": True,
+            },
         )
     else:
         mode = "development" if is_dev_mode else "production"
@@ -303,11 +554,10 @@ def create_app() -> FastAPI:
                 "event": "security_configuration",
                 "tls_termination": "internal",
                 "https_redirect": "enabled" if not disable_https_redirect else "disabled",
-                "mode": mode
-            }
+                "mode": mode,
+            },
         )
 
-    network_security_middleware = NetworkSecurityMiddleware(app, network_security_config)
     app.add_middleware(NetworkSecurityMiddleware, config=network_security_config)
 
     # Configure authentication middleware
@@ -382,7 +632,7 @@ async def health_check(request: Request):
         version = "unknown"
 
     # Get enabled protocols
-    feature_manager = get_feature_manager_from_request(request)
+    feature_manager = get_feature_manager(request)
     enabled_protocols = []
     if feature_manager.is_enabled("rvc"):
         enabled_protocols.append("rvc")
@@ -543,7 +793,7 @@ async def startupz(request: Request) -> Response:
     start_time = time.time()
 
     try:
-        feature_manager = get_feature_manager_from_request(request)
+        feature_manager = get_feature_manager(request)
 
         # Check CAN interface hardware initialization only
         can_interface_ready = feature_manager.is_enabled("can_interface")
@@ -669,13 +919,32 @@ async def readyz(request: Request, details: bool = False) -> Response:
     start_time = time.time()
 
     try:
-        feature_manager = get_feature_manager_from_request(request)
+        feature_manager = get_feature_manager(request)
         app_state = get_app_state(request)
 
         # Comprehensive readiness checks
         readiness_checks = {}
         critical_failures = []
         warning_failures = []
+
+        # NEW: ServiceRegistry health aggregation
+        if hasattr(app_state, "service_registry") and app_state.service_registry:
+            service_counts = app_state.service_registry.get_service_count_by_status()
+            healthy_services = service_counts.get(ServiceStatus.HEALTHY, 0)
+            total_services = sum(service_counts.values())
+
+            readiness_checks["service_registry"] = {
+                "status": "pass" if healthy_services >= 3 else "fail",
+                "details": {
+                    "healthy_services": healthy_services,
+                    "total_services": total_services,
+                    "service_breakdown": {
+                        status.value: count for status, count in service_counts.items()
+                    },
+                },
+            }
+            if healthy_services < 3:
+                critical_failures.append("service_registry")
 
         # 1. Hardware initialization (from startup probe)
         can_interface_ready = feature_manager.is_enabled("can_interface")

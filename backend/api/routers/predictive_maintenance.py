@@ -22,8 +22,8 @@ from typing import Annotated, Any
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from pydantic import BaseModel, Field
 
-from backend.core.dependencies import (
-    get_feature_manager_from_request,
+from backend.core.dependencies_v2 import (
+    get_feature_manager,
     get_predictive_maintenance_service,
 )
 
@@ -39,7 +39,7 @@ def _check_predictive_maintenance_feature_enabled(request: Request) -> None:
 
     Raises HTTPException with 404 status if the feature is disabled.
     """
-    feature_manager = get_feature_manager_from_request(request)
+    feature_manager = get_feature_manager(request)
     if not feature_manager.is_enabled("predictive_maintenance"):
         raise HTTPException(
             status_code=404,

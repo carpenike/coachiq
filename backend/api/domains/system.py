@@ -12,16 +12,17 @@ This router integrates with existing system services.
 
 import logging
 import os
-import time
 import platform
+import time
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
+
 from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel, Field
 
-from backend.core.dependencies import get_feature_manager_from_request
 from backend.api.domains import register_domain_router
+from backend.core.dependencies_v2 import get_feature_manager
 
 logger = logging.getLogger(__name__)
 
@@ -141,7 +142,7 @@ def create_system_router() -> APIRouter:
 
     def _check_domain_api_enabled(request: Request) -> None:
         """Check if system API v2 is enabled"""
-        feature_manager = get_feature_manager_from_request(request)
+        feature_manager = get_feature_manager(request)
         if not feature_manager.is_enabled("domain_api_v2"):
             raise HTTPException(
                 status_code=404,
@@ -216,7 +217,7 @@ def create_system_router() -> APIRouter:
         start_time = time.time()
 
         try:
-            feature_manager = get_feature_manager_from_request(request)
+            feature_manager = get_feature_manager(request)
 
             # Get all registered features as "services"
             services = []
@@ -281,10 +282,7 @@ def create_system_router() -> APIRouter:
             if critical_failures:
                 overall_status = "failed"
                 ietf_status = "fail"
-            elif critical_degraded or warning_failures:
-                overall_status = "degraded"
-                ietf_status = "warn"
-            elif warning_degraded:
+            elif critical_degraded or warning_failures or warning_degraded:
                 overall_status = "degraded"
                 ietf_status = "warn"
             else:
@@ -383,7 +381,7 @@ def create_system_router() -> APIRouter:
         _check_domain_api_enabled(request)
 
         try:
-            feature_manager = get_feature_manager_from_request(request)
+            feature_manager = get_feature_manager(request)
             services = []
             all_features = feature_manager.get_all_features()
 
@@ -420,7 +418,7 @@ def create_system_router() -> APIRouter:
         _check_domain_api_enabled(request)
 
         try:
-            feature_manager = get_feature_manager_from_request(request)
+            feature_manager = get_feature_manager(request)
             components = []
 
             # Map features to component categories

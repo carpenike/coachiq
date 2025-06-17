@@ -13,9 +13,8 @@ from typing import Any, Dict, Set
 
 from fastapi import WebSocket, WebSocketDisconnect
 
-from backend.models.security_events import SecurityEvent, SecurityEventStats
-from backend.services.security_event_manager import get_security_event_manager
-from backend.websocket.auth_handler import get_websocket_auth_handler
+from backend.models.security_events import SecurityEvent
+from backend.services.security_event_manager import SecurityEventManager
 
 logger = logging.getLogger(__name__)
 
@@ -29,24 +28,41 @@ class SecurityWebSocketHandler:
     - Aggregated statistics
     - Incident notifications
     - System health status
+
+    ARCHITECTURE NOTE: This handler is designed as an application-scoped singleton.
+    It is instantiated once at application startup and persists for the entire
+    lifespan. This ensures no security events are missed between startup and the
+    first client connection.
+
+    CRITICAL LIMITATION: This implementation relies on in-memory broadcasting and
+    is only suitable for single-process deployments. For multi-worker deployments,
+    a message broker backend (e.g., Redis Pub/Sub) would be required.
     """
 
-    def __init__(self):
-        """Initialize the security WebSocket handler."""
+    def __init__(self, event_manager: SecurityEventManager | None = None):
+        """Initialize the security WebSocket handler.
+
+        Args:
+            event_manager: SecurityEventManager instance for dependency injection
+        """
         self.clients: Set[WebSocket] = set()
         self.client_contexts: Dict[WebSocket, Dict[str, Any]] = {}
         self._stats_cache: Dict[str, Any] = {}
         self._last_stats_update = 0.0
         self._stats_cache_ttl = 2.0  # 2 second cache for stats
 
-        # Register with SecurityEventManager
-        self._event_manager = None
+        # Store injected SecurityEventManager
+        self._event_manager = event_manager
         self._is_registered = False
+        # Lock for thread-safe access to active connections
+        self._lock = asyncio.Lock()
 
     async def startup(self) -> None:
         """Initialize the handler and register with SecurityEventManager."""
         try:
-            self._event_manager = get_security_event_manager()
+            if not self._event_manager:
+                raise RuntimeError("SecurityEventManager not provided to SecurityWebSocketHandler")
+
             self._event_manager.register_listener(
                 self._handle_security_event,
                 name="security_websocket"
@@ -75,14 +91,17 @@ class SecurityWebSocketHandler:
             websocket: WebSocket connection to register
         """
         await websocket.accept()
-        self.clients.add(websocket)
-        self.client_contexts[websocket] = {
-            "connected_at": time.time(),
-            "view_context": "overview",  # Default view
-            "last_ping": time.time()
-        }
 
-        logger.info(f"Security WebSocket client connected. Total: {len(self.clients)}")
+        async with self._lock:
+            self.clients.add(websocket)
+            self.client_contexts[websocket] = {
+                "connected_at": time.time(),
+                "view_context": "overview",  # Default view
+                "last_ping": time.time()
+            }
+            client_count = len(self.clients)
+
+        logger.info(f"Security WebSocket client connected. Total: {client_count}")
 
         # Send initial data to new client
         await self._send_initial_data(websocket)
@@ -94,15 +113,17 @@ class SecurityWebSocketHandler:
         Args:
             websocket: WebSocket connection to disconnect
         """
-        self.clients.discard(websocket)
-        self.client_contexts.pop(websocket, None)
+        async with self._lock:
+            self.clients.discard(websocket)
+            self.client_contexts.pop(websocket, None)
+            remaining_clients = len(self.clients)
 
         try:
             await websocket.close()
         except Exception:
             pass  # Already closed
 
-        logger.info(f"Security WebSocket client disconnected. Remaining: {len(self.clients)}")
+        logger.info(f"Security WebSocket client disconnected. Remaining: {remaining_clients}")
 
     async def handle_client_message(self, websocket: WebSocket, message: str) -> None:
         """
@@ -294,20 +315,35 @@ class SecurityWebSocketHandler:
         """
         Broadcast message to all connected clients.
 
+        This method is designed for robustness in a safety-critical system:
+        1. It copies the list of connections under a lock to prevent race conditions
+           while minimizing lock hold time.
+        2. It uses asyncio.gather with return_exceptions=True to ensure that one
+           failed connection does not stop the broadcast to others.
+        3. It logs failures for observability and removes dead connections.
+
         Args:
             message: Message to broadcast
         """
-        if not self.clients:
+        # Copy the connection list under lock to minimize lock hold time
+        async with self._lock:
+            connections_to_send = list(self.clients)
+
+        if not connections_to_send:
             return
 
-        # Send to all clients concurrently
-        tasks = []
-        for client in list(self.clients):  # Copy to avoid modification during iteration
-            tasks.append(self._send_to_client(client, message))
+        # Prepare send tasks
+        tasks = [self._send_to_client(client, message) for client in connections_to_send]
 
-        # Wait for all sends to complete
-        if tasks:
-            await asyncio.gather(*tasks, return_exceptions=True)
+        # Execute tasks concurrently and collect results
+        results = await asyncio.gather(*tasks, return_exceptions=True)
+
+        # Post-broadcast cleanup and error handling
+        for client, result in zip(connections_to_send, results):
+            if isinstance(result, Exception):
+                logger.warning(f"Failed to send message to client: {result}")
+                # This connection is likely dead. Remove it safely.
+                await self.disconnect_client(client)
 
     async def send_system_notification(self, notification_type: str, data: Dict[str, Any]) -> None:
         """
@@ -352,15 +388,39 @@ _security_websocket_handler: SecurityWebSocketHandler | None = None
 
 
 def get_security_websocket_handler() -> SecurityWebSocketHandler:
-    """Get the global security WebSocket handler instance."""
+    """Get the global security WebSocket handler instance.
+
+    Note: This is a legacy function for backward compatibility.
+    Prefer dependency injection when possible.
+    """
     global _security_websocket_handler
     if _security_websocket_handler is None:
-        _security_websocket_handler = SecurityWebSocketHandler()
+        # For backward compatibility, try to get SecurityEventManager globally
+        # This will be removed once all callers use dependency injection
+        try:
+            from backend.services.security_event_manager import get_security_event_manager
+            event_manager = get_security_event_manager()
+            _security_websocket_handler = SecurityWebSocketHandler(event_manager)
+        except RuntimeError:
+            # Create without event manager - will fail on startup() if not set later
+            _security_websocket_handler = SecurityWebSocketHandler()
     return _security_websocket_handler
 
 
-async def initialize_security_websocket_handler() -> SecurityWebSocketHandler:
-    """Initialize the global security WebSocket handler."""
-    handler = get_security_websocket_handler()
-    await handler.startup()
-    return handler
+async def initialize_security_websocket_handler(event_manager: SecurityEventManager | None = None) -> SecurityWebSocketHandler:
+    """Initialize the global security WebSocket handler.
+
+    Args:
+        event_manager: Optional SecurityEventManager for dependency injection
+    """
+    global _security_websocket_handler
+
+    if event_manager:
+        # Use provided event manager (preferred)
+        _security_websocket_handler = SecurityWebSocketHandler(event_manager)
+    else:
+        # Fall back to legacy behavior
+        _security_websocket_handler = get_security_websocket_handler()
+
+    await _security_websocket_handler.startup()
+    return _security_websocket_handler

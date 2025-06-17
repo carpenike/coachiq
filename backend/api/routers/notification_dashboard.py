@@ -25,7 +25,7 @@ from typing import Any
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
 
-from backend.core.dependencies import get_notification_manager
+from backend.core.dependencies_v2 import get_notification_manager
 from backend.models.notification import NotificationType
 from backend.services.safe_notification_manager import SafeNotificationManager
 

@@ -79,7 +79,9 @@
       "Bash(COACHIQ_SECURITY__TLS_TERMINATION_IS_EXTERNAL=true poetry run python -c \"\nimport asyncio\nimport logging\nfrom backend.main import create_app\n\n# Configure logging to see our security messages\nlogging.basicConfig(level=logging.INFO)\n\n# Create the app to trigger configuration logging\napp = create_app()\nprint(''Testing external TLS mode with automatic proxy headers!'')\n\" 2 >& 1)",
       "Bash(COACHIQ_SECURITY__TLS_TERMINATION_IS_EXTERNAL=true poetry run python run_server.py --config 2 >& 1)",
       "Bash(COACHIQ_SECURITY__TLS_TERMINATION_IS_EXTERNAL=true poetry run python -m backend.cli --config 2 >& 1)",
-      "Bash(COACHIQ_SECURITY__TLS_TERMINATION_IS_EXTERNAL=true poetry run coachiq-daemon --config 2 >& 1)"
+      "Bash(COACHIQ_SECURITY__TLS_TERMINATION_IS_EXTERNAL=true poetry run coachiq-daemon --config 2 >& 1)",
+      "Bash(time poetry run:*)",
+      "Bash(/Users/ryan/src/rvc2api/.claude/commands/show-service-deps.sh:*)"
     ]
   },
   "enableAllProjectMcpServers": true,

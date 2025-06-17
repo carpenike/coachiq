@@ -10,7 +10,7 @@ from typing import Any, Dict, List, Optional
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
 
-from backend.core.dependencies import get_feature_manager
+from backend.core.dependencies_v2 import get_feature_manager
 from backend.integrations.can.message_filter import (
     FilterAction,
     FilterCondition,

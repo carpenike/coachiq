@@ -13,11 +13,11 @@ Routes:
 import logging
 from typing import Annotated, Any
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from fastapi import APIRouter, Depends, HTTPException, Query
 
-from backend.core.dependencies import (
+from backend.core.dependencies_v2 import (
     get_docs_service,
-    get_feature_manager_from_request,
+    get_feature_manager,
     get_vector_service,
 )
 
@@ -27,7 +27,7 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/docs", tags=["documentation"])
 
 
-def _check_api_docs_feature_enabled(request: Request) -> None:
+def _check_api_docs_feature_enabled(feature_manager) -> None:
     """
     Check if the api_docs feature is enabled.
 
@@ -35,7 +35,6 @@ def _check_api_docs_feature_enabled(request: Request) -> None:
     This allows documentation endpoints to be conditionally available
     based on the api_docs feature flag.
     """
-    feature_manager = get_feature_manager_from_request(request)
     if not feature_manager.is_enabled("api_docs"):
         raise HTTPException(
             status_code=404,
@@ -50,12 +49,12 @@ def _check_api_docs_feature_enabled(request: Request) -> None:
     description="Returns the status of the vector search service and its configuration.",
 )
 async def get_search_status(
-    request: Request,
     vector_service: Annotated[Any, Depends(get_vector_service)],
+    feature_manager: Annotated[Any, Depends(get_feature_manager)],
 ) -> dict[str, Any]:
     """Get the status of the vector search service."""
     logger.debug("GET /docs/status - Retrieving documentation search status")
-    _check_api_docs_feature_enabled(request)
+    _check_api_docs_feature_enabled(feature_manager)
 
     try:
         status = vector_service.get_status()
@@ -88,8 +87,8 @@ async def get_search_status(
     description="Search the RV-C documentation using vector-based semantic search.",
 )
 async def search_documentation(
-    request: Request,
     vector_service: Annotated[Any, Depends(get_vector_service)],
+    feature_manager: Annotated[Any, Depends(get_feature_manager)],
     query: str = Query(..., description="Search query string"),
     k: int = Query(3, description="Number of results to return", ge=1, le=10),
 ) -> list[dict[str, Any]]:
@@ -107,7 +106,7 @@ async def search_documentation(
         HTTPException: If search fails or service is unavailable
     """
     logger.info(f"GET /docs/search - Searching documentation with query: '{query}' (k={k})")
-    _check_api_docs_feature_enabled(request)
+    _check_api_docs_feature_enabled(feature_manager)
 
     try:
         if not vector_service.is_available():
@@ -151,12 +150,12 @@ async def search_documentation(
     description="Returns the complete OpenAPI schema for the API.",
 )
 async def get_openapi_schema(
-    request: Request,
     docs_service: Annotated[Any, Depends(get_docs_service)],
+    feature_manager: Annotated[Any, Depends(get_feature_manager)],
 ) -> dict[str, Any]:
     """Get the complete OpenAPI schema for the API."""
     logger.debug("GET /docs/openapi - Retrieving OpenAPI schema")
-    _check_api_docs_feature_enabled(request)
+    _check_api_docs_feature_enabled(feature_manager)
 
     try:
         schema = await docs_service.get_openapi_schema()

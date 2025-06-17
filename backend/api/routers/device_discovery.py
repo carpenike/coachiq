@@ -11,7 +11,7 @@ from typing import Annotated, Any
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from pydantic import BaseModel
 
-from backend.core.dependencies import get_feature_manager_from_request
+from backend.core.dependencies_v2 import get_feature_manager
 from backend.services.device_discovery_service import DeviceDiscoveryService
 
 logger = logging.getLogger(__name__)
@@ -57,7 +57,7 @@ class AutoDiscoveryRequest(BaseModel):
 
 def _check_device_discovery_enabled(request: Request) -> None:
     """Check if device discovery feature is enabled, raise 404 if disabled."""
-    feature_manager = get_feature_manager_from_request(request)
+    feature_manager = get_feature_manager(request)
     if not feature_manager.is_enabled("device_discovery"):
         raise HTTPException(status_code=404, detail="device_discovery feature is disabled")
 
@@ -71,7 +71,7 @@ def get_device_discovery_service(request: Request) -> DeviceDiscoveryService:
 
 def _get_device_discovery_feature(request: Request):
     """Get the device discovery feature instance."""
-    feature_manager = get_feature_manager_from_request(request)
+    feature_manager = get_feature_manager(request)
     feature = feature_manager.get_feature("device_discovery")
     if not feature:
         raise HTTPException(status_code=503, detail="Device discovery feature not available")
@@ -294,7 +294,7 @@ async def get_discovery_status(
     _check_device_discovery_enabled(request)
 
     try:
-        feature_manager = get_feature_manager_from_request(request)
+        feature_manager = get_feature_manager(request)
         feature = _get_device_discovery_feature(request)
 
         # Get feature info and health status
@@ -343,7 +343,7 @@ async def get_supported_protocols(
     _check_device_discovery_enabled(request)
 
     try:
-        feature_manager = get_feature_manager_from_request(request)
+        feature_manager = get_feature_manager(request)
 
         # Get feature configuration
         feature_config = feature_manager.get_feature_config("device_discovery")

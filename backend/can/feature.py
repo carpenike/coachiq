@@ -11,7 +11,7 @@ import logging
 import time
 from typing import Any
 
-from backend.integrations.rvc import BAMHandler, decode_payload, decode_product_id, load_config_data
+from backend.integrations.rvc import BAMHandler, decode_payload, decode_product_id
 from backend.services.feature_base import Feature
 from backend.services.feature_models import SafetyClassification
 
@@ -170,21 +170,24 @@ class CANBusFeature(Feature):
             logger.info(f"Using RVC spec path: {spec_path}")
             logger.info(f"Using device mapping path: {map_path}")
 
-            config_result = load_config_data(
+            # Use structured configuration loader
+            from backend.integrations.rvc import load_config_data_v2
+
+            rvc_config = load_config_data_v2(
                 rvc_spec_path_override=spec_path, device_mapping_path_override=map_path
             )
-            (
-                self.decoder_map,
-                _spec_meta,  # metadata about the spec file
-                _mapping_dict,  # mapping data organized by (dgn_hex, instance)
-                _entity_map,  # entity mapping data
-                _entity_ids,  # set of entity IDs
-                self.entity_id_lookup,  # entity ID to config lookup
-                _light_command_info,  # light command information
-                self.pgn_hex_to_name_map,  # PGN hex to name mapping
-                _dgn_pairs,  # DGN pairs
-                _coach_info,  # coach information
-            ) = config_result
+
+            # Extract values from structured config
+            self.decoder_map = rvc_config.dgn_dict
+            _spec_meta = rvc_config.spec_meta  # metadata about the spec file
+            _mapping_dict = rvc_config.mapping_dict  # mapping data organized by (dgn_hex, instance)
+            _entity_map = rvc_config.entity_map  # entity mapping data
+            _entity_ids = rvc_config.entity_ids  # set of entity IDs
+            self.entity_id_lookup = rvc_config.inst_map  # entity ID to config lookup
+            _light_command_info = rvc_config.unique_instances  # light command information
+            self.pgn_hex_to_name_map = rvc_config.pgn_hex_to_name_map  # PGN hex to name mapping
+            _dgn_pairs = rvc_config.dgn_pairs  # DGN pairs
+            _coach_info = rvc_config.coach_info  # coach information
 
             # Extract additional lookup tables from mapping dict
             # This is needed for device and status lookups
@@ -202,7 +205,7 @@ class CANBusFeature(Feature):
                     self.status_lookup[(status_dgn.upper(), str(instance))] = device_config
 
             # Store raw device mapping for unmapped entry suggestions
-            self.raw_device_mapping = config_result[1]  # This is the device_mapping dict
+            self.raw_device_mapping = _mapping_dict  # This is the device_mapping dict
 
             logger.info(
                 f"Loaded RVC configuration: {len(self.decoder_map)} decoders, "

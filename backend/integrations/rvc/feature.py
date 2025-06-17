@@ -117,7 +117,7 @@ class RVCFeature(Feature):
         Load RVC spec and device mapping data.
         """
         from backend.core.config import get_settings
-        from backend.integrations.rvc.decode import load_config_data
+        from backend.integrations.rvc.decode import load_config_data_v2
 
         try:
             # Get settings to check for environment variable overrides
@@ -141,24 +141,26 @@ class RVCFeature(Feature):
                 map_path_override = self._device_mapping_path
                 logger.info(f"Using device mapping path from config: {map_path_override}")
 
-            # Load data using the override paths (load_config_data will handle defaults if None)
-            (
-                self.dgn_dict,
-                self.spec_meta,
-                self.mapping_dict,
-                self.entity_map,
-                self.entity_ids,
-                self.inst_map,
-                self.unique_instances,
-                self.pgn_hex_to_name_map,
-                self.dgn_pairs,
-                self.coach_info,
-            ) = load_config_data(
+            # Load data using the new structured configuration
+            self.rvc_config = load_config_data_v2(
                 rvc_spec_path_override=spec_path_override,
                 device_mapping_path_override=map_path_override,
             )
+
+            # For backward compatibility, expose individual attributes
+            self.dgn_dict = self.rvc_config.dgn_dict
+            self.spec_meta = dict(self.rvc_config.spec_meta.dict())  # Convert back to dict for compatibility
+            self.mapping_dict = self.rvc_config.mapping_dict
+            self.entity_map = self.rvc_config.entity_map
+            self.entity_ids = self.rvc_config.entity_ids
+            self.inst_map = self.rvc_config.inst_map
+            self.unique_instances = self.rvc_config.unique_instances
+            self.pgn_hex_to_name_map = self.rvc_config.pgn_hex_to_name_map
+            self.dgn_pairs = self.rvc_config.dgn_pairs
+            self.coach_info = self.rvc_config.coach_info
+
             self._data_loaded = True
-            logger.info(f"RVC data loaded - coach: {self.coach_info}")
+            logger.info(f"RVC data loaded - coach: {self.rvc_config.coach_info}")
         except FileNotFoundError as e:
             logger.warning(f"RVC configuration files not found: {e}")
             self._data_loaded = False

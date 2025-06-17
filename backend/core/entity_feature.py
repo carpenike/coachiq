@@ -70,48 +70,55 @@ class EntityManagerFeature(Feature):
         # Initialize the persistence service (will be started in startup)
         self._persistence_service: EntityPersistenceService | None = None
 
-    async def startup(self) -> None:
-        """Initialize the EntityManager feature on startup."""
+    async def startup(self, rvc_config_provider=None) -> None:
+        """
+        Initialize the EntityManager feature on startup.
+
+        Args:
+            rvc_config_provider: Optional RVCConfigProvider instance (for ServiceRegistry integration)
+        """
         logger.info("Starting EntityManager feature")
 
         # Load entities from coach mapping file
         try:
             logger.info("Loading entity configuration from coach mapping files...")
 
-            # Get configuration paths from settings
-            from backend.core.config import get_settings
+            # Use shared config provider if available (ServiceRegistry integration)
+            if rvc_config_provider is not None:
+                logger.info("Using shared RVCConfigProvider (ServiceRegistry mode)")
 
-            settings = get_settings()
+                # Get configuration paths from provider
+                rvc_spec_path = str(rvc_config_provider._spec_path) if rvc_config_provider._spec_path else None
+                device_mapping_path = str(rvc_config_provider._device_mapping_path) if rvc_config_provider._device_mapping_path else None
 
-            rvc_spec_path = str(settings.rvc_spec_path) if settings.rvc_spec_path else None
-            device_mapping_path = (
-                str(settings.rvc_coach_mapping_path) if settings.rvc_coach_mapping_path else None
-            )
+            else:
+                logger.info("Using legacy configuration loading (fallback mode)")
+
+                # Get configuration paths from settings (legacy mode)
+                from backend.core.config import get_settings
+
+                settings = get_settings()
+
+                rvc_spec_path = str(settings.rvc_spec_path) if settings.rvc_spec_path else None
+                device_mapping_path = (
+                    str(settings.rvc_coach_mapping_path) if settings.rvc_coach_mapping_path else None
+                )
 
             logger.info("Using RV-C spec path: %s", rvc_spec_path)
             logger.info("Using device mapping path: %s", device_mapping_path)
 
-            # Load entity configuration
-            from backend.integrations.rvc import load_config_data
+            # Load entity configuration using structured config
+            from backend.integrations.rvc import load_config_data_v2
 
-            config_result = load_config_data(
+            rvc_config = load_config_data_v2(
                 rvc_spec_path_override=rvc_spec_path,
                 device_mapping_path_override=device_mapping_path,
             )
 
-            # Extract entity mapping and configuration data
-            (
-                _decoder_map,
-                _spec_meta,
-                _mapping_dict,
-                entity_map,
-                entity_ids,
-                entity_id_lookup,
-                _light_command_info,
-                _pgn_hex_to_name_map,
-                _dgn_pairs,
-                _coach_info,
-            ) = config_result
+            # Extract values from structured config
+            entity_map = rvc_config.entity_map
+            entity_ids = rvc_config.entity_ids
+            entity_id_lookup = rvc_config.inst_map
 
             # Register all entities with the EntityManager
             for entity_id in entity_ids:
@@ -218,6 +225,14 @@ def initialize_entity_manager_feature(
     """
     Initialize the EntityManager feature singleton.
 
+    NOTE: This global singleton pattern is deprecated. New code should register
+    EntityManagerFeature with FeatureManager, which will automatically register
+    it with ServiceRegistry for proper lifecycle management.
+
+    Example of preferred pattern:
+        entity_manager_feature = EntityManagerFeature(config=config)
+        feature_manager.register_feature(entity_manager_feature)
+
     Args:
         config: Optional configuration dictionary
 
@@ -228,14 +243,21 @@ def initialize_entity_manager_feature(
 
     if _entity_manager_feature is None:
         _entity_manager_feature = EntityManagerFeature(config=config)
-        logger.info("EntityManager feature singleton initialized")
+        logger.warning(
+            "EntityManagerFeature initialized with global singleton pattern (deprecated). "
+            "Consider registering with FeatureManager for proper lifecycle management."
+        )
 
     return _entity_manager_feature
 
 
 def get_entity_manager_feature() -> EntityManagerFeature:
     """
-    Get the EntityManager feature singleton.
+    Get the EntityManager feature instance.
+
+    This function follows the enhanced singleton pattern that checks modern
+    locations (app.state, ServiceRegistry) before falling back to the global
+    instance for backward compatibility.
 
     Returns:
         The EntityManagerFeature instance
@@ -243,6 +265,31 @@ def get_entity_manager_feature() -> EntityManagerFeature:
     Raises:
         RuntimeError: If the feature has not been initialized
     """
+    # Try to get from app.state first (ServiceRegistry/FeatureManager integration)
+    try:
+        # Try to access the global app instance if available
+        import backend.main
+        if hasattr(backend.main, 'app'):
+            app = backend.main.app
+            # Check if registered as a feature
+            if hasattr(app.state, 'feature_manager'):
+                feature_manager = app.state.feature_manager
+                entity_feature = feature_manager.get_feature('entity_manager')
+                if isinstance(entity_feature, EntityManagerFeature):
+                    return entity_feature
+
+            # Check ServiceRegistry
+            if hasattr(app.state, 'service_registry'):
+                service_registry = app.state.service_registry
+                if service_registry.has_service('entity_manager'):
+                    service = service_registry.get_service('entity_manager')
+                    if isinstance(service, EntityManagerFeature):
+                        return service
+    except Exception:
+        # Continue to fallback
+        pass
+
+    # Fall back to global singleton for backward compatibility
     if _entity_manager_feature is None:
         msg = "EntityManager feature has not been initialized"
         raise RuntimeError(msg)

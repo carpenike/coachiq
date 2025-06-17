@@ -5,14 +5,14 @@ This module provides API endpoints for notification analytics, metrics,
 and reporting functionality.
 """
 
-from datetime import UTC, datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
 
-from backend.core.dependencies import (
+from backend.core.dependencies_v2 import (
     get_analytics_service,
     get_reporting_service,
 )

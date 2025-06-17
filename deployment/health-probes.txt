@@ -1,0 +1,374 @@
+# Health Probe Configuration Examples
+#
+# This file provides orchestration configuration examples for the complete
+# health endpoint architecture following Phase 3 implementation.
+
+# Kubernetes Deployment with Health Probes
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: coachiq-backend
+  labels:
+    app: coachiq-backend
+    version: v2.0.0
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: coachiq-backend
+  template:
+    metadata:
+      labels:
+        app: coachiq-backend
+    spec:
+      containers:
+      - name: coachiq
+        image: coachiq/backend:latest
+        ports:
+        - containerPort: 8000
+          name: http
+        env:
+        - name: COACHIQ_SERVER__HOST
+          value: "0.0.0.0"
+        - name: COACHIQ_SERVER__PORT
+          value: "8000"
+        - name: ENVIRONMENT
+          value: "production"
+
+        # Startup Probe - Hardware Initialization
+        # Protects against slow CAN transceiver initialization
+        startupProbe:
+          httpGet:
+            path: /startupz
+            port: 8000
+            httpHeaders:
+            - name: Accept
+              value: application/health+json
+          initialDelaySeconds: 10    # Allow time for application to start
+          periodSeconds: 10          # Check every 10 seconds
+          timeoutSeconds: 5          # 5 second timeout per check
+          failureThreshold: 30       # Allow up to 5 minutes for startup (30 * 10s)
+          successThreshold: 1        # Must succeed once to be considered started
+
+        # Liveness Probe - Process Health Only
+        # Minimal scope, optimized for <5ms response time
+        livenessProbe:
+          httpGet:
+            path: /healthz
+            port: 8000
+            httpHeaders:
+            - name: Accept
+              value: application/health+json
+          initialDelaySeconds: 30    # Wait for startup to complete
+          periodSeconds: 10          # Check every 10 seconds
+          timeoutSeconds: 5          # 5 second timeout
+          failureThreshold: 3        # Restart after 3 consecutive failures
+          successThreshold: 1        # Must succeed once to be considered healthy
+
+        # Readiness Probe - Comprehensive Dependency Checking
+        # Full system readiness with safety-critical awareness
+        readinessProbe:
+          httpGet:
+            path: /readyz
+            port: 8000
+            httpHeaders:
+            - name: Accept
+              value: application/health+json
+          initialDelaySeconds: 5     # Start checking shortly after startup
+          periodSeconds: 5           # Check every 5 seconds
+          timeoutSeconds: 3          # 3 second timeout
+          failureThreshold: 3        # Remove from service after 3 failures
+          successThreshold: 1        # Must succeed once to receive traffic
+
+        # Resource constraints for safety-critical workload
+        resources:
+          requests:
+            memory: "256Mi"
+            cpu: "250m"
+          limits:
+            memory: "512Mi"
+            cpu: "500m"
+
+# Docker Compose with Health Checks
+version: '3.8'
+
+services:
+  coachiq-backend:
+    image: coachiq/backend:latest
+    ports:
+      - "8000:8000"
+    environment:
+      - COACHIQ_SERVER__HOST=0.0.0.0
+      - COACHIQ_SERVER__PORT=8000
+      - ENVIRONMENT=production
+
+    # Docker Compose Health Check (uses readiness probe for comprehensive check)
+    healthcheck:
+      test: ["CMD", "curl", "-f", "-H", "Accept: application/health+json", "http://localhost:8000/readyz"]
+      interval: 30s          # Check every 30 seconds
+      timeout: 10s           # 10 second timeout
+      retries: 3             # 3 retries before marking unhealthy
+      start_period: 60s      # Grace period for startup
+
+    restart: unless-stopped
+
+    # Additional health monitoring services
+    depends_on:
+      - health-monitor
+
+  # Optional: Dedicated health monitoring service
+  health-monitor:
+    image: coachiq/health-monitor:latest
+    environment:
+      - COACHIQ_BACKEND_URL=http://coachiq-backend:8000
+      - MONITORING_INTERVAL=10s
+      - ALERT_WEBHOOK_URL=${ALERT_WEBHOOK_URL}
+
+    # Monitor all three health endpoints
+    healthcheck:
+      test: ["CMD", "sh", "-c", "curl -f http://coachiq-backend:8000/healthz && curl -f http://coachiq-backend:8000/readyz && curl -f http://coachiq-backend:8000/startupz"]
+      interval: 15s
+      timeout: 5s
+      retries: 2
+
+# Systemd Service Configuration
+# /etc/systemd/system/coachiq-backend.service
+
+[Unit]
+Description=CoachIQ Backend Service
+After=network.target
+Requires=network.target
+
+[Service]
+Type=exec
+User=coachiq
+Group=coachiq
+WorkingDirectory=/opt/coachiq
+Environment=COACHIQ_SERVER__HOST=127.0.0.1
+Environment=COACHIQ_SERVER__PORT=8000
+Environment=ENVIRONMENT=production
+ExecStart=/opt/coachiq/.venv/bin/python -m backend.main
+Restart=always
+RestartSec=5
+TimeoutStartSec=300
+TimeoutStopSec=30
+
+# Health monitoring with systemd
+ExecStartPost=/bin/sleep 10
+ExecStartPost=/usr/bin/curl -f -H "Accept: application/health+json" http://127.0.0.1:8000/startupz
+ExecReload=/usr/bin/curl -f -H "Accept: application/health+json" http://127.0.0.1:8000/readyz
+
+[Install]
+WantedBy=multi-user.target
+
+# Nginx Load Balancer with Health Checks
+# /etc/nginx/conf.d/coachiq-backend.conf
+
+upstream coachiq_backend {
+    # Health check configuration for nginx plus (commercial)
+    # For open source nginx, use external health checking
+
+    server 10.0.1.10:8000 max_fails=3 fail_timeout=30s;
+    server 10.0.1.11:8000 max_fails=3 fail_timeout=30s;
+    server 10.0.1.12:8000 max_fails=3 fail_timeout=30s;
+
+    # Use readiness probe for load balancer health checks
+    keepalive 32;
+}
+
+server {
+    listen 80;
+    server_name coachiq.example.com;
+
+    # Health check endpoints (exposed for monitoring)
+    location /health {
+        access_log off;
+        proxy_pass http://coachiq_backend/readyz;
+        proxy_set_header Host $host;
+        proxy_set_header Accept application/health+json;
+    }
+
+    # Internal health monitoring
+    location /internal/startup {
+        internal;
+        proxy_pass http://coachiq_backend/startupz;
+    }
+
+    location /internal/liveness {
+        internal;
+        proxy_pass http://coachiq_backend/healthz;
+    }
+
+    location /internal/readiness {
+        internal;
+        proxy_pass http://coachiq_backend/readyz;
+    }
+
+    # Application routes
+    location / {
+        proxy_pass http://coachiq_backend;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+}
+
+# AWS Application Load Balancer (ALB) Health Check
+# terraform configuration example
+
+resource "aws_lb_target_group" "coachiq_backend" {
+  name     = "coachiq-backend-tg"
+  port     = 8000
+  protocol = "HTTP"
+  vpc_id   = var.vpc_id
+
+  # Use readiness probe for load balancer health checks
+  health_check {
+    enabled             = true
+    healthy_threshold   = 2
+    unhealthy_threshold = 3
+    timeout             = 5
+    interval            = 30
+    path                = "/readyz"
+    matcher             = "200"
+    port                = "traffic-port"
+    protocol            = "HTTP"
+
+    # IETF health+json compliance
+    request_headers = {
+      "Accept" = "application/health+json"
+    }
+  }
+
+  target_type = "ip"
+
+  tags = {
+    Name = "coachiq-backend"
+    Environment = "production"
+  }
+}
+
+# Monitoring and Alerting Configuration
+# Prometheus scraping configuration
+
+# prometheus.yml
+global:
+  scrape_interval: 15s
+
+scrape_configs:
+  - job_name: 'coachiq-health-endpoints'
+    scrape_interval: 10s
+    metrics_path: '/metrics'
+    static_configs:
+      - targets: ['coachiq-backend:8000']
+
+  # Separate scraping for each health endpoint
+  - job_name: 'coachiq-liveness'
+    scrape_interval: 5s
+    metrics_path: '/healthz'
+    static_configs:
+      - targets: ['coachiq-backend:8000']
+    metric_relabel_configs:
+      - source_labels: [__name__]
+        target_label: probe_type
+        replacement: 'liveness'
+
+  - job_name: 'coachiq-readiness'
+    scrape_interval: 10s
+    metrics_path: '/readyz'
+    static_configs:
+      - targets: ['coachiq-backend:8000']
+    metric_relabel_configs:
+      - source_labels: [__name__]
+        target_label: probe_type
+        replacement: 'readiness'
+
+  - job_name: 'coachiq-startup'
+    scrape_interval: 30s
+    metrics_path: '/startupz'
+    static_configs:
+      - targets: ['coachiq-backend:8000']
+    metric_relabel_configs:
+      - source_labels: [__name__]
+        target_label: probe_type
+        replacement: 'startup'
+
+# Grafana Dashboard Query Examples
+# For visualizing health probe metrics
+
+# Panel 1: Health Probe Response Times
+# Query: histogram_quantile(0.95, rate(http_request_duration_seconds_bucket{job=~"coachiq-.*"}[5m]))
+
+# Panel 2: Health Probe Success Rate
+# Query: rate(http_requests_total{job=~"coachiq-.*", code="200"}[5m]) / rate(http_requests_total{job=~"coachiq-.*"}[5m])
+
+# Panel 3: Critical vs Warning Failures
+# Query: increase(health_check_failures_total{severity="critical"}[1h])
+# Query: increase(health_check_failures_total{severity="warning"}[1h])
+
+# Panel 4: Safety-Critical System Status
+# Query: health_check_status{system_type="safety_critical"}
+
+# Health Check Testing Scripts
+
+# test-health-endpoints.sh
+#!/bin/bash
+
+BACKEND_URL="${BACKEND_URL:-http://localhost:8000}"
+
+echo "Testing CoachIQ Health Endpoints..."
+
+# Test startup probe
+echo "1. Testing /startupz (startup probe)..."
+curl -s -w "Status: %{http_code}, Time: %{time_total}s\n" \
+     -H "Accept: application/health+json" \
+     "$BACKEND_URL/startupz" | jq .
+
+# Test liveness probe
+echo "2. Testing /healthz (liveness probe)..."
+curl -s -w "Status: %{http_code}, Time: %{time_total}s\n" \
+     -H "Accept: application/health+json" \
+     "$BACKEND_URL/healthz" | jq .
+
+# Test readiness probe
+echo "3. Testing /readyz (readiness probe)..."
+curl -s -w "Status: %{http_code}, Time: %{time_total}s\n" \
+     -H "Accept: application/health+json" \
+     "$BACKEND_URL/readyz" | jq .
+
+# Test readiness probe with details
+echo "4. Testing /readyz?details=true (detailed readiness)..."
+curl -s -w "Status: %{http_code}, Time: %{time_total}s\n" \
+     -H "Accept: application/health+json" \
+     "$BACKEND_URL/readyz?details=true" | jq .
+
+echo "Health endpoint testing complete."
+
+# Performance Testing Configuration
+# test-health-performance.sh
+
+#!/bin/bash
+
+BACKEND_URL="${BACKEND_URL:-http://localhost:8000}"
+ITERATIONS=1000
+
+echo "Performance testing health endpoints..."
+
+# Test liveness probe performance (target: <5ms)
+echo "Testing /healthz performance (target: <5ms)..."
+for i in $(seq 1 $ITERATIONS); do
+    curl -s -w "%{time_total}\n" -o /dev/null \
+         -H "Accept: application/health+json" \
+         "$BACKEND_URL/healthz"
+done | awk '{sum+=$1; if($1>max) max=$1; if(min=="" || $1<min) min=$1} END {print "Avg:", sum/NR*1000"ms", "Min:", min*1000"ms", "Max:", max*1000"ms"}'
+
+# Test readiness probe performance
+echo "Testing /readyz performance..."
+for i in $(seq 1 100); do  # Fewer iterations for more complex endpoint
+    curl -s -w "%{time_total}\n" -o /dev/null \
+         -H "Accept: application/health+json" \
+         "$BACKEND_URL/readyz"
+done | awk '{sum+=$1; if($1>max) max=$1; if(min=="" || $1<min) min=$1} END {print "Avg:", sum/NR*1000"ms", "Min:", min*1000"ms", "Max:", max*1000"ms"}'
+
+echo "Performance testing complete."

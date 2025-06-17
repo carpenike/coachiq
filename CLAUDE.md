@@ -2,6 +2,22 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+## 🚨 CRITICAL UPDATE: Service Access Patterns Have Changed
+
+**IMPORTANT**: The codebase has completed a major architectural transformation. All service access now uses modern dependency injection patterns through `backend.core.dependencies_v2`.
+
+**DO NOT USE**:
+- ❌ `backend.core.dependencies` (old module)
+- ❌ `get_*_from_request()` functions
+- ❌ Direct `app.state.*` access
+- ❌ Global service variables
+
+**ALWAYS USE**:
+- ✅ `backend.core.dependencies_v2`
+- ✅ FastAPI `Depends()` with type annotations
+- ✅ ServiceRegistry for service lifecycle
+- ✅ See [`service-patterns.md`](.claude/instructions/service-patterns.md) for details
+
 ## Modular Claude Instructions
 
 This project uses modular Claude instruction files stored in `.claude/instructions/` and custom commands in `.claude/commands/`.
@@ -15,6 +31,7 @@ Each file contains targeted guidance for specific development workflows and cont
 - [`code-quality.md`](.claude/instructions/code-quality.md): Linting, formatting, and type checking standards
 - [`api-patterns.md`](.claude/instructions/api-patterns.md): Entity control, WebSocket, and REST API patterns
 - [`domain-api.md`](.claude/instructions/domain-api.md): Domain API v2 development patterns, bulk operations, and migration strategies
+- 🆕 [`service-patterns.md`](.claude/instructions/service-patterns.md): **CRITICAL - Modern service access patterns, ServiceRegistry, and dependency injection**
 
 **Available commands:**
 
@@ -31,6 +48,16 @@ Each file contains targeted guidance for specific development workflows and cont
 - `/rvc-debug` - Debug RV-C protocol encoding/decoding and real-time message monitoring
 - `/domain-api-dev` - Develop Domain API v2 endpoints with bulk operations, caching, and monitoring
 - `/api-migration` - Migrate legacy API endpoints to Domain API v2 with progressive rollout
+
+**🆕 Code Quality & Safety Commands:**
+- `/check-service-patterns` - Check for legacy service access patterns that need migration
+- `/check-service-health` - Verify all services have proper health checks and dependencies
+- `/check-memory-safety` - Ensure memory management patterns for real-time CAN operations
+- `/check-safety-patterns` - Verify safety-critical patterns for RV-C vehicle control
+- `/check-async-patterns` - Validate proper async/await usage and identify blocking operations
+- `/check-tech-debt` - Find and categorize TODOs, FIXMEs, and technical debt
+- `/dev-health-check` - Comprehensive development environment health diagnostics
+- `/show-service-deps` - Visualize service dependencies and startup order
 
 > **For any code generation or development tasks involving these topics, refer to the relevant instruction file in `.claude/instructions/` for detailed guidance.**
 
@@ -371,12 +398,13 @@ nix run .#ci            # Full CI suite
 
 ### Backend Structure
 
+- **ServiceRegistry**: Centralized service lifecycle management with dependency resolution
 - **Feature Management**: Features defined in `backend/services/feature_flags.yaml` with dependency resolution
 - **Services**: Service classes in `backend/services/` handle business logic
 - **Models**: Pydantic models in `backend/models/` for data validation
 - **API Routers**: FastAPI routers in `backend/api/routers/` organized by domain
 - **Configuration**: Centralized in `backend/core/config.py` using Pydantic Settings
-- **Dependencies**: Dependency injection via `backend/core/dependencies.py`
+- **Dependencies**: Modern dependency injection via `backend/core/dependencies_v2.py` (NOT dependencies.py)
 
 ### Frontend Structure
 
@@ -501,6 +529,15 @@ Features can be enabled/disabled via:
 - **API**: `/api/docs/search?query=term`
 
 ## Important Development Guidelines
+
+### Service Access Patterns (CRITICAL - NEW)
+
+**MANDATORY**: All new code MUST use the modern service access patterns:
+1. Import from `backend.core.dependencies_v2` (never use the old dependencies.py)
+2. Use `Annotated[Type, Depends(get_service)]` for type-safe dependency injection
+3. Never access `app.state` directly - always use ServiceRegistry through DI
+4. Run `/check-service-patterns` to verify your code follows modern patterns
+5. See `.claude/instructions/service-patterns.md` for comprehensive guidelines
 
 ### Python Command Execution
 

@@ -344,7 +344,11 @@ _security_event_manager: SecurityEventManager | None = None
 
 def get_security_event_manager() -> SecurityEventManager:
     """
-    Get the global security event manager instance.
+    Get the security event manager instance.
+
+    This function is deprecated. Use dependency injection instead:
+    - For API endpoints: Use Depends(get_security_event_manager) from backend.core.dependencies
+    - For WebSocket/Background services: Use ServiceProxy from backend.core.service_patterns
 
     Returns:
         The SecurityEventManager instance
@@ -352,27 +356,29 @@ def get_security_event_manager() -> SecurityEventManager:
     Raises:
         RuntimeError: If manager has not been initialized
     """
+    # Try to get from app.state first
+    try:
+        from backend.main import app
+        if hasattr(app.state, 'security_event_manager') and app.state.security_event_manager is not None:
+            return app.state.security_event_manager
+    except (ImportError, AttributeError, RuntimeError):
+        # App not initialized yet
+        pass
+
+    # Try ServiceRegistry if available
+    try:
+        if hasattr(app.state, 'service_registry') and app.state.service_registry is not None:
+            service = app.state.service_registry.get_service('security_event_manager')
+            if service:
+                return service
+    except:
+        pass
+
+    # Fall back to global instance for backward compatibility
     global _security_event_manager
     if _security_event_manager is None:
         raise RuntimeError(
             "SecurityEventManager has not been initialized. "
-            "Ensure it's registered with the FeatureManager."
+            "Use dependency injection or ensure it's registered with ServiceRegistry."
         )
-    return _security_event_manager
-
-
-def initialize_security_event_manager(**kwargs) -> SecurityEventManager:
-    """
-    Initialize the global security event manager.
-
-    Args:
-        **kwargs: Configuration options for the manager
-
-    Returns:
-        The initialized SecurityEventManager instance
-    """
-    global _security_event_manager
-    if _security_event_manager is None:
-        _security_event_manager = SecurityEventManager(**kwargs)
-        logger.info("Global SecurityEventManager instance initialized")
     return _security_event_manager

@@ -3,19 +3,16 @@ API endpoints for CAN protocol analyzer functionality.
 """
 
 from typing import List, Optional, Dict, Any
-from datetime import datetime, timedelta
+from datetime import datetime
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
-from pydantic import BaseModel, Field
+from pydantic import BaseModel
 
-from backend.core.dependencies import get_feature_manager_from_request
+from backend.core.dependencies_v2 import get_feature_manager
 from backend.integrations.can.protocol_analyzer import (
     ProtocolAnalyzer,
     CANProtocol,
     MessageType,
-    DecodedField,
-    AnalyzedMessage,
-    CommunicationPattern,
 )
 
 
@@ -91,7 +88,7 @@ class LiveAnalysisResponse(BaseModel):
 
 async def get_analyzer(request: Request) -> ProtocolAnalyzer:
     """Get protocol analyzer instance."""
-    feature_manager = get_feature_manager_from_request(request)
+    feature_manager = get_feature_manager(request)
     analyzer = feature_manager.get_feature("can_protocol_analyzer")
 
     if not analyzer:

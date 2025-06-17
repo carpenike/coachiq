@@ -25,7 +25,6 @@ import can.interface
 from can.exceptions import CanInterfaceNotImplementedError
 
 from backend.core.config import get_can_settings, get_multi_network_settings
-from backend.integrations.can.message_deduplicator import CANMessageDeduplicator
 
 logger = logging.getLogger(__name__)
 
@@ -617,8 +616,48 @@ _multi_network_manager: MultiNetworkManager | None = None
 
 
 def get_multi_network_manager() -> MultiNetworkManager:
-    """Get the global multi-network manager instance."""
+    """
+    Get the multi-network manager instance.
+
+    This function follows the enhanced singleton pattern that checks modern
+    locations (app.state, ServiceRegistry) before falling back to the global
+    instance for backward compatibility.
+
+    NOTE: This global singleton pattern is deprecated. New code should register
+    MultiNetworkManager with ServiceRegistry for proper lifecycle management.
+
+    Returns:
+        MultiNetworkManager: The multi-network manager instance
+    """
+    # Try to get from app.state first (ServiceRegistry integration)
+    try:
+        # Try to access the global app instance if available
+        import backend.main
+        if hasattr(backend.main, 'app'):
+            app = backend.main.app
+            # Check ServiceRegistry
+            if hasattr(app.state, 'service_registry'):
+                service_registry = app.state.service_registry
+                if service_registry.has_service('multi_network_manager'):
+                    service = service_registry.get_service('multi_network_manager')
+                    if isinstance(service, MultiNetworkManager):
+                        return service
+
+            # Check if stored directly in app.state
+            if hasattr(app.state, 'multi_network_manager'):
+                manager = app.state.multi_network_manager
+                if isinstance(manager, MultiNetworkManager):
+                    return manager
+    except Exception:
+        # Continue to fallback
+        pass
+
+    # Fall back to global singleton for backward compatibility
     global _multi_network_manager
     if _multi_network_manager is None:
+        logger.warning(
+            "MultiNetworkManager accessed via global singleton (deprecated). "
+            "Consider registering with ServiceRegistry for proper lifecycle management."
+        )
         _multi_network_manager = MultiNetworkManager()
     return _multi_network_manager

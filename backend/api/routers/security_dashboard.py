@@ -11,8 +11,7 @@ from typing import Any, Dict, List, Optional
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
 
-from backend.models.security_events import SecurityEvent, SecurityEventStats
-from backend.services.security_event_manager import get_security_event_manager
+from backend.core.dependencies_v2 import get_security_event_manager
 from backend.services.security_persistence_service import get_security_persistence_service
 from backend.websocket.security_handler import get_security_websocket_handler
 
@@ -40,7 +39,8 @@ class SystemHealthResponse(BaseModel):
 
 @router.get("/data", response_model=SecurityDashboardData)
 async def get_dashboard_data(
-    limit: int = Query(default=20, description="Number of recent events to include")
+    limit: int = Query(default=20, description="Number of recent events to include"),
+    event_manager = Depends(get_security_event_manager)
 ) -> SecurityDashboardData:
     """
     Get complete security dashboard data.
@@ -49,17 +49,10 @@ async def get_dashboard_data(
         Complete dashboard data including stats, events, and health
     """
     try:
-        # Get SecurityEventManager
-        try:
-            event_manager = get_security_event_manager()
-            manager_stats = event_manager.get_statistics()
-            event_stats = event_manager.get_event_stats()
-            recent_events = event_manager.get_recent_events(limit=limit)
-        except RuntimeError:
-            logger.warning("SecurityEventManager not available")
-            manager_stats = {"events_published": 0, "events_delivered": 0}
-            event_stats = {"total_events": 0, "events_last_hour": 0}
-            recent_events = []
+        # Use injected SecurityEventManager
+        manager_stats = event_manager.get_statistics()
+        event_stats = event_manager.get_event_stats()
+        recent_events = event_manager.get_recent_events(limit=limit)
 
         # Get persistence service stats
         try:
@@ -102,7 +95,9 @@ async def get_dashboard_data(
 
 
 @router.get("/stats", response_model=Dict[str, Any])
-async def get_security_stats() -> Dict[str, Any]:
+async def get_security_stats(
+    event_manager = Depends(get_security_event_manager)
+) -> Dict[str, Any]:
     """
     Get security statistics summary.
 
@@ -110,7 +105,6 @@ async def get_security_stats() -> Dict[str, Any]:
         Security statistics and metrics
     """
     try:
-        event_manager = get_security_event_manager()
         manager_stats = event_manager.get_statistics()
         event_stats = event_manager.get_event_stats()
 
@@ -137,7 +131,8 @@ async def get_security_stats() -> Dict[str, Any]:
 @router.get("/events/recent")
 async def get_recent_events(
     limit: int = Query(default=50, le=500, description="Number of events to return"),
-    severity: Optional[str] = Query(default=None, description="Filter by severity")
+    severity: Optional[str] = Query(default=None, description="Filter by severity"),
+    event_manager = Depends(get_security_event_manager)
 ) -> Dict[str, Any]:
     """
     Get recent security events.
@@ -150,7 +145,6 @@ async def get_recent_events(
         Recent security events with metadata
     """
     try:
-        event_manager = get_security_event_manager()
         events = event_manager.get_recent_events(limit=limit)
 
         # Apply severity filter if specified
@@ -175,7 +169,9 @@ async def get_recent_events(
 
 
 @router.get("/health", response_model=SystemHealthResponse)
-async def get_system_health() -> SystemHealthResponse:
+async def get_system_health(
+    event_manager = Depends(get_security_event_manager)
+) -> SystemHealthResponse:
     """
     Get comprehensive system health status.
 
@@ -188,20 +184,12 @@ async def get_system_health() -> SystemHealthResponse:
     overall_status = "healthy"
 
     # Check SecurityEventManager
-    try:
-        event_manager = get_security_event_manager()
-        components["event_manager"] = {
-            "status": event_manager.health,
-            "details": event_manager.health_details
-        }
-        if event_manager.health in ["degraded", "failed"]:
-            overall_status = "degraded" if overall_status == "healthy" else "failed"
-    except RuntimeError:
-        components["event_manager"] = {
-            "status": "unavailable",
-            "details": {"reason": "Service not initialized"}
-        }
-        overall_status = "degraded"
+    components["event_manager"] = {
+        "status": event_manager.health,
+        "details": event_manager.health_details
+    }
+    if event_manager.health in ["degraded", "failed"]:
+        overall_status = "degraded" if overall_status == "healthy" else "failed"
 
     # Check SecurityPersistenceService
     try:
@@ -238,7 +226,8 @@ async def get_system_health() -> SystemHealthResponse:
 async def create_test_event(
     event_type: str = "can_rate_limit_violation",
     severity: str = "medium",
-    title: str = "Test Security Event"
+    title: str = "Test Security Event",
+    event_manager = Depends(get_security_event_manager)
 ) -> Dict[str, Any]:
     """
     Create a test security event for dashboard testing.
@@ -253,6 +242,7 @@ async def create_test_event(
     """
     try:
         from backend.models.security_events import SecurityEvent, SecurityEventType, SecuritySeverity
+        import time
 
         # Create test event
         test_event = SecurityEvent.create_can_event(
@@ -266,24 +256,14 @@ async def create_test_event(
         )
 
         # Publish through SecurityEventManager
-        try:
-            event_manager = get_security_event_manager()
-            await event_manager.publish(test_event)
+        await event_manager.publish(test_event)
 
-            return {
-                "status": "success",
-                "event_id": test_event.event_id,
-                "message": "Test event created and published",
-                "event": test_event.dict()
-            }
-
-        except RuntimeError:
-            return {
-                "status": "partial",
-                "event_id": test_event.event_id,
-                "message": "Test event created but SecurityEventManager not available",
-                "event": test_event.dict()
-            }
+        return {
+            "status": "success",
+            "event_id": test_event.event_id,
+            "message": "Test event created and published",
+            "event": test_event.dict()
+        }
 
     except Exception as e:
         logger.error(f"Error creating test event: {e}")

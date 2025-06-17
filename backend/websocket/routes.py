@@ -14,7 +14,6 @@ from fastapi.exceptions import HTTPException
 from backend.core.state import AppState
 from backend.services.feature_manager import get_feature_manager
 from backend.websocket.handlers import WebSocketManager
-from backend.websocket.security_handler import get_security_websocket_handler
 
 logger = logging.getLogger(__name__)
 
@@ -143,7 +142,24 @@ async def security_ws_endpoint(websocket: WebSocket) -> None:
     Example:
         Connect to ws://<host>/ws/security to receive real-time security events.
     """
-    security_handler = get_security_websocket_handler()
+    # Get the app from WebSocket scope
+    app = websocket.scope.get("app")  # type: ignore[attr-defined]
+
+    # Try to get security handler from ServiceRegistry first
+    security_handler = None
+    if app and hasattr(app.state, "service_registry"):
+        service_registry = app.state.service_registry
+        if service_registry.has_service("security_websocket_handler"):
+            security_handler = service_registry.get_service("security_websocket_handler")
+
+    # Fallback to app.state direct access
+    if not security_handler and app and hasattr(app.state, "security_websocket_handler"):
+        security_handler = app.state.security_websocket_handler
+
+    if not security_handler:
+        logger.error("SecurityWebSocketHandler not initialized")
+        await websocket.close(code=1011)  # Internal error
+        return
     await security_handler.connect_client(websocket)
 
     try:

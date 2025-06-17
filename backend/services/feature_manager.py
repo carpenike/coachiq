@@ -22,6 +22,7 @@ from backend.services.feature_models import (
     FeatureState,
     SafetyClassification,
 )
+from backend.services.feature_manager_listener import FeatureManagerLifecycleListener
 
 logger = logging.getLogger(__name__)
 
@@ -48,6 +49,7 @@ class FeatureManager:
         """
         self._config_set = config_set
         self._features: dict[str, Feature] = {}
+        self._lifecycle_listener: FeatureManagerLifecycleListener | None = None
         self._feature_definitions: dict[str, FeatureDefinition] = config_set.features
         self._feature_states: dict[str, FeatureState] = {}
         self._reverse_dependencies: dict[str, set[str]] = {}
@@ -772,6 +774,26 @@ class FeatureManager:
         ]
         logger.info(f"Safety-critical features enabled: {critical_features}")
 
+    def integrate_with_service_registry(self, service_registry: Any) -> None:
+        """
+        Integrate FeatureManager with ServiceRegistry for lifecycle events.
+
+        This enables FeatureManager to respond to service failures and
+        automatically disable dependent features for safety.
+
+        Args:
+            service_registry: The EnhancedServiceRegistry instance
+        """
+        # Create lifecycle listener
+        self._lifecycle_listener = FeatureManagerLifecycleListener(self)
+
+        # Register with high priority to ensure safety transitions happen first
+        service_registry.add_lifecycle_listener(self._lifecycle_listener, priority=100)
+
+        logger.info(
+            "FeatureManager integrated with ServiceRegistry for lifecycle events"
+        )
+
     async def request_feature_toggle(
         self,
         feature_name: str,
@@ -1453,7 +1475,8 @@ def _create_entity_manager_feature(**kwargs):
 FeatureManager.register_feature_factory("entity_manager", _create_entity_manager_feature)
 
 
-# Global instance for use with dependency injection
+# Global instance for backward compatibility
+# New code should use dependency injection with get_feature_manager_from_request
 _feature_manager: FeatureManager | None = None
 
 
@@ -1461,7 +1484,10 @@ def get_feature_manager(
     settings: Any = None,
 ) -> FeatureManager:
     """
-    Dependency provider for FeatureManager with safety validation.
+    Get the global FeatureManager instance with safety validation.
+
+    This function maintains backward compatibility but is deprecated.
+    New code should use dependency injection with get_feature_manager_from_request.
 
     Loads and validates feature definitions from YAML config, then applies
     runtime configuration from environment variables and settings.
@@ -1470,7 +1496,7 @@ def get_feature_manager(
         settings: Application settings
 
     Returns:
-        Initialized and configured FeatureManager instance
+        The global FeatureManager instance
 
     Raises:
         ValueError: If feature configuration is invalid
@@ -1481,6 +1507,16 @@ def get_feature_manager(
     if settings is None:
         settings = get_settings()
 
+    # Try to get from app.state first if available
+    try:
+        from backend.main import app
+        if hasattr(app.state, 'feature_manager') and app.state.feature_manager is not None:
+            return app.state.feature_manager
+    except (ImportError, AttributeError, RuntimeError):
+        # App not initialized yet, fall back to global instance
+        pass
+
+    # Fallback to global instance for backward compatibility
     if _feature_manager is None:
         try:
             yaml_path = Path(__file__).parent / "feature_flags.yaml"

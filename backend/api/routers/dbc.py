@@ -226,10 +226,10 @@ async def convert_rvc_to_dbc() -> Response:
     """
     try:
         # Load current RV-C configuration
-        from backend.integrations.rvc import load_config_data
+        from backend.integrations.rvc import load_config_data_v2
 
-        config_result = load_config_data()
-        decoder_map = config_result[0]
+        rvc_config_obj = load_config_data_v2()
+        decoder_map = rvc_config_obj.dgn_dict
 
         # Create converter
         converter = RVCtoDBCConverter()

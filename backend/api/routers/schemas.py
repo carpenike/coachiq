@@ -5,12 +5,12 @@ Provides schema export endpoints for frontend runtime validation.
 Serves Zod-compatible schemas for Domain API v2 with safety-critical validation.
 """
 
-from typing import Any, Dict, List
+from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import JSONResponse
 
-from backend.core.dependencies import get_auth_manager, get_feature_manager
+from backend.core.dependencies_v2 import get_auth_manager, get_feature_manager
 from backend.schemas.schema_exporter import ZodSchemaExporter
 from backend.services.auth_manager import AuthManager
 from backend.services.feature_manager import FeatureManager
@@ -22,7 +22,7 @@ router = APIRouter(prefix="/api/schemas", tags=["schemas"])
 async def get_all_schemas(
     auth_manager: AuthManager = Depends(get_auth_manager),
     feature_manager: FeatureManager = Depends(get_feature_manager),
-) -> dict[str, Any]:
+) -> JSONResponse:
     """
     Export all Zod-compatible schemas for frontend validation.
 
@@ -30,7 +30,7 @@ async def get_all_schemas(
     safety-critical validation requirements.
     """
     # Check if schema export is enabled
-    if not feature_manager.is_feature_enabled("domain_api_v2"):
+    if not feature_manager.is_enabled("domain_api_v2"):
         raise HTTPException(status_code=503, detail="Domain API v2 schemas not available")
 
     try:
@@ -54,7 +54,7 @@ async def get_schema_list(
 ) -> dict[str, Any]:
     """Get list of available schema names with metadata"""
 
-    if not feature_manager.is_feature_enabled("domain_api_v2"):
+    if not feature_manager.is_enabled("domain_api_v2"):
         raise HTTPException(status_code=503, detail="Domain API v2 schemas not available")
 
     return {
@@ -68,14 +68,14 @@ async def get_schema_by_name(
     schema_name: str,
     auth_manager: AuthManager = Depends(get_auth_manager),
     feature_manager: FeatureManager = Depends(get_feature_manager),
-) -> dict[str, Any]:
+) -> JSONResponse:
     """
     Get a specific schema by name for targeted validation.
 
     Args:
         schema_name: Name of the schema to retrieve (Entity, ControlCommand, etc.)
     """
-    if not feature_manager.is_feature_enabled("domain_api_v2"):
+    if not feature_manager.is_enabled("domain_api_v2"):
         raise HTTPException(status_code=503, detail="Domain API v2 schemas not available")
 
     try:
@@ -107,14 +107,14 @@ async def get_schema_by_name(
 async def validate_schema_integrity(
     auth_manager: AuthManager = Depends(get_auth_manager),
     feature_manager: FeatureManager = Depends(get_feature_manager),
-) -> dict[str, Any]:
+) -> JSONResponse:
     """
     Validate that all schemas can be properly exported.
 
     Used for system health checks and debugging schema issues.
     Requires authentication as it's an administrative endpoint.
     """
-    if not feature_manager.is_feature_enabled("domain_api_v2"):
+    if not feature_manager.is_enabled("domain_api_v2"):
         raise HTTPException(status_code=503, detail="Domain API v2 schemas not available")
 
     # This endpoint requires authentication since it's for admin/debugging
@@ -154,7 +154,7 @@ async def get_openapi_schemas(
     This endpoint provides schemas in OpenAPI format for integration with
     API documentation tools and code generators.
     """
-    if not feature_manager.is_feature_enabled("domain_api_v2"):
+    if not feature_manager.is_enabled("domain_api_v2"):
         raise HTTPException(status_code=503, detail="Domain API v2 schemas not available")
 
     try:

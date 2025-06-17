@@ -6,10 +6,10 @@ from typing import List, Optional, Dict, Any
 from pathlib import Path
 from datetime import datetime
 
-from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Request
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 
-from backend.core.dependencies import get_feature_manager_from_request
+from backend.core.dependencies_v2 import get_feature_manager
 from backend.integrations.can.can_bus_recorder import (
     CANBusRecorder,
     RecordingFormat,
@@ -90,7 +90,7 @@ class StartReplayRequest(BaseModel):
 
 async def get_recorder(request) -> CANBusRecorder:
     """Get CAN bus recorder instance."""
-    feature_manager = get_feature_manager_from_request(request)
+    feature_manager = get_feature_manager(request)
     recorder = feature_manager.get_feature("can_bus_recorder")
 
     if not recorder:
@@ -250,8 +250,8 @@ async def start_replay(
     """Start replaying a recorded session."""
     try:
         # Get CAN sender from feature manager
-        from backend.core.dependencies import get_feature_manager_from_request
-        feature_manager = get_feature_manager_from_request(request)
+        from backend.core.dependencies_v2 import get_feature_manager
+        feature_manager = get_feature_manager(request)
         can_feature = feature_manager.get_feature("can_feature")
 
         if not can_feature:
@@ -294,14 +294,14 @@ async def stop_replay(recorder: CANBusRecorder = Depends(get_recorder)):
     return {"status": "stopped"}
 
 
-@router.post("/upload")
-async def upload_recording(
-    file: UploadFile = File(...),
-    recorder: CANBusRecorder = Depends(get_recorder),
-):
-    """Upload a recording file."""
-    # Validate file extension
-    valid_extensions = [f".{fmt.value}" for fmt in RecordingFormat]
+# @router.post("/upload")
+# async def upload_recording(
+#     file: UploadFile = File(...),
+#     recorder: CANBusRecorder = Depends(get_recorder),
+# ):
+#     """Upload a recording file."""
+#     # Validate file extension
+#     valid_extensions = [f".{fmt.value}" for fmt in RecordingFormat]
     file_ext = Path(file.filename).suffix.lower()
 
     if file_ext not in valid_extensions:
