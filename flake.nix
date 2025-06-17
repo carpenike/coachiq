@@ -2540,7 +2540,7 @@ EOF
               ExecStart = "${config.coachiq.package}/bin/coachiq-daemon";
               ExecStartPost = [
                 # Wait for service to be ready (increased from 2s to 10s for proper initialization)
-                "${pkgs.bash}/bin/bash -c 'sleep 10 && ${config.coachiq.package}/share/coachiq/nix/health-check.sh'"
+                "${pkgs.bash}/bin/bash -c 'sleep 20 && ${config.coachiq.package}/share/coachiq/nix/health-check.sh'"
               ];
               Restart    = "always";
               RestartSec = 5;
