@@ -577,7 +577,7 @@ EOF
             inherit version;
             src = ./frontend;
 
-            npmDepsHash = "sha256-eY3ikgJDgfpwq2BgiPorWlZdsaiG0wRDtcKagp4T1VM=";
+            npmDepsHash = "sha256-LxRGSZm9zBiRqF08J2J32k9SKMlf1NEXdA/9S4AoOTg=";
 
             # Handle React 19 peer dependency conflicts
             npmFlags = [ "--legacy-peer-deps" ];
