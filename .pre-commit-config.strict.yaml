@@ -1,15 +1,12 @@
-# Pragmatic pre-commit configuration for development with technical debt
-# This config only blocks on NEW issues in CHANGED files
-# Use this during active development, switch to full config when cleaning up
-
 # See https://pre-commit.com for full documentation
 
 default_language_version:
   python: python3.12
 
+# NO global exclude - let each tool manage its own exclusions
+
 repos:
-  # ===== ALWAYS BLOCKING (Fast, Critical) =====
-  # These are quick and catch unambiguous errors
+  # Core file + YAML + merge conflict + whitespace checks
   - repo: https://github.com/pre-commit/pre-commit-hooks
     rev: v5.0.0
     hooks:
@@ -30,28 +27,26 @@ repos:
             resources/rvc-2023-11_chunks\.json
           )$
 
-  # ===== DIFF-AWARE BLOCKING (On Changed Files Only) =====
-
-  # Python linting and formatting with Ruff
+  # Python linting and formatting with Ruff (fast checks)
   - repo: https://github.com/astral-sh/ruff-pre-commit
-    rev: v0.12.0
+    rev: v0.12.0  # Update to latest
     hooks:
       - id: ruff
-        args: [--fix, --exit-non-zero-on-fix]  # Auto-fix to reduce friction
+        args: [--fix]  # Fix what we can, report the rest
         types_or: [python, pyi]
       - id: ruff-format
         types_or: [python, pyi]
 
-  # Security scanning - always blocking for medium+ issues
+  # Security scanning with Bandit (CRITICAL - must pass for medium+ issues)
   - repo: https://github.com/PyCQA/bandit
-    rev: '1.8.5'
+    rev: '1.8.5'  # Update to latest
     hooks:
       - id: bandit
-        args: ["-c", "pyproject.toml", "--severity-level", "medium"]
+        args: ["-c", "pyproject.toml", "--severity-level", "medium"]  # Block only on medium+ severity
         additional_dependencies: ["bandit[toml]"]
         types: [python]
 
-  # Frontend linting on staged files only
+  # Frontend linting (staged files only for speed)
   - repo: local
     hooks:
       - id: eslint-staged
@@ -60,21 +55,20 @@ repos:
         language: system
         files: ^frontend/.*\.(js|jsx|ts|tsx)$
         exclude: ^frontend/(node_modules|dist|coverage)/
-        pass_filenames: true
+        pass_filenames: true  # Only lint changed files
 
-  # ===== MANUAL/CI-ONLY HOOKS =====
-  # These require full project context and are too heavy for every commit
+  # ===== PRE-PUSH HOOKS (heavier checks) =====
 
-  # Python type checking - moved to manual stage
+  # Python type checking with Pyright (slow, full project analysis)
   - repo: https://github.com/RobertCraigie/pyright-python
-    rev: v1.1.402
+    rev: v1.1.402  # Latest as of June 2025
     hooks:
       - id: pyright
-        pass_filenames: false
+        pass_filenames: false  # Analyze whole project
         args: [--project=.]
-        stages: [manual]  # Run with: pre-commit run pyright --all-files
+        stages: [pre-push]  # Only run on push
 
-  # Frontend full checks - also manual
+  # Frontend full project checks
   - repo: local
     hooks:
       - id: frontend-typecheck-full
@@ -82,16 +76,16 @@ repos:
         entry: bash -c 'cd frontend && npm run typecheck'
         language: system
         pass_filenames: false
-        stages: [manual]
+        stages: [pre-push]  # Only run on push
 
       - id: frontend-build-check
         name: Frontend build check
         entry: bash -c 'cd frontend && npm run build'
         language: system
         pass_filenames: false
-        stages: [manual]
+        stages: [pre-push]  # Only run on push
 
-  # Poetry lock check remains on pre-push as it's important but not blocking
+  # Poetry lock verification (push only)
   - repo: local
     hooks:
       - id: check-poetry-lock
@@ -101,4 +95,4 @@ repos:
         language: system
         pass_filenames: false
         files: ^(pyproject\.toml|poetry\.lock)$
-        stages: [pre-push]
+        stages: [pre-push]  # Only run on push
