@@ -93,7 +93,9 @@
       "mcp__serena__read_memory",
       "mcp__serena__think_about_task_adherence",
       "mcp__serena__find_file",
-      "mcp__zen__analyze"
+      "mcp__zen__analyze",
+      "Bash(./scripts/switch-precommit-mode.sh:*)",
+      "Bash(pre-commit:*)"
     ]
   },
   "enableAllProjectMcpServers": true,

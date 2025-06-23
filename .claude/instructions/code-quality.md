@@ -4,6 +4,10 @@
 
 Comprehensive code quality standards covering formatting, linting, type checking, and documentation for both Python backend and TypeScript frontend.
 
+> **NOTE**: This project uses a **Pragmatic Quality Policy** to balance quality with development velocity.
+> See [pragmatic-quality.md](./pragmatic-quality.md) for the enforcement strategy.
+> This document defines the standards; the pragmatic policy defines when they're enforced.
+
 ## Python Backend Quality
 
 ### Formatting with Ruff

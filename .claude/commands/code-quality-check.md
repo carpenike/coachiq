@@ -1,8 +1,27 @@
 # Code Quality Check
 
-Run comprehensive code quality checks across the entire codebase.
+Run code quality checks using our pragmatic quality policy that balances safety with development velocity.
+
+## Quick Check (Pragmatic Mode - DEFAULT)
+
+For daily development, only check changed files:
+
+```bash
+# Ensure pragmatic mode is active
+./scripts/switch-precommit-mode.sh pragmatic
+
+# Run checks on staged files only
+git add -A
+pre-commit run
+
+# Or check specific changed files
+poetry run ruff check --diff
+poetry run ruff format --check --diff
+```
 
 ## Full Quality Check Workflow
+
+For comprehensive validation before PRs or releases:
 
 ### 1. Python Backend Quality
 ```bash
@@ -81,4 +100,31 @@ $ARGUMENTS can specify:
 
 ## CI/CD Integration
 
-This command mirrors the checks run in CI/CD pipelines. All checks must pass before code can be merged.
+Use the CI quality gate for the most accurate validation:
+
+```bash
+# Run the same checks CI will run
+./scripts/ci-quality-gate.sh
+```
+
+This uses diff-aware checking and baseline management to allow existing debt while preventing new issues.
+
+## Security Checks (ALWAYS BLOCKING)
+
+Security scans always run on the full project:
+
+```bash
+# Must always pass - no exceptions
+poetry run bandit -c pyproject.toml --severity-level medium -r backend
+```
+
+## Mode Management
+
+```bash
+# Check current mode
+./scripts/switch-precommit-mode.sh status
+
+# Switch between modes
+./scripts/switch-precommit-mode.sh pragmatic  # For development
+./scripts/switch-precommit-mode.sh strict     # For cleanup/releases
+```

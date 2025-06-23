@@ -48,6 +48,7 @@ Each file contains targeted guidance for specific development workflows and cont
 - [`frontend.md`](.claude/instructions/frontend.md): React frontend standards, TypeScript patterns, UI components
 - [`testing.md`](.claude/instructions/testing.md): Testing patterns and requirements for both backend and frontend
 - [`code-quality.md`](.claude/instructions/code-quality.md): Linting, formatting, and type checking standards
+- 🆕 [`pragmatic-quality.md`](.claude/instructions/pragmatic-quality.md): **IMPORTANT - Pragmatic quality enforcement policy for working with technical debt**
 - [`api-patterns.md`](.claude/instructions/api-patterns.md): Entity control, WebSocket, and REST API patterns
 - [`domain-api.md`](.claude/instructions/domain-api.md): Domain API v2 development patterns, bulk operations, and migration strategies
 - 🆕 [`service-patterns.md`](.claude/instructions/service-patterns.md): **CRITICAL - Modern service access patterns, ServiceRegistry, and dependency injection**
@@ -127,47 +128,85 @@ Each file contains targeted guidance for specific development workflows and cont
    - Check error messages for missing dependencies or incorrect paths
    - Don't repeat the same failed command without fixing the underlying issue
 
-### Code Quality Requirements (MANDATORY)
+### Code Quality Requirements (PRAGMATIC APPROACH)
 
-**CRITICAL**: After ANY code change, you MUST run quality checks before proceeding:
+**IMPORTANT**: We use a pragmatic quality policy that balances safety with development velocity.
 
-**Frontend Quality Gates:**
+**Quality Philosophy:**
+- Block on NEW issues in CHANGED files (prevent regression)
+- Allow existing technical debt (enable progress)
+- ALWAYS block on security issues (safety-critical system)
+- Use CI for comprehensive project-wide validation
+
+**Pre-commit Configuration:**
 ```bash
-cd frontend
-npm run typecheck       # TypeScript compilation MUST pass (strict mode)
-npm run lint           # ESLint MUST pass (SonarJS + security rules)
-npm run security:audit # Dependency vulnerabilities MUST be resolved
-npm run build          # Production build MUST succeed
+# Check current mode
+./scripts/switch-precommit-mode.sh status
+
+# For daily development (recommended)
+./scripts/switch-precommit-mode.sh pragmatic
+
+# For major releases or cleanup sprints
+./scripts/switch-precommit-mode.sh strict
 ```
 
-**Backend Quality Gates:**
+**Development Workflow:**
 ```bash
-cd backend
-poetry run pyright backend    # Type checking MUST pass (strict mode)
-poetry run ruff check .        # Linting MUST pass (safety-critical rules)
-poetry run ruff format .       # Code formatting MUST be applied
-poetry run bandit -c pyproject.toml -r backend  # Security scanning MUST pass
-poetry run pip-audit           # Dependency vulnerabilities MUST be resolved
+# 1. Make your changes
+# 2. Stage files
+git add -A
+
+# 3. Commit (pragmatic mode runs fast checks on changed files only)
+git commit -m "feat: your feature"
+
+# 4. If blocked by pre-commit, you have options:
+#    a) Fix the issues in your changed files
+#    b) Use --no-verify for critical fixes (document why)
+#    c) Switch to pragmatic mode if not already
+
+# 5. Push (CI will validate everything)
+git push
 ```
 
-**When to Run Quality Checks:**
-- After every significant code change (>10 lines)
-- Before moving to the next development task
-- Before any git commit
-- After implementing any new feature or component
-- During refactoring operations
+**Quick Quality Checks (Run These Frequently):**
+```bash
+# Backend - Check only your changes
+poetry run ruff check --diff
+poetry run ruff format --check --diff
 
-**Development Workflow Pattern:**
-1. Make code changes
-2. Run appropriate quality checks immediately
-3. Fix any issues before proceeding
-4. Only then move to the next task
+# Frontend - Check only staged files
+cd frontend && npx eslint --cache
 
-**Use Available Quality Commands:**
-- `/fix-type-errors` - Automated type error resolution
-- `/code-quality-check` - Comprehensive quality validation
-- `/build-and-test` - Full build and test verification
-- `./scripts/code_quality_check.sh` - Complete safety-critical validation suite
+# Security - Always full scan (critical)
+poetry run bandit -c pyproject.toml --severity-level medium -r backend
+```
+
+**Full Quality Validation (Before PRs):**
+```bash
+# Run all pre-commit hooks manually
+pre-commit run --all-files
+
+# Type checking (slow but thorough)
+pre-commit run pyright --all-files
+pre-commit run frontend-typecheck-full --all-files
+
+# Or use the CI quality gate locally
+./scripts/ci-quality-gate.sh
+```
+
+**When to Use --no-verify:**
+Acceptable for:
+- Critical security fixes blocked by unrelated issues
+- Hotfixes for production issues
+- When switching between strict/pragmatic modes
+
+Always create a follow-up task to address any bypassed issues.
+
+**Quality Commands:**
+- `/code-quality-check` - Run pragmatic checks on changed files
+- `/fix-type-errors` - Fix type errors in changed files
+- `./scripts/ci-quality-gate.sh` - Run full CI validation locally
+- `./scripts/switch-precommit-mode.sh` - Switch between quality modes
 
 ## Domain API v2 Architecture Patterns
 
