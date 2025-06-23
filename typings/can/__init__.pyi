@@ -41,24 +41,18 @@ class Bus(BusABC):
 class CanError(Exception):
     """Base class for all python-can exceptions."""
 
-    pass
-
 class CanOperationError(CanError):
     """Indicates an operational error occurred in python-can."""
 
-    pass
-
 class CanInterfaceNotImplementedError(CanError):
     """Indicates that the CAN interface is not implemented or available."""
-
-    pass
 
 # Interface module
 class Interface:
     """Interface module for CAN."""
 
     @staticmethod
-    def Bus(  # noqa: N802
+    def Bus(
         channel: str | None = None,
         bustype: str | None = None,
         **kwargs: Any,

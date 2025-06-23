@@ -59,9 +59,9 @@ class BatchWindow:
     def should_flush(self, max_size: int) -> bool:
         """Check if window should be flushed."""
         return (
-            len(self.notifications) >= max_size or
-            datetime.utcnow() > self.end_time or
-            self.is_closed
+            len(self.notifications) >= max_size
+            or datetime.utcnow() > self.end_time
+            or self.is_closed
         )
 
     def close(self) -> list[NotificationPayload]:
@@ -73,8 +73,13 @@ class BatchWindow:
 class BatchGroup:
     """Groups notifications for batch processing."""
 
-    def __init__(self, group_id: str, channel: NotificationChannel,
-                 max_size: int = 100, max_wait_seconds: int = 5):
+    def __init__(
+        self,
+        group_id: str,
+        channel: NotificationChannel,
+        max_size: int = 100,
+        max_wait_seconds: int = 5,
+    ):
         self.group_id = group_id
         self.channel = channel
         self.max_size = max_size
@@ -102,9 +107,9 @@ class BatchGroup:
         age = (datetime.utcnow() - self.created_at).total_seconds()
 
         return (
-            len(self.notifications) >= self.max_size or
-            age >= self.max_wait_seconds or
-            self._has_critical_notification()
+            len(self.notifications) >= self.max_size
+            or age >= self.max_wait_seconds
+            or self._has_critical_notification()
         )
 
     def get_average_priority(self) -> float:
@@ -178,11 +183,13 @@ class NotificationBatcher:
             "total_notifications": 0,
             "avg_batch_size": 0.0,
             "batching_efficiency": 0.0,
-            "channel_stats": defaultdict(lambda: {
-                "batches": 0,
-                "notifications": 0,
-                "avg_size": 0.0,
-            }),
+            "channel_stats": defaultdict(
+                lambda: {
+                    "batches": 0,
+                    "notifications": 0,
+                    "avg_size": 0.0,
+                }
+            ),
         }
 
         # Background tasks
@@ -208,14 +215,14 @@ class NotificationBatcher:
             # Route based on strategy
             if self.strategy == BatchingStrategy.TIME_WINDOW:
                 return await self._add_to_time_window(notification)
-            elif self.strategy == BatchingStrategy.SIZE_THRESHOLD:
+            if self.strategy == BatchingStrategy.SIZE_THRESHOLD:
                 return await self._add_to_size_batch(notification)
-            elif self.strategy == BatchingStrategy.PRIORITY_GROUPED:
+            if self.strategy == BatchingStrategy.PRIORITY_GROUPED:
                 return await self._add_to_priority_group(notification)
-            elif self.strategy == BatchingStrategy.RECIPIENT_GROUPED:
+            if self.strategy == BatchingStrategy.RECIPIENT_GROUPED:
                 return await self._add_to_recipient_group(notification)
-            else:  # HYBRID
-                return await self._add_to_hybrid_batch(notification)
+            # HYBRID
+            return await self._add_to_hybrid_batch(notification)
 
         except Exception as e:
             self.logger.error(f"Failed to batch notification {notification.id}: {e}")
@@ -285,10 +292,7 @@ class NotificationBatcher:
         current_time = datetime.utcnow()
 
         # Calculate window ID
-        window_start = current_time.replace(
-            second=(current_time.second // 5) * 5,
-            microsecond=0
-        )
+        window_start = current_time.replace(second=(current_time.second // 5) * 5, microsecond=0)
         window_id = f"window_{window_start.timestamp()}"
 
         # Get or create window
@@ -301,17 +305,12 @@ class NotificationBatcher:
         # Add to window
         if window.add_notification(notification):
             return window_id
-        else:
-            # Window closed, create new one
-            new_window_id = f"window_{current_time.timestamp()}"
-            new_window = BatchWindow(
-                new_window_id,
-                current_time,
-                current_time + window_duration
-            )
-            new_window.add_notification(notification)
-            self.time_windows[new_window_id] = new_window
-            return new_window_id
+        # Window closed, create new one
+        new_window_id = f"window_{current_time.timestamp()}"
+        new_window = BatchWindow(new_window_id, current_time, current_time + window_duration)
+        new_window.add_notification(notification)
+        self.time_windows[new_window_id] = new_window
+        return new_window_id
 
     async def _add_to_size_batch(self, notification: NotificationPayload) -> str:
         """Add notification using size threshold strategy."""
@@ -331,18 +330,17 @@ class NotificationBatcher:
             group = self.active_groups[group_id]
             if group.add_notification(notification):
                 return group_id
-            else:
-                # Group full, create new one
-                new_group_id = f"size_{channel.value}_{datetime.utcnow().timestamp()}"
-                new_group = BatchGroup(
-                    new_group_id,
-                    channel,
-                    max_size=config.get("max_batch_size", 50),
-                    max_wait_seconds=config.get("max_wait_seconds", 5),
-                )
-                new_group.add_notification(notification)
-                self.active_groups[new_group_id] = new_group
-                return new_group_id
+            # Group full, create new one
+            new_group_id = f"size_{channel.value}_{datetime.utcnow().timestamp()}"
+            new_group = BatchGroup(
+                new_group_id,
+                channel,
+                max_size=config.get("max_batch_size", 50),
+                max_wait_seconds=config.get("max_wait_seconds", 5),
+            )
+            new_group.add_notification(notification)
+            self.active_groups[new_group_id] = new_group
+            return new_group_id
 
         return f"size_default_{datetime.utcnow().timestamp()}"
 
@@ -437,23 +435,22 @@ class NotificationBatcher:
             group = self.active_groups[group_id]
             if group.add_notification(notification):
                 return group_id
-            else:
-                # Group full, check if we should flush or create new
-                if group.should_flush():
-                    await self.batch_queue.put(group)
-                    del self.active_groups[group_id]
+            # Group full, check if we should flush or create new
+            if group.should_flush():
+                await self.batch_queue.put(group)
+                del self.active_groups[group_id]
 
-                # Create new group
-                new_group_id = f"{group_id}_{datetime.utcnow().timestamp()}"
-                new_group = BatchGroup(
-                    new_group_id,
-                    channel,
-                    max_size=config.get("max_batch_size", 50),
-                    max_wait_seconds=config.get("max_wait_seconds", 5),
-                )
-                new_group.add_notification(notification)
-                self.active_groups[new_group_id] = new_group
-                return new_group_id
+            # Create new group
+            new_group_id = f"{group_id}_{datetime.utcnow().timestamp()}"
+            new_group = BatchGroup(
+                new_group_id,
+                channel,
+                max_size=config.get("max_batch_size", 50),
+                max_wait_seconds=config.get("max_wait_seconds", 5),
+            )
+            new_group.add_notification(notification)
+            self.active_groups[new_group_id] = new_group
+            return new_group_id
 
         return f"hybrid_default_{datetime.utcnow().timestamp()}"
 
@@ -542,9 +539,7 @@ class NotificationBatcher:
         channel_stat = self.stats["channel_stats"][group.channel.value]
         channel_stat["batches"] += 1
         channel_stat["notifications"] += batch_size
-        channel_stat["avg_size"] = (
-            channel_stat["notifications"] / channel_stat["batches"]
-        )
+        channel_stat["avg_size"] = channel_stat["notifications"] / channel_stat["batches"]
 
         # Calculate batching efficiency (how much we're batching vs individual sends)
         if self.stats["total_notifications"] > 0:

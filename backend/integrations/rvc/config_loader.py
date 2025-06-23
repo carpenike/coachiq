@@ -25,7 +25,6 @@ class ConfigValidationError(Exception):
     """Raised when configuration validation fails."""
 
 
-
 def validate_spec_entry(entry: dict[str, Any], pgn_name: str) -> None:
     """
     Validate a single PGN entry from the RVC spec.
@@ -41,9 +40,7 @@ def validate_spec_entry(entry: dict[str, Any], pgn_name: str) -> None:
     for key in required_keys:
         if key not in entry:
             msg = f"Invalid PGN entry '{pgn_name}': missing required field '{key}'"
-            raise ConfigValidationError(
-                msg
-            )
+            raise ConfigValidationError(msg)
 
     # Validate signals
     if not isinstance(entry["signals"], list):
@@ -53,9 +50,7 @@ def validate_spec_entry(entry: dict[str, Any], pgn_name: str) -> None:
     for i, signal in enumerate(entry["signals"]):
         if not isinstance(signal, dict):
             msg = f"Invalid signal {i} in PGN '{pgn_name}': signal must be a dictionary"
-            raise ConfigValidationError(
-                msg
-            )
+            raise ConfigValidationError(msg)
 
         signal_required = ["name", "start_bit", "length"]
         for key in signal_required:
@@ -64,9 +59,7 @@ def validate_spec_entry(entry: dict[str, Any], pgn_name: str) -> None:
                     f"Invalid signal '{signal.get('name', i)}' in PGN '{pgn_name}': "
                     f"missing required field '{key}'"
                 )
-                raise ConfigValidationError(
-                    msg
-                )
+                raise ConfigValidationError(msg)
 
 
 @lru_cache(maxsize=1)

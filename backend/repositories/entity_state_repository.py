@@ -11,7 +11,7 @@ This repository handles:
 """
 
 import logging
-from typing import Dict, Any, Optional
+from typing import Any
 
 from backend.core.entity_manager import EntityManager
 from backend.models.entity_model import EntityConfig
@@ -27,7 +27,7 @@ class EntityStateRepository:
     providing a clean interface for entity data access and manipulation.
     """
 
-    def __init__(self, entity_manager: Optional[EntityManager] = None):
+    def __init__(self, entity_manager: EntityManager | None = None):
         """
         Initialize the entity state repository.
 
@@ -46,7 +46,7 @@ class EntityStateRepository:
         """Get the number of light entities."""
         return len(self.entity_manager.get_light_entity_ids())
 
-    def update_entity_state_and_history(self, entity_id: str, payload: Dict[str, Any]) -> None:
+    def update_entity_state_and_history(self, entity_id: str, payload: dict[str, Any]) -> None:
         """
         Update the state and history for a given entity.
 
@@ -96,11 +96,11 @@ class EntityStateRepository:
         if entity:
             entity.last_known_brightness = brightness
 
-    def get_entity_states(self) -> Dict[str, Any]:
+    def get_entity_states(self) -> dict[str, Any]:
         """Get all entity states."""
         return self.entity_manager.to_api_response()
 
-    def get_entity_history(self, entity_id: str, count: Optional[int] = None) -> list:
+    def get_entity_history(self, entity_id: str, count: int | None = None) -> list:
         """
         Get historical data for an entity.
 
@@ -116,7 +116,7 @@ class EntityStateRepository:
             return [state.model_dump() for state in entity.get_history(count=count)]
         return []
 
-    def bulk_load_entities(self, entity_configs: Dict[str, EntityConfig]) -> None:
+    def bulk_load_entities(self, entity_configs: dict[str, EntityConfig]) -> None:
         """
         Bulk load entities from configuration.
 
@@ -125,7 +125,7 @@ class EntityStateRepository:
         """
         self.entity_manager.bulk_load_entities(entity_configs)
 
-    def get_health_status(self) -> Dict[str, Any]:
+    def get_health_status(self) -> dict[str, Any]:
         """
         Get repository health status.
 
@@ -138,3 +138,75 @@ class EntityStateRepository:
             "light_count": self.get_light_entity_count(),
             "entity_manager_healthy": True,  # Could add actual health check
         }
+
+    def set_entity(self, entity_id: str, entity: Any) -> None:
+        """
+        Set/store an entity for testing purposes.
+
+        Args:
+            entity_id: Entity identifier
+            entity: Entity object
+        """
+        # This is a placeholder method for testing.
+        # In production, entities would be managed by the entity manager.
+        if not hasattr(self, "_test_entities"):
+            self._test_entities = {}
+        self._test_entities[entity_id] = entity
+
+    def get_entity(self, entity_id: str) -> Any:
+        """
+        Get an entity by ID.
+
+        Args:
+            entity_id: Entity identifier
+
+        Returns:
+            Entity object or None if not found
+        """
+        if hasattr(self, "_test_entities"):
+            return self._test_entities.get(entity_id)
+        return None
+
+    def get_all_entities(self) -> dict[str, Any]:
+        """
+        Get all entities.
+
+        Returns:
+            Dictionary of entity_id -> entity mappings
+        """
+        # Get entities from the entity manager
+        return self.entity_manager.entities
+
+    def get_all_entity_ids(self) -> list[str]:
+        """
+        Get all entity IDs.
+
+        Returns:
+            List of entity identifiers
+        """
+        return self.entity_manager.get_entity_ids()
+
+    def get_entity_ids_by_type(self, device_type: str) -> list[str]:
+        """
+        Get entity IDs filtered by device type.
+
+        Args:
+            device_type: Type to filter by
+
+        Returns:
+            List of entity IDs matching the type
+        """
+        return [
+            entity_id
+            for entity_id, entity in self.entity_manager.entities.items()
+            if entity.config.get("device_type") == device_type
+        ]
+
+    def get_unmapped_entries(self) -> dict[str, Any]:
+        """
+        Get unmapped entries from the entity manager.
+
+        Returns:
+            Dictionary of unmapped entries
+        """
+        return self.entity_manager.unmapped_entries

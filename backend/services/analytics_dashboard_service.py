@@ -12,12 +12,11 @@ import asyncio
 import contextlib
 import logging
 import time
-from typing import Any
+from typing import Any, Optional
 
 from backend.core.config import get_settings
 from backend.integrations.analytics_dashboard.config import AnalyticsDashboardSettings
 from backend.models.analytics import PatternAnalysis, SystemInsight, TrendPoint
-from backend.services.feature_manager import get_feature_manager
 
 logger = logging.getLogger(__name__)
 
@@ -33,16 +32,46 @@ class AnalyticsDashboardService:
     - Comprehensive metrics aggregation and reporting
     """
 
-    def __init__(self):
-        """Initialize the analytics dashboard service."""
+    def __init__(self, performance_monitor=None, database_manager=None, analytics_repository=None):
+        """Initialize the analytics dashboard service.
+
+        Args:
+            performance_monitor: Optional PerformanceMonitor instance
+            database_manager: Optional DatabaseManager instance
+            analytics_repository: Optional AnalyticsRepository instance
+        """
         self.config = get_settings()
-        self.feature_manager = get_feature_manager()
         self.analytics_settings = AnalyticsDashboardSettings()
 
-        # Initialize storage service with dual-mode (memory + optional persistence)
+        # Initialize storage service with repository pattern
+        from backend.core.performance import PerformanceMonitor
+        from backend.repositories.analytics_repository import AnalyticsRepository
         from backend.services.analytics_storage_service import AnalyticsStorageService
 
-        self.storage: AnalyticsStorageService = AnalyticsStorageService()
+        # Create performance monitor if not provided
+        if not performance_monitor:
+            performance_monitor = PerformanceMonitor()
+
+        # Analytics repository is REQUIRED - either provided or created with database_manager
+        if not analytics_repository:
+            if not database_manager:
+                msg = (
+                    "AnalyticsDashboardService requires either analytics_repository "
+                    "or database_manager to be provided. Persistence is now required."
+                )
+                logger.error(msg)
+                raise ValueError(msg)
+
+            # Create analytics repository with database persistence
+            analytics_repository = AnalyticsRepository(
+                database_manager=database_manager, performance_monitor=performance_monitor
+            )
+            logger.info("Created analytics repository with database persistence")
+
+        # Initialize storage service with required repository
+        self.storage = AnalyticsStorageService(
+            analytics_repository=analytics_repository, performance_monitor=performance_monitor
+        )
 
         # Configuration from analytics settings
         self.insight_generation_interval = (
@@ -55,7 +84,10 @@ class AnalyticsDashboardService:
         self._pattern_task: asyncio.Task | None = None
         self._running = False
 
-        logger.info("AnalyticsDashboardService initialized with dual-mode storage")
+        logger.info(
+            "AnalyticsDashboardService initialized with analytics storage: %s",
+            "enabled" if self.storage else "disabled",
+        )
 
     async def start(self) -> None:
         """Start the analytics dashboard service."""
@@ -86,7 +118,8 @@ class AnalyticsDashboardService:
                 await self._pattern_task
 
         # Clean up storage resources
-        self.storage.close()
+        if self.storage:
+            self.storage.close()
 
         logger.info("Analytics dashboard service stopped")
 
@@ -111,9 +144,12 @@ class AnalyticsDashboardService:
 
         cutoff_time = time.time() - (time_window_hours * 3600)
 
-        # Get performance analytics feature
-        perf_feature = self.feature_manager.get_feature("performance_analytics")
-        if not perf_feature:
+        # Get performance analytics service from ServiceRegistry
+        perf_service = None
+        if self.service_registry and self.service_registry.has_service("performance_analytics"):
+            perf_service = self.service_registry.get_service("performance_analytics")
+
+        if not perf_service:
             return self._empty_trends_response()
 
         trends = {
@@ -149,12 +185,14 @@ class AnalyticsDashboardService:
             trends["alerts"] = await self._detect_performance_alerts(trends["metrics"])
 
             # Include recent insights from storage
-            performance_insights = await self.storage.get_insights(
-                categories=["performance"],
-                min_severity="low",
-                limit=10,
-                max_age_hours=time_window_hours,
-            )
+            performance_insights = []
+            if self.storage:
+                performance_insights = await self.storage.get_insights(
+                    categories=["performance"],
+                    min_severity="low",
+                    limit=10,
+                    max_age_hours=time_window_hours,
+                )
             trends["insights"] = [
                 self._serialize_insight(insight) for insight in performance_insights
             ]
@@ -186,12 +224,14 @@ class AnalyticsDashboardService:
         logger.debug(f"Retrieving system insights with min_severity={min_severity}")
 
         # Get insights from storage service
-        filtered_insights = await self.storage.get_insights(
-            categories=categories,
-            min_severity=min_severity,
-            limit=limit,
-            max_age_hours=24,  # Default to last 24 hours
-        )
+        filtered_insights = []
+        if self.storage:
+            filtered_insights = await self.storage.get_insights(
+                categories=categories,
+                min_severity=min_severity,
+                limit=limit,
+                max_age_hours=24,  # Default to last 24 hours
+            )
 
         # Generate insights summary
         insights_summary = await self._generate_insights_summary(filtered_insights)
@@ -237,7 +277,9 @@ class AnalyticsDashboardService:
 
         try:
             if analysis_type in ["pattern_detection", "all"]:
-                patterns = await self.storage.get_patterns(min_confidence=0.5)
+                patterns = []
+                if self.storage:
+                    patterns = await self.storage.get_patterns(min_confidence=0.5)
                 analysis["patterns"] = [self._serialize_pattern(p) for p in patterns]
 
             if analysis_type in ["anomaly_detection", "all"]:
@@ -337,7 +379,9 @@ class AnalyticsDashboardService:
         """
         try:
             # Use storage service for metric recording
-            success = await self.storage.record_metric(metric_name, value, metadata)
+            success = True
+            if self.storage:
+                success = await self.storage.record_metric(metric_name, value, metadata)
 
             if success:
                 logger.debug(f"Recorded custom metric: {metric_name}={value}")
@@ -353,7 +397,9 @@ class AnalyticsDashboardService:
     async def get_storage_stats(self) -> dict[str, Any]:
         """Get storage service statistics for diagnostics."""
         try:
-            stats = await self.storage.get_storage_stats()
+            stats = {}
+            if self.storage:
+                stats = await self.storage.get_storage_stats()
 
             # Add service-level information
             stats.update(
@@ -385,19 +431,31 @@ class AnalyticsDashboardService:
         metrics = {}
 
         try:
-            # Get metrics from performance analytics feature
-            perf_feature = self.feature_manager.get_feature("performance_analytics")
-            if perf_feature and hasattr(perf_feature, "get_current_metrics"):
-                current_metrics = await perf_feature.get_current_metrics()
+            # Get metrics from performance analytics service
+            perf_service = None
+            if self.service_registry and self.service_registry.has_service("performance_analytics"):
+                perf_service = self.service_registry.get_service("performance_analytics")
+
+            if perf_service and hasattr(perf_service, "get_current_metrics"):
+                current_metrics = await perf_service.get_current_metrics()
                 metrics.update(current_metrics)
 
             # Add system-level metrics
+            active_services_count = 0
+            if self.service_registry:
+                # Count active services in ServiceRegistry
+                active_services_count = len(
+                    [
+                        name
+                        for name in self.service_registry.list_services()
+                        if self.service_registry.get_service_status(name).status == "running"
+                    ]
+                )
+
             metrics.update(
                 {
                     "timestamp": time.time(),
-                    "active_features": len(
-                        [f for f in self.feature_manager.features.values() if f.enabled]
-                    ),
+                    "active_services": active_services_count,
                     "memory_usage": 0.0,  # Would be populated from system monitoring
                     "cpu_usage": 0.0,
                 }
@@ -415,7 +473,9 @@ class AnalyticsDashboardService:
         try:
             # Get metric trend from storage service
             hours_requested = int((time.time() - cutoff_time) / 3600)
-            points = await self.storage.get_metrics_trend(metric_name, hours_requested)
+            points = []
+            if self.storage:
+                points = await self.storage.get_metrics_trend(metric_name, hours_requested)
 
             if len(points) < 2:
                 return {
@@ -575,7 +635,8 @@ class AnalyticsDashboardService:
             # Store new insights using storage service
             new_insights = performance_insights + reliability_insights + efficiency_insights
             for insight in new_insights:
-                await self.storage.store_insight(insight)
+                if self.storage:
+                    await self.storage.store_insight(insight)
 
             logger.debug(f"Generated {len(new_insights)} new insights")
 
@@ -586,7 +647,9 @@ class AnalyticsDashboardService:
         """Analyze historical data for patterns."""
         try:
             # Get storage statistics to determine which metrics to analyze
-            storage_stats = await self.storage.get_storage_stats()
+            storage_stats = {}
+            if self.storage:
+                storage_stats = await self.storage.get_storage_stats()
             memory_stats = storage_stats.get("memory_stats", {})
 
             # Analyze patterns for metrics that have sufficient data
@@ -600,7 +663,8 @@ class AnalyticsDashboardService:
 
             # Store patterns using storage service
             for pattern in new_patterns:
-                await self.storage.store_pattern(pattern)
+                if self.storage:
+                    await self.storage.store_pattern(pattern)
 
             logger.debug(f"Analyzed patterns, generated {len(new_patterns)} new patterns")
 

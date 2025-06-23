@@ -19,9 +19,10 @@ Performance considerations:
 
 import asyncio
 import logging
-from typing import Dict, List, Any, Optional, Set, Callable
 from collections import deque
+from collections.abc import Callable
 from datetime import datetime
+from typing import Any, Dict, List, Optional, Set
 
 logger = logging.getLogger(__name__)
 
@@ -45,15 +46,15 @@ class CANTrackingRepository:
         # Use deque for efficient append/pop operations
         self._can_command_sniffer_log: deque = deque(maxlen=self.MAX_SNIFFER_LOG_SIZE)
         self._can_sniffer_grouped: deque = deque(maxlen=self.MAX_GROUPED_ENTRIES)
-        self._pending_commands: List[Dict[str, Any]] = []
+        self._pending_commands: list[dict[str, Any]] = []
 
         # Tracking data
-        self._observed_source_addresses: Set[int] = set()
-        self._last_seen_by_source_addr: Dict[int, Dict[str, Any]] = {}
+        self._observed_source_addresses: set[int] = set()
+        self._last_seen_by_source_addr: dict[int, dict[str, Any]] = {}
 
         # Background task management
-        self._background_tasks: Set[asyncio.Task] = set()
-        self._broadcast_can_sniffer_group: Optional[Callable] = None
+        self._background_tasks: set[asyncio.Task] = set()
+        self._broadcast_can_sniffer_group: Callable | None = None
 
         # Thread-safe lock for command grouping
         self._grouping_lock = asyncio.Lock()
@@ -69,7 +70,7 @@ class CANTrackingRepository:
         """
         self._broadcast_can_sniffer_group = broadcast_func
 
-    def add_can_sniffer_entry(self, entry: Dict[str, Any]) -> None:
+    def add_can_sniffer_entry(self, entry: dict[str, Any]) -> None:
         """
         Add a CAN command/control message entry to the sniffer log.
 
@@ -79,7 +80,7 @@ class CANTrackingRepository:
         self._can_command_sniffer_log.append(entry)
         self._update_source_tracking(entry)
 
-    def get_can_sniffer_log(self) -> List[Dict[str, Any]]:
+    def get_can_sniffer_log(self) -> list[dict[str, Any]]:
         """
         Get the current CAN command/control sniffer log.
 
@@ -88,7 +89,7 @@ class CANTrackingRepository:
         """
         return list(self._can_command_sniffer_log)
 
-    def add_pending_command(self, entry: Dict[str, Any]) -> None:
+    def add_pending_command(self, entry: dict[str, Any]) -> None:
         """
         Add a pending command and clean up old entries.
 
@@ -98,7 +99,9 @@ class CANTrackingRepository:
         self._pending_commands.append(entry)
         self._cleanup_old_pending_commands(entry["timestamp"])
 
-    async def try_group_response(self, response_entry: Dict[str, Any], known_pairs: Dict[str, str]) -> bool:
+    async def try_group_response(
+        self, response_entry: dict[str, Any], known_pairs: dict[str, str]
+    ) -> bool:
         """
         Try to group a response (RX) with a pending command (TX).
 
@@ -136,15 +139,15 @@ class CANTrackingRepository:
 
         return False
 
-    def get_can_sniffer_grouped(self) -> List[Dict[str, Any]]:
+    def get_can_sniffer_grouped(self) -> list[dict[str, Any]]:
         """Get the list of grouped CAN sniffer entries."""
         return list(self._can_sniffer_grouped)
 
-    def get_observed_source_addresses(self) -> List[int]:
+    def get_observed_source_addresses(self) -> list[int]:
         """Get a sorted list of all observed CAN source addresses."""
         return sorted(self._observed_source_addresses)
 
-    def get_last_seen_by_source(self, source_addr: int) -> Optional[Dict[str, Any]]:
+    def get_last_seen_by_source(self, source_addr: int) -> dict[str, Any] | None:
         """
         Get the last seen message from a source address.
 
@@ -156,7 +159,7 @@ class CANTrackingRepository:
         """
         return self._last_seen_by_source_addr.get(source_addr)
 
-    def _update_source_tracking(self, entry: Dict[str, Any]) -> None:
+    def _update_source_tracking(self, entry: dict[str, Any]) -> None:
         """Update source address tracking."""
         src = entry.get("source_addr")
         if src is not None:
@@ -166,21 +169,18 @@ class CANTrackingRepository:
     def _cleanup_old_pending_commands(self, current_time: float) -> None:
         """Remove pending commands older than timeout."""
         self._pending_commands = [
-            cmd for cmd in self._pending_commands
+            cmd
+            for cmd in self._pending_commands
             if current_time - cmd["timestamp"] < self.PENDING_COMMAND_TIMEOUT
         ]
 
         # Enforce maximum size
         if len(self._pending_commands) > self.MAX_PENDING_COMMANDS:
             # Keep only the newest commands
-            self._pending_commands = self._pending_commands[-self.MAX_PENDING_COMMANDS:]
+            self._pending_commands = self._pending_commands[-self.MAX_PENDING_COMMANDS :]
 
     async def _create_group(
-        self,
-        command: Dict[str, Any],
-        response: Dict[str, Any],
-        confidence: str,
-        reason: str
+        self, command: dict[str, Any], response: dict[str, Any], confidence: str, reason: str
     ) -> None:
         """Create a command/response group and broadcast it."""
         group = {
@@ -188,7 +188,7 @@ class CANTrackingRepository:
             "response": response,
             "confidence": confidence,
             "reason": reason,
-            "timestamp": datetime.utcnow().isoformat()
+            "timestamp": datetime.utcnow().isoformat(),
         }
 
         self._can_sniffer_grouped.append(group)
@@ -210,7 +210,7 @@ class CANTrackingRepository:
 
         self._background_tasks.clear()
 
-    def get_health_status(self) -> Dict[str, Any]:
+    def get_health_status(self) -> dict[str, Any]:
         """
         Get repository health status.
 
@@ -224,10 +224,10 @@ class CANTrackingRepository:
             "pending_commands": len(self._pending_commands),
             "observed_sources": len(self._observed_source_addresses),
             "background_tasks": len(self._background_tasks),
-            "memory_bounded": True  # Collections have size limits
+            "memory_bounded": True,  # Collections have size limits
         }
 
-    def get_statistics(self) -> Dict[str, Any]:
+    def get_statistics(self) -> dict[str, Any]:
         """
         Get tracking statistics.
 

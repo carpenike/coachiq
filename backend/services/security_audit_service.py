@@ -24,6 +24,11 @@ from typing import Any, Dict, List, Optional, Set
 
 from pydantic import BaseModel, Field
 
+from backend.core.performance import PerformanceMonitor
+from backend.models.audit_events import AuditEventType as EnhancedAuditEventType
+from backend.models.audit_events import StructuredAuditEvent
+from backend.repositories.security_audit_repository import SecurityAuditRepository
+
 logger = logging.getLogger(__name__)
 
 
@@ -94,25 +99,29 @@ class SecurityAuditEvent(BaseModel):
     emergency_context: bool = Field(False, description="Whether event occurred during emergency")
 
     # Compliance fields
-    compliance_required: bool = Field(False, description="Whether event requires compliance documentation")
+    compliance_required: bool = Field(
+        False, description="Whether event requires compliance documentation"
+    )
     reviewed: bool = Field(False, description="Whether event has been reviewed")
 
     def to_log_entry(self) -> str:
         """Convert to structured log entry."""
-        return json.dumps({
-            "event_id": self.event_id,
-            "event_type": self.event_type,
-            "severity": self.severity,
-            "timestamp": self.timestamp,
-            "iso_timestamp": datetime.fromtimestamp(self.timestamp, tz=UTC).isoformat(),
-            "user_id": self.user_id,
-            "source_ip": self.source_ip,
-            "endpoint": self.endpoint,
-            "entity_id": self.entity_id,
-            "safety_impact": self.safety_impact,
-            "emergency_context": self.emergency_context,
-            "details": self.details
-        })
+        return json.dumps(
+            {
+                "event_id": self.event_id,
+                "event_type": self.event_type,
+                "severity": self.severity,
+                "timestamp": self.timestamp,
+                "iso_timestamp": datetime.fromtimestamp(self.timestamp, tz=UTC).isoformat(),
+                "user_id": self.user_id,
+                "source_ip": self.source_ip,
+                "endpoint": self.endpoint,
+                "entity_id": self.entity_id,
+                "safety_impact": self.safety_impact,
+                "emergency_context": self.emergency_context,
+                "details": self.details,
+            }
+        )
 
 
 class RateLimitConfig(BaseModel):
@@ -123,15 +132,23 @@ class RateLimitConfig(BaseModel):
     burst_limit: int = Field(10, description="Burst request limit")
 
     # Safety-specific limits (more restrictive)
-    safety_operations_per_minute: int = Field(5, description="Safety operations per minute per user")
-    emergency_operations_per_hour: int = Field(3, description="Emergency operations per hour per user")
+    safety_operations_per_minute: int = Field(
+        5, description="Safety operations per minute per user"
+    )
+    emergency_operations_per_hour: int = Field(
+        3, description="Emergency operations per hour per user"
+    )
     pin_attempts_per_minute: int = Field(3, description="PIN attempts per minute per IP")
 
     # Protection limits
-    max_failed_operations_per_hour: int = Field(10, description="Max failed operations before investigation")
+    max_failed_operations_per_hour: int = Field(
+        10, description="Max failed operations before investigation"
+    )
 
     # Exemptions
-    trusted_networks: list[str] = Field(default_factory=list, description="Trusted IP networks (CIDR)")
+    trusted_networks: list[str] = Field(
+        default_factory=list, description="Trusted IP networks (CIDR)"
+    )
     admin_multiplier: float = Field(2.0, description="Rate limit multiplier for admin users")
 
 
@@ -154,27 +171,27 @@ class SecurityAuditService:
     specifically designed for safety-critical RV control systems.
     """
 
-    def __init__(self, config: RateLimitConfig | None = None):
+    def __init__(
+        self,
+        security_audit_repository: SecurityAuditRepository,
+        performance_monitor: PerformanceMonitor,
+        config: RateLimitConfig | None = None,
+    ):
         """
         Initialize security audit service.
 
         Args:
+            security_audit_repository: Repository for security audit data
+            performance_monitor: Performance monitoring instance
             config: Rate limiting configuration
         """
+        self._repository = security_audit_repository
+        self._monitor = performance_monitor
         self.config = config or RateLimitConfig()
 
-        # Audit storage
-        self._audit_events: list[SecurityAuditEvent] = []
-        self._max_audit_entries = 10000
-
-        # Rate limiting tracking
-        self._rate_limits: dict[str, RateLimitEntry] = {}
+        # Cached data for performance
         self._cleanup_interval = 300  # 5 minutes
         self._last_cleanup = time.time()
-
-        # Security monitoring
-        self._suspicious_patterns: dict[str, list[float]] = defaultdict(list)
-        self._blocked_ips: set[str] = set()
         self._trusted_networks = [ip_network(net) for net in self.config.trusted_networks]
 
         # Alert thresholds
@@ -185,7 +202,20 @@ class SecurityAuditService:
             SecurityEventType.EMERGENCY_STOP_TRIGGERED: 1,  # Immediate alert
         }
 
+        # Apply performance monitoring
+        self._apply_monitoring()
+
         logger.info("Security Audit Service initialized for RV safety monitoring")
+
+    def _apply_monitoring(self) -> None:
+        """Apply performance monitoring to service methods."""
+        self.log_security_event = self._monitor.monitor_service_method(
+            "SecurityAuditService", "log_security_event"
+        )(self.log_security_event)
+
+        self.check_rate_limit = self._monitor.monitor_service_method(
+            "SecurityAuditService", "check_rate_limit"
+        )(self.check_rate_limit)
 
     async def log_security_event(
         self,
@@ -196,7 +226,7 @@ class SecurityAuditService:
         endpoint: str | None = None,
         entity_id: str | None = None,
         details: dict[str, Any] | None = None,
-        emergency_context: bool = False
+        emergency_context: bool = False,
     ) -> str:
         """
         Log a security audit event.
@@ -226,7 +256,7 @@ class SecurityAuditService:
             SecurityEventType.EMERGENCY_STOP_TRIGGERED,
             SecurityEventType.EMERGENCY_STOP_RESET,
             SecurityEventType.SAFETY_INTERLOCK_VIOLATED,
-            SecurityEventType.SAFETY_OVERRIDE_USED
+            SecurityEventType.SAFETY_OVERRIDE_USED,
         ]
 
         event = SecurityAuditEvent(
@@ -242,15 +272,11 @@ class SecurityAuditService:
             safety_impact=safety_impact,
             emergency_context=emergency_context,
             compliance_required=compliance_required,
-            reviewed=False  # Add default value for reviewed field
+            reviewed=False,  # Add default value for reviewed field
         )
 
-        # Store event
-        self._audit_events.append(event)
-
-        # Trim if necessary
-        if len(self._audit_events) > self._max_audit_entries:
-            self._audit_events = self._audit_events[-self._max_audit_entries:]
+        # Store event in repository
+        await self._repository.store_audit_event(event)
 
         # Log to standard logger with structured format
         log_level = self._get_log_level(severity)
@@ -264,14 +290,92 @@ class SecurityAuditService:
 
         return event_id
 
-    async def _assess_safety_impact(self, event_type: SecurityEventType, details: dict[str, Any]) -> str | None:
+    async def log_structured_event(self, event: StructuredAuditEvent) -> str:
+        """
+        Log a structured audit event following OWASP ASVS V7 guidelines.
+
+        Args:
+            event: Pre-built structured audit event
+
+        Returns:
+            Event ID for tracking
+        """
+        # Convert to legacy format for repository storage
+        # In future, update repository to store structured events directly
+        legacy_event_type = self._map_enhanced_event_type(event.event_type)
+        legacy_severity = self._map_enhanced_severity(event.severity)
+
+        # Create legacy event
+        audit_event = SecurityAuditEvent(
+            event_id=event.event_id,
+            event_type=legacy_event_type,
+            severity=legacy_severity,
+            timestamp=event.timestamp.timestamp(),
+            user_id=event.actor.id or event.actor.username,
+            source_ip=event.actor.ip_address,
+            endpoint=event.action.endpoint,
+            entity_id=event.target.id if event.target else None,
+            details=event.to_json_log(),  # Store full structured event in details
+            safety_impact=event.safety_impact,
+            emergency_context=event.emergency_context,
+            compliance_required=event.compliance_required,
+            reviewed=False,
+        )
+
+        # Store in repository
+        await self._repository.store_audit_event(audit_event)
+
+        # Log to structured logger
+        logger.info("STRUCTURED_AUDIT", extra={"audit_event": event.to_json_log()})
+
+        # Analyze patterns if needed
+        if event.severity in ["high", "critical"]:
+            await self._analyze_security_pattern(audit_event)
+
+        # Check alert thresholds
+        if event.actor.ip_address:
+            await self._check_alert_thresholds(legacy_event_type, event.actor.ip_address)
+
+        return event.event_id
+
+    def _map_enhanced_event_type(self, event_type: EnhancedAuditEventType) -> SecurityEventType:
+        """Map enhanced event types to legacy types."""
+        mapping = {
+            EnhancedAuditEventType.AUTH_LOGIN_SUCCESS: SecurityEventType.AUTH_SUCCESS,
+            EnhancedAuditEventType.AUTH_LOGIN_FAILURE: SecurityEventType.AUTH_FAILURE,
+            EnhancedAuditEventType.AUTH_LOCKOUT_TRIGGERED: SecurityEventType.AUTH_LOCKED,
+            EnhancedAuditEventType.PIN_VALIDATION_SUCCESS: SecurityEventType.PIN_VALIDATION_SUCCESS,
+            EnhancedAuditEventType.PIN_VALIDATION_FAILURE: SecurityEventType.PIN_VALIDATION_FAILURE,
+            EnhancedAuditEventType.SAFETY_EMERGENCY_STOP: SecurityEventType.EMERGENCY_STOP_TRIGGERED,
+            # Add more mappings as needed
+        }
+
+        # Default to a generic event type if no mapping exists
+        return mapping.get(event_type, SecurityEventType.ACCESS_GRANTED)
+
+    def _map_enhanced_severity(self, severity: str) -> SecurityEventSeverity:
+        """Map enhanced severity to legacy severity."""
+        mapping = {
+            "info": SecurityEventSeverity.LOW,
+            "warning": SecurityEventSeverity.MEDIUM,
+            "high": SecurityEventSeverity.HIGH,
+            "critical": SecurityEventSeverity.CRITICAL,
+        }
+        return mapping.get(severity, SecurityEventSeverity.MEDIUM)
+
+    async def _assess_safety_impact(
+        self, event_type: SecurityEventType, details: dict[str, Any]
+    ) -> str | None:
         """Assess the safety impact of a security event."""
 
         if event_type == SecurityEventType.EMERGENCY_STOP_TRIGGERED:
             return "critical_safety_action"
         if event_type == SecurityEventType.SAFETY_INTERLOCK_VIOLATED:
             return "safety_constraint_violated"
-        if event_type in [SecurityEventType.ENTITY_CONTROL_SUCCESS, SecurityEventType.ENTITY_CONTROL_FAILURE]:
+        if event_type in [
+            SecurityEventType.ENTITY_CONTROL_SUCCESS,
+            SecurityEventType.ENTITY_CONTROL_FAILURE,
+        ]:
             # Check if controlling safety-critical entities
             entity_type = details.get("entity_type", "")
             if entity_type in ["slide_room", "awning", "leveling_jack", "brake"]:
@@ -287,7 +391,7 @@ class SecurityAuditService:
             SecurityEventSeverity.LOW: logging.INFO,
             SecurityEventSeverity.MEDIUM: logging.WARNING,
             SecurityEventSeverity.HIGH: logging.ERROR,
-            SecurityEventSeverity.CRITICAL: logging.CRITICAL
+            SecurityEventSeverity.CRITICAL: logging.CRITICAL,
         }
         return mapping.get(severity, logging.INFO)
 
@@ -298,17 +402,14 @@ class SecurityAuditService:
             return
 
         pattern_key = f"{event.source_ip}:{event.event_type}"
-        self._suspicious_patterns[pattern_key].append(event.timestamp)
-
-        # Keep only recent events (last hour)
-        cutoff = time.time() - 3600
-        self._suspicious_patterns[pattern_key] = [
-            ts for ts in self._suspicious_patterns[pattern_key] if ts > cutoff
-        ]
+        await self._repository.track_suspicious_pattern(pattern_key, event.timestamp)
 
         # Check for brute force patterns
-        if event.event_type in [SecurityEventType.AUTH_FAILURE, SecurityEventType.PIN_VALIDATION_FAILURE]:
-            recent_failures = len(self._suspicious_patterns[pattern_key])
+        if event.event_type in [
+            SecurityEventType.AUTH_FAILURE,
+            SecurityEventType.PIN_VALIDATION_FAILURE,
+        ]:
+            recent_failures = await self._repository.get_pattern_count(pattern_key, hours=1.0)
             if recent_failures >= 5:  # 5 failures in an hour
                 await self.log_security_event(
                     SecurityEventType.BRUTE_FORCE_ATTEMPT,
@@ -317,15 +418,17 @@ class SecurityAuditService:
                     details={
                         "failure_count": recent_failures,
                         "pattern_type": event.event_type,
-                        "time_window_hours": 1
-                    }
+                        "time_window_hours": 1,
+                    },
                 )
 
                 # Block IP temporarily
-                self._blocked_ips.add(event.source_ip)
+                await self._repository.add_blocked_ip(event.source_ip)
                 logger.warning(f"Blocked IP {event.source_ip} due to brute force pattern")
 
-    async def _check_alert_thresholds(self, event_type: SecurityEventType, source_ip: str | None) -> None:
+    async def _check_alert_thresholds(
+        self, event_type: SecurityEventType, source_ip: str | None
+    ) -> None:
         """Check if event type exceeds alert thresholds."""
 
         if event_type not in self._alert_thresholds:
@@ -334,10 +437,11 @@ class SecurityAuditService:
         threshold = self._alert_thresholds[event_type]
 
         # Count recent events of this type
-        recent_events = [
-            e for e in self._audit_events[-100:]  # Check last 100 events
-            if e.event_type == event_type and e.timestamp > time.time() - 600  # Last 10 minutes
-        ]
+        recent_events = await self._repository.get_audit_events(
+            event_type=event_type,
+            hours=0.167,  # 10 minutes
+            limit=threshold + 1,
+        )
 
         if len(recent_events) >= threshold:
             await self.log_security_event(
@@ -348,8 +452,8 @@ class SecurityAuditService:
                     "triggered_by": event_type,
                     "event_count": len(recent_events),
                     "threshold": threshold,
-                    "time_window_minutes": 10
-                }
+                    "time_window_minutes": 10,
+                },
             )
 
     async def check_rate_limit(
@@ -357,7 +461,7 @@ class SecurityAuditService:
         identifier: str,  # IP address or user ID
         endpoint_category: str,  # "general", "safety", "emergency", "pin_auth"
         is_admin: bool = False,
-        source_ip: str | None = None
+        source_ip: str | None = None,
     ) -> bool:
         """
         Check if request exceeds rate limits.
@@ -377,12 +481,13 @@ class SecurityAuditService:
             await self._cleanup_rate_limits()
 
         # Check if IP is blocked
-        if source_ip and source_ip in self._blocked_ips:
+        blocked_ips = await self._repository.get_blocked_ips()
+        if source_ip and source_ip in blocked_ips:
             await self.log_security_event(
                 SecurityEventType.RATE_LIMIT_EXCEEDED,
                 SecurityEventSeverity.MEDIUM,
                 source_ip=source_ip,
-                details={"reason": "ip_blocked", "category": endpoint_category}
+                details={"reason": "ip_blocked", "category": endpoint_category},
             )
             return False
 
@@ -395,22 +500,23 @@ class SecurityAuditService:
         time_window = self._get_time_window(endpoint_category)
 
         # Get or create rate limit entry
-        if identifier not in self._rate_limits:
-            self._rate_limits[identifier] = RateLimitEntry(
+        entry = await self._repository.get_rate_limit(identifier)
+        if not entry:
+            entry = RateLimitEntry(
                 identifier=identifier,
                 endpoint_category=endpoint_category,
                 requests=deque(),
                 blocked_until=0,
                 total_requests=0,
-                blocked_requests=0
+                blocked_requests=0,
             )
 
-        entry = self._rate_limits[identifier]
         now = time.time()
 
         # Check if currently blocked
         if entry.blocked_until > now:
             entry.blocked_requests += 1
+            await self._repository.store_rate_limit(identifier, entry)
             await self.log_security_event(
                 SecurityEventType.RATE_LIMIT_EXCEEDED,
                 SecurityEventSeverity.MEDIUM,
@@ -418,8 +524,8 @@ class SecurityAuditService:
                 details={
                     "identifier": identifier,
                     "category": endpoint_category,
-                    "blocked_until": entry.blocked_until
-                }
+                    "blocked_until": entry.blocked_until,
+                },
             )
             return False
 
@@ -434,6 +540,7 @@ class SecurityAuditService:
             entry.blocked_until = now + time_window
             entry.blocked_requests += 1
 
+            await self._repository.store_rate_limit(identifier, entry)
             await self.log_security_event(
                 SecurityEventType.RATE_LIMIT_EXCEEDED,
                 SecurityEventSeverity.HIGH,
@@ -443,14 +550,15 @@ class SecurityAuditService:
                     "category": endpoint_category,
                     "limit": limit,
                     "time_window_seconds": time_window,
-                    "request_count": len(entry.requests)
-                }
+                    "request_count": len(entry.requests),
+                },
             )
             return False
 
         # Allow request
         entry.requests.append(now)
         entry.total_requests += 1
+        await self._repository.store_rate_limit(identifier, entry)
         return True
 
     def _is_trusted_ip(self, ip_str: str) -> bool:
@@ -467,7 +575,7 @@ class SecurityAuditService:
             "general": self.config.requests_per_minute,
             "safety": self.config.safety_operations_per_minute,
             "emergency": self.config.emergency_operations_per_hour,
-            "pin_auth": self.config.pin_attempts_per_minute
+            "pin_auth": self.config.pin_attempts_per_minute,
         }
 
         base_limit = limits.get(category, self.config.requests_per_minute)
@@ -481,133 +589,67 @@ class SecurityAuditService:
         """Get time window for rate limiting in seconds."""
         windows = {
             "general": 60,  # 1 minute
-            "safety": 60,   # 1 minute
+            "safety": 60,  # 1 minute
             "emergency": 3600,  # 1 hour
-            "pin_auth": 60  # 1 minute
+            "pin_auth": 60,  # 1 minute
         }
 
         return windows.get(category, 60)
 
     async def _cleanup_rate_limits(self) -> None:
         """Clean up expired rate limit entries."""
-        now = time.time()
-        expired_identifiers = []
+        # Clean up rate limits
+        cleaned_count = await self._repository.cleanup_rate_limits(inactive_hours=1)
 
-        for identifier, entry in self._rate_limits.items():
-            # Remove if no recent activity and not blocked
-            if (entry.blocked_until < now and
-                (not entry.requests or entry.requests[-1] < now - 3600)):
-                expired_identifiers.append(identifier)
+        # Clean up blocked IPs
+        unblocked_count = await self._repository.cleanup_blocked_ips(hours=1)
 
-        for identifier in expired_identifiers:
-            del self._rate_limits[identifier]
+        self._last_cleanup = time.time()
 
-        # Clean up blocked IPs (unblock after 1 hour)
-        blocked_cutoff = now - 3600
-        self._blocked_ips = {
-            ip for ip in self._blocked_ips
-            if any(e.timestamp > blocked_cutoff and e.source_ip == ip
-                   for e in self._audit_events[-100:])
-        }
+        if cleaned_count > 0:
+            logger.debug(f"Cleaned up {cleaned_count} expired rate limit entries")
+        if unblocked_count > 0:
+            logger.debug(f"Unblocked {unblocked_count} IP addresses")
 
-        self._last_cleanup = now
-
-        if expired_identifiers:
-            logger.debug(f"Cleaned up {len(expired_identifiers)} expired rate limit entries")
-
-    def get_security_summary(self, hours: int = 24) -> dict[str, Any]:
+    async def get_security_summary(self, hours: int = 24) -> dict[str, Any]:
         """Get security summary for the specified time period."""
+        summary = await self._repository.get_security_summary(hours)
 
-        cutoff = time.time() - (hours * 3600)
-        recent_events = [e for e in self._audit_events if e.timestamp > cutoff]
+        # Add additional pattern information
+        recent_events = await self._repository.get_audit_events(hours=hours, limit=1000)
 
-        # Event counts by type
-        event_counts = defaultdict(int)
-        severity_counts = defaultdict(int)
-
-        for event in recent_events:
-            event_counts[event.event_type] += 1
-            severity_counts[event.severity] += 1
-
-        # Rate limiting stats
-        active_rate_limits = len([
-            entry for entry in self._rate_limits.values()
-            if entry.blocked_until > time.time()
-        ])
-
-        total_blocked_requests = sum(
-            entry.blocked_requests for entry in self._rate_limits.values()
-        )
-
-        return {
-            "time_period_hours": hours,
-            "total_events": len(recent_events),
-            "events_by_type": dict(event_counts),
-            "events_by_severity": dict(severity_counts),
-            "safety_critical_events": len([
-                e for e in recent_events
-                if e.safety_impact or e.emergency_context
-            ]),
-            "compliance_events": len([
-                e for e in recent_events
-                if e.compliance_required
-            ]),
-            "rate_limiting": {
-                "active_blocks": active_rate_limits,
-                "total_blocked_requests": total_blocked_requests,
-                "blocked_ips": len(self._blocked_ips)
-            },
-            "security_patterns": {
-                "suspicious_activity_detected": len([
-                    e for e in recent_events
-                    if e.event_type == SecurityEventType.SUSPICIOUS_ACTIVITY
-                ]),
-                "brute_force_attempts": len([
-                    e for e in recent_events
-                    if e.event_type == SecurityEventType.BRUTE_FORCE_ATTEMPT
-                ])
-            }
+        summary["security_patterns"] = {
+            "suspicious_activity_detected": len(
+                [e for e in recent_events if e.event_type == SecurityEventType.SUSPICIOUS_ACTIVITY]
+            ),
+            "brute_force_attempts": len(
+                [e for e in recent_events if e.event_type == SecurityEventType.BRUTE_FORCE_ATTEMPT]
+            ),
         }
 
-    def get_audit_events(
+        return summary
+
+    async def get_audit_events(
         self,
         event_type: SecurityEventType | None = None,
         severity: SecurityEventSeverity | None = None,
         user_id: str | None = None,
         hours: int = 24,
-        limit: int = 100
+        limit: int = 100,
     ) -> list[dict[str, Any]]:
         """Get filtered audit events."""
+        events = await self._repository.get_audit_events(
+            event_type=event_type, severity=severity, user_id=user_id, hours=hours, limit=limit
+        )
 
-        cutoff = time.time() - (hours * 3600)
+        return [event.model_dump() for event in events]
 
-        # Filter events
-        filtered_events = []
-        for event in reversed(self._audit_events):  # Most recent first
-            if event.timestamp < cutoff:
-                break
-
-            if event_type and event.event_type != event_type:
-                continue
-            if severity and event.severity != severity:
-                continue
-            if user_id and event.user_id != user_id:
-                continue
-
-            filtered_events.append(event.model_dump())
-
-            if len(filtered_events) >= limit:
-                break
-
-        return filtered_events
-
-    def get_rate_limit_status(self, identifier: str) -> dict[str, Any] | None:
+    async def get_rate_limit_status(self, identifier: str) -> dict[str, Any] | None:
         """Get rate limit status for identifier."""
-
-        if identifier not in self._rate_limits:
+        entry = await self._repository.get_rate_limit(identifier)
+        if not entry:
             return None
 
-        entry = self._rate_limits[identifier]
         now = time.time()
 
         return {
@@ -618,8 +660,11 @@ class SecurityAuditService:
             "current_requests": len(entry.requests),
             "total_requests": entry.total_requests,
             "blocked_requests": entry.blocked_requests,
-            "requests_in_window": len([
-                req for req in entry.requests
-                if req > now - self._get_time_window(entry.endpoint_category)
-            ])
+            "requests_in_window": len(
+                [
+                    req
+                    for req in entry.requests
+                    if req > now - self._get_time_window(entry.endpoint_category)
+                ]
+            ),
         }

@@ -13,8 +13,8 @@ from pathlib import Path
 # Add backend to path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from backend.core.service_registry_v2 import EnhancedServiceRegistry
 from backend.core.service_dependency_resolver import DependencyType, ServiceDependency
+from backend.core.service_registry import EnhancedServiceRegistry
 from backend.main import _configure_service_startup_stages
 
 

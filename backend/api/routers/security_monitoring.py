@@ -6,12 +6,17 @@ access control lists, and security alerts.
 """
 
 import logging
-from typing import Any, List, Optional
+from typing import Annotated, Any, List, Optional
 
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
 
+from backend.core.dependencies import create_service_dependency
+
 logger = logging.getLogger(__name__)
+
+# Create service dependency for security monitoring
+get_security_monitoring_service = create_service_dependency("security_monitoring_service")
 
 router = APIRouter(prefix="/api/security", tags=["security"])
 
@@ -37,19 +42,19 @@ class SecurityAlertResponse(BaseModel):
     severity: str
     source_address: int
     source_address_hex: str
-    pgn: Optional[int]
-    pgn_hex: Optional[str]
+    pgn: int | None
+    pgn_hex: str | None
     description: str
     evidence: dict[str, Any]
-    mitigation_action: Optional[str]
+    mitigation_action: str | None
 
 
 class ACLEntryRequest(BaseModel):
     """Request to add/update ACL entry."""
 
     source_address: int
-    allowed_pgns: Optional[List[int]] = None
-    denied_pgns: Optional[List[int]] = None
+    allowed_pgns: list[int] | None = None
+    denied_pgns: list[int] | None = None
     description: str = ""
 
 
@@ -59,37 +64,21 @@ class ACLPolicyRequest(BaseModel):
     policy: str  # "allow" or "deny"
 
 
-def get_anomaly_detector():
-    """Get the anomaly detector from the CAN feature."""
-    try:
-        from backend.services.feature_manager import get_feature_manager
-
-        feature_manager = get_feature_manager()
-        can_feature = feature_manager.get_feature("can_feature")
-
-        if not can_feature or not hasattr(can_feature, "anomaly_detector"):
-            return None
-
-        return can_feature.anomaly_detector
-    except Exception as e:
-        logger.error(f"Error getting anomaly detector: {e}")
-        return None
-
-
 @router.get("/status", response_model=SecurityStatusResponse)
-async def get_security_status() -> SecurityStatusResponse:
+async def get_security_status(
+    security_service: Annotated[Any | None, Depends(get_security_monitoring_service)],
+) -> SecurityStatusResponse:
     """
     Get overall security monitoring status.
 
     Returns:
         Comprehensive security status including statistics and alert summary
     """
-    anomaly_detector = get_anomaly_detector()
-    if not anomaly_detector:
-        raise HTTPException(status_code=503, detail="Security monitoring not available")
+    if not security_service:
+        raise HTTPException(status_code=503, detail="Security monitoring service not available")
 
     try:
-        status = anomaly_detector.get_security_status()
+        status = await security_service.get_security_status()
         return SecurityStatusResponse(
             status=status["status"],
             uptime_seconds=status["uptime_seconds"],
@@ -104,13 +93,14 @@ async def get_security_status() -> SecurityStatusResponse:
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@router.get("/alerts", response_model=List[SecurityAlertResponse])
+@router.get("/alerts", response_model=list[SecurityAlertResponse])
 async def get_security_alerts(
-    since: Optional[float] = Query(None, description="Timestamp to filter from"),
-    severity: Optional[str] = Query(None, description="Filter by severity level"),
-    anomaly_type: Optional[str] = Query(None, description="Filter by anomaly type"),
+    security_service: Annotated[Any | None, Depends(get_security_monitoring_service)],
+    since: float | None = Query(None, description="Timestamp to filter from"),
+    severity: str | None = Query(None, description="Filter by severity level"),
+    anomaly_type: str | None = Query(None, description="Filter by anomaly type"),
     limit: int = Query(100, description="Maximum number of alerts to return"),
-) -> List[SecurityAlertResponse]:
+) -> list[SecurityAlertResponse]:
     """
     Get security alerts with optional filtering.
 
@@ -123,9 +113,8 @@ async def get_security_alerts(
     Returns:
         List of security alerts matching criteria
     """
-    anomaly_detector = get_anomaly_detector()
-    if not anomaly_detector:
-        raise HTTPException(status_code=503, detail="Security monitoring not available")
+    if not security_service:
+        raise HTTPException(status_code=503, detail="Security monitoring service not available")
 
     try:
         # Convert string enums to actual enum values if provided
@@ -147,7 +136,7 @@ async def get_security_alerts(
             except ValueError:
                 raise HTTPException(status_code=400, detail=f"Invalid anomaly type: {anomaly_type}")
 
-        alerts = anomaly_detector.get_alerts(
+        alerts = await security_service.get_alerts(
             since=since, severity=severity_enum, anomaly_type=anomaly_type_enum, limit=limit
         )
 
@@ -175,16 +164,17 @@ async def get_security_alerts(
 
 
 @router.get("/alerts/summary")
-async def get_alerts_summary() -> dict[str, Any]:
+async def get_alerts_summary(
+    security_service: Annotated[Any | None, Depends(get_security_monitoring_service)],
+) -> dict[str, Any]:
     """
     Get summary of recent security alerts.
 
     Returns:
         Summary statistics for alerts in different time windows
     """
-    anomaly_detector = get_anomaly_detector()
-    if not anomaly_detector:
-        raise HTTPException(status_code=503, detail="Security monitoring not available")
+    if not security_service:
+        raise HTTPException(status_code=503, detail="Security monitoring service not available")
 
     try:
         import time
@@ -192,8 +182,8 @@ async def get_alerts_summary() -> dict[str, Any]:
         current_time = time.time()
 
         # Get alerts for different time windows
-        last_hour = anomaly_detector.get_alerts(since=current_time - 3600, limit=1000)
-        last_24h = anomaly_detector.get_alerts(since=current_time - 86400, limit=1000)
+        last_hour = await security_service.get_alerts(since=current_time - 3600, limit=1000)
+        last_24h = await security_service.get_alerts(since=current_time - 86400, limit=1000)
 
         # Count by severity and type
         def count_alerts(alerts):
@@ -217,19 +207,20 @@ async def get_alerts_summary() -> dict[str, Any]:
 
 
 @router.get("/storm-status")
-async def get_storm_status() -> dict[str, Any]:
+async def get_storm_status(
+    security_service: Annotated[Any | None, Depends(get_security_monitoring_service)],
+) -> dict[str, Any]:
     """
     Get broadcast storm detection status.
 
     Returns:
         Current storm detector status and statistics
     """
-    anomaly_detector = get_anomaly_detector()
-    if not anomaly_detector:
-        raise HTTPException(status_code=503, detail="Security monitoring not available")
+    if not security_service:
+        raise HTTPException(status_code=503, detail="Security monitoring service not available")
 
     try:
-        status = anomaly_detector.get_security_status()
+        status = await security_service.get_security_status()
         return status["storm_detector"]
     except Exception as e:
         logger.error(f"Error getting storm status: {e}")
@@ -237,7 +228,10 @@ async def get_storm_status() -> dict[str, Any]:
 
 
 @router.post("/acl/source")
-async def add_source_to_acl(entry: ACLEntryRequest) -> dict[str, str]:
+async def add_source_to_acl(
+    entry: ACLEntryRequest,
+    security_service: Annotated[Any | None, Depends(get_security_monitoring_service)],
+) -> dict[str, str]:
     """
     Add or update a source in the Access Control List.
 
@@ -247,12 +241,11 @@ async def add_source_to_acl(entry: ACLEntryRequest) -> dict[str, str]:
     Returns:
         Success message
     """
-    anomaly_detector = get_anomaly_detector()
-    if not anomaly_detector:
-        raise HTTPException(status_code=503, detail="Security monitoring not available")
+    if not security_service:
+        raise HTTPException(status_code=503, detail="Security monitoring service not available")
 
     try:
-        anomaly_detector.add_source_to_acl(
+        await security_service.add_source_to_acl(
             source_address=entry.source_address,
             allowed_pgns=set(entry.allowed_pgns) if entry.allowed_pgns else None,
             denied_pgns=set(entry.denied_pgns) if entry.denied_pgns else None,
@@ -266,7 +259,10 @@ async def add_source_to_acl(entry: ACLEntryRequest) -> dict[str, str]:
 
 
 @router.delete("/acl/source/{source_address}")
-async def remove_source_from_acl(source_address: int) -> dict[str, str]:
+async def remove_source_from_acl(
+    source_address: int,
+    security_service: Annotated[Any | None, Depends(get_security_monitoring_service)],
+) -> dict[str, str]:
     """
     Remove a source from the Access Control List.
 
@@ -276,19 +272,17 @@ async def remove_source_from_acl(source_address: int) -> dict[str, str]:
     Returns:
         Success message
     """
-    anomaly_detector = get_anomaly_detector()
-    if not anomaly_detector:
-        raise HTTPException(status_code=503, detail="Security monitoring not available")
+    if not security_service:
+        raise HTTPException(status_code=503, detail="Security monitoring service not available")
 
     try:
-        removed = anomaly_detector.remove_source_from_acl(source_address)
+        removed = await security_service.remove_source_from_acl(source_address)
 
         if removed:
             return {"message": f"Successfully removed source 0x{source_address:02X} from ACL"}
-        else:
-            raise HTTPException(
-                status_code=404, detail=f"Source 0x{source_address:02X} not found in ACL"
-            )
+        raise HTTPException(
+            status_code=404, detail=f"Source 0x{source_address:02X} not found in ACL"
+        )
     except HTTPException:
         raise
     except Exception as e:
@@ -297,20 +291,21 @@ async def remove_source_from_acl(source_address: int) -> dict[str, str]:
 
 
 @router.get("/acl/sources")
-async def list_acl_sources() -> dict[str, Any]:
+async def list_acl_sources(
+    security_service: Annotated[Any | None, Depends(get_security_monitoring_service)],
+) -> dict[str, Any]:
     """
     List all sources in the Access Control List.
 
     Returns:
         Dictionary of ACL entries by source address
     """
-    anomaly_detector = get_anomaly_detector()
-    if not anomaly_detector:
-        raise HTTPException(status_code=503, detail="Security monitoring not available")
+    if not security_service:
+        raise HTTPException(status_code=503, detail="Security monitoring service not available")
 
     try:
         acl_entries = {}
-        for source_addr, entry in anomaly_detector.source_acl.items():
+        for source_addr, entry in security_service.source_acl.items():
             acl_entries[f"0x{source_addr:02X}"] = {
                 "address": source_addr,
                 "allowed_pgns": list(entry.allowed_pgns),
@@ -322,7 +317,7 @@ async def list_acl_sources() -> dict[str, Any]:
 
         return {
             "sources": acl_entries,
-            "default_policy": anomaly_detector.default_acl_policy,
+            "default_policy": security_service.default_acl_policy,
             "total_sources": len(acl_entries),
         }
     except Exception as e:
@@ -331,7 +326,10 @@ async def list_acl_sources() -> dict[str, Any]:
 
 
 @router.post("/acl/policy")
-async def set_acl_policy(policy_request: ACLPolicyRequest) -> dict[str, str]:
+async def set_acl_policy(
+    policy_request: ACLPolicyRequest,
+    security_service: Annotated[Any | None, Depends(get_security_monitoring_service)],
+) -> dict[str, str]:
     """
     Set the default ACL policy.
 
@@ -341,15 +339,14 @@ async def set_acl_policy(policy_request: ACLPolicyRequest) -> dict[str, str]:
     Returns:
         Success message
     """
-    anomaly_detector = get_anomaly_detector()
-    if not anomaly_detector:
-        raise HTTPException(status_code=503, detail="Security monitoring not available")
+    if not security_service:
+        raise HTTPException(status_code=503, detail="Security monitoring service not available")
 
     try:
         if policy_request.policy not in ["allow", "deny"]:
             raise HTTPException(status_code=400, detail="Policy must be 'allow' or 'deny'")
 
-        anomaly_detector.set_default_acl_policy(policy_request.policy)
+        await security_service.set_default_acl_policy(policy_request.policy)
 
         return {"message": f"Default ACL policy set to: {policy_request.policy}"}
     except HTTPException:
@@ -360,25 +357,26 @@ async def set_acl_policy(policy_request: ACLPolicyRequest) -> dict[str, str]:
 
 
 @router.get("/rate-limiting")
-async def get_rate_limiting_status() -> dict[str, Any]:
+async def get_rate_limiting_status(
+    security_service: Annotated[Any | None, Depends(get_security_monitoring_service)],
+) -> dict[str, Any]:
     """
     Get rate limiting status and statistics.
 
     Returns:
         Rate limiting configuration and current token bucket status
     """
-    anomaly_detector = get_anomaly_detector()
-    if not anomaly_detector:
-        raise HTTPException(status_code=503, detail="Security monitoring not available")
+    if not security_service:
+        raise HTTPException(status_code=503, detail="Security monitoring service not available")
 
     try:
         # Get basic rate limiting info from security status
-        status = anomaly_detector.get_security_status()
+        status = await security_service.get_security_status()
         rate_limiting_info = status["rate_limiting"]
 
         # Add detailed bucket information
         bucket_details = {}
-        for (source_addr, pgn), bucket in anomaly_detector.token_buckets.items():
+        for (source_addr, pgn), bucket in security_service.token_buckets.items():
             key = f"0x{source_addr:02X}_0x{pgn:05X}"
             bucket_details[key] = {
                 "source_address": source_addr,
@@ -399,7 +397,9 @@ async def get_rate_limiting_status() -> dict[str, Any]:
 
 
 @router.post("/reset")
-async def reset_security_monitoring() -> dict[str, str]:
+async def reset_security_monitoring(
+    security_service: Annotated[Any | None, Depends(get_security_monitoring_service)],
+) -> dict[str, str]:
     """
     Reset all security monitoring data.
 
@@ -409,12 +409,11 @@ async def reset_security_monitoring() -> dict[str, str]:
     Returns:
         Confirmation message
     """
-    anomaly_detector = get_anomaly_detector()
-    if not anomaly_detector:
-        raise HTTPException(status_code=503, detail="Security monitoring not available")
+    if not security_service:
+        raise HTTPException(status_code=503, detail="Security monitoring service not available")
 
     try:
-        anomaly_detector.reset_statistics()
+        await security_service.reset_statistics()
 
         logger.info("Security monitoring data reset")
 
@@ -426,6 +425,7 @@ async def reset_security_monitoring() -> dict[str, str]:
 
 @router.get("/test/simulate-attack")
 async def simulate_attack_for_testing(
+    security_service: Annotated[Any | None, Depends(get_security_monitoring_service)],
     attack_type: str = Query(..., description="Type of attack to simulate"),
     source_address: int = Query(0x42, description="Source address for simulation"),
     duration: int = Query(10, description="Duration in seconds"),
@@ -441,23 +441,22 @@ async def simulate_attack_for_testing(
     Returns:
         Simulation results
     """
-    anomaly_detector = get_anomaly_detector()
-    if not anomaly_detector:
-        raise HTTPException(status_code=503, detail="Security monitoring not available")
+    if not security_service:
+        raise HTTPException(status_code=503, detail="Security monitoring service not available")
 
     try:
         import asyncio
-        import time
         import random
+        import time
 
         start_time = time.time()
         messages_sent = 0
-        alerts_before = len(anomaly_detector.alerts)
+        alerts_before = len(security_service.alerts)
 
         if attack_type == "flood":
             # Message flooding attack
             while time.time() - start_time < duration:
-                await anomaly_detector.analyze_message(
+                await security_service.analyze_message(
                     arbitration_id=(0x1FF << 8) | source_address,
                     data=b"\x01\x02\x03\x04\x05\x06\x07\x08",
                     timestamp=time.time(),
@@ -470,7 +469,7 @@ async def simulate_attack_for_testing(
             base_time = time.time()
             for i in range(100):  # Scan 100 different PGNs
                 pgn = 0x1FF00 + i
-                await anomaly_detector.analyze_message(
+                await security_service.analyze_message(
                     arbitration_id=(pgn << 8) | source_address,
                     data=b"\x01\x02\x03\x04\x05\x06\x07\x08",
                     timestamp=base_time + (i * 0.1),
@@ -482,7 +481,7 @@ async def simulate_attack_for_testing(
             while time.time() - start_time < duration:
                 # Multiple sources sending rapidly
                 for src in range(source_address, source_address + 5):
-                    await anomaly_detector.analyze_message(
+                    await security_service.analyze_message(
                         arbitration_id=(0x1FF << 8) | src,
                         data=b"\x01\x02\x03\x04\x05\x06\x07\x08",
                         timestamp=time.time(),
@@ -493,7 +492,7 @@ async def simulate_attack_for_testing(
         else:
             raise HTTPException(status_code=400, detail="Invalid attack type")
 
-        alerts_after = len(anomaly_detector.alerts)
+        alerts_after = len(security_service.alerts)
 
         return {
             "attack_type": attack_type,

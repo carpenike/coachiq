@@ -11,23 +11,30 @@ This module provides comprehensive CAN traffic recording with:
 
 import asyncio
 import json
+import logging
 import struct
 import time
-from pathlib import Path
-from datetime import datetime, UTC
-from typing import Any, Dict, List, Optional, Callable, Set, Union
-from dataclasses import dataclass
 from collections import deque
+from collections.abc import Callable
+from dataclasses import dataclass
+from datetime import UTC, datetime
 from enum import Enum
-import logging
+from pathlib import Path
+from typing import Any, Dict, List, Optional, Set, Union
 
-from backend.services.feature_base import Feature
+from backend.core.safety_interfaces import (
+    SafeStateAction,
+    SafetyAware,
+    SafetyClassification,
+    SafetyStatus,
+)
 
 logger = logging.getLogger(__name__)
 
 
 class RecordingFormat(str, Enum):
     """Supported recording formats."""
+
     JSON = "json"
     CSV = "csv"
     BINARY = "binary"
@@ -36,6 +43,7 @@ class RecordingFormat(str, Enum):
 
 class RecordingState(str, Enum):
     """Recording session states."""
+
     IDLE = "idle"
     RECORDING = "recording"
     PAUSED = "paused"
@@ -45,6 +53,7 @@ class RecordingState(str, Enum):
 @dataclass
 class RecordedMessage:
     """Recorded CAN message with metadata."""
+
     timestamp: float  # Unix timestamp with microsecond precision
     can_id: int
     data: bytes
@@ -53,7 +62,7 @@ class RecordedMessage:
     is_error: bool = False
     is_remote: bool = False
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         """Convert to dictionary format."""
         return {
             "timestamp": self.timestamp,
@@ -66,7 +75,7 @@ class RecordedMessage:
         }
 
     @classmethod
-    def from_dict(cls, data: Dict[str, Any]) -> "RecordedMessage":
+    def from_dict(cls, data: dict[str, Any]) -> "RecordedMessage":
         """Create from dictionary format."""
         return cls(
             timestamp=data["timestamp"],
@@ -82,18 +91,19 @@ class RecordedMessage:
 @dataclass
 class RecordingSession:
     """Recording session metadata."""
+
     session_id: str
     name: str
     description: str
     start_time: datetime
-    end_time: Optional[datetime]
+    end_time: datetime | None
     message_count: int
-    interfaces: List[str]
-    filters: Dict[str, Any]
+    interfaces: list[str]
+    filters: dict[str, Any]
     format: RecordingFormat
-    file_path: Optional[Path]
+    file_path: Path | None
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         """Convert to dictionary format."""
         return {
             "session_id": self.session_id,
@@ -112,16 +122,17 @@ class RecordingSession:
 @dataclass
 class ReplayOptions:
     """Options for replay operation."""
+
     speed_factor: float = 1.0  # 1.0 = real-time, 2.0 = 2x speed, 0.5 = half speed
     loop: bool = False
     start_offset: float = 0.0  # Start replay from offset seconds
-    end_offset: Optional[float] = None  # End replay at offset seconds
-    interface_mapping: Optional[Dict[str, str]] = None  # Map recorded -> replay interfaces
-    filter_can_ids: Optional[Set[int]] = None  # Only replay specific CAN IDs
-    modify_callback: Optional[Callable[[RecordedMessage], Optional[RecordedMessage]]] = None
+    end_offset: float | None = None  # End replay at offset seconds
+    interface_mapping: dict[str, str] | None = None  # Map recorded -> replay interfaces
+    filter_can_ids: set[int] | None = None  # Only replay specific CAN IDs
+    modify_callback: Callable[[RecordedMessage], RecordedMessage | None] | None = None
 
 
-class CANBusRecorder(Feature):
+class CANBusRecorder(SafetyAware):
     """
     CAN bus traffic recorder with replay capabilities.
 
@@ -135,16 +146,17 @@ class CANBusRecorder(Feature):
 
     def __init__(
         self,
-        name: str = "can_bus_recorder",
-        enabled: bool = True,
-        core: bool = False,
         buffer_size: int = 100000,  # Maximum messages in memory buffer
         storage_path: Path = Path("./recordings"),
         auto_save_interval: float = 60.0,  # Auto-save every 60 seconds
         max_file_size_mb: float = 100.0,  # Max file size before rotation
-        **kwargs,
     ):
-        super().__init__(name=name, enabled=enabled, core=core, **kwargs)
+        # Initialize as safety-aware service
+        super().__init__(
+            safety_classification=SafetyClassification.OPERATIONAL,
+            safe_state_action=SafeStateAction.DISABLE,
+        )
+
         self.buffer_size = buffer_size
         self.storage_path = storage_path
         self.auto_save_interval = auto_save_interval
@@ -152,15 +164,18 @@ class CANBusRecorder(Feature):
 
         # Recording state
         self.recording_state = RecordingState.IDLE
-        self.current_session: Optional[RecordingSession] = None
+        self.current_session: RecordingSession | None = None
         self.message_buffer: deque[RecordedMessage] = deque(maxlen=buffer_size)
-        self.recording_task: Optional[asyncio.Task] = None
-        self.replay_task: Optional[asyncio.Task] = None
+        self.recording_task: asyncio.Task | None = None
+        self.replay_task: asyncio.Task | None = None
+
+        # Service state
+        self._is_running = False
 
         # Filters
-        self.can_id_filter: Optional[Set[int]] = None
-        self.interface_filter: Optional[Set[str]] = None
-        self.pgn_filter: Optional[Set[int]] = None  # For J1939
+        self.can_id_filter: set[int] | None = None
+        self.interface_filter: set[str] | None = None
+        self.pgn_filter: set[int] | None = None  # For J1939
 
         # Statistics
         self.messages_recorded = 0
@@ -168,18 +183,26 @@ class CANBusRecorder(Feature):
         self.bytes_recorded = 0
 
         # Callbacks
-        self.message_callback: Optional[Callable[[RecordedMessage], None]] = None
+        self.message_callback: Callable[[RecordedMessage], None] | None = None
 
         # Ensure storage directory exists
         self.storage_path.mkdir(parents=True, exist_ok=True)
 
-    async def startup(self) -> None:
-        """Initialize the recorder."""
-        await super().startup()
-        logger.info(f"CAN Bus Recorder initialized with storage at {self.storage_path}")
+        logger.info(
+            "CANBusRecorder initialized: buffer_size=%d, storage=%s", buffer_size, storage_path
+        )
 
-    async def shutdown(self) -> None:
-        """Cleanup recorder resources."""
+    async def start(self) -> None:
+        """Start the recorder."""
+        logger.info("Starting CAN bus recorder")
+        self._is_running = True
+        self._set_safety_status(SafetyStatus.SAFE)
+
+    async def stop(self) -> None:
+        """Stop the recorder."""
+        logger.info("Stopping CAN bus recorder")
+        self._is_running = False
+
         # Stop any active recording
         if self.recording_state == RecordingState.RECORDING:
             await self.stop_recording()
@@ -188,19 +211,127 @@ class CANBusRecorder(Feature):
         if self.recording_state == RecordingState.REPLAYING:
             await self.stop_replay()
 
-        await super().shutdown()
+    async def emergency_stop(self, reason: str) -> None:
+        """
+        Emergency stop all recording and replay operations.
+
+        This method implements the SafetyAware emergency stop interface
+        for immediate cessation of all recorder activities.
+
+        Args:
+            reason: Reason for emergency stop (for audit logging)
+        """
+        logger.critical("CAN bus recorder emergency stop: %s", reason)
+
+        # Set emergency stop state
+        self._set_emergency_stop_active(True)
+
+        # Immediately stop all operations
+        self._is_running = False
+        self.recording_state = RecordingState.IDLE
+
+        # Cancel recording task
+        if self.recording_task:
+            self.recording_task.cancel()
+            try:
+                await self.recording_task
+            except asyncio.CancelledError:
+                pass
+
+        # Cancel replay task
+        if self.replay_task:
+            self.replay_task.cancel()
+            try:
+                await self.replay_task
+            except asyncio.CancelledError:
+                pass
+
+        # Save current session if recording
+        if self.current_session:
+            try:
+                self.current_session.end_time = datetime.now(UTC)
+                await self._save_recording(self.current_session)
+                logger.info(
+                    "Emergency saved recording session: %s", self.current_session.session_id
+                )
+            except Exception as e:
+                logger.error("Error saving recording during emergency stop: %s", e)
+            finally:
+                self.current_session = None
+
+        logger.critical("CAN bus recorder emergency stop completed")
+
+    async def get_safety_status(self) -> SafetyStatus:
+        """Get current safety status of the recorder."""
+        if self._emergency_stop_active:
+            return SafetyStatus.EMERGENCY_STOP
+        if not self._is_running:
+            return SafetyStatus.SAFE
+        if self.recording_state in [RecordingState.RECORDING, RecordingState.REPLAYING]:
+            # Check buffer usage
+            buffer_usage = len(self.message_buffer) / self.buffer_size
+            if buffer_usage > 0.9:
+                return SafetyStatus.DEGRADED
+            return SafetyStatus.SAFE
+        return SafetyStatus.SAFE
+
+    async def validate_safety_interlock(self, operation: str) -> bool:
+        """
+        Validate if recorder operation is safe to perform.
+
+        Args:
+            operation: Operation being validated (e.g., "start_recording", "start_replay")
+
+        Returns:
+            True if operation is safe to perform
+        """
+        # Check basic safety status
+        safety_status = await self.get_safety_status()
+        if safety_status == SafetyStatus.EMERGENCY_STOP:
+            logger.warning("Recorder operation %s blocked: emergency stop active", operation)
+            return False
+
+        if not self._is_running and operation not in ["start"]:
+            logger.warning("Recorder operation %s blocked: service not running", operation)
+            return False
+
+        # Additional operation-specific validations
+        if operation == "start_recording" and self.recording_state != RecordingState.IDLE:
+            logger.warning(
+                "Start recording blocked: recorder not idle (state: %s)", self.recording_state.value
+            )
+            return False
+
+        if operation == "start_replay" and self.recording_state != RecordingState.IDLE:
+            logger.warning(
+                "Start replay blocked: recorder not idle (state: %s)", self.recording_state.value
+            )
+            return False
+
+        return True
+
+    # Legacy methods for backward compatibility
+    async def startup(self) -> None:
+        """Legacy startup method - delegates to start()."""
+        await self.start()
+
+    async def shutdown(self) -> None:
+        """Legacy shutdown method - delegates to stop()."""
+        await self.stop()
 
     def set_filters(
         self,
-        can_ids: Optional[Set[int]] = None,
-        interfaces: Optional[Set[str]] = None,
-        pgns: Optional[Set[int]] = None,
+        can_ids: set[int] | None = None,
+        interfaces: set[str] | None = None,
+        pgns: set[int] | None = None,
     ) -> None:
         """Set recording filters."""
         self.can_id_filter = can_ids
         self.interface_filter = interfaces
         self.pgn_filter = pgns
-        logger.info(f"Recording filters updated - CAN IDs: {can_ids}, Interfaces: {interfaces}, PGNs: {pgns}")
+        logger.info(
+            f"Recording filters updated - CAN IDs: {can_ids}, Interfaces: {interfaces}, PGNs: {pgns}"
+        )
 
     def should_record_message(self, can_id: int, interface: str) -> bool:
         """Check if a message should be recorded based on filters."""
@@ -267,8 +398,12 @@ class CANBusRecorder(Feature):
         format: RecordingFormat = RecordingFormat.JSON,
     ) -> RecordingSession:
         """Start a new recording session."""
+        # Check safety interlock
+        if not await self.validate_safety_interlock("start_recording"):
+            raise RuntimeError("Start recording blocked by safety interlock")
+
         if self.recording_state != RecordingState.IDLE:
-            raise RuntimeError(f"Cannot start recording in state {self.state}")
+            raise RuntimeError(f"Cannot start recording in state {self.recording_state.value}")
 
         # Create session
         session_id = f"rec_{int(time.time() * 1000)}"
@@ -301,7 +436,7 @@ class CANBusRecorder(Feature):
         logger.info(f"Started recording session {session_id}: {name}")
         return self.current_session
 
-    async def stop_recording(self) -> Optional[RecordingSession]:
+    async def stop_recording(self) -> RecordingSession | None:
         """Stop the current recording session."""
         if self.recording_state != RecordingState.RECORDING:
             return None
@@ -325,7 +460,9 @@ class CANBusRecorder(Feature):
             session = self.current_session
             self.current_session = None
 
-            logger.info(f"Stopped recording session {session.session_id}: {session.message_count} messages")
+            logger.info(
+                f"Stopped recording session {session.session_id}: {session.message_count} messages"
+            )
             return session
 
         return None
@@ -383,7 +520,7 @@ class CANBusRecorder(Feature):
         self,
         file_path: Path,
         session: RecordingSession,
-        messages: List[RecordedMessage],
+        messages: list[RecordedMessage],
         incremental: bool,
     ) -> None:
         """Save in JSON format."""
@@ -394,6 +531,7 @@ class CANBusRecorder(Feature):
 
         # Use async file I/O
         import aiofiles
+
         async with aiofiles.open(file_path, "w") as f:
             await f.write(json.dumps(data, indent=2))
 
@@ -401,7 +539,7 @@ class CANBusRecorder(Feature):
         self,
         file_path: Path,
         session: RecordingSession,
-        messages: List[RecordedMessage],
+        messages: list[RecordedMessage],
         incremental: bool,
     ) -> None:
         """Save in CSV format."""
@@ -422,7 +560,7 @@ class CANBusRecorder(Feature):
         self,
         file_path: Path,
         session: RecordingSession,
-        messages: List[RecordedMessage],
+        messages: list[RecordedMessage],
         incremental: bool,
     ) -> None:
         """Save in binary format for space efficiency."""
@@ -450,7 +588,7 @@ class CANBusRecorder(Feature):
         self,
         file_path: Path,
         session: RecordingSession,
-        messages: List[RecordedMessage],
+        messages: list[RecordedMessage],
         incremental: bool,
     ) -> None:
         """Save in candump format (socketcan compatible)."""
@@ -464,7 +602,7 @@ class CANBusRecorder(Feature):
                 line = f"({msg.timestamp:.6f}) {msg.interface} {can_id_str}#{msg.data.hex()}\n"
                 await f.write(line)
 
-    async def load_recording(self, file_path: Union[str, Path]) -> RecordingSession:
+    async def load_recording(self, file_path: str | Path) -> RecordingSession:
         """Load a recording from file."""
         file_path = Path(file_path)
         if not file_path.exists():
@@ -476,20 +614,19 @@ class CANBusRecorder(Feature):
 
         if format == RecordingFormat.JSON:
             return await self._load_json(file_path)
-        elif format == RecordingFormat.CSV:
+        if format == RecordingFormat.CSV:
             return await self._load_csv(file_path)
-        elif format == RecordingFormat.BINARY:
+        if format == RecordingFormat.BINARY:
             return await self._load_binary(file_path)
-        elif format == RecordingFormat.CANDUMP:
+        if format == RecordingFormat.CANDUMP:
             return await self._load_candump(file_path)
-        else:
-            raise ValueError(f"Unsupported format: {format}")
+        raise ValueError(f"Unsupported format: {format}")
 
     async def _load_json(self, file_path: Path) -> RecordingSession:
         """Load JSON format recording."""
         import aiofiles
 
-        async with aiofiles.open(file_path, "r") as f:
+        async with aiofiles.open(file_path) as f:
             data = json.loads(await f.read())
 
         # Load session metadata
@@ -499,7 +636,9 @@ class CANBusRecorder(Feature):
             name=session_data["name"],
             description=session_data["description"],
             start_time=datetime.fromisoformat(session_data["start_time"]),
-            end_time=datetime.fromisoformat(session_data["end_time"]) if session_data["end_time"] else None,
+            end_time=datetime.fromisoformat(session_data["end_time"])
+            if session_data["end_time"]
+            else None,
             message_count=session_data["message_count"],
             interfaces=session_data["interfaces"],
             filters=session_data["filters"],
@@ -531,9 +670,9 @@ class CANBusRecorder(Feature):
 
     async def start_replay(
         self,
-        session_or_file: Union[RecordingSession, str, Path],
-        options: Optional[ReplayOptions] = None,
-        can_sender: Optional[Callable[[int, bytes, str], asyncio.Task]] = None,
+        session_or_file: RecordingSession | str | Path,
+        options: ReplayOptions | None = None,
+        can_sender: Callable[[int, bytes, str], asyncio.Task] | None = None,
     ) -> None:
         """Start replaying a recording."""
         if self.recording_state != RecordingState.IDLE:
@@ -551,13 +690,11 @@ class CANBusRecorder(Feature):
         options = options or ReplayOptions()
 
         self.recording_state = RecordingState.REPLAYING
-        self.replay_task = asyncio.create_task(
-            self._replay_messages(session, options, can_sender)
-        )
+        self.replay_task = asyncio.create_task(self._replay_messages(session, options, can_sender))
 
     async def stop_replay(self) -> None:
         """Stop the current replay."""
-        if self.state != RecordingState.REPLAYING:
+        if self.recording_state != RecordingState.REPLAYING:
             return
 
         self.recording_state = RecordingState.IDLE
@@ -591,19 +728,15 @@ class CANBusRecorder(Feature):
                 end_time = messages[0].timestamp + options.end_offset
 
             # Filter messages by time range
-            messages = [
-                msg for msg in messages
-                if start_time <= msg.timestamp <= end_time
-            ]
+            messages = [msg for msg in messages if start_time <= msg.timestamp <= end_time]
 
             # Apply CAN ID filtering
             if options.filter_can_ids:
-                messages = [
-                    msg for msg in messages
-                    if msg.can_id in options.filter_can_ids
-                ]
+                messages = [msg for msg in messages if msg.can_id in options.filter_can_ids]
 
-            logger.info(f"Starting replay of {len(messages)} messages at {options.speed_factor}x speed")
+            logger.info(
+                f"Starting replay of {len(messages)} messages at {options.speed_factor}x speed"
+            )
 
             while self.recording_state == RecordingState.REPLAYING:
                 replay_start_time = time.time()
@@ -657,7 +790,7 @@ class CANBusRecorder(Feature):
         finally:
             self.recording_state = RecordingState.IDLE
 
-    def get_status(self) -> Dict[str, Any]:
+    def get_status(self) -> dict[str, Any]:
         """Get current recorder status."""
         return {
             "state": self.recording_state.value,
@@ -674,7 +807,7 @@ class CANBusRecorder(Feature):
             },
         }
 
-    async def list_recordings(self) -> List[Dict[str, Any]]:
+    async def list_recordings(self) -> list[dict[str, Any]]:
         """List all available recordings."""
         recordings = []
 
@@ -683,14 +816,16 @@ class CANBusRecorder(Feature):
                 try:
                     # Get file info
                     stat = file_path.stat()
-                    recordings.append({
-                        "filename": file_path.name,
-                        "path": str(file_path),
-                        "size_bytes": stat.st_size,
-                        "size_mb": round(stat.st_size / (1024 * 1024), 2),
-                        "modified": datetime.fromtimestamp(stat.st_mtime).isoformat(),
-                        "format": file_path.suffix[1:],
-                    })
+                    recordings.append(
+                        {
+                            "filename": file_path.name,
+                            "path": str(file_path),
+                            "size_bytes": stat.st_size,
+                            "size_mb": round(stat.st_size / (1024 * 1024), 2),
+                            "modified": datetime.fromtimestamp(stat.st_mtime).isoformat(),
+                            "format": file_path.suffix[1:],
+                        }
+                    )
                 except Exception as e:
                     logger.error(f"Error listing recording {file_path}: {e}")
 

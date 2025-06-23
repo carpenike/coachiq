@@ -57,21 +57,22 @@ class SecureAuthenticationMiddleware(BaseHTTPMiddleware):
 
     def __init__(self, app):
         super().__init__(app)
-        self.auth_manager: Optional[AuthManager] = None
-        self.token_service: Optional[SecureTokenService] = None
+        self.auth_manager: AuthManager | None = None
+        self.token_service: SecureTokenService | None = None
 
     async def dispatch(self, request: Request, call_next):
         """Process request with secure authentication"""
 
-        # Initialize services from app state if not already done
-        if not self.auth_manager and hasattr(request.app.state, "auth_manager"):
+        # Initialize services from ServiceRegistry if not already done
+        if not self.auth_manager:
             try:
-                # Get auth manager from feature manager (following existing patterns)
-                feature_manager = getattr(request.app.state, "feature_manager", None)
-                if feature_manager and hasattr(feature_manager, "get_auth_manager"):
-                    self.auth_manager = feature_manager.get_auth_manager()
+                from backend.core.dependencies import get_service_registry
+
+                service_registry = get_service_registry()
+                if service_registry.has_service("auth_manager"):
+                    self.auth_manager = service_registry.get_service("auth_manager")
                     self.token_service = SecureTokenService(self.auth_manager)
-                    logger.info("Secure authentication middleware initialized")
+                    logger.info("Secure authentication middleware initialized from ServiceRegistry")
             except Exception as e:
                 logger.warning(f"Could not initialize secure auth middleware: {e}")
 
@@ -189,12 +190,11 @@ class SecureAuthenticationMiddleware(BaseHTTPMiddleware):
                     "token_refreshed": True,
                     "new_tokens": refresh_result["tokens"],
                 }
-            else:
-                return {
-                    "authenticated": False,
-                    "error": "Invalid or expired refresh token",
-                    "status_code": 401,
-                }
+            return {
+                "authenticated": False,
+                "error": "Invalid or expired refresh token",
+                "status_code": 401,
+            }
 
         # Case 3: No valid tokens available
         return {"authenticated": False, "error": "Authentication required", "status_code": 401}

@@ -359,12 +359,12 @@ class TestDGNMappingConsistency:
                 status_pgn = f"0x{status_dgn}"
 
                 # Both PGNs should exist in the spec
-                assert (
-                    cmd_pgn in pgn_hex_to_name_map
-                ), f"Command PGN {cmd_pgn} not found in spec (file: {mapping_path.name})"
-                assert (
-                    status_pgn in pgn_hex_to_name_map
-                ), f"Status PGN {status_pgn} not found in spec (file: {mapping_path.name})"
+                assert cmd_pgn in pgn_hex_to_name_map, (
+                    f"Command PGN {cmd_pgn} not found in spec (file: {mapping_path.name})"
+                )
+                assert status_pgn in pgn_hex_to_name_map, (
+                    f"Status PGN {status_pgn} not found in spec (file: {mapping_path.name})"
+                )
 
     def test_mapping_dgns_exist_in_spec(self, mapping_files, spec_data):
         """Test that all mapping DGNs exist in the spec."""
@@ -383,9 +383,9 @@ class TestDGNMappingConsistency:
 
             for dgn_hex in dgn_keys:
                 pgn = f"0x{dgn_hex}"
-                assert (
-                    pgn in pgn_hex_to_name_map
-                ), f"Mapped DGN {dgn_hex} not found in spec (file: {mapping_path.name})"
+                assert pgn in pgn_hex_to_name_map, (
+                    f"Mapped DGN {dgn_hex} not found in spec (file: {mapping_path.name})"
+                )
 
     def test_dgn_calculation_consistency(self, spec_data):
         """Test that DGN calculations are consistent."""
@@ -425,6 +425,7 @@ class TestSignalDecoding:
         """Test payload decoding with known good data."""
         # Load config to get a known entry
         from backend.integrations.rvc.decode import load_config_data_v2
+
         config = load_config_data_v2()
         dgn_dict = config.dgn_dict
 
@@ -706,6 +707,7 @@ class TestEndToEndFunctionality:
     def config_data(self):
         """Load configuration data."""
         from backend.integrations.rvc.decode import load_config_data_v2
+
         config = load_config_data_v2()
         # Return as tuple for backward compatibility with test expectations
         return (
@@ -718,7 +720,7 @@ class TestEndToEndFunctionality:
             config.entity_ids,
             config.mapping_dict,
             config.raw_device_mapping,
-            config.coach_info
+            config.coach_info,
         )
 
     def test_complete_decoding_workflow(self, config_data):

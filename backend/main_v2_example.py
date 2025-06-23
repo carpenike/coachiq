@@ -7,6 +7,7 @@ the existing ServiceRegistry for unified service management.
 
 # ... (imports remain the same) ...
 
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Application lifespan manager using enhanced patterns."""
@@ -23,12 +24,14 @@ async def lifespan(app: FastAPI):
         # Start core services via ServiceRegistry
         startup_report = await service_registry.startup_all()
 
-        if not startup_report['success']:
-            logger.error("Failed to start core services: %s", startup_report['errors'])
+        if not startup_report["success"]:
+            logger.error("Failed to start core services: %s", startup_report["errors"])
             raise RuntimeError("Core service startup failed")
 
-        logger.info("ServiceRegistry: All core services initialized successfully in %.2fs",
-                   startup_report['total_time'])
+        logger.info(
+            "ServiceRegistry: All core services initialized successfully in %.2fs",
+            startup_report["total_time"],
+        )
 
         # Store core services in app.state
         for service_name, service_instance in service_registry._services.items():
@@ -37,7 +40,7 @@ async def lifespan(app: FastAPI):
         # NEW: Initialize long-lived services with the new pattern
         from backend.core.service_patterns_migration import (
             initialize_long_lived_services,
-            shutdown_long_lived_services
+            shutdown_long_lived_services,
         )
 
         # Initialize WebSocket handlers and background services
@@ -66,11 +69,12 @@ async def lifespan(app: FastAPI):
             # Shutdown core services via ServiceRegistry
             shutdown_report = await service_registry.shutdown_all()
 
-            if not shutdown_report['success']:
-                logger.error("Errors during shutdown: %s", shutdown_report['errors'])
+            if not shutdown_report["success"]:
+                logger.error("Errors during shutdown: %s", shutdown_report["errors"])
             else:
-                logger.info("All services shut down successfully in %.2fs",
-                           shutdown_report['total_time'])
+                logger.info(
+                    "All services shut down successfully in %.2fs", shutdown_report["total_time"]
+                )
 
             # ... (rest of shutdown remains the same) ...
 

@@ -26,10 +26,7 @@ class AnalyticsNotificationDispatcher(AsyncNotificationDispatcher):
     """
 
     def __init__(
-        self,
-        *args,
-        analytics_service: NotificationAnalyticsService | None = None,
-        **kwargs
+        self, *args, analytics_service: NotificationAnalyticsService | None = None, **kwargs
     ):
         """
         Initialize dispatcher with analytics service.
@@ -97,7 +94,7 @@ class AnalyticsNotificationDispatcher(AsyncNotificationDispatcher):
                     metadata={
                         "retry_count": notification.retry_count,
                         "priority": notification.priority,
-                    }
+                    },
                 )
 
             return success
@@ -126,7 +123,7 @@ class AnalyticsNotificationDispatcher(AsyncNotificationDispatcher):
                     metadata={
                         "exception_type": type(e).__name__,
                         "retry_count": notification.retry_count,
-                    }
+                    },
                 )
 
             return False
@@ -142,9 +139,7 @@ class AnalyticsNotificationDispatcher(AsyncNotificationDispatcher):
             if self.analytics_service and result:
                 delivery_time = (time.time() - start_time) * 1000
                 await self._track_channel_performance(
-                    NotificationChannel.SMTP,
-                    delivery_time,
-                    success=True
+                    NotificationChannel.SMTP, delivery_time, success=True
                 )
 
             return result
@@ -152,10 +147,7 @@ class AnalyticsNotificationDispatcher(AsyncNotificationDispatcher):
         except Exception as e:
             if self.analytics_service:
                 await self._track_channel_performance(
-                    NotificationChannel.SMTP,
-                    0,
-                    success=False,
-                    error=str(e)
+                    NotificationChannel.SMTP, 0, success=False, error=str(e)
                 )
             raise
 
@@ -169,9 +161,7 @@ class AnalyticsNotificationDispatcher(AsyncNotificationDispatcher):
             if self.analytics_service and result:
                 delivery_time = (time.time() - start_time) * 1000
                 await self._track_channel_performance(
-                    NotificationChannel.WEBHOOK,
-                    delivery_time,
-                    success=True
+                    NotificationChannel.WEBHOOK, delivery_time, success=True
                 )
 
             return result
@@ -179,10 +169,7 @@ class AnalyticsNotificationDispatcher(AsyncNotificationDispatcher):
         except Exception as e:
             if self.analytics_service:
                 await self._track_channel_performance(
-                    NotificationChannel.WEBHOOK,
-                    0,
-                    success=False,
-                    error=str(e)
+                    NotificationChannel.WEBHOOK, 0, success=False, error=str(e)
                 )
             raise
 
@@ -196,21 +183,14 @@ class AnalyticsNotificationDispatcher(AsyncNotificationDispatcher):
 
             if self.analytics_service and result:
                 delivery_time = (time.time() - start_time) * 1000
-                await self._track_channel_performance(
-                    primary_channel,
-                    delivery_time,
-                    success=True
-                )
+                await self._track_channel_performance(primary_channel, delivery_time, success=True)
 
             return result
 
         except Exception as e:
             if self.analytics_service:
                 await self._track_channel_performance(
-                    primary_channel,
-                    0,
-                    success=False,
-                    error=str(e)
+                    primary_channel, 0, success=False, error=str(e)
                 )
             raise
 
@@ -224,9 +204,7 @@ class AnalyticsNotificationDispatcher(AsyncNotificationDispatcher):
             if self.analytics_service and result:
                 delivery_time = (time.time() - start_time) * 1000
                 await self._track_channel_performance(
-                    NotificationChannel.PUSHOVER,
-                    delivery_time,
-                    success=True
+                    NotificationChannel.PUSHOVER, delivery_time, success=True
                 )
 
             return result
@@ -234,10 +212,7 @@ class AnalyticsNotificationDispatcher(AsyncNotificationDispatcher):
         except Exception as e:
             if self.analytics_service:
                 await self._track_channel_performance(
-                    NotificationChannel.PUSHOVER,
-                    0,
-                    success=False,
-                    error=str(e)
+                    NotificationChannel.PUSHOVER, 0, success=False, error=str(e)
                 )
             raise
 

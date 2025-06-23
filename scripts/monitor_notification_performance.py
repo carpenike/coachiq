@@ -16,6 +16,7 @@ from typing import Optional
 
 try:
     import psutil
+
     PSUTIL_AVAILABLE = True
 except ImportError:
     PSUTIL_AVAILABLE = False
@@ -25,11 +26,8 @@ except ImportError:
 # Configure logging
 logging.basicConfig(
     level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-    handlers=[
-        logging.StreamHandler(),
-        logging.FileHandler('notification_performance.log')
-    ]
+    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+    handlers=[logging.StreamHandler(), logging.FileHandler("notification_performance.log")],
 )
 logger = logging.getLogger(__name__)
 
@@ -117,13 +115,14 @@ class PerformanceMonitor:
                 else:
                     logger.error(f"Health check failed with status {response.status}")
 
-        except asyncio.TimeoutError:
+        except TimeoutError:
             logger.error("Health check timed out")
         except Exception as e:
             logger.error(f"Health check error: {e}")
 
-    async def _process_health_data(self, health_data: dict, response_time: float,
-                                   timestamp: datetime) -> None:
+    async def _process_health_data(
+        self, health_data: dict, response_time: float, timestamp: datetime
+    ) -> None:
         """Process and analyze health check data."""
         # Extract metrics
         metrics = health_data.get("metrics", {})
@@ -144,8 +143,9 @@ class PerformanceMonitor:
             "cache_hit_rate": cache.get("hit_rate", 0),
             "batching_efficiency": batcher.get("efficiency", 0),
             "active_batches": batcher.get("active_batches", 0),
-            "circuit_breakers_open": sum(1 for cb in circuit_breakers.values()
-                                       if cb.get("state") == "open"),
+            "circuit_breakers_open": sum(
+                1 for cb in circuit_breakers.values() if cb.get("state") == "open"
+            ),
         }
 
         # Add to history
@@ -171,8 +171,10 @@ class PerformanceMonitor:
             logger.debug("Connection pools:")
             for pool_name, pool_stats in pools.items():
                 if pool_stats:
-                    logger.debug(f"  {pool_name}: {pool_stats.get('active', 0)}/{pool_stats.get('max_connections', 0)} active, "
-                               f"reuse rate: {pool_stats.get('reuse_rate', 0):.1%}")
+                    logger.debug(
+                        f"  {pool_name}: {pool_stats.get('active', 0)}/{pool_stats.get('max_connections', 0)} active, "
+                        f"reuse rate: {pool_stats.get('reuse_rate', 0):.1%}"
+                    )
 
         # System resources (if psutil available)
         if PSUTIL_AVAILABLE:
@@ -188,20 +190,26 @@ class PerformanceMonitor:
         # Trim history if needed
         if len(self.history["timestamps"]) > self.max_history_size:
             for key in self.history:
-                self.history[key] = self.history[key][-self.max_history_size:]
+                self.history[key] = self.history[key][-self.max_history_size :]
 
     def _check_thresholds(self, metrics: dict) -> list[str]:
         """Check if any metrics exceed thresholds."""
         issues = []
 
         if metrics["memory_mb"] > self.thresholds["memory_mb"]:
-            issues.append(f"Memory usage ({metrics['memory_mb']:.1f} MB) exceeds threshold ({self.thresholds['memory_mb']} MB)")
+            issues.append(
+                f"Memory usage ({metrics['memory_mb']:.1f} MB) exceeds threshold ({self.thresholds['memory_mb']} MB)"
+            )
 
         if metrics["response_time_ms"] > self.thresholds["response_time_ms"]:
-            issues.append(f"Response time ({metrics['response_time_ms']:.1f} ms) exceeds threshold ({self.thresholds['response_time_ms']} ms)")
+            issues.append(
+                f"Response time ({metrics['response_time_ms']:.1f} ms) exceeds threshold ({self.thresholds['response_time_ms']} ms)"
+            )
 
         if metrics["success_rate"] < (1 - self.thresholds["error_rate"]):
-            issues.append(f"Success rate ({metrics['success_rate']:.1%}) below threshold ({(1-self.thresholds['error_rate']):.1%})")
+            issues.append(
+                f"Success rate ({metrics['success_rate']:.1%}) below threshold ({(1 - self.thresholds['error_rate']):.1%})"
+            )
 
         if metrics["circuit_breakers_open"] >= self.thresholds["circuit_breaker_open"]:
             issues.append(f"{metrics['circuit_breakers_open']} circuit breakers are open")
@@ -221,21 +229,25 @@ class PerformanceMonitor:
             memory = psutil.virtual_memory()
 
             # Disk usage
-            disk = psutil.disk_usage('/')
+            disk = psutil.disk_usage("/")
 
             # Network (if available)
             net_io = psutil.net_io_counters()
 
             logger.debug("System resources:")
             logger.debug(f"  CPU: {cpu_percent:.1f}%")
-            logger.debug(f"  Memory: {memory.percent:.1f}% ({memory.used / 1024 / 1024:.1f} MB used)")
+            logger.debug(
+                f"  Memory: {memory.percent:.1f}% ({memory.used / 1024 / 1024:.1f} MB used)"
+            )
             logger.debug(f"  Disk: {disk.percent:.1f}% used")
-            logger.debug(f"  Network: {net_io.bytes_sent / 1024 / 1024:.1f} MB sent, "
-                        f"{net_io.bytes_recv / 1024 / 1024:.1f} MB received")
+            logger.debug(
+                f"  Network: {net_io.bytes_sent / 1024 / 1024:.1f} MB sent, "
+                f"{net_io.bytes_recv / 1024 / 1024:.1f} MB received"
+            )
 
             # Temperature (Raspberry Pi specific)
             try:
-                with open('/sys/class/thermal/thermal_zone0/temp', 'r') as f:
+                with open("/sys/class/thermal/thermal_zone0/temp") as f:
                     temp = float(f.read()) / 1000
                     logger.debug(f"  CPU Temperature: {temp:.1f}°C")
             except:
@@ -251,10 +263,10 @@ class PerformanceMonitor:
 
         runtime = time.time() - self.start_time
 
-        print("\n" + "="*60)
+        print("\n" + "=" * 60)
         print("NOTIFICATION SYSTEM PERFORMANCE REPORT")
-        print("="*60)
-        print(f"\nMonitoring Duration: {runtime/3600:.1f} hours")
+        print("=" * 60)
+        print(f"\nMonitoring Duration: {runtime / 3600:.1f} hours")
         print(f"Total Health Checks: {self.checks_performed}")
 
         # Memory statistics
@@ -263,7 +275,7 @@ class PerformanceMonitor:
             max_memory = max(self.history["memory"])
             min_memory = min(self.history["memory"])
 
-            print(f"\nMemory Usage:")
+            print("\nMemory Usage:")
             print(f"  Average: {avg_memory:.1f} MB")
             print(f"  Maximum: {max_memory:.1f} MB")
             print(f"  Minimum: {min_memory:.1f} MB")
@@ -274,7 +286,7 @@ class PerformanceMonitor:
             max_response = max(self.history["response_times"])
             min_response = min(self.history["response_times"])
 
-            print(f"\nResponse Times:")
+            print("\nResponse Times:")
             print(f"  Average: {avg_response:.1f} ms")
             print(f"  Maximum: {max_response:.1f} ms")
             print(f"  Minimum: {min_response:.1f} ms")
@@ -284,12 +296,12 @@ class PerformanceMonitor:
             avg_success = sum(self.history["success_rate"]) / len(self.history["success_rate"])
             min_success = min(self.history["success_rate"])
 
-            print(f"\nReliability:")
+            print("\nReliability:")
             print(f"  Average Success Rate: {avg_success:.1%}")
             print(f"  Minimum Success Rate: {min_success:.1%}")
 
         # Summary
-        print(f"\nSummary:")
+        print("\nSummary:")
         if max_memory < 100:
             print("  ✓ Memory usage: EXCELLENT for Raspberry Pi")
         elif max_memory < 200:
@@ -318,25 +330,22 @@ async def main():
     parser.add_argument(
         "--url",
         default="http://localhost:8080/api/notifications/health",
-        help="Health check endpoint URL"
+        help="Health check endpoint URL",
     )
     parser.add_argument(
-        "--interval",
-        type=int,
-        default=30,
-        help="Check interval in seconds (default: 30)"
+        "--interval", type=int, default=30, help="Check interval in seconds (default: 30)"
     )
     parser.add_argument(
         "--memory-threshold",
         type=int,
         default=200,
-        help="Memory usage threshold in MB (default: 200)"
+        help="Memory usage threshold in MB (default: 200)",
     )
     parser.add_argument(
         "--response-threshold",
         type=int,
         default=1000,
-        help="Response time threshold in ms (default: 1000)"
+        help="Response time threshold in ms (default: 1000)",
     )
 
     args = parser.parse_args()

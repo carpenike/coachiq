@@ -7,15 +7,15 @@ health validation results, and performance baseline comparisons.
 """
 
 import logging
-from typing import Any, Dict
+from typing import Annotated, Any, Dict
 
 from fastapi import APIRouter, Depends, HTTPException
-from starlette.requests import Request
 from pydantic import BaseModel, Field
+from starlette.requests import Request
 
-from backend.core.dependencies_v2 import get_feature_manager, get_service_registry
+from backend.core.dependencies import get_service_registry
+from backend.core.service_registry import EnhancedServiceRegistry
 from backend.middleware.startup_monitoring import get_startup_monitor
-from backend.core.service_registry_v2 import EnhancedServiceRegistry
 
 logger = logging.getLogger(__name__)
 
@@ -23,6 +23,7 @@ router = APIRouter(prefix="/api/startup", tags=["startup_monitoring"])
 
 
 # Response Models
+
 
 class StartupHealthStatus(BaseModel):
     """Startup health validation status."""
@@ -55,27 +56,17 @@ class StartupPerformanceReport(BaseModel):
     service_count: int = Field(..., description="Number of services")
     average_service_time_ms: float = Field(..., description="Average service startup time")
     slowest_services: list[ServiceTimingInfo] = Field(..., description="5 slowest services")
-    baseline_comparison: Dict[str, Any] = Field(..., description="Baseline performance comparison")
-    health_checks: Dict[str, bool] = Field(..., description="Component health check results")
+    baseline_comparison: dict[str, Any] = Field(..., description="Baseline performance comparison")
+    health_checks: dict[str, bool] = Field(..., description="Component health check results")
     warnings: list[str] = Field(..., description="Performance warnings")
     errors: list[str] = Field(..., description="Performance errors")
-    performance_analysis: Dict[str, Any] = Field(..., description="Performance analysis")
-
-
-def _check_monitoring_enabled(request: Request) -> None:
-    """Check if startup monitoring features are enabled."""
-    feature_manager = get_feature_manager(request)
-    if not feature_manager.is_enabled("startup_monitoring"):
-        raise HTTPException(
-            status_code=404,
-            detail="Startup monitoring features are disabled"
-        )
+    performance_analysis: dict[str, Any] = Field(..., description="Performance analysis")
 
 
 def _get_startup_report_from_request(request: Request):
     """Safely get startup report from request state."""
     try:
-        return getattr(request.state, 'startup_report', None)
+        return getattr(request.state, "startup_report", None)
     except AttributeError:
         return None
 
@@ -84,14 +75,13 @@ def _calculate_performance_grade(startup_time_ms: float, baseline_ms: float = 50
     """Calculate performance grade based on startup time."""
     if startup_time_ms <= baseline_ms:
         return "A"
-    elif startup_time_ms <= baseline_ms * 1.2:
+    if startup_time_ms <= baseline_ms * 1.2:
         return "B"
-    elif startup_time_ms <= baseline_ms * 1.5:
+    if startup_time_ms <= baseline_ms * 1.5:
         return "C"
-    elif startup_time_ms <= baseline_ms * 2.0:
+    if startup_time_ms <= baseline_ms * 2.0:
         return "D"
-    else:
-        return "F"
+    return "F"
 
 
 @router.get(
@@ -101,8 +91,8 @@ def _calculate_performance_grade(startup_time_ms: float, baseline_ms: float = 50
     description="Get overall startup health validation status and basic metrics.",
 )
 async def get_startup_health(
+    service_registry: Annotated[EnhancedServiceRegistry, Depends(get_service_registry)],
     request: Request,
-    service_registry: EnhancedServiceRegistry = Depends(get_service_registry),
 ) -> StartupHealthStatus:
     """
     Get startup health validation status.
@@ -113,7 +103,6 @@ async def get_startup_health(
     - Critical component availability
     - Performance warnings/errors
     """
-    _check_monitoring_enabled(request)
 
     try:
         # Get startup monitor data
@@ -123,18 +112,21 @@ async def get_startup_health(
         registry_metrics = service_registry.get_startup_metrics()
 
         # Get startup report if available
-        startup_report = _get_startup_report_from_request(request) if hasattr(request, 'state') else None
+        startup_report = (
+            _get_startup_report_from_request(request) if hasattr(request, "state") else None
+        )
 
         # Calculate health metrics
-        services_started = len([s for s in service_registry.list_services()])
+        # Get service count from registry metrics
+        services_started = registry_metrics.get("service_count", 0)
         services_failed = len(registry_metrics.get("startup_errors", {}))
         total_time = registry_metrics.get("total_startup_time_ms", 0)
 
         # Determine overall health
         healthy = (
-            services_failed == 0 and
-            total_time < 1000 and  # Less than 1 second
-            (startup_report is None or len(startup_report.errors) == 0)
+            services_failed == 0
+            and total_time < 1000  # Less than 1 second
+            and (startup_report is None or len(startup_report.errors) == 0)
         )
 
         # Get warnings and errors
@@ -178,8 +170,8 @@ async def get_startup_health(
     description="Get comprehensive startup performance metrics and analysis.",
 )
 async def get_startup_metrics(
+    service_registry: Annotated[EnhancedServiceRegistry, Depends(get_service_registry)],
     request: Request,
-    service_registry: EnhancedServiceRegistry = Depends(get_service_registry),
 ) -> StartupPerformanceReport:
     """
     Get comprehensive startup performance metrics.
@@ -190,7 +182,6 @@ async def get_startup_metrics(
     - Component health check results
     - Performance analysis and recommendations
     """
-    _check_monitoring_enabled(request)
 
     try:
         # Get startup monitor and registry data
@@ -203,9 +194,7 @@ async def get_startup_metrics(
         slowest_services = []
 
         for service_name, timing in sorted(
-            service_timings.items(),
-            key=lambda x: x[1],
-            reverse=True
+            service_timings.items(), key=lambda x: x[1], reverse=True
         )[:5]:
             # Get service definition for metadata
             service_def = service_registry._service_definitions.get(service_name)
@@ -216,20 +205,22 @@ async def get_startup_metrics(
                 dependencies = [dep.name for dep in service_def.dependencies]
                 tags = list(service_def.tags) if service_def.tags else []
 
-            slowest_services.append(ServiceTimingInfo(
-                name=service_name,
-                startup_time_ms=timing,
-                success=service_name in service_registry.list_services(),
-                dependencies=dependencies,
-                tags=tags,
-            ))
+            slowest_services.append(
+                ServiceTimingInfo(
+                    name=service_name,
+                    startup_time_ms=timing,
+                    success=service_registry.has_service(service_name),
+                    dependencies=dependencies,
+                    tags=tags,
+                )
+            )
 
         # Performance baseline comparison
         baseline_comparison = {
             "target_total_ms": 500.0,
             "actual_total_ms": registry_metrics.get("total_startup_time_ms", 0),
             "target_service_registry_ms": 120.0,
-            "actual_service_registry_ms": getattr(service_registry, '_startup_time', 0) * 1000,
+            "actual_service_registry_ms": getattr(service_registry, "_startup_time", 0) * 1000,
             "meets_target": registry_metrics.get("total_startup_time_ms", 0) <= 500.0,
         }
 
@@ -249,8 +240,7 @@ async def get_startup_metrics(
             "performance_grade": _calculate_performance_grade(total_time),
             "efficiency_score": min(100, max(0, 100 - (total_time - 500) / 10)),
             "bottlenecks": [
-                service["name"] for service in slowest_services
-                if service.startup_time_ms > 200
+                service["name"] for service in slowest_services if service.startup_time_ms > 200
             ],
             "optimization_suggestions": [],
         }
@@ -295,8 +285,8 @@ async def get_startup_metrics(
     description="Get detailed timing information for all services.",
 )
 async def get_service_timings(
+    service_registry: Annotated[EnhancedServiceRegistry, Depends(get_service_registry)],
     request: Request,
-    service_registry: EnhancedServiceRegistry = Depends(get_service_registry),
 ) -> list[ServiceTimingInfo]:
     """
     Get detailed service startup timing information.
@@ -307,11 +297,9 @@ async def get_service_timings(
     - Dependencies
     - Service tags
     """
-    _check_monitoring_enabled(request)
 
     try:
         service_timings = service_registry.get_service_timings()
-        services_list = service_registry.list_services()
 
         timing_info = []
 
@@ -325,13 +313,15 @@ async def get_service_timings(
                 dependencies = [dep.name for dep in service_def.dependencies]
                 tags = list(service_def.tags) if service_def.tags else []
 
-            timing_info.append(ServiceTimingInfo(
-                name=service_name,
-                startup_time_ms=timing,
-                success=service_name in services_list,
-                dependencies=dependencies,
-                tags=tags,
-            ))
+            timing_info.append(
+                ServiceTimingInfo(
+                    name=service_name,
+                    startup_time_ms=timing,
+                    success=service_registry.has_service(service_name),
+                    dependencies=dependencies,
+                    tags=tags,
+                )
+            )
 
         # Sort by startup time (slowest first)
         timing_info.sort(key=lambda x: x.startup_time_ms, reverse=True)
@@ -345,18 +335,17 @@ async def get_service_timings(
 
 @router.get(
     "/report",
-    response_model=Dict[str, Any],
+    response_model=dict[str, Any],
     summary="Get startup monitoring report",
     description="Get the complete startup monitoring report if available.",
 )
-async def get_startup_report(request: Request) -> Dict[str, Any]:
+async def get_startup_report(request: Request) -> dict[str, Any]:
     """
     Get the complete startup monitoring report.
 
     Returns the detailed startup report generated by the monitoring middleware,
     including all phases, timings, and analysis.
     """
-    _check_monitoring_enabled(request)
 
     try:
         startup_report = _get_startup_report_from_request(request)
@@ -364,7 +353,7 @@ async def get_startup_report(request: Request) -> Dict[str, Any]:
         if not startup_report:
             raise HTTPException(
                 status_code=404,
-                detail="Startup report not available - application may still be starting"
+                detail="Startup report not available - application may still be starting",
             )
 
         return startup_report.to_dict()
@@ -378,11 +367,11 @@ async def get_startup_report(request: Request) -> Dict[str, Any]:
 
 @router.get(
     "/baseline-comparison",
-    response_model=Dict[str, Any],
+    response_model=dict[str, Any],
     summary="Get performance baseline comparison",
     description="Get comprehensive performance baseline comparison analysis.",
 )
-async def get_baseline_comparison(request: Request) -> Dict[str, Any]:
+async def get_baseline_comparison(request: Request) -> dict[str, Any]:
     """
     Get performance baseline comparison analysis.
 
@@ -392,7 +381,6 @@ async def get_baseline_comparison(request: Request) -> Dict[str, Any]:
     - Regression alerts
     - Optimization scoring
     """
-    _check_monitoring_enabled(request)
 
     try:
         # Get startup monitor and report
@@ -401,8 +389,7 @@ async def get_baseline_comparison(request: Request) -> Dict[str, Any]:
 
         if not startup_report:
             raise HTTPException(
-                status_code=404,
-                detail="Startup report not available for baseline comparison"
+                status_code=404, detail="Startup report not available for baseline comparison"
             )
 
         # Generate baseline comparison report

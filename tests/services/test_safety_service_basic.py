@@ -19,11 +19,9 @@ def mock_feature_manager():
     """Create a basic mock feature manager."""
     manager = Mock()
     manager.features = {}
-    manager.check_system_health = AsyncMock(return_value={
-        "status": "healthy",
-        "features": {},
-        "failed_critical": []
-    })
+    manager.check_system_health = AsyncMock(
+        return_value={"status": "healthy", "features": {}, "failed_critical": []}
+    )
     manager.get_feature = Mock(return_value=None)
     return manager
 
@@ -143,11 +141,13 @@ class TestSafetyServiceBasics:
         """Test audit log functionality."""
         # Add some audit entries
         for i in range(5):
-            safety_service._audit_log.append({
-                "timestamp": datetime.utcnow().isoformat(),
-                "event_type": f"test_event_{i}",
-                "details": {"index": i}
-            })
+            safety_service._audit_log.append(
+                {
+                    "timestamp": datetime.utcnow().isoformat(),
+                    "event_type": f"test_event_{i}",
+                    "details": {"index": i},
+                }
+            )
 
         # Get recent entries
         log = safety_service.get_audit_log(max_entries=3)
@@ -172,11 +172,13 @@ class TestSafetyServiceBasics:
     async def test_check_safety_interlocks(self, safety_service):
         """Test checking all safety interlocks."""
         # Set vehicle moving
-        safety_service.update_system_state({
-            "vehicle_speed": 30,
-            "parking_brake": False,
-            "engine_running": True,
-        })
+        safety_service.update_system_state(
+            {
+                "vehicle_speed": 30,
+                "parking_brake": False,
+                "engine_running": True,
+            }
+        )
 
         # Check interlocks
         results = await safety_service.check_safety_interlocks()
@@ -244,11 +246,51 @@ class TestSafetyInterlocks:
 
         # All conditions must be met
         test_cases = [
-            ({"vehicle_speed": 0, "parking_brake": True, "engine_running": False, "transmission_gear": "PARK"}, True),
-            ({"vehicle_speed": 5, "parking_brake": True, "engine_running": False, "transmission_gear": "PARK"}, False),
-            ({"vehicle_speed": 0, "parking_brake": False, "engine_running": False, "transmission_gear": "PARK"}, False),
-            ({"vehicle_speed": 0, "parking_brake": True, "engine_running": True, "transmission_gear": "PARK"}, False),
-            ({"vehicle_speed": 0, "parking_brake": True, "engine_running": False, "transmission_gear": "D"}, False),
+            (
+                {
+                    "vehicle_speed": 0,
+                    "parking_brake": True,
+                    "engine_running": False,
+                    "transmission_gear": "PARK",
+                },
+                True,
+            ),
+            (
+                {
+                    "vehicle_speed": 5,
+                    "parking_brake": True,
+                    "engine_running": False,
+                    "transmission_gear": "PARK",
+                },
+                False,
+            ),
+            (
+                {
+                    "vehicle_speed": 0,
+                    "parking_brake": False,
+                    "engine_running": False,
+                    "transmission_gear": "PARK",
+                },
+                False,
+            ),
+            (
+                {
+                    "vehicle_speed": 0,
+                    "parking_brake": True,
+                    "engine_running": True,
+                    "transmission_gear": "PARK",
+                },
+                False,
+            ),
+            (
+                {
+                    "vehicle_speed": 0,
+                    "parking_brake": True,
+                    "engine_running": False,
+                    "transmission_gear": "D",
+                },
+                False,
+            ),
         ]
 
         for state, expected in test_cases:

@@ -38,6 +38,7 @@ import pytest
 
 try:
     import apprise
+
     APPRISE_AVAILABLE = True
 except ImportError:
     APPRISE_AVAILABLE = False
@@ -55,15 +56,18 @@ def requires_real_smtp(func):
     """Decorator to skip tests if real SMTP is not enabled."""
     return pytest.mark.skipif(
         not os.getenv("COACHIQ_TEST_SMTP_ENABLED", "false").lower() == "true",
-        reason="Real SMTP testing not enabled. Set COACHIQ_TEST_SMTP_ENABLED=true"
+        reason="Real SMTP testing not enabled. Set COACHIQ_TEST_SMTP_ENABLED=true",
     )(func)
 
 
 def requires_real_pushover(func):
     """Decorator to skip tests if real Pushover is not enabled."""
     return pytest.mark.skipif(
-        not (os.getenv("COACHIQ_TEST_PUSHOVER_ENABLED", "false").lower() == "true" and APPRISE_AVAILABLE),
-        reason="Real Pushover testing not enabled or apprise not available"
+        not (
+            os.getenv("COACHIQ_TEST_PUSHOVER_ENABLED", "false").lower() == "true"
+            and APPRISE_AVAILABLE
+        ),
+        reason="Real Pushover testing not enabled or apprise not available",
     )(func)
 
 
@@ -108,27 +112,35 @@ async def real_notification_config(real_smtp_config, real_pushover_config):
 
     # Configure real SMTP
     if os.getenv("COACHIQ_TEST_SMTP_ENABLED", "false").lower() == "true":
-        config.smtp = type('SMTPSettings', (), {
-            'enabled': True,
-            'host': real_smtp_config["host"],
-            'port': real_smtp_config["port"],
-            'username': real_smtp_config["username"],
-            'password': real_smtp_config["password"],
-            'use_tls': real_smtp_config["use_tls"],
-            'from_email': real_smtp_config["from_email"],
-        })()
+        config.smtp = type(
+            "SMTPSettings",
+            (),
+            {
+                "enabled": True,
+                "host": real_smtp_config["host"],
+                "port": real_smtp_config["port"],
+                "username": real_smtp_config["username"],
+                "password": real_smtp_config["password"],
+                "use_tls": real_smtp_config["use_tls"],
+                "from_email": real_smtp_config["from_email"],
+            },
+        )()
     else:
-        config.smtp = type('SMTPSettings', (), {'enabled': False})()
+        config.smtp = type("SMTPSettings", (), {"enabled": False})()
 
     # Configure real Pushover
     if os.getenv("COACHIQ_TEST_PUSHOVER_ENABLED", "false").lower() == "true":
-        config.pushover = type('PushoverSettings', (), {
-            'enabled': True,
-            'token': real_pushover_config["token"],
-            'user_key': real_pushover_config["user_key"],
-        })()
+        config.pushover = type(
+            "PushoverSettings",
+            (),
+            {
+                "enabled": True,
+                "token": real_pushover_config["token"],
+                "user_key": real_pushover_config["user_key"],
+            },
+        )()
     else:
-        config.pushover = type('PushoverSettings', (), {'enabled': False})()
+        config.pushover = type("PushoverSettings", (), {"enabled": False})()
 
     yield config
 
@@ -172,11 +184,15 @@ class TestRealEmailDelivery:
 
         # Check queue statistics
         stats = await real_notification_manager.get_queue_statistics()
-        print(f"Queue stats after magic link email: pending={stats.pending_count}, "
-              f"completed={stats.completed_count}, failed={stats.failed_count}")
+        print(
+            f"Queue stats after magic link email: pending={stats.pending_count}, "
+            f"completed={stats.completed_count}, failed={stats.failed_count}"
+        )
 
     @requires_real_smtp
-    async def test_send_system_notification_email(self, real_notification_manager, real_smtp_config):
+    async def test_send_system_notification_email(
+        self, real_notification_manager, real_smtp_config
+    ):
         """Test sending system notification email through real SMTP."""
         success = await real_notification_manager.send_email(
             to_email=real_smtp_config["test_email"],
@@ -189,7 +205,7 @@ class TestRealEmailDelivery:
                 "correlation_id": f"test_{datetime.utcnow().isoformat()}",
                 "app_name": "CoachIQ Integration Test",
                 "support_email": real_smtp_config["from_email"],
-            }
+            },
         )
 
         assert success, "System notification email should be queued successfully"
@@ -199,8 +215,10 @@ class TestRealEmailDelivery:
 
         # Check queue statistics
         stats = await real_notification_manager.get_queue_statistics()
-        print(f"Queue stats after system notification: pending={stats.pending_count}, "
-              f"completed={stats.completed_count}, failed={stats.failed_count}")
+        print(
+            f"Queue stats after system notification: pending={stats.pending_count}, "
+            f"completed={stats.completed_count}, failed={stats.failed_count}"
+        )
 
     @requires_real_smtp
     async def test_send_test_notification_email(self, real_notification_manager, real_smtp_config):
@@ -212,7 +230,7 @@ class TestRealEmailDelivery:
                 "message": "CoachIQ notification system integration test completed successfully!",
                 "app_name": "CoachIQ Integration Test",
                 "timestamp": datetime.utcnow().isoformat(),
-            }
+            },
         )
 
         assert success, "Test notification email should be queued successfully"
@@ -222,11 +240,15 @@ class TestRealEmailDelivery:
 
         # Check queue statistics
         stats = await real_notification_manager.get_queue_statistics()
-        print(f"Queue stats after test notification: pending={stats.pending_count}, "
-              f"completed={stats.completed_count}, failed={stats.failed_count}")
+        print(
+            f"Queue stats after test notification: pending={stats.pending_count}, "
+            f"completed={stats.completed_count}, failed={stats.failed_count}"
+        )
 
     @requires_real_smtp
-    async def test_email_template_rendering_with_real_smtp(self, real_notification_manager, real_smtp_config):
+    async def test_email_template_rendering_with_real_smtp(
+        self, real_notification_manager, real_smtp_config
+    ):
         """Test email template rendering and delivery through real SMTP."""
         # Create custom template for testing
         template_name = "integration_test_custom"
@@ -298,7 +320,7 @@ class TestRealEmailDelivery:
                 "source_component": "RealServiceIntegrationTest",
                 "template_name": template_name,
                 "app_name": "CoachIQ Integration Test",
-            }
+            },
         )
 
         assert success, "Custom template email should be queued successfully"
@@ -310,18 +332,24 @@ class TestRealEmailDelivery:
         stats = await real_notification_manager.get_queue_statistics()
         manager_stats = real_notification_manager.get_statistics()
 
-        print(f"Final queue stats: pending={stats.pending_count}, "
-              f"completed={stats.completed_count}, failed={stats.failed_count}")
-        print(f"Manager stats: total={manager_stats['total_notifications']}, "
-              f"successful={manager_stats['successful_notifications']}, "
-              f"failed={manager_stats['failed_notifications']}")
+        print(
+            f"Final queue stats: pending={stats.pending_count}, "
+            f"completed={stats.completed_count}, failed={stats.failed_count}"
+        )
+        print(
+            f"Manager stats: total={manager_stats['total_notifications']}, "
+            f"successful={manager_stats['successful_notifications']}, "
+            f"failed={manager_stats['failed_notifications']}"
+        )
 
 
 class TestRealPushoverDelivery:
     """Test real Pushover notification delivery."""
 
     @requires_real_pushover
-    async def test_send_pushover_notification(self, real_notification_manager, real_pushover_config):
+    async def test_send_pushover_notification(
+        self, real_notification_manager, real_pushover_config
+    ):
         """Test sending Pushover notification through real API."""
         success = await real_notification_manager.send_pushover_notification(
             message="CoachIQ integration test notification via Pushover",
@@ -336,11 +364,15 @@ class TestRealPushoverDelivery:
 
         # Check queue statistics
         stats = await real_notification_manager.get_queue_statistics()
-        print(f"Queue stats after Pushover notification: pending={stats.pending_count}, "
-              f"completed={stats.completed_count}, failed={stats.failed_count}")
+        print(
+            f"Queue stats after Pushover notification: pending={stats.pending_count}, "
+            f"completed={stats.completed_count}, failed={stats.failed_count}"
+        )
 
     @requires_real_pushover
-    async def test_send_high_priority_pushover_notification(self, real_notification_manager, real_pushover_config):
+    async def test_send_high_priority_pushover_notification(
+        self, real_notification_manager, real_pushover_config
+    ):
         """Test sending high priority Pushover notification."""
         success = await real_notification_manager.notify(
             message="HIGH PRIORITY: CoachIQ integration test - critical system alert simulation",
@@ -357,19 +389,25 @@ class TestRealPushoverDelivery:
 
         # Check queue statistics
         stats = await real_notification_manager.get_queue_statistics()
-        print(f"Queue stats after critical Pushover notification: pending={stats.pending_count}, "
-              f"completed={stats.completed_count}, failed={stats.failed_count}")
+        print(
+            f"Queue stats after critical Pushover notification: pending={stats.pending_count}, "
+            f"completed={stats.completed_count}, failed={stats.failed_count}"
+        )
 
 
 class TestRealServiceCombination:
     """Test combinations of real services."""
 
     @pytest.mark.skipif(
-        not (os.getenv("COACHIQ_TEST_SMTP_ENABLED", "false").lower() == "true" and
-             os.getenv("COACHIQ_TEST_PUSHOVER_ENABLED", "false").lower() == "true"),
-        reason="Both SMTP and Pushover testing not enabled"
+        not (
+            os.getenv("COACHIQ_TEST_SMTP_ENABLED", "false").lower() == "true"
+            and os.getenv("COACHIQ_TEST_PUSHOVER_ENABLED", "false").lower() == "true"
+        ),
+        reason="Both SMTP and Pushover testing not enabled",
     )
-    async def test_multi_channel_notification(self, real_notification_manager, real_smtp_config, real_pushover_config):
+    async def test_multi_channel_notification(
+        self, real_notification_manager, real_smtp_config, real_pushover_config
+    ):
         """Test notification delivery across multiple real channels."""
         success = await real_notification_manager.notify(
             message="Multi-channel integration test: This notification should be delivered via both email and Pushover",
@@ -396,10 +434,16 @@ class TestRealServiceCombination:
         manager_stats = real_notification_manager.get_statistics()
         routing_stats = real_notification_manager.get_routing_statistics()
 
-        print(f"Multi-channel test results:")
-        print(f"  Queue: pending={stats.pending_count}, completed={stats.completed_count}, failed={stats.failed_count}")
-        print(f"  Manager: total={manager_stats['total_notifications']}, successful={manager_stats['successful_notifications']}")
-        print(f"  Routing: total={routing_stats.get('total_routings', 0)}, matches={routing_stats.get('rule_matches', 0)}")
+        print("Multi-channel test results:")
+        print(
+            f"  Queue: pending={stats.pending_count}, completed={stats.completed_count}, failed={stats.failed_count}"
+        )
+        print(
+            f"  Manager: total={manager_stats['total_notifications']}, successful={manager_stats['successful_notifications']}"
+        )
+        print(
+            f"  Routing: total={routing_stats.get('total_routings', 0)}, matches={routing_stats.get('rule_matches', 0)}"
+        )
 
 
 class TestRealServiceErrorHandling:
@@ -415,7 +459,7 @@ class TestRealServiceErrorHandling:
             context={
                 "message": "This email should fail to deliver due to invalid address",
                 "app_name": "CoachIQ Error Test",
-            }
+            },
         )
 
         # Should still queue successfully (failure happens during delivery)
@@ -428,8 +472,10 @@ class TestRealServiceErrorHandling:
         stats = await real_notification_manager.get_queue_statistics()
         manager_stats = real_notification_manager.get_statistics()
 
-        print(f"Invalid email test results:")
-        print(f"  Queue: pending={stats.pending_count}, failed={stats.failed_count}, dlq={stats.dlq_count}")
+        print("Invalid email test results:")
+        print(
+            f"  Queue: pending={stats.pending_count}, failed={stats.failed_count}, dlq={stats.dlq_count}"
+        )
         print(f"  Manager: failed={manager_stats.get('failed_notifications', 0)}")
 
     @requires_real_smtp
@@ -444,7 +490,7 @@ class TestRealServiceErrorHandling:
                 context={
                     "message": f"Rate limiting test email #{i}",
                     "app_name": "CoachIQ Rate Limit Test",
-                }
+                },
             )
             tasks.append(task)
 
@@ -461,13 +507,16 @@ class TestRealServiceErrorHandling:
         rate_limit_status = await real_notification_manager.get_rate_limit_status()
         manager_stats = real_notification_manager.get_statistics()
 
-        print(f"Rate limiting test with real SMTP:")
+        print("Rate limiting test with real SMTP:")
         print(f"  Successful queues: {successful}/10")
         print(f"  Rate limited: {manager_stats.get('rate_limited_notifications', 0)}")
-        print(f"  Current tokens: {rate_limit_status.current_tokens}/{rate_limit_status.max_tokens}")
+        print(
+            f"  Current tokens: {rate_limit_status.current_tokens}/{rate_limit_status.max_tokens}"
+        )
 
 
 # Utility functions for test environment setup
+
 
 def print_test_environment_info():
     """Print information about test environment configuration."""
@@ -489,7 +538,7 @@ def validate_test_environment():
             "COACHIQ_TEST_SMTP_HOST",
             "COACHIQ_TEST_SMTP_USERNAME",
             "COACHIQ_TEST_SMTP_PASSWORD",
-            "COACHIQ_TEST_EMAIL"
+            "COACHIQ_TEST_EMAIL",
         ]
 
         for var in required_smtp_vars:
@@ -500,10 +549,7 @@ def validate_test_environment():
         if not APPRISE_AVAILABLE:
             issues.append("Pushover testing enabled but apprise library not available")
 
-        required_pushover_vars = [
-            "COACHIQ_TEST_PUSHOVER_TOKEN",
-            "COACHIQ_TEST_PUSHOVER_USER"
-        ]
+        required_pushover_vars = ["COACHIQ_TEST_PUSHOVER_TOKEN", "COACHIQ_TEST_PUSHOVER_USER"]
 
         for var in required_pushover_vars:
             if not os.getenv(var):

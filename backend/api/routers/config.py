@@ -21,18 +21,25 @@ import os
 import time
 from typing import Annotated, Any
 
-from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
 from fastapi.responses import PlainTextResponse
 
 from backend.core.config import get_settings
-from backend.core.dependencies_v2 import (
-    get_app_state,
-    get_can_interface_service,
+from backend.core.dependencies import (
+    create_service_dependency,
     get_config_service,
-    get_feature_manager,
-    get_github_update_checker,
+    get_entity_state_repository,
 )
+
+# Create missing dependencies
+get_can_interface_service = create_service_dependency("can_interface_service")
+get_github_update_checker = create_service_dependency("github_update_checker")
+get_can_tracking_repository = create_service_dependency("can_tracking_repository")
 from backend.models.github_update import GitHubUpdateStatus
+from backend.repositories.can_tracking_repository import CANTrackingRepository
+from backend.repositories.entity_state_repository import EntityStateRepository
+from backend.services.config_service import ConfigService
+from backend.services.github_update_checker import GitHubUpdateChecker
 
 logger = logging.getLogger(__name__)
 
@@ -49,10 +56,11 @@ SERVER_START_TIME = time.time()
     summary="Get device mapping configuration",
     description="Returns the current device mapping configuration file content.",
 )
-async def get_device_mapping_config(request: Request) -> PlainTextResponse:
+async def get_device_mapping_config(
+    config_service: Annotated[ConfigService, Depends(get_config_service)],
+) -> PlainTextResponse:
     """Get device mapping configuration content."""
     logger.info("GET /config/device_mapping - Retrieving device mapping configuration")
-    config_service = get_config_service(request)
     try:
         content = await config_service.get_device_mapping_content()
         logger.info(
@@ -75,10 +83,11 @@ async def get_device_mapping_config(request: Request) -> PlainTextResponse:
     summary="Get RV-C specification configuration",
     description="Returns the current RV-C specification file content.",
 )
-async def get_spec_config(request: Request) -> PlainTextResponse:
+async def get_spec_config(
+    config_service: Annotated[ConfigService, Depends(get_config_service)],
+) -> PlainTextResponse:
     """Get RV-C specification configuration content."""
     logger.info("GET /config/spec - Retrieving RV-C specification configuration")
-    config_service = get_config_service(request)
     try:
         content = await config_service.get_spec_content()
         logger.info(
@@ -130,17 +139,24 @@ async def get_server_status() -> dict[str, Any]:
     summary="Get application status",
     description="Returns application-specific status information including configuration and entity counts.",
 )
-async def get_application_status(request: Request) -> dict[str, Any]:
+async def get_application_status(
+    config_service: Annotated[ConfigService, Depends(get_config_service)],
+    entity_state_repo: Annotated[EntityStateRepository, Depends(get_entity_state_repository)],
+    can_tracking_repo: Annotated[CANTrackingRepository, Depends(get_can_tracking_repository)],
+) -> dict[str, Any]:
     """Returns application-specific status information."""
     logger.debug("GET /status/application - Application status requested")
-    config_service = get_config_service(request)
-    app_state = get_app_state(request)
 
     # Get configuration status
     config_status = await config_service.get_config_status()
 
     # Basic check for CAN listeners (simple proxy: if entities exist, listeners likely ran)
-    entity_count = len(app_state.entity_manager.get_entity_ids())
+    entity_count = 0
+    if entity_state_repo:
+        entity_count = len(entity_state_repo.get_all_entity_ids())
+    else:
+        # If repository not available, default to 0
+        entity_count = 0
     can_listeners_active = entity_count > 0
 
     status_data = {
@@ -151,8 +167,8 @@ async def get_application_status(request: Request) -> dict[str, Any]:
         "device_mapping_file_path": config_status.get("mapping_path"),
         "known_entity_count": entity_count,
         "active_entity_state_count": entity_count,
-        "unmapped_entry_count": len(app_state.unmapped_entries),
-        "unknown_pgn_count": len(app_state.unknown_pgns),
+        "unmapped_entry_count": 0,  # Deprecated - tracking moved to service layer
+        "unknown_pgn_count": 0,  # Deprecated - tracking moved to service layer
         "can_listeners_status": (
             "likely_active" if can_listeners_active else "unknown_or_inactive"
         ),
@@ -167,8 +183,8 @@ async def get_application_status(request: Request) -> dict[str, Any]:
 
     logger.info(
         f"Application status retrieved - entities: {entity_count}, "
-        f"unmapped: {len(app_state.unmapped_entries)}, "
-        f"unknown_pgns: {len(app_state.unknown_pgns)}, "
+        f"unmapped: 0, "  # Deprecated
+        f"unknown_pgns: 0, "  # Deprecated
         f"spec_loaded: {config_status['spec_loaded']}, "
         f"mapping_loaded: {config_status['mapping_loaded']}"
     )
@@ -182,10 +198,13 @@ async def get_application_status(request: Request) -> dict[str, Any]:
     summary="Get latest GitHub release",
     description="Returns the latest GitHub release version and metadata.",
 )
-async def get_latest_github_release(request: Request) -> GitHubUpdateStatus:
+async def get_latest_github_release(
+    update_checker: Annotated[GitHubUpdateChecker | None, Depends(get_github_update_checker)],
+) -> GitHubUpdateStatus:
     """Returns the latest GitHub release version and metadata."""
     logger.debug("GET /status/latest_release - GitHub release status requested")
-    update_checker = get_github_update_checker(request)
+    if not update_checker:
+        raise HTTPException(status_code=503, detail="GitHub update checker not available")
     status_data = update_checker.get_status()
 
     logger.info(
@@ -204,11 +223,13 @@ async def get_latest_github_release(request: Request) -> GitHubUpdateStatus:
     description="Forces an immediate GitHub update check and returns the new status.",
 )
 async def force_github_update_check(
-    request: Request, background_tasks: BackgroundTasks
+    background_tasks: BackgroundTasks,
+    update_checker: Annotated[GitHubUpdateChecker | None, Depends(get_github_update_checker)],
 ) -> GitHubUpdateStatus:
     """Forces an immediate GitHub update check and returns the new status."""
     logger.info("POST /status/force_update_check - Forcing GitHub update check")
-    update_checker = get_github_update_checker(request)
+    if not update_checker:
+        raise HTTPException(status_code=503, detail="GitHub update checker not available")
 
     try:
         await update_checker.force_check()
@@ -230,55 +251,30 @@ async def force_github_update_check(
     "/status/features",
     response_model=dict[str, Any],
     summary="Get feature status",
-    description="Returns the current status of all features in the system.",
-    response_description="Dictionary containing feature states and metadata",
+    description="Returns the current status of all services in the system.",
+    response_description="Dictionary containing service states and metadata",
 )
-async def get_feature_status(request: Request) -> dict[str, Any]:
+async def get_feature_status() -> dict[str, Any]:
     """
-    Returns the current status of all features in the system.
+    Returns the current status of all services in the system.
 
-    This endpoint provides information about enabled/disabled features,
-    their health status, and configuration details.
+    This endpoint provides information about available services
+    and their health status.
     """
-    logger.debug("GET /status/features - Feature status requested")
-    feature_manager = get_feature_manager(request)
+    logger.debug("GET /status/features - Service status requested")
 
-    all_features = feature_manager.get_all_features()
-    enabled_features = feature_manager.get_enabled_features()
-    core_features = feature_manager.get_core_features()
-    optional_features = feature_manager.get_optional_features()
-
-    # Build health report
-    health_report = {}
-    for name, feature in all_features.items():
-        try:
-            health_status = getattr(feature, "health", "unknown")
-        except AttributeError:
-            health_status = "unknown"
-        health_report[name] = health_status
-
+    # In v2, all services are always enabled
+    # This endpoint is kept for backward compatibility
     feature_status = {
-        "total_features": len(all_features),
-        "enabled_count": len(enabled_features),
-        "core_count": len(core_features),
-        "optional_count": len(optional_features),
-        "features": {
-            name: {
-                "enabled": name in enabled_features,
-                "core": name in core_features,
-                "health": health_report.get(name, "unknown"),
-                "type": type(feature).__name__ if feature else "Unknown",
-            }
-            for name, feature in all_features.items()
-        },
+        "total_features": 0,
+        "enabled_count": 0,
+        "core_count": 0,
+        "optional_count": 0,
+        "features": {},
+        "message": "Feature flags have been removed. All services are available through ServiceRegistry.",
     }
 
-    logger.info(
-        f"Feature status retrieved - total: {len(all_features)}, "
-        f"enabled: {len(enabled_features)}, "
-        f"core: {len(core_features)}, "
-        f"optional: {len(optional_features)}"
-    )
+    logger.info("Feature status endpoint called - returning deprecation notice")
 
     return feature_status
 
@@ -329,69 +325,16 @@ async def get_settings_overview():
 
 
 @router.get("/config/features")
-async def get_enhanced_feature_status(
-    feature_manager: Annotated[Any, Depends(get_feature_manager)],
-):
-    """Get current feature status and availability (enhanced version)."""
-    all_features = feature_manager.get_all_features()
-
-    # Build dependency graph for dependent_features calculation
-    dependency_graph = {}
-    for name, feature in all_features.items():
-        dependencies = getattr(feature, "dependencies", [])
-        for dep in dependencies:
-            if dep not in dependency_graph:
-                dependency_graph[dep] = []
-            dependency_graph[dep].append(name)
-
-    # Extract rich feature data from configuration
-    features_data = {}
-    for name, feature in all_features.items():
-        config = getattr(feature, "config", {})
-
-        # Determine category based on core status and protocol detection
-        category = "core" if getattr(feature, "core", False) else "advanced"
-        if name in ["rvc", "j1939", "firefly", "spartan_k2", "multi_network_can"]:
-            category = "protocol"
-        elif name in [
-            "log_history",
-            "log_streaming",
-            "github_update_checker",
-            "uptimerobot",
-            "pushover",
-        ]:
-            category = "experimental"
-
-        # Determine stability based on feature maturity
-        stability = "stable"
-        if name in [
-            "firefly",
-            "spartan_k2",
-            "multi_network_can",
-            "advanced_diagnostics",
-        ]:
-            stability = "beta"
-        elif name in ["github_update_checker", "uptimerobot", "pushover"]:
-            stability = "alpha"
-
-        features_data[name] = {
-            "name": getattr(feature, "friendly_name", name),
-            "enabled": getattr(feature, "enabled", False),
-            "description": config.get("description", "No description available"),
-            "dependencies": getattr(feature, "dependencies", []),
-            "dependent_features": dependency_graph.get(name, []),
-            "category": category,
-            "stability": stability,
-            "environment_restrictions": [],  # Could be enhanced later based on config
-        }
-
+async def get_enhanced_feature_status():
+    """Get current service status and availability."""
+    # In v2, feature flags are removed
+    # This endpoint is kept for backward compatibility
     return {
-        "features": features_data,
-        "dependency_graph": {
-            name: getattr(feature, "dependencies", []) for name, feature in all_features.items()
-        },
-        "conflict_resolution": {},  # Placeholder for future conflict detection
-        "validation_errors": [],  # Placeholder for validation errors
+        "features": {},
+        "dependency_graph": {},
+        "conflict_resolution": {},
+        "validation_errors": [],
+        "message": "Feature flags have been removed. All services are available through ServiceRegistry.",
     }
 
 
@@ -449,15 +392,11 @@ async def get_coach_interface_requirements(
     can_service: Annotated[Any, Depends(get_can_interface_service)],
 ):
     """Get coach interface requirements and compatibility validation."""
-    from backend.services.coach_mapping_service import CoachMappingService
-
-    coach_service = CoachMappingService(can_service)
-
-    return {
-        "interface_requirements": coach_service.get_interface_requirements(),
-        "runtime_mappings": coach_service.get_runtime_interface_mappings(),
-        "compatibility": coach_service.validate_interface_compatibility(),
-    }
+    # This endpoint is deprecated - use repository-based coach mapping service instead
+    raise HTTPException(
+        status_code=410,
+        detail="This endpoint has been deprecated. Use /api/coach-mapping endpoints instead.",
+    )
 
 
 @router.get("/config/coach/metadata")
@@ -465,7 +404,8 @@ async def get_coach_mapping_metadata(
     can_service: Annotated[Any, Depends(get_can_interface_service)],
 ):
     """Get complete coach mapping metadata including interface analysis."""
-    from backend.services.coach_mapping_service import CoachMappingService
-
-    coach_service = CoachMappingService(can_service)
-    return coach_service.get_mapping_metadata()
+    # This endpoint is deprecated - use repository-based coach mapping service instead
+    raise HTTPException(
+        status_code=410,
+        detail="This endpoint has been deprecated. Use /api/coach-mapping endpoints instead.",
+    )

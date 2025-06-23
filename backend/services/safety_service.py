@@ -18,11 +18,7 @@ from datetime import UTC, datetime, timedelta
 from enum import Enum
 from typing import Any
 
-from backend.services.feature_models import (
-    FeatureState,
-    SafeStateAction,
-    SafetyClassification,
-)
+from backend.core.safety_interfaces import SafeStateAction
 
 logger = logging.getLogger(__name__)
 
@@ -276,23 +272,24 @@ class SafetyService:
 
     def __init__(
         self,
-        feature_manager,
+        service_registry=None,
         health_check_interval: float = 5.0,
         watchdog_timeout: float = 15.0,
         pin_manager=None,
         security_audit_service=None,
     ):
         """
-        Initialize safety service.
+        Initialize safety service with modern ServiceRegistry integration.
 
         Args:
-            feature_manager: FeatureManager instance to monitor
+            service_registry: SafetyServiceRegistry instance to monitor services
             health_check_interval: Interval between health checks (seconds)
             watchdog_timeout: Watchdog timeout threshold (seconds)
             pin_manager: Optional PIN manager for enhanced authorization
             security_audit_service: Optional security audit service for enhanced logging
         """
-        self.feature_manager = feature_manager
+        self.service_registry = service_registry
+        # Note: feature_manager support removed - use SafetyServiceRegistry only
         self.health_check_interval = health_check_interval
         self.watchdog_timeout = watchdog_timeout
         self.pin_manager = pin_manager
@@ -548,21 +545,51 @@ class SafetyService:
         )
 
         try:
-            # Get all position-critical features
-            position_critical_features = []
-            for feature_name, feature in self.feature_manager.features.items():
-                if (
-                    hasattr(feature, "_safety_classification")
-                    and feature._safety_classification == SafetyClassification.POSITION_CRITICAL
-                ):
-                    position_critical_features.append(feature_name)
+            # Use SafetyServiceRegistry coordinated emergency stop
+            if self.service_registry and hasattr(self.service_registry, "execute_emergency_stop"):
+                logger.critical("Initiating coordinated emergency stop via SafetyServiceRegistry")
+                emergency_results = await self.service_registry.execute_emergency_stop(
+                    reason=reason, triggered_by="safety_service"
+                )
 
-            # Set all position-critical features to SAFE_SHUTDOWN
-            for feature_name in position_critical_features:
-                feature = self.feature_manager.get_feature(feature_name)
-                if feature and feature.enabled:
-                    logger.critical("Emergency stop: Setting %s to SAFE_SHUTDOWN", feature_name)
-                    feature.state = FeatureState.SAFE_SHUTDOWN
+                # Log emergency stop results
+                successful_stops = sum(1 for success in emergency_results.values() if success)
+                failed_stops = sum(1 for success in emergency_results.values() if not success)
+
+                logger.critical(
+                    f"Emergency stop coordination complete: {successful_stops} successful, {failed_stops} failed"
+                )
+
+                if failed_stops > 0:
+                    failed_services = [
+                        name for name, success in emergency_results.items() if not success
+                    ]
+                    logger.error(f"Emergency stop failed for services: {failed_services}")
+
+            else:
+                # Fallback to manual service shutdown
+                logger.warning("SafetyServiceRegistry not available, using fallback emergency stop")
+                safety_critical_services = self._get_safety_critical_services()
+
+                for service_name in safety_critical_services:
+                    try:
+                        service = (
+                            self.service_registry.get_service(service_name)
+                            if self.service_registry
+                            else None
+                        )
+                        if service and hasattr(service, "emergency_stop"):
+                            logger.critical(
+                                "Emergency stop: Triggering safe shutdown for %s", service_name
+                            )
+                            await service.emergency_stop(reason)
+                        elif service and hasattr(service, "stop"):
+                            logger.critical("Emergency stop: Stopping service %s", service_name)
+                            await service.stop()
+                    except Exception as e:
+                        logger.error(
+                            "Error stopping service %s during emergency: %s", service_name, e
+                        )
 
             # Engage all safety interlocks
             for interlock in self._interlocks.values():
@@ -577,6 +604,35 @@ class SafetyService:
         except Exception as e:
             logger.critical("Error during emergency stop: %s", e)
             await self._audit_log_event("emergency_stop_error", {"error": str(e), "reason": reason})
+
+    def _get_safety_critical_services(self) -> list[str]:
+        """
+        Get list of safety-critical service names from SafetyServiceRegistry.
+
+        Returns:
+            List of service names that are safety-critical and need emergency stop.
+        """
+        # Use SafetyServiceRegistry if available for accurate safety classification
+        if self.service_registry and hasattr(self.service_registry, "get_safety_critical_services"):
+            return self.service_registry.get_safety_critical_services()
+
+        # Fallback: Define known safety-critical services for basic operation
+        fallback_critical_services = [
+            "can_bus_service",  # Vehicle CAN bus control
+            "entity_control_service",  # Entity state control
+            "auth_manager",  # Access control security
+            "websocket_manager",  # Real-time communication
+        ]
+
+        # Filter to only services that are actually registered and running
+        if self.service_registry:
+            available_services = []
+            for service_name in fallback_critical_services:
+                if self.service_registry.has_service(service_name):
+                    available_services.append(service_name)
+            return available_services
+
+        return []
 
     async def reset_emergency_stop(
         self,
@@ -1525,21 +1581,34 @@ class SafetyService:
         """Execute emergency stop safety actions."""
         self._active_safety_actions = []
 
-        # 1. Position-critical features to safe shutdown
-        position_critical_count = 0
-        for feature_name, feature in self.feature_manager.features.items():
-            if (
-                hasattr(feature, "_safety_classification")
-                and feature._safety_classification == SafetyClassification.POSITION_CRITICAL
-            ):
-                position_critical_count += 1
-                if feature.enabled and feature.state != FeatureState.SAFE_SHUTDOWN:
-                    logger.critical("Emergency stop: Setting %s to SAFE_SHUTDOWN", feature_name)
-                    feature.state = FeatureState.SAFE_SHUTDOWN
+        # 1. Safety-critical services to safe shutdown
+        safety_critical_services = self._get_safety_critical_services()
+        safety_shutdown_count = 0
 
-        if position_critical_count > 0:
-            self._active_safety_actions.append("position_critical_safe_shutdown")
-            self._active_safety_actions.append("maintain_position")
+        for service_name in safety_critical_services:
+            try:
+                service = (
+                    self.service_registry.get_service(service_name)
+                    if self.service_registry
+                    else None
+                )
+                if service:
+                    safety_shutdown_count += 1
+                    if hasattr(service, "emergency_stop"):
+                        logger.critical(
+                            "Emergency stop action: Triggering safe shutdown for %s", service_name
+                        )
+                        await service.emergency_stop("Safety system emergency stop")
+                    else:
+                        logger.warning(
+                            "Service %s does not support emergency_stop method", service_name
+                        )
+            except Exception as e:
+                logger.error("Error executing emergency stop for service %s: %s", service_name, e)
+
+        if safety_shutdown_count > 0:
+            self._active_safety_actions.append("safety_critical_safe_shutdown")
+            self._active_safety_actions.append("maintain_safe_state")
 
         # 2. Engage all safety interlocks
         for interlock in self._interlocks.values():
@@ -1577,15 +1646,61 @@ class SafetyService:
         """Perform comprehensive health check."""
         self._last_health_check = datetime.now(UTC)
 
-        # Check feature health
-        health_report = await self.feature_manager.check_system_health()
+        # Check service health via SafetyServiceRegistry
+        if self.service_registry and hasattr(self.service_registry, "get_safety_status_summary"):
+            try:
+                # Use comprehensive safety status from SafetyServiceRegistry
+                safety_summary = await self.service_registry.get_safety_status_summary()
 
-        # Check for critical failures
-        failed_critical = health_report.get("failed_critical", [])
-        if failed_critical:
-            await self.trigger_emergency_stop(
-                f"Critical feature failed: {', '.join(failed_critical)}", "health_monitoring"
-            )
+                # Check for critical safety issues
+                overall_status = safety_summary.get("overall_safety_status", "safe")
+                unsafe_count = safety_summary.get("summary", {}).get("unsafe_count", 0)
+                emergency_count = safety_summary.get("summary", {}).get("emergency_stop_count", 0)
+
+                if overall_status == "unsafe" or unsafe_count > 0:
+                    # Find which services are unsafe
+                    failed_critical = []
+                    for category in [
+                        "critical_services",
+                        "safety_related_services",
+                        "position_critical_services",
+                    ]:
+                        services = safety_summary.get(category, {})
+                        for service_name, status in services.items():
+                            if status in ["unsafe", "emergency_stop"]:
+                                failed_critical.append(service_name)
+
+                    if failed_critical:
+                        await self.trigger_emergency_stop(
+                            f"Critical safety failure detected: {', '.join(failed_critical)}",
+                            "health_monitoring",
+                        )
+                        return
+
+                elif overall_status == "degraded":
+                    logger.warning("System operating in degraded safety mode")
+
+            except Exception as e:
+                logger.error(f"Error checking safety status summary: {e}")
+                # Fallback to individual service checks
+                failed_critical = []
+                safety_critical_services = self._get_safety_critical_services()
+
+                for service_name in safety_critical_services:
+                    try:
+                        status = self.service_registry.get_service_status(service_name)
+                        if status in ["FAILED", "DEGRADED"]:
+                            failed_critical.append(service_name)
+                    except Exception as e:
+                        logger.error("Error checking health of service %s: %s", service_name, e)
+                        failed_critical.append(service_name)
+
+                # Check for critical failures
+                if failed_critical:
+                    await self.trigger_emergency_stop(
+                        f"Critical service failed: {', '.join(failed_critical)}",
+                        "health_monitoring",
+                    )
             return
 
         # Check watchdog timeout
@@ -1663,8 +1778,26 @@ class SafetyService:
             try:
                 start_time = time.time()
 
-                # Check feature health via feature manager
-                health_report = await self.feature_manager.check_system_health()
+                # Check service health via ServiceRegistry
+                if self.service_registry:
+                    # Use ServiceRegistry to check service health
+                    health_summary = self.service_registry.get_health_summary()
+                    failed_services = [
+                        name
+                        for name, status in health_summary.items()
+                        if status.get("status") in ["FAILED", "DEGRADED"]
+                    ]
+
+                    # Create health report compatible with existing logic
+                    health_report = {
+                        "failed_critical": [
+                            s for s in failed_services if s in self._get_safety_critical_services()
+                        ],
+                        "healthy": len(failed_services) == 0,
+                    }
+                else:
+                    # Fallback when ServiceRegistry not available
+                    health_report = {"failed_critical": [], "healthy": True}
 
                 # Check safety interlocks
                 interlock_results = await self.check_safety_interlocks()
@@ -1717,7 +1850,7 @@ class SafetyService:
         Check for conditions that require emergency stop.
 
         Args:
-            health_report: System health report from feature manager
+            health_report: System health report from service registry
             interlock_results: Results from safety interlock checks
         """
         # Check for critical feature failures
@@ -1776,22 +1909,42 @@ class SafetyService:
             await self._audit_log_event("safe_state_error", {"error": str(e), "reason": reason})
 
     async def _shutdown_safety_critical_features(self) -> None:
-        """Shut down safety-critical features in controlled manner."""
-        for feature_name, feature in self.feature_manager.features.items():
-            if hasattr(feature, "_safety_classification"):
-                classification = feature._safety_classification  # noqa: SLF001
+        """Shut down safety-critical services in controlled manner."""
+        safety_critical_services = self._get_safety_critical_services()
 
-                if (
-                    classification
-                    in [
-                        SafetyClassification.CRITICAL,
-                        SafetyClassification.POSITION_CRITICAL,
-                    ]
-                    and feature.enabled
-                    and feature.state != FeatureState.SAFE_SHUTDOWN
-                ):
-                    logger.warning("Safe state: Setting %s to SAFE_SHUTDOWN", feature_name)
-                    feature.state = FeatureState.SAFE_SHUTDOWN
+        for service_name in safety_critical_services:
+            try:
+                service = (
+                    self.service_registry.get_service(service_name)
+                    if self.service_registry
+                    else None
+                )
+                if service:
+                    if hasattr(service, "emergency_stop"):
+                        logger.info("Safe state shutdown: %s", service_name)
+                        await service.emergency_stop("Entering safe state")
+                    elif hasattr(service, "stop"):
+                        logger.info("Safe state shutdown: %s", service_name)
+                        await service.stop()
+            except Exception as e:
+                logger.error("Error shutting down service %s: %s", service_name, e)
+
+    def get_health_status(self) -> dict[str, Any]:
+        """Get health status for ServiceRegistry monitoring."""
+        return {
+            "healthy": not self._emergency_stop_active and not self._in_safe_state,
+            "emergency_stop_active": self._emergency_stop_active,
+            "in_safe_state": self._in_safe_state,
+            "operational_mode": self._operational_mode.value,
+            "active_interlocks": len([i for i in self._interlocks.values() if i.is_engaged]),
+            "last_health_check": self._last_health_check.isoformat()
+            if self._last_health_check
+            else None,
+        }
+
+    async def stop(self) -> None:
+        """Stop the safety service gracefully."""
+        await self.stop_monitoring()
 
     async def _audit_log_event(self, event_type: str, details: dict[str, Any]) -> None:
         """

@@ -31,10 +31,10 @@ class SecurityEvent(BaseModel):
     event_type: str = Field(..., description="Type of security event")
     client_ip: str = Field(..., description="Client IP address")
     endpoint: str = Field(..., description="Requested endpoint")
-    user_agent: Optional[str] = Field(None, description="User agent string")
-    country: Optional[str] = Field(None, description="Country code from GeoIP")
+    user_agent: str | None = Field(None, description="User agent string")
+    country: str | None = Field(None, description="Country code from GeoIP")
     severity: str = Field("medium", description="Event severity level")
-    details: Dict[str, Any] = Field(default_factory=dict, description="Additional event details")
+    details: dict[str, Any] = Field(default_factory=dict, description="Additional event details")
     action_taken: str = Field("logged", description="Action taken in response")
     resolved: bool = Field(False, description="Whether event has been resolved")
 
@@ -61,7 +61,7 @@ class SecurityThreat(BaseModel):
     event_count: int = Field(1, description="Number of related events")
     severity: str = Field("medium", description="Threat severity level")
     active: bool = Field(True, description="Whether threat is still active")
-    details: Dict[str, Any] = Field(default_factory=dict, description="Threat details")
+    details: dict[str, Any] = Field(default_factory=dict, description="Threat details")
 
 
 class NetworkSecurityService:
@@ -72,7 +72,7 @@ class NetworkSecurityService:
     and threat detection for internet-connected RV deployments.
     """
 
-    def __init__(self, security_config_service: Optional[SecurityConfigService] = None):
+    def __init__(self, security_config_service: SecurityConfigService | None = None):
         """
         Initialize network security service.
 
@@ -82,15 +82,15 @@ class NetworkSecurityService:
         self.security_config_service = security_config_service or SecurityConfigService()
 
         # Security event storage
-        self.security_events: List[SecurityEvent] = []
+        self.security_events: list[SecurityEvent] = []
         self.max_events = 10000  # Keep last 10k events in memory
 
         # IP blocking management
-        self.blocked_ips: Dict[str, IPBlockEntry] = {}
-        self.trusted_ips: Set[str] = set()
+        self.blocked_ips: dict[str, IPBlockEntry] = {}
+        self.trusted_ips: set[str] = set()
 
         # Threat detection
-        self.active_threats: Dict[str, SecurityThreat] = {}
+        self.active_threats: dict[str, SecurityThreat] = {}
         self.threat_patterns = {
             "brute_force": {"events": 5, "window": 300},  # 5 events in 5 minutes
             "ddos": {"events": 100, "window": 60},  # 100 requests in 1 minute
@@ -114,8 +114,8 @@ class NetworkSecurityService:
         client_ip: str,
         endpoint: str,
         severity: str = "medium",
-        user_agent: Optional[str] = None,
-        details: Optional[Dict[str, Any]] = None,
+        user_agent: str | None = None,
+        details: dict[str, Any] | None = None,
     ) -> str:
         """
         Log a security event and perform threat analysis.
@@ -376,7 +376,7 @@ class NetworkSecurityService:
         return threat_detected
 
     async def _detect_brute_force(
-        self, event: SecurityEvent, recent_events: List[SecurityEvent]
+        self, event: SecurityEvent, recent_events: list[SecurityEvent]
     ) -> bool:
         """Detect brute force attack patterns."""
         failed_auth_events = [
@@ -388,7 +388,7 @@ class NetworkSecurityService:
 
         return len(failed_auth_events) >= self.threat_patterns["brute_force"]["events"]
 
-    async def _detect_ddos(self, event: SecurityEvent, recent_events: List[SecurityEvent]) -> bool:
+    async def _detect_ddos(self, event: SecurityEvent, recent_events: list[SecurityEvent]) -> bool:
         """Detect DDoS attack patterns."""
         ddos_window = self.threat_patterns["ddos"]["window"]
         recent_requests = [e for e in recent_events if time.time() - e.timestamp <= ddos_window]
@@ -396,7 +396,7 @@ class NetworkSecurityService:
         return len(recent_requests) >= self.threat_patterns["ddos"]["events"]
 
     async def _detect_scanning(
-        self, event: SecurityEvent, recent_events: List[SecurityEvent]
+        self, event: SecurityEvent, recent_events: list[SecurityEvent]
     ) -> bool:
         """Detect port/endpoint scanning patterns."""
         scanning_window = self.threat_patterns["scanning"]["window"]
@@ -412,7 +412,7 @@ class NetworkSecurityService:
         return len(unique_endpoints) >= self.threat_patterns["scanning"]["events"]
 
     async def _detect_safety_abuse(
-        self, event: SecurityEvent, recent_events: List[SecurityEvent]
+        self, event: SecurityEvent, recent_events: list[SecurityEvent]
     ) -> bool:
         """Detect safety endpoint abuse patterns."""
         safety_window = self.threat_patterns["safety_abuse"]["window"]
@@ -430,7 +430,7 @@ class NetworkSecurityService:
         self,
         threat_type: str,
         event: SecurityEvent,
-        recent_events: List[SecurityEvent],
+        recent_events: list[SecurityEvent],
     ) -> None:
         """
         Handle detected threat.
@@ -535,7 +535,7 @@ class NetworkSecurityService:
 
         return len(expired_ips)
 
-    def get_security_summary(self) -> Dict[str, Any]:
+    def get_security_summary(self) -> dict[str, Any]:
         """
         Get network security summary for monitoring.
 

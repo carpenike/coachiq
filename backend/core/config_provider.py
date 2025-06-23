@@ -18,10 +18,10 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 from backend.integrations.rvc.config_loader import (
+    extract_coach_info,
     get_default_paths,
     load_device_mapping,
     load_rvc_spec,
-    extract_coach_info
 )
 from backend.models.common import CoachInfo
 
@@ -37,7 +37,7 @@ class RVCConfigProvider:
     file loading that was causing startup inefficiency.
     """
 
-    def __init__(self, spec_path: Optional[Path] = None, device_mapping_path: Optional[Path] = None):
+    def __init__(self, spec_path: Path | None = None, device_mapping_path: Path | None = None):
         """
         Initialize the RVC config provider.
 
@@ -45,13 +45,13 @@ class RVCConfigProvider:
             spec_path: Path to RVC spec JSON file (auto-detected if None)
             device_mapping_path: Path to device mapping YAML file (auto-detected if None)
         """
-        self._spec_path: Optional[Path] = spec_path
-        self._device_mapping_path: Optional[Path] = device_mapping_path
+        self._spec_path: Path | None = spec_path
+        self._device_mapping_path: Path | None = device_mapping_path
 
         # Loaded configuration data
-        self._spec_data: Optional[Dict[str, Any]] = None
-        self._device_mapping_data: Optional[Dict[str, Any]] = None
-        self._coach_info: Optional[CoachInfo] = None
+        self._spec_data: dict[str, Any] | None = None
+        self._device_mapping_data: dict[str, Any] | None = None
+        self._coach_info: CoachInfo | None = None
 
         # Initialization state
         self._initialized: bool = False
@@ -90,15 +90,14 @@ class RVCConfigProvider:
 
             # Extract coach information
             self._coach_info = extract_coach_info(
-                self._device_mapping_data,
-                str(self._device_mapping_path)
+                self._device_mapping_data, str(self._device_mapping_path)
             )
 
             self._initialized = True
 
             # Log summary
-            pgn_count = len(self._spec_data.get('pgns', {}))
-            entity_count = len(self._device_mapping_data.get('entities', {}))
+            pgn_count = len(self._spec_data.get("pgns", {}))
+            entity_count = len(self._device_mapping_data.get("entities", {}))
 
             logger.info(
                 f"RVCConfigProvider: Configuration loaded successfully - "
@@ -114,12 +113,10 @@ class RVCConfigProvider:
     def _ensure_initialized(self):
         """Ensure the provider is initialized before accessing data."""
         if not self._initialized:
-            raise RuntimeError(
-                "RVCConfigProvider not initialized. Call initialize() first."
-            )
+            raise RuntimeError("RVCConfigProvider not initialized. Call initialize() first.")
 
     @property
-    def spec_data(self) -> Dict[str, Any]:
+    def spec_data(self) -> dict[str, Any]:
         """
         Get RVC specification data.
 
@@ -133,7 +130,7 @@ class RVCConfigProvider:
         return self._spec_data
 
     @property
-    def device_mapping_data(self) -> Dict[str, Any]:
+    def device_mapping_data(self) -> dict[str, Any]:
         """
         Get device mapping data.
 
@@ -160,7 +157,7 @@ class RVCConfigProvider:
         self._ensure_initialized()
         return self._coach_info
 
-    def get_entity_config(self, entity_id: str) -> Dict[str, Any]:
+    def get_entity_config(self, entity_id: str) -> dict[str, Any]:
         """
         Get configuration for a specific entity.
 
@@ -171,9 +168,9 @@ class RVCConfigProvider:
             Entity configuration dictionary, empty if not found
         """
         self._ensure_initialized()
-        return self.device_mapping_data.get('entities', {}).get(entity_id, {})
+        return self.device_mapping_data.get("entities", {}).get(entity_id, {})
 
-    def get_pgn_config(self, pgn: int) -> Dict[str, Any]:
+    def get_pgn_config(self, pgn: int) -> dict[str, Any]:
         """
         Get PGN configuration from spec.
 
@@ -184,9 +181,9 @@ class RVCConfigProvider:
             PGN configuration dictionary, empty if not found
         """
         self._ensure_initialized()
-        return self.spec_data.get('pgns', {}).get(str(pgn), {})
+        return self.spec_data.get("pgns", {}).get(str(pgn), {})
 
-    def get_entity_list(self) -> List[str]:
+    def get_entity_list(self) -> list[str]:
         """
         Get list of all entity IDs.
 
@@ -194,9 +191,9 @@ class RVCConfigProvider:
             List of entity identifiers
         """
         self._ensure_initialized()
-        return list(self.device_mapping_data.get('entities', {}).keys())
+        return list(self.device_mapping_data.get("entities", {}).keys())
 
-    def get_pgn_list(self) -> List[int]:
+    def get_pgn_list(self) -> list[int]:
         """
         Get list of all PGN numbers.
 
@@ -204,7 +201,7 @@ class RVCConfigProvider:
             List of PGN numbers as integers
         """
         self._ensure_initialized()
-        pgns = self.spec_data.get('pgns', {}).keys()
+        pgns = self.spec_data.get("pgns", {}).keys()
         return [int(pgn) for pgn in pgns if pgn.isdigit()]
 
     def has_entity(self, entity_id: str) -> bool:
@@ -218,7 +215,7 @@ class RVCConfigProvider:
             True if entity exists, False otherwise
         """
         self._ensure_initialized()
-        return entity_id in self.device_mapping_data.get('entities', {})
+        return entity_id in self.device_mapping_data.get("entities", {})
 
     def has_pgn(self, pgn: int) -> bool:
         """
@@ -231,9 +228,9 @@ class RVCConfigProvider:
             True if PGN exists, False otherwise
         """
         self._ensure_initialized()
-        return str(pgn) in self.spec_data.get('pgns', {})
+        return str(pgn) in self.spec_data.get("pgns", {})
 
-    def get_entities_by_device_type(self, device_type: str) -> List[str]:
+    def get_entities_by_device_type(self, device_type: str) -> list[str]:
         """
         Get all entity IDs of a specific device type.
 
@@ -246,13 +243,13 @@ class RVCConfigProvider:
         self._ensure_initialized()
         matching_entities = []
 
-        for entity_id, entity_config in self.device_mapping_data.get('entities', {}).items():
-            if entity_config.get('device_type') == device_type:
+        for entity_id, entity_config in self.device_mapping_data.get("entities", {}).items():
+            if entity_config.get("device_type") == device_type:
                 matching_entities.append(entity_id)
 
         return matching_entities
 
-    def get_configuration_summary(self) -> Dict[str, Any]:
+    def get_configuration_summary(self) -> dict[str, Any]:
         """
         Get a summary of the loaded configuration.
 
@@ -261,29 +258,29 @@ class RVCConfigProvider:
         """
         self._ensure_initialized()
 
-        entities = self.device_mapping_data.get('entities', {})
+        entities = self.device_mapping_data.get("entities", {})
         device_types = {}
 
         # Count entities by device type
         for entity_config in entities.values():
-            device_type = entity_config.get('device_type', 'unknown')
+            device_type = entity_config.get("device_type", "unknown")
             device_types[device_type] = device_types.get(device_type, 0) + 1
 
         return {
-            'coach_info': {
-                'year': self._coach_info.year,
-                'make': self._coach_info.make,
-                'model': self._coach_info.model,
-                'trim': self._coach_info.trim,
-                'filename': self._coach_info.filename
+            "coach_info": {
+                "year": self._coach_info.year,
+                "make": self._coach_info.make,
+                "model": self._coach_info.model,
+                "trim": self._coach_info.trim,
+                "filename": self._coach_info.filename,
             },
-            'statistics': {
-                'total_pgns': len(self.spec_data.get('pgns', {})),
-                'total_entities': len(entities),
-                'device_types': device_types,
-                'spec_file': str(self._spec_path),
-                'mapping_file': str(self._device_mapping_path)
-            }
+            "statistics": {
+                "total_pgns": len(self.spec_data.get("pgns", {})),
+                "total_entities": len(entities),
+                "device_types": device_types,
+                "spec_file": str(self._spec_path),
+                "mapping_file": str(self._device_mapping_path),
+            },
         }
 
     async def shutdown(self):
@@ -294,7 +291,7 @@ class RVCConfigProvider:
         """
         logger.debug("RVCConfigProvider: Shutdown complete")
 
-    async def check_health(self) -> 'ServiceStatus':
+    async def check_health(self) -> "ServiceStatus":
         """
         Check health of the configuration provider.
 
@@ -319,8 +316,10 @@ class RVCConfigProvider:
         if not self._initialized:
             return "RVCConfigProvider(uninitialized)"
 
-        entity_count = len(self.device_mapping_data.get('entities', {}))
-        pgn_count = len(self.spec_data.get('pgns', {}))
+        entity_count = len(self.device_mapping_data.get("entities", {}))
+        pgn_count = len(self.spec_data.get("pgns", {}))
 
-        return (f"RVCConfigProvider(entities={entity_count}, pgns={pgn_count}, "
-                f"coach={self._coach_info.make} {self._coach_info.model})")
+        return (
+            f"RVCConfigProvider(entities={entity_count}, pgns={pgn_count}, "
+            f"coach={self._coach_info.make} {self._coach_info.model})"
+        )

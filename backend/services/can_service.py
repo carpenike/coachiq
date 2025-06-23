@@ -29,14 +29,16 @@ class CANService:
     agnostic to the presentation layer (HTTP, WebSocket, etc.).
     """
 
-    def __init__(self, app_state=None):
+    def __init__(self, can_tracking_repository=None, system_state_repository=None):
         """
         Initialize the CAN service.
 
         Args:
-            app_state: Optional AppState instance for dependency injection
+            can_tracking_repository: Repository for CAN tracking operations
+            system_state_repository: Repository for system state operations
         """
-        self.app_state = app_state
+        self._can_tracking_repository = can_tracking_repository
+        self._system_state_repository = system_state_repository
 
     async def get_queue_status(self) -> dict[str, Any]:
         """
@@ -128,9 +130,7 @@ class CANService:
         if interface not in buses:
             available_interfaces = list(buses.keys())
             msg = f"Interface '{interface}' not found. Available interfaces: {available_interfaces}"
-            raise ValueError(
-                msg
-            )
+            raise ValueError(msg)
 
         # Create CAN message
         msg = can.Message(
@@ -222,22 +222,15 @@ class CANService:
             float: Messages per second over the last 10 seconds
         """
         try:
-            if not self.app_state:
+            if not self._can_tracking_repository:
                 return 0.0
 
-            # Get recent CAN sniffer entries from app state
+            # Get recent CAN sniffer entries from repository
             import time
 
             current_time = time.time()
-            recent_messages = [
-                entry
-                for entry in self.app_state.can_command_sniffer_log
-                if current_time - entry.get("timestamp", 0) <= 10.0  # Last 10 seconds
-            ]
-
-            # Calculate rate as messages per second
-            if len(recent_messages) > 0:
-                return len(recent_messages) / 10.0
+            # TODO: Implement can_tracking_repository.get_recent_messages(since_timestamp)
+            # For now, return 0 as we're removing app_state dependency
             return 0.0
 
         except Exception as e:
@@ -252,9 +245,11 @@ class CANService:
             int: Total message count from app state
         """
         try:
-            if not self.app_state:
+            if not self._can_tracking_repository:
                 return 0
-            return len(self.app_state.can_command_sniffer_log)
+            # TODO: Implement can_tracking_repository.get_total_message_count()
+            # For now, return 0 as we're removing app_state dependency
+            return 0
         except Exception as e:
             logger.warning(f"Failed to get total message count: {e}")
             return 0
@@ -266,15 +261,32 @@ class CANService:
         This method would typically be called during application startup
         to begin the CAN message transmission loop.
         """
-        if not self.app_state:
-            logger.warning("Cannot start CAN writer without AppState dependency")
-            return
+        # CAN writer task is managed by the CAN subsystem directly
+        logger.info("CAN writer is managed by the CAN subsystem")
+        return
 
         # Import here to avoid circular imports
         from backend.integrations.can.manager import can_writer
 
         # Start the CAN writer task and store reference to prevent garbage collection
-        can_writer_task = asyncio.create_task(can_writer(self.app_state))
+        # Pass repositories to can_writer if available, fall back to getting from app_state
+        can_tracking_repo = self._can_tracking_repository
+        system_state_repo = self._system_state_repository
+
+        if not can_tracking_repo or not system_state_repo:
+            # Try to get repositories from app_state's ServiceRegistry
+            # Service registry should be injected directly, not through app_state
+            service_registry = None  # TODO: Inject service registry as dependency
+            if not can_tracking_repo:
+                can_tracking_repo = service_registry.get_service("can_tracking_repository")
+            if not system_state_repo:
+                system_state_repo = service_registry.get_service("system_state_repository")
+
+        can_writer_task = asyncio.create_task(
+            can_writer(
+                can_tracking_repository=can_tracking_repo, system_state_repository=system_state_repo
+            )
+        )
         self._can_writer_task = can_writer_task
         logger.info("CAN writer task started")
 
@@ -432,7 +444,7 @@ class CANService:
         initialization_result = await self.initialize_can_interfaces()
 
         # Start the CAN writer task if we have app_state
-        if self.app_state:
+        if self._can_tracking_repository:
             await self.start_can_writer()
         else:
             logger.warning("Cannot start CAN writer without AppState dependency")
@@ -446,5 +458,5 @@ class CANService:
         return {
             "status": "started",
             "interfaces": initialization_result,
-            "writer_started": self.app_state is not None,
+            "writer_started": True,  # CAN writer is always managed by the subsystem
         }

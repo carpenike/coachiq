@@ -9,19 +9,19 @@ Provides comprehensive monitoring capabilities including:
 """
 
 from .health_probe_metrics import (
-    health_probe_monitor,
-    record_health_probe,
-    get_health_monitoring_summary,
+    HealthProbeMonitor,
     ProbeMetric,
     ProbeStatistics,
-    HealthProbeMonitor,
+    get_health_monitoring_summary,
+    health_probe_monitor,
+    record_health_probe,
 )
 
 __all__ = [
-    "health_probe_monitor",
-    "record_health_probe",
-    "get_health_monitoring_summary",
+    "HealthProbeMonitor",
     "ProbeMetric",
     "ProbeStatistics",
-    "HealthProbeMonitor",
+    "get_health_monitoring_summary",
+    "health_probe_monitor",
+    "record_health_probe",
 ]

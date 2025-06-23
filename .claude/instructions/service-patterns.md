@@ -1,26 +1,34 @@
 # Service Access Patterns
 
-## 🚨 CRITICAL: Modern Service Access Patterns (Updated)
+## 🚨 CRITICAL: Target Architecture Only (Pre-Release)
 
-**IMPORTANT**: The codebase has completed a major architectural transformation. All new code MUST follow these modern patterns.
+**IMPORTANT**: We are in pre-release development. Use ONLY the target patterns. Delete legacy code on sight.
+
+### Target State:
+- ✅ Repository injection only (no app_state)
+- ✅ Direct service implementations (no compatibility adapters)
+- ✅ Clean dependency injection everywhere
+- ✅ No backward compatibility code
+- ✅ Value-adding facades OK (complexity abstraction)
+- ❌ No compatibility facades (legacy support)
 
 ## Service Access Pattern Evolution
 
 ### ✅ Modern Pattern (REQUIRED for all new code)
 ```python
-# Use dependencies_v2 for all service access
-from backend.core.dependencies_v2 import (
-    get_feature_manager,
+# Use backend.core.dependencies for all service access
+from backend.core.dependencies import (
     get_entity_service,
     get_can_service,
-    get_auth_manager
+    get_auth_manager,
+    get_settings
 )
 from typing import Annotated
 from fastapi import Depends
 
 @router.get("/endpoint")
 async def endpoint(
-    feature_manager: Annotated[Any, Depends(get_feature_manager)],
+    settings: Annotated[Any, Depends(get_settings)],
     entity_service: Annotated[Any, Depends(get_entity_service)]
 ):
     # Services are automatically injected by FastAPI
@@ -29,8 +37,8 @@ async def endpoint(
 
 ### ❌ Legacy Patterns (DO NOT USE)
 ```python
-# DON'T use old dependencies.py
-from backend.core.dependencies import get_feature_manager_from_request  # ❌
+# DON'T use get_*_from_request functions
+from backend.core.dependencies import get_entity_service_from_request  # ❌
 
 # DON'T access app.state directly
 entity_service = request.app.state.entity_service  # ❌
@@ -39,7 +47,10 @@ entity_service = request.app.state.entity_service  # ❌
 global_service = MyService()  # ❌
 
 # DON'T use get_*_from_request functions
-feature_manager = get_feature_manager_from_request(request)  # ❌
+entity_service = get_entity_service_from_request(request)  # ❌
+
+# DON'T use FeatureManager at all - it has been removed
+from backend.services.feature_manager import FeatureManager  # ❌
 ```
 
 ## Service Registry Architecture
@@ -71,7 +82,6 @@ All services are available through `backend.core.dependencies_v2`:
 ### Core Services
 - `get_app_state()` - Application state and metadata
 - `get_settings()` - Configuration settings
-- `get_feature_manager()` - Feature flag management
 - `get_service_registry()` - Direct registry access
 
 ### Domain Services
@@ -168,23 +178,52 @@ async def background_task(app: FastAPI):
 ### 1. Create Service Class
 ```python
 # backend/services/my_service.py
+import logging
+
+logger = logging.getLogger(__name__)
+
 class MyService:
-    def __init__(self, dependency1: Service1, dependency2: Service2):
-        self.dep1 = dependency1
-        self.dep2 = dependency2
+    def __init__(
+        self,
+        # Required repositories/dependencies first
+        repository1: Repository1,
+        repository2: Repository2,
+        # Optional configuration
+        config: dict[str, Any] | None = None,
+        # DEPRECATED - app_state should be last if needed for compatibility
+        app_state: Any | None = None,
+    ):
+        """
+        Initialize service with repository injection.
+
+        Args:
+            repository1: First repository dependency
+            repository2: Second repository dependency
+            config: Optional configuration
+            app_state: DEPRECATED - Use repositories instead
+        """
+        if app_state is not None:
+            logger.warning(
+                "MyService initialized with deprecated app_state parameter. "
+                "Please use repository injection instead."
+            )
+
+        self.repository1 = repository1
+        self.repository2 = repository2
+        self.config = config or {}
 
     async def initialize(self) -> None:
         """Optional async initialization"""
-        await self.dep1.connect()
+        await self.repository1.connect()
 
     async def shutdown(self) -> None:
         """Cleanup resources"""
-        await self.dep1.disconnect()
+        await self.repository1.disconnect()
 
     def get_health(self) -> dict[str, Any]:
         """Required for health monitoring"""
         return {
-            "healthy": self.dep1.is_connected,
+            "healthy": self.repository1.is_connected,
             "status": "operational"
         }
 ```
@@ -246,23 +285,48 @@ For expensive services, use the ServiceProxy pattern for additional features:
 - Performance metrics
 
 ```python
-# Create proxied dependency with caching
-from backend.core.dependencies_v2 import create_proxied_service_dependency
+# Create proxied dependency with caching (future enhancement)
+# Note: ServiceProxy pattern is planned but not yet implemented
+# For now, use standard dependency injection:
+from backend.core.dependencies import get_service_with_fallback
 
-get_expensive_service = create_proxied_service_dependency(
-    service_name="expensive_service",
-    cache_ttl=300.0,  # 5 minute cache
-    enable_circuit_breaker=True
-)
+def get_expensive_service(request: Request) -> Any:
+    return get_service_with_fallback(request, "expensive_service")
 ```
 
-## Migration Guide
+## Target Service Architecture
 
-### For Existing Code
-1. **Update imports**: Replace `backend.core.dependencies` with `backend.core.dependencies_v2`
-2. **Remove function suffixes**: Change `get_*_from_request()` to `get_*()`
-3. **Use Annotated types**: Add proper type annotations with `Depends()`
-4. **Remove app.state access**: Replace with dependency injection
+### Clean Service Implementation
+```python
+# backend/services/my_service.py
+class MyService:
+    def __init__(
+        self,
+        repository1: Repository1,
+        repository2: Repository2,
+        config: dict[str, Any] | None = None,
+    ):
+        """
+        Initialize service with repository injection ONLY.
+        NO app_state parameter!
+        """
+        self.repository1 = repository1
+        self.repository2 = repository2
+        self.config = config or {}
+```
+
+### Direct Service Registration
+```python
+# In backend/main.py - No adapters!
+service_registry.register_service(
+    name="my_service",
+    factory=lambda: MyService(
+        repository1=service_registry.get_service("repository1"),
+        repository2=service_registry.get_service("repository2"),
+    ),
+    dependencies=["repository1", "repository2"],
+)
+```
 
 ### Example Migration
 ```python
@@ -275,7 +339,7 @@ async def old_endpoint(request: Request):
     entity_service = request.app.state.entity_service
 
 # NEW CODE ✅
-from backend.core.dependencies_v2 import get_feature_manager, get_entity_service
+from backend.core.dependencies import get_feature_manager, get_entity_service
 from typing import Annotated
 from fastapi import Depends
 
@@ -287,13 +351,254 @@ async def new_endpoint(
     # Services are automatically injected
 ```
 
+## Fixing Legacy Patterns (DELETE and REPLACE)
+
+### 1. Direct app.state Access
+```python
+# LEGACY ❌ - DELETE THIS
+feature_manager = request.app.state.feature_manager
+
+# TARGET ✅ - REPLACE WITH THIS
+feature_manager: Annotated[FeatureManager, Depends(get_feature_manager)]
+```
+
+### 2. Service with app_state
+```python
+# LEGACY ❌ - DELETE ENTIRE CLASS
+class MyService:
+    def __init__(self, app_state: AppState):
+        self.app_state = app_state
+
+# TARGET ✅ - REWRITE FROM SCRATCH
+class MyService:
+    def __init__(
+        self,
+        required_repository: Repository,
+        other_repository: Repository,
+    ):
+        self.required_repository = required_repository
+        self.other_repository = other_repository
+```
+
+### 3. Migration Adapters
+```python
+# LEGACY ❌ - DELETE ENTIRE FILE
+class MyServiceMigrationAdapter(MyService):
+    def __init__(self, feature_manager, ...):
+        if feature_manager.is_enabled("USE_V2"):
+            self._service = MyServiceV2(...)
+        else:
+            self._service = MyService(...)
+
+# TARGET ✅ - USE V2 DIRECTLY
+# Just use MyServiceV2 everywhere, delete adapter
+```
+
+## Facade Pattern Guidelines
+
+### ✅ PREFERRED Facades (Use These by Default)
+
+**Safety-Critical Coordination Facades** - These should be your default choice:
+
+```python
+# RV-C Protocol Facade - PREFERRED for real-time safety
+class RVCProtocolFacade:
+    """
+    Unified facade for all RV-C protocol operations.
+    Coordinates CAN routing, decoding, security, safety events.
+    """
+    def __init__(self, can_manager, rvc_decoder, security_validator, audit_logger):
+        # Centralized protocol processing pipeline
+
+    async def process_can_frame(self, frame) -> ProcessedMessage:
+        # 1. Security validation
+        # 2. Protocol routing (BAM vs single-frame)
+        # 3. Decoding (RV-C vs J1939)
+        # 4. Safety event extraction
+        # 5. Audit logging
+
+# Safety Operations Facade - PREFERRED for critical operations
+class SafetyOperationsFacade:
+    """Centralized facade for all safety-critical operations."""
+    def __init__(self, safety_service, pin_manager, audit_logger):
+        # Ensures authorization, validation, audit trails
+
+    async def execute_safety_operation(self, operation, auth_context):
+        # 1. PIN authorization
+        # 2. Safety validation
+        # 3. Rate limiting
+        # 4. Operation execution
+        # 5. Audit logging
+        # 6. Emergency response coordination
+
+# Entity Control Facade - PREFERRED for coordinated operations
+class EntityControlFacade:
+    """
+    Unified facade for entity operations with safety validation.
+    Coordinates state management, protocol routing, real-time updates.
+    """
+    def __init__(self, entity_repo, safety_validator, can_service, websocket_service):
+        # Multi-service coordination
+
+    async def control_entity(self, entity_id, command, authorization):
+        # 1. Authorization validation
+        # 2. Safety interlock checking
+        # 3. Protocol-specific message creation
+        # 4. Optimistic state updates
+        # 5. CAN message transmission
+        # 6. WebSocket broadcasting
+        # 7. Audit logging
+```
+
+**Complex Subsystem Facades** - Good for abstracting complexity:
+
+```python
+# DatabaseManager - Abstracts database complexity
+class DatabaseManager:
+    """Abstracts SQLAlchemy, connection pooling, migrations."""
+
+# AuthManager - Unifies authentication modes
+class AuthManager:
+    """Abstracts JWT, sessions, MFA, magic links into one interface."""
+```
+
+### When Facades Are PREFERRED:
+1. **Safety-Critical Operations** - Emergency stops, interlocks, vehicle control
+2. **Real-Time Protocol Coordination** - CAN/RV-C/J1939 processing
+3. **Multi-Service Audit Trails** - Security events spanning services
+4. **Complex State Management** - Entity control with multiple protocols
+5. **Service Orchestration** - System lifecycle with dependencies
+
+### ❌ BAD Facades (Delete These)
+
+**Compatibility Facades** that only exist for migration:
+
+```python
+# LEGACY PATTERN - DELETE THIS
+class ServiceWithLegacySupport:
+    def __init__(self, new_service=None, legacy_service=None):
+        self._use_new = new_service is not None
+
+    def operation(self):
+        if self._use_new:
+            return self._new_service.operation()
+        else:
+            return self._legacy_service.operation()
+
+# Thin wrappers - DELETE THIS
+class CANBusServiceWrapper(CANBusFeature):
+    """Just wraps feature to look like service."""
+    pass
+```
+
+These facades are BAD because they:
+- Only exist for backward compatibility
+- Add layers without simplifying
+- Perpetuate technical debt
+- Make debugging harder
+
+## NO Migration Patterns!
+
+**DO NOT CREATE MIGRATION ADAPTERS**
+
+We are in pre-release development. When updating a service:
+
+1. **DELETE** the old service completely
+2. **DELETE** any migration adapters
+3. **DELETE** any V1/V2 feature flags
+4. **CREATE** clean V2 implementation only
+5. **UPDATE** all callers to use the new service
+
+Example:
+```python
+# ❌ DON'T DO THIS
+if feature_flag:
+    use_v2()
+else:
+    use_v1()
+
+# ✅ DO THIS
+use_v2()  # Only implementation
+```
+
+## Facades in Safety-Critical Systems
+
+For RV control and other safety-critical paths, **facades should be the DEFAULT choice** for:
+
+### ALWAYS Use Facades For:
+1. **Vehicle Control Operations** - All commands affecting RV movement, braking, steering
+2. **Emergency Systems** - Emergency stops, safety interlocks, critical alerts
+3. **Multi-Protocol Coordination** - CAN/RV-C/J1939 operations requiring sync
+4. **Security Operations** - PIN validation, authentication, audit logging
+5. **Real-Time Safety** - Operations with timing constraints affecting safety
+
+### Pattern: Safety-First Facade Design
+```python
+class VehicleControlFacade:
+    """
+    REQUIRED facade for all vehicle control operations.
+    Ensures safety validation, audit trails, and proper coordination.
+    """
+
+    def __init__(
+        self,
+        safety_validator: SafetyValidator,
+        can_service: CANService,
+        audit_logger: AuditLogger,
+        emergency_system: EmergencySystem
+    ):
+        self._safety = safety_validator
+        self._can = can_service
+        self._audit = audit_logger
+        self._emergency = emergency_system
+
+    async def execute_vehicle_command(self, command: VehicleCommand) -> CommandResult:
+        # MANDATORY safety pipeline - cannot be bypassed
+        if not await self._safety.validate_command(command):
+            await self._emergency.trigger_safety_stop()
+            raise SafetyViolation("Command failed safety validation")
+
+        # Rate limiting for safety
+        if not await self._safety.check_rate_limits(command):
+            raise RateLimitExceeded("Command rate limit exceeded")
+
+        # Execute with full audit trail
+        result = await self._can.send_command(command)
+        await self._audit.log_vehicle_command(command, result)
+
+        return result
+```
+
+### Sometimes Use Facades For:
+- **Complex Subsystems**: Database operations, authentication
+- **Service Coordination**: When 3+ services must work together
+- **Audit Boundaries**: Operations requiring compliance logging
+
+### Avoid Facades For:
+- **Simple CRUD**: Basic repository operations
+- **Internal Utilities**: Logging, configuration, simple calculations
+- **Performance-Critical Paths**: After profiling shows unacceptable overhead
+
+### Decision Tree: Should I Use a Facade?
+
+```
+Is this a safety-critical operation?
+├─ YES → Use facade (MANDATORY)
+└─ NO → Does it coordinate 3+ services?
+    ├─ YES → Use facade (PREFERRED)
+    └─ NO → Does it abstract complex subsystem?
+        ├─ YES → Use facade (GOOD)
+        └─ NO → Use direct service (SIMPLE)
+```
+
 ## Common Pitfalls to Avoid
 
-1. **Don't mix old and new patterns** - Use only dependencies_v2
-2. **Don't access app.state directly** - Always use dependency injection
-3. **Don't create services manually** - Let ServiceRegistry handle lifecycle
-4. **Don't ignore type annotations** - Use Annotated[Type, Depends()] for clarity
-5. **Don't bypass health checks** - All services must implement get_health()
+1. **Don't access app.state directly** - Always use dependency injection
+2. **Don't create services manually** - Let ServiceRegistry handle lifecycle
+3. **Don't ignore type annotations** - Use Annotated[Type, Depends()] for clarity
+4. **Don't bypass health checks** - All services must implement get_health()
+5. **Don't use app_state in new services** - Use repository injection instead
+6. **Don't create compatibility facades** - We're pre-release, break things!
 
 ## Testing with New Patterns
 

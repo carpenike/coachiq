@@ -27,7 +27,7 @@ class TestCANMessage:
         """Test CAN message with all optional fields."""
         msg = CANMessage(
             can_id=0x123,
-            data=b"\xAB\xCD",
+            data=b"\xab\xcd",
             extended=False,
             is_bam=True,
             target_pgn=0x1234,
@@ -37,7 +37,7 @@ class TestCANMessage:
             is_remote=True,
         )
         assert msg.can_id == 0x123
-        assert msg.data == b"\xAB\xCD"
+        assert msg.data == b"\xab\xcd"
         assert msg.extended is False
         assert msg.dlc == 2
         assert msg.is_bam is True

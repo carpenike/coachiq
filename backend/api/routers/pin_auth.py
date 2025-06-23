@@ -8,12 +8,17 @@ security layers beyond standard authentication.
 
 import logging
 import time
-from typing import Any
+from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from pydantic import BaseModel, Field
 
-from backend.core.dependencies_v2 import get_authenticated_admin, get_authenticated_user, get_pin_manager, get_security_audit_service
+from backend.core.dependencies import (
+    get_authenticated_admin,
+    get_authenticated_user,
+    get_pin_manager,
+    get_security_audit_service,
+)
 from backend.services.pin_manager import PINManager
 
 logger = logging.getLogger(__name__)
@@ -100,9 +105,9 @@ class SystemStatusResponse(BaseModel):
 async def validate_pin(
     request: Request,
     pin_request: PINValidationRequest,
-    user: dict = Depends(get_authenticated_user),
-    pin_manager: PINManager = Depends(get_pin_manager),
-    security_service = Depends(get_security_audit_service),
+    user: Annotated[dict, Depends(get_authenticated_user)],
+    pin_manager: Annotated[PINManager, Depends(get_pin_manager)],
+    security_service: Annotated[Any, Depends(get_security_audit_service)],
 ) -> PINValidationResponse:
     """
     Validate a PIN and create authorization session.
@@ -220,8 +225,8 @@ async def validate_pin(
 async def authorize_operation(
     request: Request,
     auth_request: OperationAuthorizationRequest,
-    user: dict = Depends(get_authenticated_user),
-    pin_manager: PINManager = Depends(get_pin_manager),
+    user: Annotated[dict, Depends(get_authenticated_user)],
+    pin_manager: Annotated[PINManager, Depends(get_pin_manager)],
 ) -> OperationAuthorizationResponse:
     """
     Authorize an operation using PIN session.
@@ -280,7 +285,10 @@ async def authorize_operation(
 
 @router.delete("/sessions/{session_id}")
 async def revoke_session(
-    request: Request, session_id: str, user: dict = Depends(get_authenticated_user)
+    request: Request,
+    session_id: str,
+    user: Annotated[dict, Depends(get_authenticated_user)],
+    pin_manager: Annotated[PINManager, Depends(get_pin_manager)],
 ) -> dict[str, str]:
     """
     Revoke a specific PIN session.
@@ -288,7 +296,6 @@ async def revoke_session(
     Users can revoke their own sessions. Admins can revoke any session.
     """
     try:
-        pin_manager = get_pin_manager(request)
         user_id = user["user_id"]
         is_admin = user.get("role") == "admin"
 
@@ -323,7 +330,9 @@ async def revoke_session(
 
 @router.delete("/sessions")
 async def revoke_all_user_sessions(
-    request: Request, user: dict = Depends(get_authenticated_user)
+    request: Request,
+    user: Annotated[dict, Depends(get_authenticated_user)],
+    pin_manager: Annotated[PINManager, Depends(get_pin_manager)],
 ) -> dict[str, Any]:
     """
     Revoke all PIN sessions for the current user.
@@ -331,7 +340,6 @@ async def revoke_all_user_sessions(
     Useful for security cleanup or when leaving the RV.
     """
     try:
-        pin_manager = get_pin_manager(request)
         user_id = user["user_id"]
 
         revoked_count = await pin_manager.revoke_all_user_sessions(user_id)
@@ -355,7 +363,9 @@ async def revoke_all_user_sessions(
 
 @router.get("/status", response_model=PINStatusResponse)
 async def get_pin_status(
-    request: Request, user: dict = Depends(get_authenticated_user)
+    request: Request,
+    user: Annotated[dict, Depends(get_authenticated_user)],
+    pin_manager: Annotated[PINManager, Depends(get_pin_manager)],
 ) -> PINStatusResponse:
     """
     Get PIN status for the current user.
@@ -363,7 +373,6 @@ async def get_pin_status(
     Shows lockout status, active sessions, and PIN availability.
     """
     try:
-        pin_manager = get_pin_manager(request)
         user_id = user["user_id"]
 
         status = pin_manager.get_user_status(user_id)
@@ -400,7 +409,9 @@ async def get_pin_status(
 
 @router.get("/admin/system-status", response_model=SystemStatusResponse)
 async def get_system_status(
-    request: Request, admin_user: dict = Depends(get_authenticated_admin)
+    request: Request,
+    admin_user: Annotated[dict, Depends(get_authenticated_admin)],
+    pin_manager: Annotated[PINManager, Depends(get_pin_manager)],
 ) -> SystemStatusResponse:
     """
     Get overall PIN system status (Admin only).
@@ -408,7 +419,6 @@ async def get_system_status(
     Provides system-wide statistics and health information.
     """
     try:
-        pin_manager = get_pin_manager(request)
         status = pin_manager.get_system_status()
 
         return SystemStatusResponse(**status)
@@ -422,7 +432,9 @@ async def get_system_status(
 
 @router.post("/admin/rotate-pins", response_model=PINRotationResponse)
 async def rotate_pins(
-    request: Request, admin_user: dict = Depends(get_authenticated_admin)
+    request: Request,
+    admin_user: Annotated[dict, Depends(get_authenticated_admin)],
+    pin_manager: Annotated[PINManager, Depends(get_pin_manager)],
 ) -> PINRotationResponse:
     """
     Generate new PINs for all types (Admin only).
@@ -431,8 +443,6 @@ async def rotate_pins(
     and generates new PINs. Use with caution.
     """
     try:
-        pin_manager = get_pin_manager(request)
-
         # Count active sessions before rotation
         status = pin_manager.get_system_status()
         sessions_before = status["active_sessions"]
@@ -459,7 +469,10 @@ async def rotate_pins(
 
 @router.get("/admin/user-status/{user_id}")
 async def get_user_pin_status(
-    request: Request, user_id: str, admin_user: dict = Depends(get_authenticated_admin)
+    request: Request,
+    user_id: str,
+    admin_user: Annotated[dict, Depends(get_authenticated_admin)],
+    pin_manager: Annotated[PINManager, Depends(get_pin_manager)],
 ) -> dict[str, Any]:
     """
     Get PIN status for a specific user (Admin only).
@@ -467,7 +480,6 @@ async def get_user_pin_status(
     Provides detailed information about user's PIN authentication status.
     """
     try:
-        pin_manager = get_pin_manager(request)
         status = pin_manager.get_user_status(user_id)
 
         return status
@@ -481,7 +493,10 @@ async def get_user_pin_status(
 
 @router.post("/admin/unlock-user/{user_id}")
 async def unlock_user(
-    request: Request, user_id: str, admin_user: dict = Depends(get_authenticated_admin)
+    request: Request,
+    user_id: str,
+    admin_user: Annotated[dict, Depends(get_authenticated_admin)],
+    pin_manager: Annotated[PINManager, Depends(get_pin_manager)],
 ) -> dict[str, str]:
     """
     Unlock a user from PIN lockout (Admin only).
@@ -489,8 +504,6 @@ async def unlock_user(
     Clears PIN attempt failures and removes lockout for the specified user.
     """
     try:
-        pin_manager = get_pin_manager(request)
-
         # Clear failed attempts and lockout
         if user_id in pin_manager._failed_attempts:
             del pin_manager._failed_attempts[user_id]

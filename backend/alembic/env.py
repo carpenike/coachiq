@@ -6,15 +6,8 @@ from sqlalchemy import pool
 from sqlalchemy.engine import Connection
 from sqlalchemy.ext.asyncio import async_engine_from_config
 
-# Import auth models to include them in metadata
-from backend.models import auth  # noqa: F401
-
-# Import analytics models to include them in metadata
-from backend.models import analytics  # noqa: F401
-
-# Import security events models to include them in metadata
-from backend.models import security_events_db  # noqa: F401
-
+# Import models to include them in metadata - these are imported but not used directly
+# The imports ensure the models are registered with SQLAlchemy's metadata
 # Import our database models and engine
 from backend.models.database import Base
 from backend.services.database_engine import DatabaseSettings

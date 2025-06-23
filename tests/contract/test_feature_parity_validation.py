@@ -11,12 +11,13 @@ Based on Week 1 documentation:
 """
 
 import json
-import pytest
 import os
-from typing import Dict, Any, List
-from unittest.mock import patch, MagicMock
+from typing import Any, Dict, List
+from unittest.mock import MagicMock, patch
 
+import pytest
 from fastapi.testclient import TestClient
+
 from backend.main import create_app
 
 
@@ -36,54 +37,45 @@ class FeatureParityTestConfig:
             "legacy_method": "GET",
             "v2_path": "/api/v2/entities",
             "v2_method": "GET",
-            "description": "Get all entities with optional filtering"
+            "description": "Get all entities with optional filtering",
         },
         {
             "legacy_path": "/api/entities/{entity_id}",
             "legacy_method": "GET",
             "v2_path": "/api/v2/entities/{entity_id}",
             "v2_method": "GET",
-            "description": "Get specific entity by ID"
+            "description": "Get specific entity by ID",
         },
         {
             "legacy_path": "/api/entities/{entity_id}/control",
             "legacy_method": "POST",
             "v2_path": "/api/v2/entities/{entity_id}/control",
             "v2_method": "POST",
-            "description": "Control single entity"
+            "description": "Control single entity",
         },
         {
             "legacy_path": "/api/bulk-operations",
             "legacy_method": "POST",
             "v2_path": "/api/v2/entities/bulk-control",
             "v2_method": "POST",
-            "description": "Bulk entity control operations"
+            "description": "Bulk entity control operations",
         },
     ]
 
     # Test data for validation
     TEST_ENTITY_ID = "test_light_1"
-    TEST_CONTROL_COMMAND = {
-        "command": "set",
-        "state": True
-    }
+    TEST_CONTROL_COMMAND = {"command": "set", "state": True}
     TEST_BULK_COMMAND = {
         "entity_ids": ["test_light_1", "test_light_2"],
-        "command": {
-            "command": "set",
-            "state": False
-        }
+        "command": {"command": "set", "state": False},
     }
 
     # Legacy bulk operations format (different structure)
     LEGACY_BULK_COMMAND = {
         "operation_type": "state_change",
         "targets": ["test_light_1", "test_light_2"],
-        "payload": {
-            "command": "set",
-            "state": False
-        },
-        "description": "Test bulk operation"
+        "payload": {"command": "set", "state": False},
+        "description": "Test bulk operation",
     }
 
 
@@ -91,8 +83,9 @@ class FeatureParityTestConfig:
 def legacy_client():
     """Create test client with only legacy APIs enabled"""
     # Clear any cached managers
-    import backend.services.feature_manager
     import backend.core.config
+    import backend.services.feature_manager
+
     backend.services.feature_manager._feature_manager = None
     backend.core.config._settings = None
 
@@ -108,8 +101,9 @@ def domain_client(monkeypatch):
         monkeypatch.setenv(key, value)
 
     # Clear caches to force reload
-    import backend.services.feature_manager
     import backend.core.config
+    import backend.services.feature_manager
+
     backend.services.feature_manager._feature_manager = None
     backend.core.config._settings = None
 
@@ -117,7 +111,9 @@ def domain_client(monkeypatch):
     return TestClient(app)
 
 
-def normalize_response_for_comparison(response_data: Dict[str, Any], endpoint_type: str) -> Dict[str, Any]:
+def normalize_response_for_comparison(
+    response_data: dict[str, Any], endpoint_type: str
+) -> dict[str, Any]:
     """
     Normalize response data for comparison between legacy and v2 APIs
 
@@ -170,9 +166,11 @@ class TestFeatureParityValidation:
 
         # Both should have same basic success/failure pattern
         # In test environment, both might fail due to missing services, but they should fail consistently
-        assert legacy_response.status_code == v2_response.status_code or \
-               (legacy_response.status_code in [200, 500] and v2_response.status_code in [200, 404, 500]), \
-               f"Response patterns should be similar: legacy={legacy_response.status_code}, v2={v2_response.status_code}"
+        assert legacy_response.status_code == v2_response.status_code or (
+            legacy_response.status_code in [200, 500] and v2_response.status_code in [200, 404, 500]
+        ), (
+            f"Response patterns should be similar: legacy={legacy_response.status_code}, v2={v2_response.status_code}"
+        )
 
         # If both succeed, compare data structure
         if legacy_response.status_code == 200 and v2_response.status_code == 200:
@@ -184,8 +182,9 @@ class TestFeatureParityValidation:
             assert "entities" in v2_data, "V2 response should have entities"
 
             # Entity count should match
-            assert len(legacy_data["entities"]) == len(v2_data["entities"]), \
+            assert len(legacy_data["entities"]) == len(v2_data["entities"]), (
                 "Entity counts should match between legacy and v2"
+            )
 
     def test_entities_filtering_parity(self, legacy_client, domain_client):
         """Test that filtering works consistently between legacy and v2"""
@@ -195,14 +194,19 @@ class TestFeatureParityValidation:
         v2_response = domain_client.get(f"/api/v2/entities{filter_params}")
 
         # Should have similar response patterns
-        assert (legacy_response.status_code in [200, 500]) and (v2_response.status_code in [200, 404, 500]), \
-               f"Filtering should work similarly: legacy={legacy_response.status_code}, v2={v2_response.status_code}"
+        assert (legacy_response.status_code in [200, 500]) and (
+            v2_response.status_code in [200, 404, 500]
+        ), (
+            f"Filtering should work similarly: legacy={legacy_response.status_code}, v2={v2_response.status_code}"
+        )
 
         # If v2 is available, it should support the same filter parameters
         if v2_response.status_code == 200:
             v2_data = v2_response.json()
             assert "filters_applied" in v2_data, "V2 should track applied filters"
-            assert v2_data["filters_applied"].get("device_type") == "light", "Filter should be applied"
+            assert v2_data["filters_applied"].get("device_type") == "light", (
+                "Filter should be applied"
+            )
 
     def test_entity_control_parity(self, legacy_client, domain_client):
         """Test that entity control works consistently between legacy and v2"""
@@ -217,8 +221,12 @@ class TestFeatureParityValidation:
         v2_response = domain_client.post(v2_url, json=command)
 
         # Both should handle the request (success or consistent failure)
-        assert legacy_response.status_code in [200, 400, 404, 500], f"Legacy control should return valid status: {legacy_response.status_code}"
-        assert v2_response.status_code in [200, 400, 404, 500], f"V2 control should return valid status: {v2_response.status_code}"
+        assert legacy_response.status_code in [200, 400, 404, 500], (
+            f"Legacy control should return valid status: {legacy_response.status_code}"
+        )
+        assert v2_response.status_code in [200, 400, 404, 500], (
+            f"V2 control should return valid status: {v2_response.status_code}"
+        )
 
         # If both succeed, compare response structure
         if legacy_response.status_code == 200 and v2_response.status_code == 200:
@@ -226,21 +234,31 @@ class TestFeatureParityValidation:
             v2_data = v2_response.json()
 
             # Both should indicate operation status
-            assert "status" in legacy_data or "success" in legacy_data, "Legacy should have status indicator"
+            assert "status" in legacy_data or "success" in legacy_data, (
+                "Legacy should have status indicator"
+            )
             assert "status" in v2_data or "entity_id" in v2_data, "V2 should have operation result"
 
     def test_bulk_operations_parity(self, legacy_client, domain_client):
         """Test that bulk operations provide equivalent functionality"""
 
         # Legacy bulk operations endpoint (different format)
-        legacy_response = legacy_client.post("/api/bulk-operations", json=FeatureParityTestConfig.LEGACY_BULK_COMMAND)
+        legacy_response = legacy_client.post(
+            "/api/bulk-operations", json=FeatureParityTestConfig.LEGACY_BULK_COMMAND
+        )
 
         # V2 bulk operations endpoint
-        v2_response = domain_client.post("/api/v2/entities/bulk-control", json=FeatureParityTestConfig.TEST_BULK_COMMAND)
+        v2_response = domain_client.post(
+            "/api/v2/entities/bulk-control", json=FeatureParityTestConfig.TEST_BULK_COMMAND
+        )
 
         # Should handle bulk operations consistently
-        assert legacy_response.status_code in [200, 400, 404, 500], f"Legacy bulk should return valid status: {legacy_response.status_code}"
-        assert v2_response.status_code in [200, 400, 404, 500], f"V2 bulk should return valid status: {v2_response.status_code}"
+        assert legacy_response.status_code in [200, 400, 404, 500], (
+            f"Legacy bulk should return valid status: {legacy_response.status_code}"
+        )
+        assert v2_response.status_code in [200, 400, 404, 500], (
+            f"V2 bulk should return valid status: {v2_response.status_code}"
+        )
 
         # If both succeed, v2 should provide more detailed results
         if legacy_response.status_code == 200 and v2_response.status_code == 200:
@@ -268,7 +286,9 @@ class TestEnhancedFeatures:
             expected_schemas = ["Entity", "ControlCommand", "BulkControlRequest", "OperationResult"]
             for schema_name in expected_schemas:
                 assert schema_name in schemas, f"Should provide {schema_name} schema"
-                assert isinstance(schemas[schema_name], dict), f"{schema_name} should be a valid schema"
+                assert isinstance(schemas[schema_name], dict), (
+                    f"{schema_name} should be a valid schema"
+                )
 
     def test_v2_safety_endpoints(self, domain_client):
         """Test safety-critical endpoints unique to v2"""
@@ -276,7 +296,7 @@ class TestEnhancedFeatures:
             "/api/v2/entities/emergency-stop",
             "/api/v2/entities/clear-emergency-stop",
             "/api/v2/entities/safety-status",
-            "/api/v2/entities/reconcile-state"
+            "/api/v2/entities/reconcile-state",
         ]
 
         for endpoint in safety_endpoints:
@@ -287,7 +307,9 @@ class TestEnhancedFeatures:
 
             # Should exist and respond (even if service fails in test env)
             assert response.status_code != 404, f"Safety endpoint {endpoint} should exist"
-            assert response.status_code in [200, 500], f"Safety endpoint {endpoint} should be reachable"
+            assert response.status_code in [200, 500], (
+                f"Safety endpoint {endpoint} should be reachable"
+            )
 
     def test_v2_pagination(self, domain_client):
         """Test enhanced pagination in v2"""
@@ -304,10 +326,7 @@ class TestEnhancedFeatures:
     def test_v2_command_validation(self, domain_client):
         """Test enhanced command validation in v2"""
         # Test invalid command structure
-        invalid_command = {
-            "command": "invalid_command_type",
-            "invalid_field": "should_be_rejected"
-        }
+        invalid_command = {"command": "invalid_command_type", "invalid_field": "should_be_rejected"}
 
         response = domain_client.post("/api/v2/entities/test_entity/control", json=invalid_command)
 
@@ -325,14 +344,16 @@ class TestBusinessLogicPreservation:
             {"command": "set", "state": True, "brightness": 75},
             {"command": "toggle"},  # Should remember brightness of 75
             {"command": "brightness_up"},
-            {"command": "brightness_down"}
+            {"command": "brightness_down"},
         ]
 
         for command in light_commands:
             response = domain_client.post("/api/v2/entities/test_light/control", json=command)
 
             # Should accept all valid light commands
-            assert response.status_code in [200, 404, 500], f"Should handle light command: {command}"
+            assert response.status_code in [200, 404, 500], (
+                f"Should handle light command: {command}"
+            )
 
     def test_safety_interlock_validation(self, domain_client):
         """Test that safety interlocks are validated"""
@@ -346,7 +367,9 @@ class TestBusinessLogicPreservation:
             response = domain_client.post("/api/v2/entities/test_slide/control-safe", json=command)
 
             # Should use safety validation pathway
-            assert response.status_code in [200, 400, 404, 500], f"Should validate safety command: {command}"
+            assert response.status_code in [200, 400, 404, 500], (
+                f"Should validate safety command: {command}"
+            )
 
 
 class TestMigrationReadiness:

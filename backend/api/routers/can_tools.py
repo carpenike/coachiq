@@ -5,19 +5,18 @@ Advanced CAN bus utilities for testing, diagnostics, and analysis.
 """
 
 import logging
-from typing import Any
+from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field, validator
 
-from backend.core.dependencies_v2 import get_feature_manager
+from backend.core.dependencies import get_can_message_injector
 from backend.integrations.can.message_injector import (
     CANMessageInjector,
     InjectionMode,
     InjectionRequest,
     SafetyLevel,
 )
-from backend.services.feature_manager import FeatureManager
 
 logger = logging.getLogger(__name__)
 
@@ -33,8 +32,12 @@ class MessageInjectionRequest(BaseModel):
     interface: str = Field(default="can0", description="CAN interface to use")
     mode: InjectionMode = Field(default=InjectionMode.SINGLE, description="Injection mode")
     count: int = Field(default=1, ge=1, le=1000, description="Number of messages for burst mode")
-    interval: float = Field(default=1.0, ge=0.01, description="Interval for periodic mode (seconds)")
-    duration: float = Field(default=0.0, ge=0, description="Duration for periodic mode (0=infinite)")
+    interval: float = Field(
+        default=1.0, ge=0.01, description="Interval for periodic mode (seconds)"
+    )
+    duration: float = Field(
+        default=0.0, ge=0, description="Duration for periodic mode (0=infinite)"
+    )
     priority: int = Field(default=6, ge=0, le=7, description="J1939 priority")
     source_address: int = Field(default=0xFE, ge=0, le=255, description="Source address")
     destination_address: int = Field(default=0xFF, ge=0, le=255, description="Destination address")
@@ -128,40 +131,9 @@ class SafetyConfigRequest(BaseModel):
     safety_level: SafetyLevel = Field(..., description="New safety level")
 
 
-# Dependency to get message injector
-async def get_message_injector(
-    feature_manager: FeatureManager = Depends(get_feature_manager),
-) -> CANMessageInjector:
-    """Get CAN message injector feature."""
-    injector = feature_manager.get_feature("can_message_injector")
-
-    if not injector:
-        # Create injector if it doesn't exist
-        injector = CANMessageInjector(
-            enabled=True,
-            safety_level=SafetyLevel.MODERATE,
-        )
-        feature_manager.register_feature(injector)
-        await injector.startup()
-
-    if not isinstance(injector, CANMessageInjector):
-        raise HTTPException(
-            status_code=500,
-            detail="CAN message injector not properly configured"
-        )
-
-    if not injector.enabled:
-        raise HTTPException(
-            status_code=503,
-            detail="CAN message injector is disabled"
-        )
-
-    return injector
-
-
 @router.get("/status", response_model=InjectorStatusResponse)
 async def get_injector_status(
-    injector: CANMessageInjector = Depends(get_message_injector),
+    injector: Annotated[CANMessageInjector, Depends(get_can_message_injector)],
 ) -> InjectorStatusResponse:
     """Get CAN message injector status and statistics."""
     stats = injector.get_statistics()
@@ -183,7 +155,7 @@ async def get_injector_status(
 @router.post("/inject", response_model=MessageInjectionResponse)
 async def inject_message(
     request: MessageInjectionRequest,
-    injector: CANMessageInjector = Depends(get_message_injector),
+    injector: Annotated[CANMessageInjector, Depends(get_can_message_injector)],
 ) -> MessageInjectionResponse:
     """
     Inject CAN message(s) for testing and diagnostics.
@@ -237,7 +209,7 @@ async def inject_message(
 @router.post("/inject/j1939", response_model=MessageInjectionResponse)
 async def inject_j1939_message(
     request: J1939MessageRequest,
-    injector: CANMessageInjector = Depends(get_message_injector),
+    injector: Annotated[CANMessageInjector, Depends(get_can_message_injector)],
 ) -> MessageInjectionResponse:
     """
     Inject J1939 message with automatic CAN ID generation.
@@ -294,8 +266,8 @@ async def inject_j1939_message(
 
 @router.delete("/inject/stop")
 async def stop_injection(
+    injector: Annotated[CANMessageInjector, Depends(get_can_message_injector)],
     pattern: str | None = Query(None, description="Pattern to match injections"),
-    injector: CANMessageInjector = Depends(get_message_injector),
 ) -> dict[str, Any]:
     """Stop active periodic message injections."""
     stopped = await injector.stop_injection(pattern)
@@ -310,15 +282,14 @@ async def stop_injection(
 @router.put("/safety", response_model=dict[str, str])
 async def update_safety_config(
     request: SafetyConfigRequest,
-    injector: CANMessageInjector = Depends(get_message_injector),
+    injector: Annotated[CANMessageInjector, Depends(get_can_message_injector)],
 ) -> dict[str, str]:
     """Update safety configuration for message injection."""
     old_level = injector.safety_level
     injector.safety_level = request.safety_level
 
     logger.warning(
-        "Safety level changed from %s to %s",
-        old_level.value, request.safety_level.value
+        "Safety level changed from %s to %s", old_level.value, request.safety_level.value
     )
 
     return {
@@ -332,12 +303,13 @@ async def update_safety_config(
 @router.get("/pgn-info/{pgn}")
 async def get_pgn_info(
     pgn: int,
-    injector: CANMessageInjector = Depends(get_message_injector),
+    injector: Annotated[CANMessageInjector, Depends(get_can_message_injector)],
 ) -> dict[str, Any]:
     """Get information about a specific PGN."""
     # Check if dangerous
     # Import the DANGEROUS_PGNS from the message_injector module
     from backend.integrations.can.message_injector import DANGEROUS_PGNS
+
     is_dangerous = pgn in DANGEROUS_PGNS
 
     # Get name

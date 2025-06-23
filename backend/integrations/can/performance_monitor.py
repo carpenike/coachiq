@@ -221,7 +221,7 @@ class PerformanceMonitor:
             self._stop_event.set()
             try:
                 await asyncio.wait_for(self._collection_task, timeout=5.0)
-            except asyncio.TimeoutError:
+            except TimeoutError:
                 self._collection_task.cancel()
             logger.info("Performance monitoring stopped")
 

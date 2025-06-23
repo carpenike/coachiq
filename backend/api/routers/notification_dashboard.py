@@ -20,12 +20,12 @@ Example:
 
 import logging
 from datetime import datetime, timedelta
-from typing import Any
+from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
 
-from backend.core.dependencies_v2 import get_notification_manager
+from backend.core.dependencies import get_notification_manager
 from backend.models.notification import NotificationType
 from backend.services.safe_notification_manager import SafeNotificationManager
 
@@ -189,7 +189,7 @@ logger = logging.getLogger(__name__)
 
 @router.get("/health", response_model=DashboardHealth)
 async def get_system_health(
-    manager: SafeNotificationManager = Depends(get_notification_manager),
+    manager: Annotated[SafeNotificationManager, Depends(get_notification_manager)],
 ) -> DashboardHealth:
     """
     Get comprehensive notification system health status.
@@ -281,8 +281,8 @@ async def get_system_health(
 
 @router.get("/metrics", response_model=DashboardMetrics)
 async def get_system_metrics(
+    manager: Annotated[SafeNotificationManager, Depends(get_notification_manager)],
     hours: int = Query(default=24, ge=1, le=168, description="Time range in hours"),
-    manager: SafeNotificationManager = Depends(get_notification_manager),
 ) -> DashboardMetrics:
     """
     Get comprehensive notification system metrics over specified time range.
@@ -378,7 +378,7 @@ async def get_system_metrics(
 
 @router.get("/queue-stats", response_model=QueueStatistics)
 async def get_queue_statistics(
-    manager: SafeNotificationManager = Depends(get_notification_manager),
+    manager: Annotated[SafeNotificationManager, Depends(get_notification_manager)],
 ) -> QueueStatistics:
     """
     Get detailed notification queue statistics and health information.
@@ -443,7 +443,7 @@ async def get_queue_statistics(
 
 @router.get("/rate-limiting", response_model=RateLimitingStatus)
 async def get_rate_limiting_status(
-    manager: SafeNotificationManager = Depends(get_notification_manager),
+    manager: Annotated[SafeNotificationManager, Depends(get_notification_manager)],
 ) -> RateLimitingStatus:
     """
     Get rate limiting system status and statistics.
@@ -500,7 +500,7 @@ async def get_rate_limiting_status(
 
 @router.get("/channels/health")
 async def get_channel_health(
-    manager: SafeNotificationManager = Depends(get_notification_manager),
+    manager: Annotated[SafeNotificationManager, Depends(get_notification_manager)],
 ) -> dict[str, Any]:
     """
     Get health status for all notification channels.
@@ -539,8 +539,8 @@ async def get_channel_health(
 
 @router.post("/test")
 async def trigger_test_notifications(
+    manager: Annotated[SafeNotificationManager, Depends(get_notification_manager)],
     channels: list[str] = Query(default=None, description="Specific channels to test"),
-    manager: SafeNotificationManager = Depends(get_notification_manager),
 ) -> dict[str, Any]:
     """
     Trigger test notifications for monitoring and verification.
@@ -616,9 +616,9 @@ async def update_alert_configuration(config: AlertConfiguration) -> AlertConfigu
 
 @router.get("/export/metrics")
 async def export_metrics(
+    manager: Annotated[SafeNotificationManager, Depends(get_notification_manager)],
     format: str = Query(default="json", regex="^(json|csv|prometheus)$"),
     hours: int = Query(default=24, ge=1, le=168),
-    manager: SafeNotificationManager = Depends(get_notification_manager),
 ) -> dict[str, Any]:
     """
     Export notification system metrics in various formats.

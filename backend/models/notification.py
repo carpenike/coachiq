@@ -275,6 +275,7 @@ class NotificationChannelStatus(BaseModel):
 
 # Queue-based notification models for Phase 1 modernization
 
+
 class NotificationPayload(BaseModel):
     """
     Payload model for queue-based notification system.
@@ -332,20 +333,28 @@ class QueueStatistics(BaseModel):
     dlq_count: int = Field(0, description="Number of notifications in dead letter queue")
 
     # Performance metrics
-    avg_processing_time: float | None = Field(None, description="Average processing time in seconds")
+    avg_processing_time: float | None = Field(
+        None, description="Average processing time in seconds"
+    )
     success_rate: float = Field(0.0, description="Success rate (0.0-1.0) over last 24h")
 
     # Queue health
-    oldest_pending: datetime | None = Field(None, description="Timestamp of oldest pending notification")
+    oldest_pending: datetime | None = Field(
+        None, description="Timestamp of oldest pending notification"
+    )
     last_success: datetime | None = Field(None, description="Last successful delivery")
     last_failure: datetime | None = Field(None, description="Last delivery failure")
 
     # System status
     dispatcher_running: bool = Field(False, description="Whether background dispatcher is running")
-    queue_size_bytes: int | None = Field(None, description="Approximate queue database size in bytes")
+    queue_size_bytes: int | None = Field(
+        None, description="Approximate queue database size in bytes"
+    )
 
     # Generated at
-    timestamp: datetime = Field(default_factory=datetime.utcnow, description="Statistics generation time")
+    timestamp: datetime = Field(
+        default_factory=datetime.utcnow, description="Statistics generation time"
+    )
 
 
 class RateLimitStatus(BaseModel):
@@ -364,17 +373,23 @@ class RateLimitStatus(BaseModel):
 
     # Status
     healthy: bool = Field(True, description="Whether rate limiting is functioning properly")
-    last_reset: datetime = Field(default_factory=datetime.utcnow, description="Last token bucket reset")
+    last_reset: datetime = Field(
+        default_factory=datetime.utcnow, description="Last token bucket reset"
+    )
 
 
 class DeadLetterEntry(BaseModel):
     """Entry in the dead letter queue for permanently failed notifications."""
 
     id: str = Field(..., description="Unique entry ID")
-    original_notification: NotificationPayload = Field(..., description="Original notification payload")
+    original_notification: NotificationPayload = Field(
+        ..., description="Original notification payload"
+    )
 
     # Failure information
-    failed_at: datetime = Field(default_factory=datetime.utcnow, description="When notification finally failed")
+    failed_at: datetime = Field(
+        default_factory=datetime.utcnow, description="When notification finally failed"
+    )
     failure_reason: str = Field(..., description="Final failure reason")
     total_attempts: int = Field(0, description="Total delivery attempts made")
 

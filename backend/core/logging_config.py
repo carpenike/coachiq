@@ -202,16 +202,16 @@ def configure_logging(
         try:
             import asyncio
 
-            from backend.websocket.handlers import WebSocketLogHandler
+            from backend.services.websocket_service import WebSocketLogHandler
 
             # Get the current event loop or create a new one
             try:
-                loop = asyncio.get_event_loop()
+                loop = asyncio.get_running_loop()
             except RuntimeError:
                 loop = asyncio.new_event_loop()
                 asyncio.set_event_loop(loop)
 
-            ws_handler = WebSocketLogHandler(websocket_manager, loop)
+            ws_handler = WebSocketLogHandler(websocket_service, loop)
             # Always set WebSocket handler to DEBUG to send all logs
             # Let frontend handle filtering based on client preferences
             ws_handler.setLevel(logging.DEBUG)
@@ -323,7 +323,7 @@ def setup_early_logging() -> None:
         logger.info(f"Early basic logging configured with level: {log_level_str}")
 
 
-def update_websocket_logging(websocket_manager: "WebSocketManager") -> None:
+def update_websocket_logging(websocket_service) -> None:
     """
     Add or update WebSocket logging to an already configured logger.
 
@@ -331,12 +331,12 @@ def update_websocket_logging(websocket_manager: "WebSocketManager") -> None:
     after the initial logging configuration.
 
     Args:
-        websocket_manager (WebSocketManager): WebSocket manager for log streaming
+        websocket_service: WebSocket service for log streaming
     """
     root_logger = logging.getLogger()
 
     # Check if WebSocket handler already exists
-    from backend.websocket.handlers import WebSocketLogHandler
+    from backend.services.websocket_service import WebSocketLogHandler
 
     has_ws_handler = any(
         isinstance(handler, WebSocketLogHandler) for handler in root_logger.handlers
@@ -346,16 +346,16 @@ def update_websocket_logging(websocket_manager: "WebSocketManager") -> None:
         try:
             import asyncio
 
-            from backend.websocket.handlers import WebSocketLogHandler
+            from backend.services.websocket_service import WebSocketLogHandler
 
             # Get the current event loop
             try:
-                loop = asyncio.get_event_loop()
+                loop = asyncio.get_running_loop()
             except RuntimeError:
                 logger.warning("No event loop available for WebSocket logging")
                 return
 
-            ws_handler = WebSocketLogHandler(websocket_manager, loop)
+            ws_handler = WebSocketLogHandler(websocket_service, loop)
             # Always set WebSocket handler to DEBUG to send all logs
             # Let frontend handle filtering based on client preferences
             ws_handler.setLevel(logging.DEBUG)
@@ -529,16 +529,16 @@ def configure_unified_logging(
         try:
             import asyncio
 
-            from backend.websocket.handlers import WebSocketLogHandler
+            from backend.services.websocket_service import WebSocketLogHandler
 
             # Get the current event loop or create a new one
             try:
-                loop = asyncio.get_event_loop()
+                loop = asyncio.get_running_loop()
             except RuntimeError:
                 loop = asyncio.new_event_loop()
                 asyncio.set_event_loop(loop)
 
-            ws_handler = WebSocketLogHandler(websocket_manager, loop)
+            ws_handler = WebSocketLogHandler(websocket_service, loop)
             # Always set WebSocket handler to DEBUG to send all logs
             ws_handler.setLevel(logging.DEBUG)
 

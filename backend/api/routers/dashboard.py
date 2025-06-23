@@ -19,14 +19,14 @@ import logging
 from datetime import datetime
 from typing import Annotated, Any
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from fastapi import APIRouter, Depends, HTTPException, Query
 
-from backend.core.dependencies_v2 import (
-    get_can_service,
-    get_entity_service,
-    get_feature_manager,
-    get_websocket_manager,
+from backend.core.dependencies import (
+    create_service_dependency,
 )
+
+# Create dashboard service dependency
+get_dashboard_service = create_service_dependency("dashboard_service")
 from backend.models.dashboard import (
     ActivityFeed,
     BulkControlRequest,
@@ -44,35 +44,6 @@ logger = logging.getLogger(__name__)
 # Create the router
 router = APIRouter(prefix="/api/dashboard", tags=["dashboard"])
 
-# Global dashboard service instance (will be initialized on first use)
-_dashboard_service: DashboardService | None = None
-
-
-def _check_dashboard_aggregation_enabled(request: Request) -> None:
-    """Check if dashboard_aggregation feature is enabled, raise 404 if disabled."""
-    feature_manager = get_feature_manager(request)
-    if not feature_manager.is_enabled("dashboard_aggregation"):
-        raise HTTPException(status_code=404, detail="dashboard_aggregation feature is disabled")
-
-
-def _get_dashboard_service(
-    request: Request,
-    entity_service: Annotated[Any, Depends(get_entity_service)],
-    can_service: Annotated[Any, Depends(get_can_service)],
-    websocket_manager: Annotated[Any, Depends(get_websocket_manager)],
-) -> DashboardService:
-    """Get or create dashboard service instance."""
-    global _dashboard_service
-
-    if _dashboard_service is None:
-        _dashboard_service = DashboardService(
-            entity_service=entity_service,
-            can_service=can_service,
-            websocket_manager=websocket_manager,
-        )
-
-    return _dashboard_service
-
 
 @router.get(
     "/summary",
@@ -82,8 +53,7 @@ def _get_dashboard_service(
     response_description="Complete dashboard data including entities, system metrics, and activity feed",
 )
 async def get_dashboard_summary(
-    request: Request,
-    dashboard_service: Annotated[DashboardService, Depends(_get_dashboard_service)],
+    dashboard_service: Annotated[DashboardService, Depends(get_dashboard_service)],
 ) -> DashboardSummary:
     """
     Get complete aggregated dashboard data in a single request.
@@ -92,7 +62,6 @@ async def get_dashboard_summary(
     optimized for performance with intelligent caching.
     """
     logger.info("GET /dashboard/summary - Retrieving complete dashboard data")
-    _check_dashboard_aggregation_enabled(request)
 
     try:
         summary = await dashboard_service.get_dashboard_summary()
@@ -115,12 +84,10 @@ async def get_dashboard_summary(
     response_description="Entity summary with counts, health scores, and device type breakdown",
 )
 async def get_entity_summary(
-    request: Request,
-    dashboard_service: Annotated[DashboardService, Depends(_get_dashboard_service)],
+    dashboard_service: Annotated[DashboardService, Depends(get_dashboard_service)],
 ) -> EntitySummary:
     """Get aggregated entity statistics."""
     logger.debug("GET /dashboard/entities - Retrieving entity summary")
-    _check_dashboard_aggregation_enabled(request)
 
     try:
         summary = await dashboard_service.get_entity_summary()
@@ -142,12 +109,10 @@ async def get_entity_summary(
     response_description="System metrics including uptime, performance, and resource usage",
 )
 async def get_system_metrics(
-    request: Request,
-    dashboard_service: Annotated[DashboardService, Depends(_get_dashboard_service)],
+    dashboard_service: Annotated[DashboardService, Depends(get_dashboard_service)],
 ) -> SystemMetrics:
     """Get system performance metrics."""
     logger.debug("GET /dashboard/system - Retrieving system metrics")
-    _check_dashboard_aggregation_enabled(request)
 
     try:
         metrics = await dashboard_service.get_system_metrics()
@@ -169,12 +134,10 @@ async def get_system_metrics(
     response_description="CAN bus summary with interface count, message rates, and health status",
 )
 async def get_can_bus_summary(
-    request: Request,
-    dashboard_service: Annotated[DashboardService, Depends(_get_dashboard_service)],
+    dashboard_service: Annotated[DashboardService, Depends(get_dashboard_service)],
 ) -> CANBusSummary:
     """Get CAN bus status summary."""
     logger.debug("GET /dashboard/can-bus - Retrieving CAN bus summary")
-    _check_dashboard_aggregation_enabled(request)
 
     try:
         summary = await dashboard_service.get_can_bus_summary()
@@ -196,8 +159,7 @@ async def get_can_bus_summary(
     response_description="Activity feed with recent events, entity changes, and system notifications",
 )
 async def get_activity_feed(
-    request: Request,
-    dashboard_service: Annotated[DashboardService, Depends(_get_dashboard_service)],
+    dashboard_service: Annotated[DashboardService, Depends(get_dashboard_service)],
     limit: int = Query(50, description="Maximum number of activities to return", ge=1, le=200),
     since: Annotated[
         datetime | None, Query(description="Return activities since this timestamp")
@@ -205,7 +167,6 @@ async def get_activity_feed(
 ) -> ActivityFeed:
     """Get recent system activity feed."""
     logger.debug(f"GET /dashboard/activity - Retrieving activity feed (limit={limit})")
-    _check_dashboard_aggregation_enabled(request)
 
     try:
         activity_feed = await dashboard_service.get_activity_feed(limit=limit, since=since)
@@ -227,19 +188,13 @@ async def get_activity_feed(
     response_description="Results of bulk control operation with individual entity status",
 )
 async def bulk_control_entities(
-    request: Request,
     bulk_request: BulkControlRequest,
-    dashboard_service: Annotated[DashboardService, Depends(_get_dashboard_service)],
+    dashboard_service: Annotated[DashboardService, Depends(get_dashboard_service)],
 ) -> BulkControlResponse:
     """Perform bulk control operations on multiple entities."""
     logger.info(
         f"POST /dashboard/bulk-control - Bulk {bulk_request.command} on {len(bulk_request.entity_ids)} entities"
     )
-
-    # Check if bulk operations feature is enabled
-    feature_manager = get_feature_manager(request)
-    if not feature_manager.is_enabled("bulk_operations"):
-        raise HTTPException(status_code=404, detail="bulk_operations feature is disabled")
 
     if not bulk_request.entity_ids:
         raise HTTPException(status_code=400, detail="No entity IDs provided")
@@ -270,16 +225,10 @@ async def bulk_control_entities(
     response_description="System analytics with active alerts, trends, and recommendations",
 )
 async def get_system_analytics(
-    request: Request,
-    dashboard_service: Annotated[DashboardService, Depends(_get_dashboard_service)],
+    dashboard_service: Annotated[DashboardService, Depends(get_dashboard_service)],
 ) -> SystemAnalytics:
     """Get system analytics and monitoring data."""
     logger.debug("GET /dashboard/analytics - Retrieving system analytics")
-
-    # Check if system analytics feature is enabled
-    feature_manager = get_feature_manager(request)
-    if not feature_manager.is_enabled("system_analytics"):
-        raise HTTPException(status_code=404, detail="system_analytics feature is disabled")
 
     try:
         analytics = await dashboard_service.get_system_analytics()
@@ -302,16 +251,10 @@ async def get_system_analytics(
 )
 async def acknowledge_alert(
     alert_id: str,
-    request: Request,
-    dashboard_service: Annotated[DashboardService, Depends(_get_dashboard_service)],
+    dashboard_service: Annotated[DashboardService, Depends(get_dashboard_service)],
 ) -> dict[str, Any]:
     """Acknowledge an active system alert."""
     logger.info(f"POST /dashboard/alerts/{alert_id}/acknowledge - Acknowledging alert")
-
-    # Check if system analytics feature is enabled
-    feature_manager = get_feature_manager(request)
-    if not feature_manager.is_enabled("system_analytics"):
-        raise HTTPException(status_code=404, detail="system_analytics feature is disabled")
 
     try:
         success = await dashboard_service.acknowledge_alert(alert_id)

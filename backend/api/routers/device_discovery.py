@@ -8,10 +8,13 @@ Provides device polling, network mapping, and availability tracking.
 import logging
 from typing import Annotated, Any
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
 
-from backend.core.dependencies_v2 import get_feature_manager
+from backend.core.dependencies import create_service_dependency
+
+# Create device discovery service dependency
+get_device_discovery_service = create_service_dependency("device_discovery_service")
 from backend.services.device_discovery_service import DeviceDiscoveryService
 
 logger = logging.getLogger(__name__)
@@ -55,29 +58,6 @@ class AutoDiscoveryRequest(BaseModel):
     save_results: bool = True
 
 
-def _check_device_discovery_enabled(request: Request) -> None:
-    """Check if device discovery feature is enabled, raise 404 if disabled."""
-    feature_manager = get_feature_manager(request)
-    if not feature_manager.is_enabled("device_discovery"):
-        raise HTTPException(status_code=404, detail="device_discovery feature is disabled")
-
-
-def get_device_discovery_service(request: Request) -> DeviceDiscoveryService:
-    """Get the device discovery service from app state."""
-    if not hasattr(request.app.state, "device_discovery_service"):
-        raise HTTPException(status_code=500, detail="Device discovery service not available")
-    return request.app.state.device_discovery_service
-
-
-def _get_device_discovery_feature(request: Request):
-    """Get the device discovery feature instance."""
-    feature_manager = get_feature_manager(request)
-    feature = feature_manager.get_feature("device_discovery")
-    if not feature:
-        raise HTTPException(status_code=503, detail="Device discovery feature not available")
-    return feature
-
-
 @router.get(
     "/topology",
     response_model=dict[str, Any],
@@ -86,7 +66,6 @@ def _get_device_discovery_feature(request: Request):
     response_description="Network topology information including devices, protocols, and health metrics",
 )
 async def get_network_topology(
-    request: Request,
     service: Annotated[DeviceDiscoveryService, Depends(get_device_discovery_service)],
 ) -> dict[str, Any]:
     """
@@ -96,7 +75,6 @@ async def get_network_topology(
     including devices, protocols, health metrics, and availability statistics.
     """
     logger.debug("GET /discovery/topology - Retrieving network topology")
-    _check_device_discovery_enabled(request)
 
     try:
         topology = await service.get_network_topology()
@@ -119,7 +97,6 @@ async def get_network_topology(
     response_description="Device availability metrics including online/offline counts and protocol distribution",
 )
 async def get_device_availability(
-    request: Request,
     service: Annotated[DeviceDiscoveryService, Depends(get_device_discovery_service)],
 ) -> dict[str, Any]:
     """
@@ -129,7 +106,6 @@ async def get_device_availability(
     including online/offline status, recent activity, and protocol distribution.
     """
     logger.debug("GET /discovery/availability - Retrieving device availability")
-    _check_device_discovery_enabled(request)
 
     try:
         availability = await service.get_device_availability()
@@ -152,8 +128,8 @@ async def get_device_availability(
     response_description="Discovery results with found devices and their information",
 )
 async def discover_devices(
-    request: Request,
     discover_request: DiscoverDevicesRequest,
+    service: Annotated[DeviceDiscoveryService, Depends(get_device_discovery_service)],
 ) -> dict[str, Any]:
     """
     Perform active device discovery for a specific protocol.
@@ -170,11 +146,9 @@ async def discover_devices(
     logger.info(
         f"POST /discovery/discover - Starting discovery for protocol: {discover_request.protocol}"
     )
-    _check_device_discovery_enabled(request)
 
     try:
-        feature = _get_device_discovery_feature(request)
-        discovered = await feature.discover_devices(discover_request.protocol)
+        discovered = await service.discover_devices(discover_request.protocol)
 
         # Convert DeviceInfo objects to dictionaries for JSON response
         result = {
@@ -215,8 +189,8 @@ async def discover_devices(
     response_description="Polling request status and information",
 )
 async def poll_device(
-    request: Request,
     poll_request: PollDeviceRequest,
+    service: Annotated[DeviceDiscoveryService, Depends(get_device_discovery_service)],
 ) -> dict[str, Any]:
     """
     Poll a specific device for status information.
@@ -234,11 +208,9 @@ async def poll_device(
         f"POST /discovery/poll - Polling device {poll_request.source_address:02X} "
         f"for PGN {poll_request.pgn:04X}"
     )
-    _check_device_discovery_enabled(request)
 
     try:
-        feature = _get_device_discovery_feature(request)
-        success = await feature.poll_device(
+        success = await service.poll_device(
             source_address=poll_request.source_address,
             pgn=poll_request.pgn,
             protocol=poll_request.protocol,
@@ -282,7 +254,7 @@ async def poll_device(
     response_description="Service status including configuration and runtime information",
 )
 async def get_discovery_status(
-    request: Request,
+    service: Annotated[DeviceDiscoveryService, Depends(get_device_discovery_service)],
 ) -> dict[str, Any]:
     """
     Get the current status of the device discovery service.
@@ -291,20 +263,14 @@ async def get_discovery_status(
     status, configuration, and runtime metrics.
     """
     logger.debug("GET /discovery/status - Retrieving discovery service status")
-    _check_device_discovery_enabled(request)
 
     try:
-        feature_manager = get_feature_manager(request)
-        feature = _get_device_discovery_feature(request)
-
-        # Get feature info and health status
-        feature_info = await feature.get_feature_info()
-        health_status = await feature.health_check()
+        # Get health status from service
+        health_status = await service.health_check()
 
         # Combine into status response
         status = {
-            "enabled": feature_manager.is_enabled("device_discovery"),
-            "feature_info": feature_info,
+            "enabled": True,  # Service is always enabled in v2
             "health": health_status,
             "service_status": (
                 "active"
@@ -331,7 +297,7 @@ async def get_discovery_status(
     response_description="List of supported protocols and their configuration",
 )
 async def get_supported_protocols(
-    request: Request,
+    service: Annotated[DeviceDiscoveryService, Depends(get_device_discovery_service)],
 ) -> dict[str, Any]:
     """
     Get information about supported protocols for device discovery.
@@ -340,25 +306,10 @@ async def get_supported_protocols(
     for device discovery and their specific configuration.
     """
     logger.debug("GET /discovery/protocols - Retrieving supported protocols")
-    _check_device_discovery_enabled(request)
 
     try:
-        feature_manager = get_feature_manager(request)
-
-        # Get feature configuration
-        feature_config = feature_manager.get_feature_config("device_discovery")
-
-        protocols = {
-            "supported_protocols": feature_config.get("supported_protocols", ["rvc", "j1939"]),
-            "discovery_pgns": feature_config.get("discovery_pgns", {}),
-            "status_pgns": feature_config.get("status_pgns", {}),
-            "configuration": {
-                "polling_interval": feature_config.get("polling_interval_seconds", 30),
-                "discovery_interval": feature_config.get("discovery_interval_seconds", 300),
-                "poll_timeout": feature_config.get("poll_timeout_seconds", 5),
-                "max_retries": feature_config.get("poll_retry_limit", 3),
-            },
-        }
+        # Get supported protocols from service
+        protocols = await service.get_supported_protocols()
 
         logger.info(
             f"Retrieved protocol information for {len(protocols['supported_protocols'])} protocols"
@@ -380,7 +331,6 @@ async def get_supported_protocols(
     response_description="Auto-discovery wizard results with discovered devices and setup recommendations",
 )
 async def start_auto_discovery_wizard(
-    request: Request,
     discovery_request: AutoDiscoveryRequest,
     service: Annotated[DeviceDiscoveryService, Depends(get_device_discovery_service)],
 ) -> dict[str, Any]:
@@ -402,7 +352,6 @@ async def start_auto_discovery_wizard(
     logger.info(
         f"POST /discovery/wizard/auto-discover - Starting enhanced discovery for protocols: {discovery_request.protocols}"
     )
-    _check_device_discovery_enabled(request)
 
     try:
         # Start enhanced auto-discovery
@@ -433,7 +382,6 @@ async def start_auto_discovery_wizard(
     response_description="Device setup results and configuration status",
 )
 async def setup_discovered_device(
-    request: Request,
     setup_request: DeviceSetupRequest,
     service: Annotated[DeviceDiscoveryService, Depends(get_device_discovery_service)],
 ) -> dict[str, Any]:
@@ -455,7 +403,6 @@ async def setup_discovered_device(
     logger.info(
         f"POST /discovery/wizard/setup-device - Setting up device {setup_request.device_address:02X}"
     )
-    _check_device_discovery_enabled(request)
 
     try:
         # Setup device with wizard guidance
@@ -488,8 +435,8 @@ async def setup_discovered_device(
     response_description="Comprehensive device profile with setup recommendations",
 )
 async def get_device_profile(
-    request: Request,
     device_address: int,
+    service: Annotated[DeviceDiscoveryService, Depends(get_device_discovery_service)],
     protocol: str = Query("rvc", description="Protocol to use for device profiling"),
 ) -> dict[str, Any]:
     """
@@ -509,13 +456,10 @@ async def get_device_profile(
         Comprehensive device profile and setup recommendations
     """
     logger.info(f"GET /discovery/wizard/device-profile/{device_address:02X} - Profiling device")
-    _check_device_discovery_enabled(request)
 
     try:
-        feature = _get_device_discovery_feature(request)
-
         # Get enhanced device profile
-        profile = await feature.get_device_profile(device_address=device_address, protocol=protocol)
+        profile = await service.get_device_profile(device_address=device_address, protocol=protocol)
 
         if not profile:
             raise HTTPException(status_code=404, detail="Device not found or not responding")
@@ -540,7 +484,6 @@ async def get_device_profile(
     response_description="Setup recommendations and configuration suggestions",
 )
 async def get_setup_recommendations(
-    request: Request,
     service: Annotated[DeviceDiscoveryService, Depends(get_device_discovery_service)],
     include_configured: bool = Query(False, description="Include already configured devices"),
 ) -> dict[str, Any]:
@@ -560,7 +503,6 @@ async def get_setup_recommendations(
         Intelligent setup recommendations and guidance
     """
     logger.debug("GET /discovery/wizard/setup-recommendations - Generating setup recommendations")
-    _check_device_discovery_enabled(request)
 
     try:
         # Generate intelligent recommendations
@@ -588,7 +530,6 @@ async def get_setup_recommendations(
     response_description="Enhanced network topology with device relationships and health metrics",
 )
 async def get_enhanced_network_map(
-    request: Request,
     service: Annotated[DeviceDiscoveryService, Depends(get_device_discovery_service)],
     include_offline: bool = Query(True, description="Include offline devices"),
     group_by_protocol: bool = Query(True, description="Group devices by protocol"),
@@ -610,7 +551,6 @@ async def get_enhanced_network_map(
         Enhanced network topology map with relationships
     """
     logger.debug("GET /discovery/network-map - Retrieving enhanced network map")
-    _check_device_discovery_enabled(request)
 
     try:
         # Get enhanced network topology

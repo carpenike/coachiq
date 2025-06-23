@@ -446,7 +446,9 @@ class AsyncNotificationDispatcher:
         """Send notification via webhook channel."""
         try:
             # Import webhook channel here to avoid circular imports
-            from backend.integrations.notifications.channels.webhook import send_webhook_notification
+            from backend.integrations.notifications.channels.webhook import (
+                send_webhook_notification,
+            )
 
             # Send via webhook channel
             success = await send_webhook_notification(notification)

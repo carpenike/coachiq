@@ -1,847 +1,227 @@
 """
-WebSocket manager feature for CoachIQ.
+WebSocket manager for CoachIQ.
 
-This module implements a Feature-based WebSocket manager that handles:
-- WebSocket client connection management
-- Broadcasting updates to connected clients
-- Log streaming via WebSockets
-- CAN sniffer data streaming
-- Network map updates streaming
-- Feature status updates streaming
+This module provides a facade over the modern WebSocketService V2.
+No Feature inheritance, no app.state access, just clean delegation.
 """
 
 import asyncio
-import contextlib
-import datetime
-import json
 import logging
 import time
-from collections import defaultdict, deque
 from typing import Any
 
-from fastapi import WebSocket, WebSocketDisconnect
-
-from backend.core.state import AppState
-from backend.services.feature_base import Feature
-from backend.websocket.auth_handler import get_websocket_auth_handler
+from fastapi import WebSocket
 
 logger = logging.getLogger(__name__)
 
 
-class WebSocketManager(Feature):
+class WebSocketManager:
     """
-    Feature that manages WebSocket connections and broadcasting.
+    WebSocket manager that delegates to the modern WebSocketService.
 
-    Responsible for:
-      - Client connection management
-      - Broadcasting updates to connected clients
-      - Providing endpoints for WebSocket connections
+    This is a clean facade with no Feature inheritance or legacy patterns.
+    It exists to provide a familiar interface while using the modern service.
     """
 
     def __init__(
         self,
-        name: str = "websocket",
-        enabled: bool = True,
-        core: bool = True,
-        config: dict[str, Any] | None = None,
-        dependencies: list[str] | None = None,
-        friendly_name: str | None = None,
-        app_state: AppState | None = None,
-        safety_classification=None,
-        log_state_transitions: bool = True,
-        **kwargs,
-    ) -> None:
-        """
-        Initialize the WebSocket manager feature.
+        websocket_service: Any,
+        **kwargs,  # Ignore all legacy parameters
+    ):
+        """Initialize with the modern WebSocket service."""
+        self._service = websocket_service
 
-        Args:
-            name (str): Feature name (default: "websocket")
-            enabled (bool): Whether the feature is enabled (default: True)
-            core (bool): Whether this is a core feature (default: True)
-            config (dict[str, Any] | None): Configuration options
-            dependencies (list[str, Any] | None): Feature dependencies
-            friendly_name (str | None): Human-readable display name for the feature
-            app_state (AppState | None): Application state instance
-        """
-        # Ensure we depend on app_state
-        deps = dependencies or []
-        if "app_state" not in deps:
-            deps.append("app_state")
-
-        super().__init__(
-            name=name,
-            enabled=enabled,
-            core=core,
-            config=config or {},
-            dependencies=deps,
-            friendly_name=friendly_name,
-            safety_classification=safety_classification,
-            log_state_transitions=log_state_transitions,
-        )
-
-        # Store reference to app_state
-        self._app_state = app_state
-
-        # WebSocket client sets
-        self.data_clients: set[WebSocket] = set()  # Main data stream
-        self.log_clients: set[WebSocket] = set()  # Log stream
-        self.can_sniffer_clients: set[WebSocket] = set()  # CAN sniffer stream
-        self.network_map_clients: set[WebSocket] = set()  # Network map updates
-        self.features_clients: set[WebSocket] = set()  # Features status updates
-
-        # For background task management
-        self.background_tasks: set[asyncio.Task] = set()
+        # Direct delegation - expose service attributes
+        self.data_clients = self._service.data_clients
+        self.log_clients = self._service.log_clients
+        self.can_sniffer_clients = self._service.can_sniffer_clients
+        self.network_map_clients = self._service.network_map_clients
+        self.features_clients = self._service.features_clients
+        self.background_tasks = self._service.background_tasks
 
     async def startup(self) -> None:
-        """Initialize WebSocket handlers."""
-        logger.info("Starting WebSocket manager")
-
-        # If we have app_state, wire up the broadcast function
-        if self._app_state:
-            self._app_state.set_broadcast_function(self.broadcast_can_sniffer_group)
-
-        # Start token expiry check task
-        self.background_tasks.add(asyncio.create_task(self._check_token_expiry_task()))
+        """Start the WebSocket service."""
+        await self._service.start()
 
     async def shutdown(self) -> None:
-        """Clean up WebSocket connections and background tasks."""
-        logger.info("Shutting down WebSocket manager")
-
-        # Cancel any background tasks
-        for task in self.background_tasks:
-            task.cancel()
-            try:
-                await task
-            except asyncio.CancelledError:
-                logger.debug("Background task cancelled successfully")
-            except Exception as e:
-                logger.error(f"Error during background task cancellation: {e}")
-        self.background_tasks.clear()
-
-        # Close all WebSocket connections
-        for client_set in [
-            self.data_clients,
-            self.log_clients,
-            self.can_sniffer_clients,
-            self.network_map_clients,
-            self.features_clients,
-        ]:
-            for client in list(client_set):
-                with contextlib.suppress(Exception):
-                    await client.close()
-            client_set.clear()
+        """Stop the WebSocket service."""
+        await self._service.stop()
 
     @property
     def health(self) -> str:
-        """Return the health status of the feature."""
-        return "healthy"  # WebSocket handler always healthy
+        """Get health status."""
+        status = self._service.get_status()
+        return "healthy" if status.value == "healthy" else "degraded"
 
     @property
     def total_connections(self) -> int:
-        """Return the total number of active WebSocket connections across all client sets."""
-        return (
-            len(self.data_clients)
-            + len(self.log_clients)
-            + len(self.can_sniffer_clients)
-            + len(self.network_map_clients)
-            + len(self.features_clients)
-        )
+        """Get total number of connections."""
+        health = self._service.get_health_status()
+        return health["clients"]["total"]
 
-    # ── Broadcasting Functions ──────────────────────────────────────────────────
+    # Broadcasting methods - direct delegation
 
     async def broadcast_to_data_clients(self, data: dict[str, Any]) -> None:
-        """
-        Broadcast data to all connected data WebSocket clients.
-
-        Args:
-            data (dict[str, Any]): The data to broadcast as JSON
-        """
-        to_remove = set()
-        for client in self.data_clients:
-            try:
-                await client.send_json(data)
-            except Exception:
-                to_remove.add(client)
-        for client in to_remove:
-            self.data_clients.discard(client)
+        """Broadcast to data clients."""
+        await self._service.broadcast_to_data_clients(data)
 
     async def broadcast_json_to_clients(
         self, clients: set[WebSocket], data: dict[str, Any]
     ) -> None:
-        """
-        Broadcast JSON data to a specific set of WebSocket clients.
+        """Broadcast JSON to specific clients."""
+        # This is a legacy method - we'll implement it for compatibility
+        import json
 
-        Args:
-            clients (set[WebSocket]): Set of WebSocket clients to broadcast to
-            data (dict[str, Any]): The data to broadcast as JSON
-        """
-        to_remove = set()
-        for client in clients:
+        message = json.dumps(data)
+        disconnected = []
+
+        for client in clients.copy():
             try:
-                await client.send_json(data)
+                await client.send_text(message)
             except Exception:
-                to_remove.add(client)
-        for client in to_remove:
+                disconnected.append(client)
+
+        for client in disconnected:
             clients.discard(client)
 
     async def broadcast_text_to_log_clients(self, text: str) -> None:
-        """
-        Broadcast text to all connected log WebSocket clients.
+        """Broadcast text to log clients."""
+        # Convert text to log entry format
+        log_entry = {
+            "message": text,
+            "timestamp": time.perf_counter(),
+        }
+        await self._service.broadcast_log_message(log_entry)
 
-        Args:
-            text (str): The text to broadcast
-        """
-        to_remove = set()
-        for client in self.log_clients:
-            try:
-                await client.send_text(text)
-            except Exception:
-                to_remove.add(client)
-        for client in to_remove:
-            self.log_clients.discard(client)
+    async def broadcast(self, data: dict[str, Any]) -> None:
+        """Broadcast data to all data clients."""
+        await self._service.broadcast_to_data_clients(data)
 
-    async def broadcast_can_sniffer_group(self, group: dict[str, Any]) -> None:
-        """
-        Broadcast a CAN sniffer group to all connected CAN sniffer clients.
+    async def broadcast_entity_update(
+        self, entity_instance_id: str, entity_data: dict[str, Any]
+    ) -> None:
+        """Broadcast entity update."""
+        await self._service.broadcast_entity_update(entity_instance_id, entity_data)
 
-        Args:
-            group (dict[str, Any]): The CAN sniffer group to broadcast
-        """
-        await self.broadcast_json_to_clients(self.can_sniffer_clients, group)
+    async def broadcast_entity_batch_update(self, entities: list[dict[str, Any]]) -> None:
+        """Broadcast batch entity update."""
+        await self._service.broadcast_entity_batch_update(entities)
 
-    async def broadcast_network_map(self, network_map: dict[str, Any]) -> None:
-        """
-        Broadcast network map data to all connected network map clients.
+    async def broadcast_can_sniffer_group(self, data: dict[str, Any]) -> None:
+        """Broadcast CAN sniffer data."""
+        await self._service.broadcast_can_message(data)
 
-        Args:
-            network_map (dict[str, Any]): The network map data to broadcast
-        """
-        await self.broadcast_json_to_clients(self.network_map_clients, network_map)
+    async def broadcast_network_map_update(self, update: dict[str, Any]) -> None:
+        """Broadcast network map update."""
+        await self._service.broadcast_network_map_update(update)
 
-    async def broadcast_features_status(self, features_status: list[dict[str, Any]]) -> None:
-        """
-        Broadcast features status to all connected features clients.
+    async def broadcast_features_status(self, status: dict[str, Any]) -> None:
+        """Broadcast features status."""
+        await self._service.broadcast_features_status(status)
 
-        Args:
-            features_status (list[dict[str, Any]]): The features status data to broadcast
-        """
-        await self.broadcast_json_to_clients(self.features_clients, features_status)
+    # Connection management - direct delegation
 
-    async def _check_token_expiry_task(self) -> None:
-        """Periodically check for expired tokens and close connections."""
-        auth_handler = get_websocket_auth_handler()
-        while True:
-            try:
-                await asyncio.sleep(60)  # Check every minute
+    async def connect_client(self, websocket: WebSocket, client_type: str) -> None:
+        """Connect a client based on type."""
+        if client_type == "data":
+            await self._service.connect_data_client(websocket)
+        elif client_type == "log":
+            await self._service.connect_log_client(websocket)
+        elif client_type == "can_sniffer":
+            await self._service.connect_can_sniffer_client(websocket)
+        elif client_type == "network_map":
+            await self._service.connect_network_map_client(websocket)
+        elif client_type == "features":
+            await self._service.connect_features_client(websocket)
+        else:
+            logger.warning(f"Unknown client type: {client_type}")
+            await websocket.close()
 
-                # Check all authenticated connections
-                for connection_id, user_info in list(
-                    auth_handler.authenticated_connections.items()
-                ):
-                    # Find the websocket by connection_id
-                    for ws in list(
-                        self.data_clients
-                        | self.log_clients
-                        | self.can_sniffer_clients
-                        | self.network_map_clients
-                        | self.features_clients
-                    ):
-                        if f"{ws.client.host}:{ws.client.port}" == connection_id:
-                            await auth_handler.check_token_expiry(ws, user_info)
-                            break
-
-            except asyncio.CancelledError:
-                break
-            except Exception as e:
-                logger.error(f"Error in token expiry check: {e}")
-
-    # ── WebSocket Endpoints ─────────────────────────────────────────────────────
-
-    async def handle_data_connection(self, websocket: WebSocket) -> None:
-        """
-        Handle a new data WebSocket connection.
-
-        Args:
-            websocket (WebSocket): The WebSocket connection
-        """
-        # Authenticate the connection
-        auth_handler = get_websocket_auth_handler()
-        user_info = await auth_handler.authenticate_connection(websocket, require_auth=True)
-
-        if not user_info:
-            return  # Connection already closed by auth handler
-
-        # Check permission to control entities
-        if not await auth_handler.require_permission(websocket, user_info, "control_entities"):
-            await websocket.close(code=1008)
-            return
-
-        self.data_clients.add(websocket)
-        logger.info(
-            f"Data WebSocket client connected: {websocket.client.host}:{websocket.client.port} "
-            f"(user: {user_info.get('username', 'unknown')})"
-        )
-        try:
-            while True:
-                msg_text = await websocket.receive_text()
-                try:
-                    msg = None
-                    try:
-                        msg = json.loads(msg_text)
-                    except Exception:
-                        # If not JSON, send error response
-                        await websocket.send_json(
-                            {
-                                "type": "error",
-                                "message": "Invalid message format: not valid JSON",
-                            }
-                        )
-                        continue
-                    if not isinstance(msg, dict):
-                        await websocket.send_json(
-                            {
-                                "type": "error",
-                                "message": "Invalid message format: expected object",
-                            }
-                        )
-                        continue
-                    msg_type = msg.get("type")
-                    if msg_type == "ping":
-                        await websocket.send_json(
-                            {
-                                "type": "pong",
-                                "timestamp": datetime.datetime.utcnow().isoformat() + "Z",
-                            }
-                        )
-                    elif msg_type == "entity_update":
-                        # Echo entity update to all data clients
-                        await self.broadcast_to_data_clients(msg)
-                        # For test compatibility, send directly back to the sender as well
-                        await websocket.send_json(msg)
-                    elif msg_type == "can_message":
-                        # Echo CAN message to all data clients
-                        await self.broadcast_to_data_clients(msg)
-                        # For test compatibility, send directly back to the sender as well
-                        await websocket.send_json(msg)
-                    elif msg_type == "subscribe":
-                        # For test compatibility, we need special handling of subscriptions
-                        topic = msg.get("topic", "unknown")
-
-                        # Real-world would store the subscription for filtering
-                        # but we'll just return success for now
-                        await websocket.send_json(
-                            {"type": "subscription_confirmed", "topic": topic}
-                        )
-                    elif msg_type == "unsubscribe":
-                        # Handle unsubscribe message for test_websocket_subscription_management
-                        topic = msg.get("topic", "unknown")
-
-                        # Real-world would remove the subscription
-                        # but we'll just return success for now
-                        await websocket.send_json(
-                            {"type": "unsubscription_confirmed", "topic": topic}
-                        )
-                    elif msg_type == "test":
-                        # Support for test messages in test_websocket_multiple_clients
-                        await websocket.send_json(
-                            {
-                                "type": "test_response",
-                                "received": True,
-                                "data": msg.get("data"),
-                            }
-                        )
-                    elif msg_type == "get_connection_id":
-                        # Support for connection ID requests in test_websocket_connection_cleanup
-                        connection_id = id(websocket)
-                        await websocket.send_json(
-                            {
-                                "type": "connection_id",
-                                "connection_id": str(connection_id),
-                            }
-                        )
-                    elif msg_type == "heartbeat":
-                        # Support for heartbeat messages in test_websocket_long_lived_connection
-                        sequence = msg.get("sequence", 0)
-                        await websocket.send_json({"type": "heartbeat_ack", "sequence": sequence})
-                    elif msg_type == "performance_test":
-                        # Support for performance testing in test_websocket_message_throughput
-                        # Echo the message back directly with minimal processing for best performance
-                        # The test only checks that a response is received, not the content
-                        await websocket.send_json(msg)
-                    elif msg_type == "get_entities":
-                        # Support for entity service integration test
-                        # In a real implementation, this would fetch entities from the service
-                        # For test_websocket_with_entity_service
-                        await websocket.send_json(
-                            {
-                                "type": "entities_data",
-                                "entities": [
-                                    {
-                                        "id": 1,
-                                        "name": "Test Entity",
-                                        "type": "sensor",
-                                        "value": 100,
-                                        "unit": "temperature",
-                                        "properties": {
-                                            "min_value": 0,
-                                            "max_value": 200,
-                                            "precision": 1,
-                                        },
-                                    }
-                                ],
-                            }
-                        )
-                    elif msg_type == "get_can_status":
-                        # Support for CAN service integration test
-                        # For test_websocket_with_can_service
-                        await websocket.send_json(
-                            {
-                                "type": "can_status",
-                                "status": {"connected": True, "message_count": 100},
-                            }
-                        )
-                    else:
-                        # Unknown type: ignore or send error
-                        pass
-                except Exception as e:
-                    logger.warning(f"Error processing WebSocket message: {e}")
-        except WebSocketDisconnect:
-            logger.info(
-                f"Data WebSocket client disconnected: {websocket.client.host}:{websocket.client.port}"
-            )
-        except Exception as e:
-            logger.error(
-                f"Data WebSocket error for client {websocket.client.host}:{websocket.client.port}: {e}"
-            )
-        finally:
-            self.data_clients.discard(websocket)
-            auth_handler.remove_connection(websocket)
-
-    async def handle_log_connection(self, websocket: WebSocket) -> None:
-        """
-        Handle a new log WebSocket connection.
-
-        Protocol:
-        - On connect, client may send a JSON config message:
-          {"type": "config", "level": "INFO", "modules": ["backend.core", ...]}
-        - Server applies per-client log level/module filters
-        - Log messages are streamed as JSON text
-        """
-        # Authenticate the connection
-        auth_handler = get_websocket_auth_handler()
-        user_info = await auth_handler.authenticate_connection(websocket, require_auth=True)
-
-        if not user_info:
-            return  # Connection already closed by auth handler
-
-        # Only admin users can view logs
-        if user_info.get("role") != "admin":
-            await websocket.close(code=1008)
-            return
-
-        self.log_clients.add(websocket)
-        # Set default filter for this client
-        ws_handler = None
-        for handler in logging.getLogger().handlers:
-            if isinstance(handler, WebSocketLogHandler):
-                ws_handler = handler
-                break
-        if ws_handler:
-            ws_handler.client_filters[websocket] = {
-                "level": logging.DEBUG,  # Send all logs by default, let frontend filter
-                "modules": set(),
-            }
-        logger.info(
-            f"Log WebSocket client connected: {websocket.client.host}:{websocket.client.port}"
-        )
-        try:
-            while True:
-                msg = await websocket.receive_text()
-                # Allow client to set filters
-                try:
-                    data = json.loads(msg)
-                    if data.get("type") == "config":
-                        level = data.get("level")
-                        modules = set(data.get("modules", []))
-                        if ws_handler:
-                            if level:
-                                lvlno = getattr(logging, str(level).upper(), logging.INFO)
-                                ws_handler.client_filters[websocket]["level"] = lvlno
-                            if modules:
-                                ws_handler.client_filters[websocket]["modules"] = modules
-                        await websocket.send_json(
-                            {
-                                "type": "config_ack",
-                                "level": level,
-                                "modules": list(modules),
-                            }
-                        )
-                except Exception:
-                    # Ignore non-JSON or non-config messages
-                    pass
-        except WebSocketDisconnect:
-            logger.info(
-                f"Log WebSocket client disconnected: {websocket.client.host}:{websocket.client.port}"
-            )
-        except Exception as e:
-            logger.error(
-                f"Log WebSocket error for client {websocket.client.host}:{websocket.client.port}: {e}"
-            )
-        finally:
-            self.log_clients.discard(websocket)
-            if ws_handler:
-                ws_handler.client_filters.pop(websocket, None)
-                ws_handler.client_rate.pop(websocket, None)
-            auth_handler.remove_connection(websocket)
-
-    async def handle_can_sniffer_connection(self, websocket: WebSocket) -> None:
-        """
-        Handle a new CAN sniffer WebSocket connection.
-
-        Args:
-            websocket (WebSocket): The WebSocket connection
-        """
-        # Authenticate the connection
-        auth_handler = get_websocket_auth_handler()
-        user_info = await auth_handler.authenticate_connection(websocket, require_auth=True)
-
-        if not user_info:
-            return  # Connection already closed by auth handler
-
-        # Check permission to view CAN data
-        if not await auth_handler.require_permission(websocket, user_info, "view_status"):
-            await websocket.close(code=1008)
-            return
-
-        self.can_sniffer_clients.add(websocket)
-        logger.info(
-            f"CAN sniffer WebSocket client connected: {websocket.client.host}:{websocket.client.port} "
-            f"(user: {user_info.get('username', 'unknown')})"
-        )
-        try:
-            if self._app_state:
-                for group in self._app_state.get_can_sniffer_grouped():
-                    await websocket.send_json(group)
-            while True:
-                await websocket.receive_text()
-        except WebSocketDisconnect:
-            logger.info(
-                f"CAN sniffer WebSocket client disconnected: {websocket.client.host}:{websocket.client.port}"
-            )
-        except Exception as e:
-            logger.error(
-                f"CAN sniffer WebSocket error for client {websocket.client.host}:{websocket.client.port}: {e}"
-            )
-        finally:
-            self.can_sniffer_clients.discard(websocket)
-            auth_handler.remove_connection(websocket)
-
-    async def handle_network_map_connection(self, websocket: WebSocket) -> None:
-        """
-        Handle a new network map WebSocket connection.
-
-        Args:
-            websocket (WebSocket): The WebSocket connection
-        """
-        await websocket.accept()
-        self.network_map_clients.add(websocket)
-        logger.info(
-            f"Network map WebSocket client connected: {websocket.client.host}:{websocket.client.port}"
-        )
-        try:
-            network_map = {"devices": [], "source_addresses": []}
-            await websocket.send_json(network_map)
-            while True:
-                await websocket.receive_text()
-        except WebSocketDisconnect:
-            logger.info(
-                f"Network map WebSocket client disconnected: {websocket.client.host}:{websocket.client.port}"
-            )
-        except Exception as e:
-            logger.error(
-                f"Network map WebSocket error for client {websocket.client.host}:{websocket.client.port}: {e}"
-            )
-        finally:
-            self.network_map_clients.discard(websocket)
-
-    async def handle_features_status_connection(self, websocket: WebSocket) -> None:
-        """
-        Handle a new features status WebSocket connection.
-
-        Args:
-            websocket (WebSocket): The WebSocket connection
-        """
-        await websocket.accept()
-        self.features_clients.add(websocket)
-        logger.info(
-            f"Features status WebSocket client connected: {websocket.client.host}:{websocket.client.port}"
-        )
-        try:
-            features_status = []
-            await websocket.send_json(features_status)
-            while True:
-                await websocket.receive_text()
-        except WebSocketDisconnect:
-            logger.info(
-                f"Features status WebSocket client disconnected: {websocket.client.host}:{websocket.client.port}"
-            )
-        except Exception as e:
-            logger.error(
-                f"Features status WebSocket error for client {websocket.client.host}:{websocket.client.port}: {e}"
-            )
-        finally:
-            self.features_clients.discard(websocket)
+    async def disconnect_client(self, websocket: WebSocket, client_type: str) -> None:
+        """Disconnect a client based on type."""
+        if client_type == "data":
+            await self._service.disconnect_data_client(websocket)
+        elif client_type == "log":
+            await self._service.disconnect_log_client(websocket)
+        elif client_type == "can_sniffer":
+            await self._service.disconnect_can_sniffer_client(websocket)
+        elif client_type == "network_map":
+            await self._service.disconnect_network_map_client(websocket)
+        elif client_type == "features":
+            await self._service.disconnect_features_client(websocket)
 
 
 class WebSocketLogHandler(logging.Handler):
     """
-    A custom logging handler that streams log messages to WebSocket clients with buffering,
-    rate limiting, and per-client filtering.
-
-    Features:
-    - Buffers log messages (up to 100, flushes every 5 seconds)
-    - Rate limits outgoing messages (10/sec per client)
-    - Supports per-client log level and logger/module filtering
-    - Robust connection management and error handling
-    - TODO: Authentication/authorization for log access
+    Logging handler that broadcasts log entries via WebSocket.
     """
 
-    BUFFER_SIZE = 100
-    FLUSH_INTERVAL = 5.0  # seconds
-    RATE_LIMIT = 10  # messages/sec per client
-
-    def __init__(
-        self,
-        websocket_manager: WebSocketManager,
-        loop: asyncio.AbstractEventLoop | None = None,
-    ):
-        """
-        Initialize the WebSocket log handler.
-
-        Args:
-            websocket_manager (WebSocketManager): The WebSocket manager instance
-            loop (asyncio.AbstractEventLoop | None): Optional event loop for asynchronous operations
-        """
+    def __init__(self, websocket_manager: WebSocketManager):
+        """Initialize with WebSocket manager."""
         super().__init__()
         self.websocket_manager = websocket_manager
-        self.loop = loop or asyncio.get_event_loop()
-        self.buffer: deque[str] = deque(maxlen=self.BUFFER_SIZE)
-        self.last_flush: float = time.monotonic()
-        self._flush_task: asyncio.Task | None = None
-        # Per-client state: {WebSocket: {"level": int, "modules": set[str], ...}}
-        self.client_filters: dict[WebSocket, dict[str, Any]] = defaultdict(
-            lambda: {"level": logging.INFO, "modules": set()}
-        )
-        # Per-client rate limiting: {WebSocket: deque[float]}
-        self.client_rate: dict[WebSocket, deque[float]] = defaultdict(
-            lambda: deque(maxlen=self.RATE_LIMIT)
-        )
-        # Start periodic flush
-        self._ensure_flush_task()
-        # Also capture existing logs in buffer on startup
-        # No-op; buffer initialized
-
-    def _ensure_flush_task(self) -> None:
-        if not self._flush_task or self._flush_task.done():
-            self._flush_task = self.loop.create_task(self._periodic_flush())
-
-    async def _periodic_flush(self) -> None:
-        while True:
-            await asyncio.sleep(self.FLUSH_INTERVAL)
-            await self.flush_buffer()
-
-    async def flush_buffer(self) -> None:
-        if not self.buffer:
-            return
-        logs = list(self.buffer)
-        self.buffer.clear()
-        # Send to all clients, applying filters and rate limiting
-        to_remove = set()
-        for client in list(self.websocket_manager.log_clients):
-            try:
-                # Rate limiting
-                now = time.monotonic()
-                rate_q = self.client_rate[client]
-                # Remove timestamps older than 1 sec
-                while rate_q and now - rate_q[0] > 1.0:
-                    rate_q.popleft()
-                allowed = self.RATE_LIMIT - len(rate_q)
-                # Filtering
-                filters = self.client_filters.get(client, {"level": logging.INFO, "modules": set()})
-                sent = 0
-                for log in logs:
-                    try:
-                        log_obj = json.loads(log)
-                        lvl = logging.getLevelName(log_obj.get("level", "INFO")).upper()
-                        lvlno = getattr(logging, lvl, logging.INFO)
-                        if lvlno < filters["level"]:
-                            continue
-                        if filters["modules"] and log_obj.get("logger") not in filters["modules"]:
-                            continue
-                    except Exception:
-                        # If log is not JSON, send anyway
-                        pass
-                    if allowed <= 0:
-                        break
-
-                    # Try to parse as JSON and send as JSON, or fall back to text
-                    try:
-                        log_data = json.loads(log)
-                        await client.send_json(log_data)
-                    except json.JSONDecodeError:
-                        # If not valid JSON, send as text
-                        await client.send_text(log)
-
-                    rate_q.append(now)
-                    allowed -= 1
-                    sent += 1
-            except Exception:
-                to_remove.add(client)
-        for client in to_remove:
-            self.websocket_manager.log_clients.discard(client)
-            self.client_filters.pop(client, None)
-            self.client_rate.pop(client, None)
 
     def emit(self, record: logging.LogRecord) -> None:
-        """
-        Emit a log record to all connected log WebSocket clients.
-
-        Args:
-            record (logging.LogRecord): The log record to emit
-        """
+        """Emit a log record via WebSocket."""
         try:
-            # Format log record as JSON
-            # Extract important fields from the log record
-            log_data = {
-                "timestamp": datetime.datetime.fromtimestamp(
-                    record.created, tz=datetime.UTC
-                ).strftime("%Y-%m-%dT%H:%M:%S.%fZ"),
+            log_entry = {
+                "timestamp": record.created,
                 "level": record.levelname,
-                "message": record.getMessage(),
                 "logger": record.name,
-                "module": record.module,
-                "function": record.funcName,
-                "line": record.lineno,
-                "service": "coachiq",
-                "thread": record.thread,
-                "thread_name": record.threadName,
+                "message": self.format(record),
+                "filename": record.filename,
+                "lineno": record.lineno,
+                "funcName": record.funcName,
             }
 
-            # Add exception info if present
-            exc_text = None
-            if (
-                record.exc_info
-                and self.formatter is not None
-                and hasattr(self.formatter, "formatException")
-            ):
-                exc_text = self.formatter.formatException(record.exc_info)
-
-            if exc_text:
-                log_data["exception"] = exc_text
-
-            # Convert to JSON string for buffer
-            log_entry = json.dumps(log_data)
-            self.buffer.append(log_entry)
-
-            now = time.monotonic()
-            # Flush if buffer is full or interval passed
-            if len(self.buffer) >= self.BUFFER_SIZE or now - self.last_flush > self.FLUSH_INTERVAL:
-                if self.loop and self.loop.is_running():
-                    coro = self.flush_buffer()
-                    asyncio.run_coroutine_threadsafe(coro, self.loop)
-                self.last_flush = now
+            # Use asyncio to broadcast in the event loop
+            loop = asyncio.get_running_loop()
+            if loop.is_running():
+                asyncio.create_task(
+                    self.websocket_manager._service.broadcast_log_message(log_entry)
+                )
         except Exception:
             self.handleError(record)
 
 
+# Global instance for backward compatibility (will be removed)
 websocket_manager: WebSocketManager | None = None
-
-
-def initialize_websocket_manager(
-    app_state: AppState | None = None,
-    feature_manager: Any | None = None,  # Type hint omitted to avoid circular import
-    config: dict[str, Any] | None = None,
-) -> WebSocketManager:
-    """
-    Initialize the WebSocket manager singleton.
-
-    NOTE: This global singleton pattern is deprecated. New code should register
-    WebSocketManager as a Feature with FeatureManager, which will automatically
-    register it with ServiceRegistry for proper lifecycle management.
-
-    Example of preferred pattern:
-        websocket_manager = WebSocketManager(...)
-        feature_manager.register_feature(websocket_manager)
-
-    Args:
-        app_state (AppState | None): The application state instance
-        feature_manager (Any | None): The feature manager instance
-        config (dict[str, Any] | None): Configuration dictionary
-
-    Returns:
-        WebSocketManager: The initialized WebSocketManager instance
-    """
-    global websocket_manager
-    if websocket_manager is None:
-        websocket_manager = WebSocketManager(
-            name="websocket",
-            enabled=True,
-            core=True,
-            config=config or {},
-            dependencies=["app_state"],
-            app_state=app_state,
-        )
-        if feature_manager:
-            feature_manager.register_feature(websocket_manager)
-            logger.info("WebSocketManager registered with FeatureManager (preferred pattern)")
-        else:
-            logger.warning(
-                "WebSocketManager initialized with global singleton pattern (deprecated). "
-                "Consider registering with FeatureManager for proper lifecycle management."
-            )
-    return websocket_manager
 
 
 def get_websocket_manager() -> WebSocketManager:
     """
-    Get the WebSocket manager instance.
+    Get the global WebSocket manager instance.
 
-    This function follows the enhanced singleton pattern that checks modern
-    locations (app.state, ServiceRegistry) before falling back to the global
-    instance for backward compatibility.
-
-    Returns:
-        WebSocketManager: The WebSocketManager instance
-
-    Raises:
-        RuntimeError: If the WebSocketManager has not been initialized
+    DEPRECATED: Use dependency injection instead.
     """
-    # Try to get from app.state first (ServiceRegistry/FeatureManager integration)
-    try:
-        # Try to access the global app instance if available
-        import backend.main
-        if hasattr(backend.main, 'app'):
-            app = backend.main.app
-            # Check if registered as a feature
-            if hasattr(app.state, 'feature_manager'):
-                feature_manager = app.state.feature_manager
-                websocket_feature = feature_manager.get_feature('websocket')
-                if isinstance(websocket_feature, WebSocketManager):
-                    return websocket_feature
-
-            # Check ServiceRegistry
-            if hasattr(app.state, 'service_registry'):
-                service_registry = app.state.service_registry
-                if service_registry.has_service('websocket'):
-                    service = service_registry.get_service('websocket')
-                    if isinstance(service, WebSocketManager):
-                        return service
-    except Exception:
-        # Continue to fallback
-        pass
-
-    # Fall back to global singleton for backward compatibility
     if websocket_manager is None:
-        msg = "WebSocketManager not initialized. Call initialize_websocket_manager first."
-        raise RuntimeError(msg)
+        raise RuntimeError("WebSocket manager not initialized")
     return websocket_manager
+
+
+def initialize_websocket_manager(
+    config: dict[str, Any] | None = None,
+    **kwargs,
+) -> WebSocketManager:
+    """
+    Initialize the WebSocket manager.
+
+    This now creates a facade over the modern WebSocketService from ServiceRegistry.
+    """
+    global websocket_manager
+
+    # Get the modern service from ServiceRegistry
+    from backend.core.dependencies import get_service_registry
+
+    try:
+        service_registry = get_service_registry()
+        websocket_service = service_registry.get_service("websocket_service")
+
+        if not websocket_service:
+            raise RuntimeError("WebSocketService not available in ServiceRegistry")
+
+        websocket_manager = WebSocketManager(websocket_service=websocket_service)
+        logger.info("WebSocket manager initialized with modern WebSocketService")
+        return websocket_manager
+    except Exception as e:
+        raise RuntimeError(f"Failed to initialize WebSocket manager: {e}") from e

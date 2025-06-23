@@ -8,31 +8,33 @@ CRITICAL: These tests validate safety-critical vehicle control functionality.
 All tests must pass before Phase 2 deployment.
 """
 
+from unittest.mock import AsyncMock, Mock, patch
+
 import pytest
-from unittest.mock import Mock, AsyncMock, patch
 
 from backend.core.config import get_settings
-from backend.services.feature_manager import FeatureManager
-from backend.schemas import EntitySchemaV2, ControlCommandSchemaV2, BulkOperationSchemaV2
-from backend.schemas.schema_exporter import ZodSchemaExporter
-from backend.services.secure_token_service import SecureTokenService, TokenPair
-from backend.services.auth_manager import AuthManager
+from backend.core.service_registry import EnhancedServiceRegistry
 from backend.middleware.validation import RuntimeValidationMiddleware, SchemaValidationMixin
+from backend.schemas import BulkOperationSchemaV2, ControlCommandSchemaV2, EntitySchemaV2
+from backend.schemas.schema_exporter import ZodSchemaExporter
+from backend.services.auth_manager import AuthManager
+from backend.services.secure_token_service import SecureTokenService, TokenPair
 
 
 class TestSafetySystemValidation:
     """Test safety-critical functionality for Phase 1 validation."""
 
     @pytest.fixture
-    async def feature_manager(self):
-        """Create feature manager with Domain API v2 enabled."""
+    async def service_registry(self):
+        """Create service registry for testing."""
         # Force enable Domain API v2 for testing by setting environment variable
         import os
+
         os.environ["COACHIQ_FEATURES__DOMAIN_API_V2"] = "true"
 
-        feature_manager = FeatureManager()
-        # For testing, we'll mock the enabled features
-        yield feature_manager
+        service_registry = EnhancedServiceRegistry()
+        # For testing, we'll mock the services
+        return service_registry
 
     @pytest.fixture
     def mock_auth_manager(self):
@@ -56,8 +58,8 @@ class TestSafetySystemValidation:
             command_metadata={
                 "priority": "critical",
                 "timeout_ms": 1000,
-                "require_acknowledgment": True
-            }
+                "require_acknowledgment": True,
+            },
         )
 
         assert emergency_stop.safety_critical is True
@@ -66,10 +68,7 @@ class TestSafetySystemValidation:
 
         # Test that non-safety-critical commands default correctly
         normal_command = ControlCommandSchemaV2(
-            command="set",
-            entity_ids=["light-1"],
-            state=True,
-            brightness=50
+            command="set", entity_ids=["light-1"], state=True, brightness=50
         )
 
         assert normal_command.safety_critical is False
@@ -82,8 +81,8 @@ class TestSafetySystemValidation:
             safety_validation={
                 "require_confirmation": True,
                 "max_entities": 1000,
-                "timeout_seconds": 30
-            }
+                "timeout_seconds": 30,
+            },
         )
 
         assert bulk_emergency.safety_validation["require_confirmation"] is True
@@ -125,7 +124,9 @@ class TestSafetySystemValidation:
         # Check that all expected schemas are present
         expected_schemas = ["Entity", "ControlCommand", "BulkOperation", "OperationResult"]
         for schema_name in expected_schemas:
-            assert schema_name in integrity_results["valid_schemas"], f"Missing schema: {schema_name}"
+            assert schema_name in integrity_results["valid_schemas"], (
+                f"Missing schema: {schema_name}"
+            )
 
     async def test_secure_token_service_safety(self, mock_auth_manager):
         """Test secure token service safety features."""
@@ -145,14 +146,11 @@ class TestSafetySystemValidation:
         mock_auth_manager.generate_refresh_token = AsyncMock(return_value="refresh_token_456")
 
         # Mock the token storage methods
-        with patch.object(token_service, '_store_refresh_token', new_callable=AsyncMock):
+        with patch.object(token_service, "_store_refresh_token", new_callable=AsyncMock):
             token_pair = await token_service.issue_token_pair(
                 user_id="admin",
                 username="admin",
-                additional_claims={
-                    "safety_critical": True,
-                    "vehicle_control": True
-                }
+                additional_claims={"safety_critical": True, "vehicle_control": True},
             )
 
             assert isinstance(token_pair, TokenPair)
@@ -176,11 +174,13 @@ class TestSafetySystemValidation:
         critical_endpoints = [
             "/api/v2/entities/control",
             "/api/v2/entities/bulk-control",
-            "/api/v2/entities/control-safe"
+            "/api/v2/entities/control-safe",
         ]
 
         for endpoint in critical_endpoints:
-            assert endpoint in middleware.CRITICAL_ENDPOINTS, f"Critical endpoint {endpoint} not in validation list"
+            assert endpoint in middleware.CRITICAL_ENDPOINTS, (
+                f"Critical endpoint {endpoint} not in validation list"
+            )
 
     def test_schema_validation_mixin_safety(self):
         """Test schema validation mixin for safety-critical operations."""
@@ -196,10 +196,7 @@ class TestSafetySystemValidation:
             "command": "emergency_stop",
             "entity_ids": ["all"],
             "safety_critical": True,
-            "command_metadata": {
-                "require_acknowledgment": True,
-                "timeout_ms": 1000
-            }
+            "command_metadata": {"require_acknowledgment": True, "timeout_ms": 1000},
         }
 
         # This should not raise an exception
@@ -213,7 +210,7 @@ class TestSafetySystemValidation:
         invalid_data = {
             "command": "emergency_stop",
             "entity_ids": [],  # Empty entity list should be invalid for emergency stop
-            "safety_critical": False  # Emergency stop should be safety critical
+            "safety_critical": False,  # Emergency stop should be safety critical
         }
 
         # This should raise ValidationError which is caught by validate_data
@@ -222,28 +219,31 @@ class TestSafetySystemValidation:
         # The business logic enforcement would happen at the service layer, not the schema layer
         assert validation_result["valid"] is True
 
-    async def test_feature_manager_safety_integration(self, feature_manager):
-        """Test that feature manager properly handles safety-critical features."""
-        # Test basic feature manager functionality
-        assert feature_manager is not None
-        assert hasattr(feature_manager, "features")
-        assert isinstance(feature_manager.features, dict)
+    async def test_service_registry_safety_integration(self, service_registry):
+        """Test that service registry properly handles safety-critical services."""
+        # Test basic service registry functionality
+        assert service_registry is not None
+        assert hasattr(service_registry, "_services")
+        assert isinstance(service_registry._services, dict)
 
-        # Test that we can register and check features
-        from backend.services.feature_base import GenericFeature
+        # Test that we can register and check services
+        from unittest.mock import Mock
 
-        # Create a mock domain API feature
-        mock_domain_api_feature = GenericFeature(
+        # Create a mock domain API service
+        mock_domain_api_service = Mock()
+        mock_domain_api_service.name = "domain_api_v2"
+        mock_domain_api_service.enabled = True
+
+        service_registry.register_service(
             name="domain_api_v2",
-            enabled=True,
-            dependencies=["can_interface", "entity_management"]
+            service=mock_domain_api_service,
+            dependencies=["can_interface", "entity_management"],
+            is_critical=True,
         )
 
-        feature_manager.register_feature(mock_domain_api_feature)
-
-        # Test feature is registered
-        assert "domain_api_v2" in feature_manager.features
-        assert feature_manager.is_enabled("domain_api_v2")
+        # Test service is registered
+        assert service_registry.has_service("domain_api_v2")
+        assert service_registry.get_service("domain_api_v2") == mock_domain_api_service
 
     def test_entity_schema_safety_constraints(self):
         """Test that entity schemas enforce safety constraints."""
@@ -259,10 +259,7 @@ class TestSafetySystemValidation:
             capabilities=["emergency_stop", "system_shutdown"],
             status="online",
             last_seen="2024-01-01T00:00:00Z",
-            metadata={
-                "safety_class": "critical",
-                "redundancy": "triple"
-            }
+            metadata={"safety_class": "critical", "redundancy": "triple"},
         )
 
         assert safety_entity.safety_critical is True
@@ -275,9 +272,7 @@ class TestSafetySystemValidation:
         """Test safety validation for various command types."""
         # Test emergency stop - should always be safety critical
         emergency_cmd = ControlCommandSchemaV2(
-            command="emergency_stop",
-            entity_ids=["all"],
-            safety_critical=True
+            command="emergency_stop", entity_ids=["all"], safety_critical=True
         )
         assert emergency_cmd.safety_critical is True
 
@@ -286,20 +281,13 @@ class TestSafetySystemValidation:
             command="clear_emergency_stop",
             entity_ids=["emergency-system-1"],
             safety_critical=True,
-            command_metadata={
-                "require_manual_confirmation": True,
-                "safety_check_required": True
-            }
+            command_metadata={"require_manual_confirmation": True, "safety_check_required": True},
         )
         assert clear_emergency_cmd.safety_critical is True
 
         # Test normal control commands
         normal_cmd = ControlCommandSchemaV2(
-            command="set",
-            entity_ids=["light-1"],
-            state=True,
-            brightness=75,
-            safety_critical=False
+            command="set", entity_ids=["light-1"], state=True, brightness=75, safety_critical=False
         )
         assert normal_cmd.safety_critical is False
 
@@ -312,13 +300,13 @@ class TestSafetySystemValidation:
             command=ControlCommandSchemaV2(
                 command="emergency_stop",
                 entity_ids=[],  # Will be populated by filter
-                safety_critical=True
+                safety_critical=True,
             ),
             safety_validation={
                 "require_confirmation": True,
                 "max_entities": 1000,  # Allow stopping many entities in emergency
-                "timeout_seconds": 30
-            }
+                "timeout_seconds": 30,
+            },
         )
 
         assert emergency_bulk.safety_validation["require_confirmation"] is True
@@ -328,17 +316,12 @@ class TestSafetySystemValidation:
         normal_bulk = BulkOperationSchemaV2(
             operation_type="control",
             entity_filters={"device_type": "light"},
-            command=ControlCommandSchemaV2(
-                command="set",
-                entity_ids=[],
-                state=True,
-                brightness=50
-            ),
+            command=ControlCommandSchemaV2(command="set", entity_ids=[], state=True, brightness=50),
             safety_validation={
                 "require_confirmation": False,
                 "max_entities": 100,  # Lower limit for normal operations
-                "timeout_seconds": 60
-            }
+                "timeout_seconds": 60,
+            },
         )
 
         assert normal_bulk.safety_validation["max_entities"] == 100
@@ -358,9 +341,7 @@ if __name__ == "__main__":
     # Test safety command validation
     try:
         emergency_cmd = ControlCommandSchemaV2(
-            command="emergency_stop",
-            entity_ids=["all"],
-            safety_critical=True
+            command="emergency_stop", entity_ids=["all"], safety_critical=True
         )
         print("✅ Emergency stop command validation: PASS")
     except Exception as e:

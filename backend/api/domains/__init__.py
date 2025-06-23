@@ -19,48 +19,47 @@ Safety-Critical Implementation:
 
 import logging
 from collections.abc import Callable
-from typing import Dict
 
 from fastapi import FastAPI
-
-from backend.services.feature_manager import FeatureManager
 
 logger = logging.getLogger(__name__)
 
 # Registry of domain router registration functions
 DOMAIN_ROUTERS: dict[str, Callable] = {}
 
+
 def register_domain_router(domain_name: str):
     """Decorator to register domain router factory functions"""
+
     def decorator(register_func: Callable):
         DOMAIN_ROUTERS[domain_name] = register_func
         return register_func
+
     return decorator
 
-def register_all_domain_routers(app: FastAPI, feature_manager: FeatureManager) -> None:
+
+def register_all_domain_routers(app: FastAPI) -> None:
     """
-    Register all available domain routers based on enabled features
+    Register all available domain routers unconditionally
+
+    Per CLAUDE.md: Domain API v2 is the ONLY implementation and should not be behind feature flags
 
     Args:
         app: FastAPI application instance
-        feature_manager: Feature manager for checking enabled features
     """
     for domain_name, register_func in DOMAIN_ROUTERS.items():
-        feature_flag = f"{domain_name}_api_v2"
+        try:
+            router = register_func()
+            app.include_router(router, prefix=f"/api/v2/{domain_name}")
+            logger.info("✅ Registered domain router: %s", domain_name)
+        except Exception as e:
+            logger.error("❌ Failed to register domain router %s: %s", domain_name, e)
 
-        if feature_manager.is_enabled(feature_flag):
-            try:
-                router = register_func(app.state)
-                app.include_router(router, prefix=f"/api/v2/{domain_name}")
-                logger.info("✅ Registered domain router: %s", domain_name)
-            except Exception as e:
-                logger.error("❌ Failed to register domain router %s: %s", domain_name, e)
-        else:
-            logger.debug("⚠️  Domain router %s disabled by feature flag", domain_name)
 
 # Import domain modules to trigger registration
 try:
     from . import diagnostics, entities, networks, system
+
     # Explicitly reference imported modules to satisfy linter
     _domain_modules = [entities, diagnostics, networks, system]
 except ImportError as e:

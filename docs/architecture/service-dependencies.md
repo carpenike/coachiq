@@ -11,7 +11,6 @@ Generated from EnhancedServiceRegistry configuration in `backend/main.py`.
 | core_services | Database and persistence infrastructure | core, infrastructure, database | app_settings (REQUIRED) |
 | security_event_manager | Security event logging and audit trail management | security, events, audit | core_services (REQUIRED) |
 | device_discovery_service | RV-C device discovery and network scanning | discovery, rvc, network | rvc_config (REQUIRED), can_service (OPTIONAL) |
-| config_service | Coach configuration management service | configuration, coach | app_state (RUNTIME) |
 | security_config_service | Centralized security configuration management | security, configuration | None |
 | pin_manager | PIN-based authorization for safety operations | security, safety, authentication | security_config_service (REQUIRED) |
 | security_audit_service | Security audit logging and rate limiting | security, audit, monitoring | security_config_service (REQUIRED) |
@@ -30,7 +29,6 @@ Services are automatically grouped into stages based on dependencies:
 ### Stage 1
 - **core_services**: Database and persistence infrastructure (deps: app_settings)
 - **device_discovery_service**: RV-C device discovery and network scanning (deps: rvc_config, can_service)
-- **config_service**: Coach configuration management service (deps: app_state)
 - **pin_manager**: PIN-based authorization for safety operations (deps: security_config_service)
 - **security_audit_service**: Security audit logging and rate limiting (deps: security_config_service)
 - **network_security_service**: Network security monitoring and protection (deps: security_config_service)
@@ -50,7 +48,6 @@ graph TD
     subgraph Stage1[Stage 1]
         core_services
         device_discovery_service
-        config_service
         pin_manager
         security_audit_service
         network_security_service

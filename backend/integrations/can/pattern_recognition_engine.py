@@ -25,6 +25,7 @@ logger = logging.getLogger(__name__)
 @dataclass
 class MessageStatistics:
     """Statistical analysis of a specific CAN message."""
+
     arbitration_id: int
     first_seen: float
     last_seen: float
@@ -32,15 +33,15 @@ class MessageStatistics:
     data_samples: deque = field(default_factory=lambda: deque(maxlen=1000))
     timestamps: deque = field(default_factory=lambda: deque(maxlen=1000))
     intervals: deque = field(default_factory=lambda: deque(maxlen=999))
-    unique_data_values: Set[bytes] = field(default_factory=set)
+    unique_data_values: set[bytes] = field(default_factory=set)
 
     # Computed properties
-    mean_interval: Optional[float] = None
-    std_interval: Optional[float] = None
-    min_interval: Optional[float] = None
-    max_interval: Optional[float] = None
-    periodicity_score: Optional[float] = None
-    classification: Optional[str] = None  # 'periodic', 'event', 'mixed'
+    mean_interval: float | None = None
+    std_interval: float | None = None
+    min_interval: float | None = None
+    max_interval: float | None = None
+    periodicity_score: float | None = None
+    classification: str | None = None  # 'periodic', 'event', 'mixed'
 
     def add_message(self, data: bytes, timestamp: float) -> None:
         """Add a new message observation."""
@@ -96,12 +97,13 @@ class MessageStatistics:
 @dataclass
 class BitChangePattern:
     """Tracks bit-level changes in message data."""
+
     arbitration_id: int
     byte_position: int
     bit_position: int
     change_count: int = 0
-    last_value: Optional[bool] = None
-    change_timestamps: List[float] = field(default_factory=list)
+    last_value: bool | None = None
+    change_timestamps: list[float] = field(default_factory=list)
 
     def add_bit_value(self, value: bool, timestamp: float) -> bool:
         """
@@ -127,7 +129,7 @@ class PeriodicityAnalyzer:
         self.min_samples = min_samples
         self.max_samples = max_samples
 
-    def analyze_intervals(self, intervals: List[float]) -> Dict[str, Any]:
+    def analyze_intervals(self, intervals: list[float]) -> dict[str, Any]:
         """
         Analyze timing intervals to determine periodicity characteristics.
 
@@ -146,7 +148,7 @@ class PeriodicityAnalyzer:
         median_interval = statistics.median(intervals)
 
         # Coefficient of variation (std/mean) - lower values indicate more periodic
-        cv = std_interval / mean_interval if mean_interval > 0 else float('inf')
+        cv = std_interval / mean_interval if mean_interval > 0 else float("inf")
 
         # Periodicity score (0-1, higher = more periodic)
         periodicity_score = 1.0 / (1.0 + cv)
@@ -175,18 +177,18 @@ class PeriodicityAnalyzer:
             "periodicity_score": periodicity_score,
             "classification": classification,
             "potential_periods": peak_bins,
-            "frequency_hz": 1.0 / mean_interval if mean_interval > 0 else 0.0
+            "frequency_hz": 1.0 / mean_interval if mean_interval > 0 else 0.0,
         }
 
-    def _find_peaks(self, hist: np.ndarray, bin_edges: np.ndarray) -> List[float]:
+    def _find_peaks(self, hist: np.ndarray, bin_edges: np.ndarray) -> list[float]:
         """Find peaks in the interval histogram to detect multiple periodicities."""
         peaks = []
 
         # Simple peak detection - values higher than neighbors
         for i in range(1, len(hist) - 1):
-            if hist[i] > hist[i-1] and hist[i] > hist[i+1]:
+            if hist[i] > hist[i - 1] and hist[i] > hist[i + 1]:
                 # Use bin center as the peak value
-                peak_value = (bin_edges[i] + bin_edges[i+1]) / 2
+                peak_value = (bin_edges[i] + bin_edges[i + 1]) / 2
                 peaks.append(peak_value)
 
         return sorted(peaks)
@@ -197,9 +199,11 @@ class BitChangeDetector:
 
     def __init__(self, track_bytes: int = 8):
         self.track_bytes = track_bytes
-        self.bit_patterns: Dict[int, Dict[Tuple[int, int], BitChangePattern]] = defaultdict(dict)
+        self.bit_patterns: dict[int, dict[tuple[int, int], BitChangePattern]] = defaultdict(dict)
 
-    def analyze_message(self, arbitration_id: int, data: bytes, timestamp: float) -> List[BitChangePattern]:
+    def analyze_message(
+        self, arbitration_id: int, data: bytes, timestamp: float
+    ) -> list[BitChangePattern]:
         """
         Analyze a message for bit-level changes.
 
@@ -225,9 +229,7 @@ class BitChangeDetector:
                 # Get or create bit pattern tracker
                 if pattern_key not in self.bit_patterns[arbitration_id]:
                     self.bit_patterns[arbitration_id][pattern_key] = BitChangePattern(
-                        arbitration_id=arbitration_id,
-                        byte_position=byte_pos,
-                        bit_position=bit_pos
+                        arbitration_id=arbitration_id, byte_position=byte_pos, bit_position=bit_pos
                     )
 
                 pattern = self.bit_patterns[arbitration_id][pattern_key]
@@ -238,13 +240,14 @@ class BitChangeDetector:
 
         return changed_patterns
 
-    def get_active_bits(self, arbitration_id: int, min_changes: int = 5) -> List[BitChangePattern]:
+    def get_active_bits(self, arbitration_id: int, min_changes: int = 5) -> list[BitChangePattern]:
         """Get bits that have changed at least min_changes times."""
         if arbitration_id not in self.bit_patterns:
             return []
 
         return [
-            pattern for pattern in self.bit_patterns[arbitration_id].values()
+            pattern
+            for pattern in self.bit_patterns[arbitration_id].values()
             if pattern.change_count >= min_changes
         ]
 
@@ -254,8 +257,8 @@ class CorrelationMatrix:
 
     def __init__(self, window_seconds: float = 1.0):
         self.window_seconds = window_seconds
-        self.message_events: Dict[int, List[float]] = defaultdict(list)
-        self.correlation_cache: Dict[Tuple[int, int], float] = {}
+        self.message_events: dict[int, list[float]] = defaultdict(list)
+        self.correlation_cache: dict[tuple[int, int], float] = {}
 
     def add_message_event(self, arbitration_id: int, timestamp: float) -> None:
         """Record a message event for correlation analysis."""
@@ -264,8 +267,7 @@ class CorrelationMatrix:
         # Keep only recent events (last 1000 or 1 hour)
         cutoff_time = timestamp - 3600  # 1 hour
         self.message_events[arbitration_id] = [
-            t for t in self.message_events[arbitration_id]
-            if t > cutoff_time
+            t for t in self.message_events[arbitration_id] if t > cutoff_time
         ][-1000:]  # Keep last 1000 events
 
     def compute_correlation(self, id1: int, id2: int) -> float:
@@ -300,7 +302,9 @@ class CorrelationMatrix:
 
         return correlation
 
-    def find_correlated_messages(self, target_id: int, min_correlation: float = 0.5) -> List[Tuple[int, float]]:
+    def find_correlated_messages(
+        self, target_id: int, min_correlation: float = 0.5
+    ) -> list[tuple[int, float]]:
         """Find messages that correlate with the target message."""
         correlations = []
 
@@ -321,9 +325,7 @@ class PatternRecognitionEngine:
     to provide comprehensive insights into unknown CAN traffic.
     """
 
-    def __init__(self,
-                 max_tracked_messages: int = 10000,
-                 analysis_interval: float = 30.0):
+    def __init__(self, max_tracked_messages: int = 10000, analysis_interval: float = 30.0):
         """
         Initialize the pattern recognition engine.
 
@@ -340,11 +342,11 @@ class PatternRecognitionEngine:
         self.correlation_matrix = CorrelationMatrix()
 
         # Message tracking
-        self.message_stats: Dict[int, MessageStatistics] = {}
+        self.message_stats: dict[int, MessageStatistics] = {}
         self.last_analysis_time = time.time()
 
         # Background analysis task
-        self._analysis_task: Optional[asyncio.Task] = None
+        self._analysis_task: asyncio.Task | None = None
         self._running = False
 
     async def start(self) -> None:
@@ -364,7 +366,9 @@ class PatternRecognitionEngine:
                 pass
         logger.info("Pattern Recognition Engine stopped")
 
-    async def analyze_message(self, arbitration_id: int, data: bytes, timestamp: float) -> Dict[str, Any]:
+    async def analyze_message(
+        self, arbitration_id: int, data: bytes, timestamp: float
+    ) -> dict[str, Any]:
         """
         Analyze a new CAN message for patterns.
 
@@ -380,15 +384,13 @@ class PatternRecognitionEngine:
         if arbitration_id not in self.message_stats:
             if len(self.message_stats) >= self.max_tracked_messages:
                 # Remove oldest message (simple LRU)
-                oldest_id = min(self.message_stats.keys(),
-                              key=lambda x: self.message_stats[x].last_seen)
+                oldest_id = min(
+                    self.message_stats.keys(), key=lambda x: self.message_stats[x].last_seen
+                )
                 del self.message_stats[oldest_id]
 
             self.message_stats[arbitration_id] = MessageStatistics(
-                arbitration_id=arbitration_id,
-                first_seen=timestamp,
-                last_seen=timestamp,
-                count=0
+                arbitration_id=arbitration_id, first_seen=timestamp, last_seen=timestamp, count=0
             )
 
         stats = self.message_stats[arbitration_id]
@@ -413,10 +415,10 @@ class PatternRecognitionEngine:
                 {
                     "byte": bit.byte_position,
                     "bit": bit.bit_position,
-                    "total_changes": bit.change_count
+                    "total_changes": bit.change_count,
                 }
                 for bit in changed_bits
-            ]
+            ],
         }
 
     async def _periodic_analysis(self) -> None:
@@ -441,10 +443,12 @@ class PatternRecognitionEngine:
         for arbitration_id in self.message_stats:
             correlations = self.correlation_matrix.find_correlated_messages(arbitration_id)
             if correlations:
-                correlation_findings.append({
-                    "message_id": arbitration_id,
-                    "correlations": correlations[:5]  # Top 5 correlations
-                })
+                correlation_findings.append(
+                    {
+                        "message_id": arbitration_id,
+                        "correlations": correlations[:5],  # Top 5 correlations
+                    }
+                )
 
         # Log interesting findings
         if correlation_findings:
@@ -452,7 +456,7 @@ class PatternRecognitionEngine:
 
         self.last_analysis_time = current_time
 
-    def get_message_analysis(self, arbitration_id: int) -> Optional[Dict[str, Any]]:
+    def get_message_analysis(self, arbitration_id: int) -> dict[str, Any] | None:
         """Get detailed analysis for a specific message ID."""
         if arbitration_id not in self.message_stats:
             return None
@@ -474,11 +478,13 @@ class PatternRecognitionEngine:
                 "std_interval": stats.std_interval,
                 "min_interval": stats.min_interval,
                 "max_interval": stats.max_interval,
-                "frequency_hz": 1.0 / stats.mean_interval if stats.mean_interval else 0.0
+                "frequency_hz": 1.0 / stats.mean_interval if stats.mean_interval else 0.0,
             },
             "data_analysis": {
                 "unique_data_count": len(stats.unique_data_values),
-                "data_variability": len(stats.unique_data_values) / stats.count if stats.count > 0 else 0.0
+                "data_variability": len(stats.unique_data_values) / stats.count
+                if stats.count > 0
+                else 0.0,
             },
             "bit_analysis": {
                 "active_bits": [
@@ -486,16 +492,16 @@ class PatternRecognitionEngine:
                         "byte_position": bit.byte_position,
                         "bit_position": bit.bit_position,
                         "change_count": bit.change_count,
-                        "change_rate": bit.change_count / stats.count if stats.count > 0 else 0.0
+                        "change_rate": bit.change_count / stats.count if stats.count > 0 else 0.0,
                     }
                     for bit in active_bits
                 ],
-                "total_active_bits": len(active_bits)
+                "total_active_bits": len(active_bits),
             },
-            "correlations": correlations[:10]  # Top 10 correlations
+            "correlations": correlations[:10],  # Top 10 correlations
         }
 
-    def get_all_messages_summary(self) -> Dict[str, Any]:
+    def get_all_messages_summary(self) -> dict[str, Any]:
         """Get summary of all tracked messages."""
         total_messages = len(self.message_stats)
 
@@ -508,7 +514,7 @@ class PatternRecognitionEngine:
             "total_tracked_messages": total_messages,
             "classifications": dict(classifications),
             "last_analysis_time": self.last_analysis_time,
-            "engine_status": "running" if self._running else "stopped"
+            "engine_status": "running" if self._running else "stopped",
         }
 
     def export_provisional_dbc(self) -> str:
@@ -520,41 +526,41 @@ class PatternRecognitionEngine:
         """
         dbc_lines = [
             'VERSION ""',
-            '',
-            'NS_ :',
-            '\tNS_DESC_',
-            '\tCM_',
-            '\tBA_DEF_',
-            '\tBA_',
-            '\tVAL_',
-            '\tCAT_DEF_',
-            '\tCAT_',
-            '\tFILTER',
-            '\tBA_DEF_DEF_',
-            '\tEV_DATA_',
-            '\tENVVAR_DATA_',
-            '\tSGTYPE_',
-            '\tSGTYPE_VAL_',
-            '\tBA_DEF_SGTYPE_',
-            '\tBA_SGTYPE_',
-            '\tSIG_TYPE_REF_',
-            '\tVAL_TABLE_',
-            '\tSIG_GROUP_',
-            '\tSIG_VALTYPE_',
-            '\tSIGTYPE_VALTYPE_',
-            '\tBO_TX_BU_',
-            '\tBA_DEF_REL_',
-            '\tBA_REL_',
-            '\tBA_DEF_DEF_REL_',
-            '\tBU_SG_REL_',
-            '\tBU_EV_REL_',
-            '\tBU_BO_REL_',
-            '\tSG_MUL_VAL_',
-            '',
-            'BS_:',
-            '',
-            'BU_: UnknownECU',
-            ''
+            "",
+            "NS_ :",
+            "\tNS_DESC_",
+            "\tCM_",
+            "\tBA_DEF_",
+            "\tBA_",
+            "\tVAL_",
+            "\tCAT_DEF_",
+            "\tCAT_",
+            "\tFILTER",
+            "\tBA_DEF_DEF_",
+            "\tEV_DATA_",
+            "\tENVVAR_DATA_",
+            "\tSGTYPE_",
+            "\tSGTYPE_VAL_",
+            "\tBA_DEF_SGTYPE_",
+            "\tBA_SGTYPE_",
+            "\tSIG_TYPE_REF_",
+            "\tVAL_TABLE_",
+            "\tSIG_GROUP_",
+            "\tSIG_VALTYPE_",
+            "\tSIGTYPE_VALTYPE_",
+            "\tBO_TX_BU_",
+            "\tBA_DEF_REL_",
+            "\tBA_REL_",
+            "\tBA_DEF_DEF_REL_",
+            "\tBU_SG_REL_",
+            "\tBU_EV_REL_",
+            "\tBU_BO_REL_",
+            "\tSG_MUL_VAL_",
+            "",
+            "BS_:",
+            "",
+            "BU_: UnknownECU",
+            "",
         ]
 
         # Add messages based on discovered patterns
@@ -578,19 +584,19 @@ class PatternRecognitionEngine:
                     start_bit = bit_pattern.byte_position * 8 + bit_pattern.bit_position
 
                     dbc_lines.append(
-                        f" SG_ {signal_name} : {start_bit}|1@1+ (1,0) [0|1] \"\" UnknownECU"
+                        f' SG_ {signal_name} : {start_bit}|1@1+ (1,0) [0|1] "" UnknownECU'
                     )
             else:
                 # Add a generic data signal if no active bits detected
-                dbc_lines.append(f" SG_ Data : 0|{max_length * 8}@1+ (1,0) [0|0] \"\" UnknownECU")
+                dbc_lines.append(f' SG_ Data : 0|{max_length * 8}@1+ (1,0) [0|0] "" UnknownECU')
 
             dbc_lines.append("")
 
-        return '\n'.join(dbc_lines)
+        return "\n".join(dbc_lines)
 
 
 # Global instance
-_pattern_engine: Optional[PatternRecognitionEngine] = None
+_pattern_engine: PatternRecognitionEngine | None = None
 
 
 def get_pattern_recognition_engine() -> PatternRecognitionEngine:

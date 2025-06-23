@@ -332,9 +332,7 @@ class J1939Decoder:
         """
         if start_bit + length > len(data) * 8:
             msg = f"Signal extends beyond data: start={start_bit}, length={length}, data_bits={len(data) * 8}"
-            raise ValueError(
-                msg
-            )
+            raise ValueError(msg)
 
         # Convert bytes to integer for bit manipulation
         data_int = int.from_bytes(data, byteorder="little")

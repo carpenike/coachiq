@@ -22,7 +22,6 @@ from backend.models.entity import ControlCommand
 from backend.services.auth_manager import AuthManager
 from backend.services.config_service import ConfigService
 from backend.services.entity_service import EntityService
-from backend.services.feature_manager import FeatureManager
 from backend.websocket.handlers import WebSocketManager
 
 logger = logging.getLogger(__name__)
@@ -31,7 +30,10 @@ logger = logging.getLogger(__name__)
 # Safety-Critical Domain Models
 class SafetyControlCommandV2(BaseModel):
     """Enhanced control command with safety validation"""
-    command: str = Field(..., description="Command type: set, toggle, brightness_up, brightness_down")
+
+    command: str = Field(
+        ..., description="Command type: set, toggle, brightness_up, brightness_down"
+    )
     state: bool | None = Field(None, description="Target state for set commands")
     brightness: int | None = Field(None, ge=0, le=100, description="Brightness level 0-100")
     parameters: dict[str, Any] | None = Field(None, description="Additional command parameters")
@@ -41,28 +43,39 @@ class SafetyControlCommandV2(BaseModel):
 
 class SafetyOperationResultV2(BaseModel):
     """Safety-critical operation result with acknowledgment tracking"""
+
     operation_id: str = Field(..., description="Unique operation identifier")
     entity_id: str = Field(..., description="Entity ID that was operated on")
-    status: str = Field(..., description="Operation status: success, failed, timeout, unauthorized, safety_abort")
-    acknowledged: bool = Field(False, description="Whether operation was acknowledged by physical system")
+    status: str = Field(
+        ..., description="Operation status: success, failed, timeout, unauthorized, safety_abort"
+    )
+    acknowledged: bool = Field(
+        False, description="Whether operation was acknowledged by physical system"
+    )
     acknowledgment_time_ms: float | None = Field(None, description="Time to receive acknowledgment")
     error_message: str | None = Field(None, description="Error details if failed")
     error_code: str | None = Field(None, description="Machine-readable error code")
     execution_time_ms: float | None = Field(None, description="Operation execution time")
-    safety_validation: dict[str, Any] = Field(default_factory=dict, description="Safety validation results")
+    safety_validation: dict[str, Any] = Field(
+        default_factory=dict, description="Safety validation results"
+    )
 
 
 class BulkSafetyOperationRequestV2(BaseModel):
     """Bulk operation request with safety controls"""
+
     entity_ids: list[str] = Field(..., description="List of entity IDs to control")
     command: SafetyControlCommandV2 = Field(..., description="Command to execute on all entities")
     ignore_errors: bool = Field(False, description="Continue on individual failures")
-    safety_mode: str = Field("strict", description="Safety mode: strict, permissive, emergency_stop")
+    safety_mode: str = Field(
+        "strict", description="Safety mode: strict, permissive, emergency_stop"
+    )
     max_concurrent: int = Field(10, ge=1, le=50, description="Maximum concurrent operations")
 
 
 class BulkSafetyOperationResultV2(BaseModel):
     """Bulk operation result with safety tracking"""
+
     operation_id: str = Field(..., description="Unique bulk operation identifier")
     total_count: int = Field(..., description="Total number of operations attempted")
     success_count: int = Field(..., description="Number of successful operations")
@@ -71,7 +84,9 @@ class BulkSafetyOperationResultV2(BaseModel):
     safety_abort_count: int = Field(..., description="Number of operations aborted for safety")
     results: list[SafetyOperationResultV2] = Field(..., description="Per-entity operation results")
     total_execution_time_ms: float = Field(..., description="Total execution time")
-    safety_summary: dict[str, Any] = Field(default_factory=dict, description="Safety operation summary")
+    safety_summary: dict[str, Any] = Field(
+        default_factory=dict, description="Safety operation summary"
+    )
 
 
 class EntityDomainService:
@@ -93,7 +108,6 @@ class EntityDomainService:
         self,
         config_service: ConfigService,
         auth_manager: AuthManager,
-        feature_manager: FeatureManager,
         entity_service: EntityService,
         websocket_manager: WebSocketManager,
         entity_manager: EntityManager,
@@ -101,7 +115,6 @@ class EntityDomainService:
         """Initialize domain service with all required dependencies"""
         self.config = config_service
         self.auth = auth_manager
-        self.features = feature_manager
         self.entities = entity_service
         self.websocket = websocket_manager
         self.entity_manager = entity_manager
@@ -115,7 +128,9 @@ class EntityDomainService:
         self._max_concurrent_operations = 5  # Conservative for Pi hardware
         self._operation_timeout_default = 10.0  # Reasonable for local CAN bus
 
-        logger.info("EntityDomainService initialized with Pi optimizations and safety interlocks enabled")
+        logger.info(
+            "EntityDomainService initialized with Pi optimizations and safety interlocks enabled"
+        )
 
     async def _check_safety_interlocks(self, command: SafetyControlCommandV2) -> dict[str, Any]:
         """
@@ -125,18 +140,14 @@ class EntityDomainService:
         """
         validation = {
             "emergency_stop_check": not self._emergency_stop_active,
-            "feature_enabled_check": self.features.is_enabled("domain_api_v2"),
             "safety_interlocks_check": self._safety_interlocks_enabled,
             "command_validation": True,
             "timeout_validation": 0.1 <= command.timeout_seconds <= 30.0,
-            "issues": []
+            "issues": [],
         }
 
         if self._emergency_stop_active:
             validation["issues"].append("Emergency stop is active - all operations halted")
-
-        if not self.features.is_enabled("domain_api_v2"):
-            validation["issues"].append("Domain API v2 is disabled")
 
         if not self._safety_interlocks_enabled:
             validation["issues"].append("Safety interlocks are disabled")
@@ -148,16 +159,15 @@ class EntityDomainService:
 
         # Safety confirmation check for critical operations
         if command.command in ["set", "toggle"] and not command.safety_confirmation:
-            validation["issues"].append("Safety confirmation required for state-changing operations")
+            validation["issues"].append(
+                "Safety confirmation required for state-changing operations"
+            )
 
         validation["passed"] = len(validation["issues"]) == 0
         return validation
 
     async def _wait_for_acknowledgment(
-        self,
-        operation_id: str,
-        entity_id: str,
-        timeout_seconds: float
+        self, operation_id: str, entity_id: str, timeout_seconds: float
     ) -> tuple[bool, float | None]:
         """
         Wait for command acknowledgment from the physical RV-C system.
@@ -218,7 +228,7 @@ class EntityDomainService:
             return False
 
         # For Pi deployment, check key fields that matter for RV control
-        key_fields = ['state', 'brightness', 'level', 'position']
+        key_fields = ["state", "brightness", "level", "position"]
 
         for field in key_fields:
             if field in expected_state:
@@ -261,7 +271,7 @@ class EntityDomainService:
             "type": "emergency_stop",
             "timestamp": time.time(),
             "cancelled_operations": cancelled_operations,
-            "message": "All entity operations have been halted for safety"
+            "message": "All entity operations have been halted for safety",
         }
 
         if self.websocket:
@@ -271,7 +281,7 @@ class EntityDomainService:
             "emergency_stop_active": True,
             "cancelled_operations_count": len(cancelled_operations),
             "cancelled_operations": cancelled_operations,
-            "timestamp": time.time()
+            "timestamp": time.time(),
         }
 
     async def clear_emergency_stop(self) -> dict[str, Any]:
@@ -287,14 +297,14 @@ class EntityDomainService:
         return {
             "emergency_stop_active": False,
             "timestamp": time.time(),
-            "message": "Emergency stop cleared - Normal operations resumed"
+            "message": "Emergency stop cleared - Normal operations resumed",
         }
 
     async def control_entity_safe(
         self,
         entity_id: str,
         command: SafetyControlCommandV2,
-        user_context: dict[str, Any] | None = None
+        user_context: dict[str, Any] | None = None,
     ) -> SafetyOperationResultV2:
         """
         Control a single entity with safety-critical validation and acknowledgment.
@@ -316,7 +326,7 @@ class EntityDomainService:
             acknowledgment_time_ms=None,
             error_message=None,
             error_code=None,
-            execution_time_ms=None
+            execution_time_ms=None,
         )
 
         try:
@@ -326,7 +336,9 @@ class EntityDomainService:
 
             if not safety_validation["passed"]:
                 operation.status = "safety_abort"
-                operation.error_message = f"Safety validation failed: {'; '.join(safety_validation['issues'])}"
+                operation.error_message = (
+                    f"Safety validation failed: {'; '.join(safety_validation['issues'])}"
+                )
                 operation.error_code = "SAFETY_VALIDATION_FAILED"
                 operation.execution_time_ms = (time.time() - start_time) * 1000
                 return operation
@@ -338,7 +350,7 @@ class EntityDomainService:
             legacy_command = ControlCommand(
                 command=command.command,
                 state=str(command.state) if command.state is not None else None,
-                brightness=command.brightness
+                brightness=command.brightness,
             )
 
             # Step 4: Execute command via existing entity service
@@ -359,7 +371,9 @@ class EntityDomainService:
                 logger.info(f"Entity control successful with acknowledgment: {operation_id}")
             elif not acknowledged:
                 operation.status = "timeout"
-                operation.error_message = f"Command not acknowledged within {command.timeout_seconds}s"
+                operation.error_message = (
+                    f"Command not acknowledged within {command.timeout_seconds}s"
+                )
                 operation.error_code = "ACKNOWLEDGMENT_TIMEOUT"
                 logger.warning(f"Entity control timeout - no acknowledgment: {operation_id}")
             else:
@@ -381,7 +395,9 @@ class EntityDomainService:
 
             # Pi optimization: Clean up operation state to prevent memory accumulation
             if len(self._pending_operations) > self._max_concurrent_operations * 2:
-                logger.warning(f"Pending operations ({len(self._pending_operations)}) exceeding Pi limits, cleaning up")
+                logger.warning(
+                    f"Pending operations ({len(self._pending_operations)}) exceeding Pi limits, cleaning up"
+                )
                 self._cleanup_stale_operations()
 
         return operation
@@ -393,7 +409,7 @@ class EntityDomainService:
 
         for op_id, operation in self._pending_operations.items():
             # Remove operations older than 1 minute (likely stale)
-            if hasattr(operation, 'start_time') and (current_time - operation.start_time) > 60:
+            if hasattr(operation, "start_time") and (current_time - operation.start_time) > 60:
                 stale_ops.append(op_id)
 
         for op_id in stale_ops:
@@ -403,9 +419,7 @@ class EntityDomainService:
             logger.info(f"Cleaned up {len(stale_ops)} stale operations on Pi")
 
     async def bulk_control_entities_safe(
-        self,
-        request: BulkSafetyOperationRequestV2,
-        user_context: dict[str, Any] | None = None
+        self, request: BulkSafetyOperationRequestV2, user_context: dict[str, Any] | None = None
     ) -> BulkSafetyOperationResultV2:
         """
         Execute bulk control operations with safety controls and partial success handling.
@@ -415,7 +429,9 @@ class EntityDomainService:
         operation_id = str(uuid.uuid4())
         start_time = time.time()
 
-        logger.info(f"Starting bulk safety operation: {operation_id} for {len(request.entity_ids)} entities")
+        logger.info(
+            f"Starting bulk safety operation: {operation_id} for {len(request.entity_ids)} entities"
+        )
 
         # Safety check: Emergency stop
         if self._emergency_stop_active:
@@ -428,26 +444,32 @@ class EntityDomainService:
                 safety_abort_count=len(request.entity_ids),
                 results=[],
                 total_execution_time_ms=(time.time() - start_time) * 1000,
-                safety_summary={"emergency_stop_active": True}
+                safety_summary={"emergency_stop_active": True},
             )
 
         # Safety check: Bulk operation limits - Pi optimized
         max_bulk_size = 20  # Reduced for Pi memory constraints
         if len(request.entity_ids) > max_bulk_size:
-            raise ValueError(f"Bulk operation size {len(request.entity_ids)} exceeds Pi maximum {max_bulk_size}")
+            raise ValueError(
+                f"Bulk operation size {len(request.entity_ids)} exceeds Pi maximum {max_bulk_size}"
+            )
 
         # Execute operations with Pi-optimized concurrency control
         pi_safe_concurrency = min(request.max_concurrent, self._max_concurrent_operations)
         semaphore = asyncio.Semaphore(pi_safe_concurrency)
 
-        logger.info(f"Pi bulk operation: {len(request.entity_ids)} entities, concurrency: {pi_safe_concurrency}")
+        logger.info(
+            f"Pi bulk operation: {len(request.entity_ids)} entities, concurrency: {pi_safe_concurrency}"
+        )
 
         async def control_single_entity_safe(entity_id: str) -> SafetyOperationResultV2:
             async with semaphore:
                 return await self.control_entity_safe(entity_id, request.command, user_context)
 
         # Execute all operations
-        operation_tasks = [control_single_entity_safe(entity_id) for entity_id in request.entity_ids]
+        operation_tasks = [
+            control_single_entity_safe(entity_id) for entity_id in request.entity_ids
+        ]
         results = await asyncio.gather(*operation_tasks, return_exceptions=True)
 
         # Process results and handle exceptions
@@ -463,7 +485,7 @@ class EntityDomainService:
                     acknowledgment_time_ms=None,
                     error_message=str(result),
                     error_code="BULK_OPERATION_EXCEPTION",
-                    execution_time_ms=None
+                    execution_time_ms=None,
                 )
                 processed_results.append(error_result)
             else:
@@ -480,8 +502,10 @@ class EntityDomainService:
         safety_summary = {
             "emergency_stop_active": self._emergency_stop_active,
             "safety_interlocks_enabled": self._safety_interlocks_enabled,
-            "acknowledgment_rate": sum(1 for r in processed_results if r.acknowledged) / len(processed_results),
-            "average_execution_time": sum(r.execution_time_ms or 0 for r in processed_results) / len(processed_results)
+            "acknowledgment_rate": sum(1 for r in processed_results if r.acknowledged)
+            / len(processed_results),
+            "average_execution_time": sum(r.execution_time_ms or 0 for r in processed_results)
+            / len(processed_results),
         }
 
         result = BulkSafetyOperationResultV2(
@@ -493,10 +517,12 @@ class EntityDomainService:
             safety_abort_count=safety_abort_count,
             results=processed_results,
             total_execution_time_ms=total_time,
-            safety_summary=safety_summary
+            safety_summary=safety_summary,
         )
 
-        logger.info(f"Bulk operation completed: {operation_id} - {success_count}/{len(request.entity_ids)} successful")
+        logger.info(
+            f"Bulk operation completed: {operation_id} - {success_count}/{len(request.entity_ids)} successful"
+        )
 
         return result
 
@@ -507,8 +533,7 @@ class EntityDomainService:
             "safety_interlocks_enabled": self._safety_interlocks_enabled,
             "pending_operations_count": len(self._pending_operations),
             "pending_operations": list(self._pending_operations.keys()),
-            "domain_api_v2_enabled": self.features.is_enabled("domain_api_v2"),
-            "timestamp": time.time()
+            "timestamp": time.time(),
         }
 
     async def reconcile_state_with_rvc_bus(self) -> dict[str, Any]:
@@ -545,7 +570,7 @@ class EntityDomainService:
                 "entities_reconciled": reconciled_count,
                 "discrepancies_found": len(discrepancies),
                 "discrepancies": discrepancies,
-                "timestamp": time.time()
+                "timestamp": time.time(),
             }
 
             logger.info(f"State reconciliation completed: {reconciled_count} entities reconciled")
@@ -554,8 +579,4 @@ class EntityDomainService:
 
         except Exception as e:
             logger.error(f"State reconciliation failed: {e}")
-            return {
-                "reconciliation_successful": False,
-                "error": str(e),
-                "timestamp": time.time()
-            }
+            return {"reconciliation_successful": False, "error": str(e), "timestamp": time.time()}

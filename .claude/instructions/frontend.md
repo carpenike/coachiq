@@ -1,5 +1,44 @@
 # React Frontend Instructions
 
+## MCP Server Usage for Frontend Development
+
+When developing frontend features, leverage MCP servers effectively:
+
+1. **@playwright** - Primary tool for UI testing and verification during development
+2. **@context7** - React patterns, hooks, TypeScript, and component libraries
+3. **@zen analyze** - Component architecture and performance analysis
+4. **@perplexity** - UI/UX best practices and accessibility standards
+
+### Frontend Development MCP Workflow
+
+```
+# Building new components:
+1. @context7 React component patterns with TypeScript
+2. @context7 shadcn/ui component usage examples
+3. @playwright browser_snapshot - Verify component rendering
+4. @playwright browser_click/type - Test interactions
+
+# Debugging UI issues:
+1. @playwright browser_console_messages - Check for errors
+2. @playwright browser_snapshot - See current DOM state
+3. @context7 React debugging patterns
+4. @zen analyze frontend/src/components - Review architecture
+```
+
+### Playwright Development Pattern
+
+```bash
+# Start dev server first
+cd frontend && npm run dev
+
+# Use Playwright to verify your work
+1. browser_navigate(url="http://localhost:5173")
+2. browser_snapshot() - Understand page structure
+3. browser_click(element="Button", ref="button")
+4. browser_type(element="Search", ref="input", text="test")
+5. browser_take_screenshot() - Visual verification
+```
+
 ## Technology Stack
 
 - **React 19.1.0** with TypeScript strict mode

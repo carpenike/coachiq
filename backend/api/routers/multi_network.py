@@ -9,8 +9,13 @@ from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, HTTPException
 
-from backend.core.dependencies_v2 import get_feature_manager
-from backend.services.feature_manager import FeatureManager
+from backend.core.dependencies import create_optional_service_dependency
+
+# Create service dependencies - these services are optional based on configuration
+get_multi_network_service = create_optional_service_dependency("multi_network_can_service")
+get_j1939_service = create_optional_service_dependency("j1939_service")
+get_firefly_service = create_optional_service_dependency("firefly_service")
+get_spartan_k2_service = create_optional_service_dependency("spartan_k2_service")
 
 logger = logging.getLogger(__name__)
 
@@ -19,7 +24,7 @@ router = APIRouter(prefix="/api/multi-network", tags=["multi-network"])
 
 @router.get("/status")
 async def get_multi_network_status(
-    feature_manager: Annotated[FeatureManager, Depends(get_feature_manager)],
+    multi_network_service: Annotated[Any | None, Depends(get_multi_network_service)],
 ) -> dict[str, Any]:
     """
     Get the status of multi-network CAN management.
@@ -28,16 +33,15 @@ async def get_multi_network_status(
         Multi-network status information including network health and statistics
     """
     try:
-        multi_network_feature = feature_manager.get_feature("multi_network_can")
-        if not multi_network_feature or not multi_network_feature.enabled:
+        if not multi_network_service:
             return {
                 "enabled": False,
                 "status": "disabled",
-                "message": "Multi-network CAN feature is not enabled",
+                "message": "Multi-network CAN service is not available",
             }
 
-        # Get status from the multi-network feature
-        status = multi_network_feature.get_status()
+        # Get status from the multi-network service
+        status = await multi_network_service.get_status()
         return {"enabled": True, "status": "active", **status}
 
     except Exception as e:
@@ -49,7 +53,10 @@ async def get_multi_network_status(
 
 @router.get("/bridge-status")
 async def get_bridge_status(
-    feature_manager: Annotated[FeatureManager, Depends(get_feature_manager)],
+    multi_network_service: Annotated[Any | None, Depends(get_multi_network_service)],
+    j1939_service: Annotated[Any | None, Depends(get_j1939_service)],
+    firefly_service: Annotated[Any | None, Depends(get_firefly_service)],
+    spartan_k2_service: Annotated[Any | None, Depends(get_spartan_k2_service)],
 ) -> dict[str, Any]:
     """
     Get the status of protocol bridges between different CAN networks.
@@ -58,72 +65,32 @@ async def get_bridge_status(
         Bridge status information including translation statistics and health
     """
     try:
-        # Check if multi-network feature is available
-        multi_network_feature = feature_manager.get_feature("multi_network_can")
-        if not multi_network_feature or not multi_network_feature.enabled:
-            return {
-                "enabled": False,
-                "bridges": {},
-                "message": "Multi-network CAN feature is not enabled",
-            }
+        bridges = {}
 
         # Check for J1939 bridge
-        j1939_feature = feature_manager.get_feature("j1939")
-        j1939_bridge_status = {}
-        if j1939_feature and j1939_feature.enabled:
-            try:
-                j1939_bridge_status = j1939_feature.get_bridge_status()
-            except AttributeError:
-                j1939_bridge_status = {
-                    "enabled": True,
-                    "status": "active",
-                    "message": "J1939 bridge operational",
-                }
+        if j1939_service:
+            bridges["j1939"] = await j1939_service.get_bridge_status()
+        else:
+            bridges["j1939"] = {"enabled": False, "status": "unavailable"}
 
         # Check for Firefly bridge
-        firefly_feature = feature_manager.get_feature("firefly")
-        firefly_bridge_status = {}
-        if firefly_feature and firefly_feature.enabled:
-            try:
-                firefly_bridge_status = firefly_feature.get_bridge_status()
-            except AttributeError:
-                firefly_bridge_status = {
-                    "enabled": True,
-                    "status": "active",
-                    "message": "Firefly bridge operational",
-                }
+        if firefly_service:
+            bridges["firefly"] = await firefly_service.get_bridge_status()
+        else:
+            bridges["firefly"] = {"enabled": False, "status": "unavailable"}
 
         # Check for Spartan K2 bridge
-        spartan_k2_feature = feature_manager.get_feature("spartan_k2")
-        spartan_k2_bridge_status = {}
-        if spartan_k2_feature and spartan_k2_feature.enabled:
-            try:
-                spartan_k2_bridge_status = spartan_k2_feature.get_bridge_status()
-            except AttributeError:
-                spartan_k2_bridge_status = {
-                    "enabled": True,
-                    "status": "active",
-                    "message": "Spartan K2 bridge operational",
-                }
+        if spartan_k2_service:
+            bridges["spartan_k2"] = await spartan_k2_service.get_bridge_status()
+        else:
+            bridges["spartan_k2"] = {"enabled": False, "status": "unavailable"}
+
+        total_bridges = len([status for status in bridges.values() if status.get("enabled", False)])
 
         return {
-            "enabled": True,
-            "bridges": {
-                "j1939": j1939_bridge_status,
-                "firefly": firefly_bridge_status,
-                "spartan_k2": spartan_k2_bridge_status,
-            },
-            "total_bridges": len(
-                [
-                    status
-                    for status in [
-                        j1939_bridge_status,
-                        firefly_bridge_status,
-                        spartan_k2_bridge_status,
-                    ]
-                    if status.get("enabled", False)
-                ]
-            ),
+            "enabled": bool(multi_network_service),
+            "bridges": bridges,
+            "total_bridges": total_bridges,
         }
 
     except Exception as e:
@@ -133,7 +100,7 @@ async def get_bridge_status(
 
 @router.get("/networks")
 async def get_networks(
-    feature_manager: Annotated[FeatureManager, Depends(get_feature_manager)],
+    multi_network_service: Annotated[Any | None, Depends(get_multi_network_service)],
 ) -> dict[str, Any]:
     """
     Get information about all registered CAN networks.
@@ -142,29 +109,16 @@ async def get_networks(
         Network information including health status and configuration
     """
     try:
-        multi_network_feature = feature_manager.get_feature("multi_network_can")
-        if not multi_network_feature or not multi_network_feature.enabled:
+        if not multi_network_service:
             return {
                 "enabled": False,
                 "networks": {},
-                "message": "Multi-network CAN feature is not enabled",
+                "message": "Multi-network CAN service is not available",
             }
 
-        # Get network information from the multi-network feature
-        try:
-            networks = multi_network_feature.get_networks()
-            return {"enabled": True, "networks": networks, "network_count": len(networks)}
-        except AttributeError:
-            # Fallback if method doesn't exist
-            return {
-                "enabled": True,
-                "networks": {
-                    "house": {"status": "unknown", "interface": "logical"},
-                    "chassis": {"status": "unknown", "interface": "logical"},
-                },
-                "network_count": 2,
-                "message": "Network details unavailable - using defaults",
-            }
+        # Get network information from the multi-network service
+        networks = await multi_network_service.get_networks()
+        return {"enabled": True, "networks": networks, "network_count": len(networks)}
 
     except Exception as e:
         logger.error(f"Error getting networks: {e}")
@@ -173,42 +127,53 @@ async def get_networks(
 
 @router.get("/health")
 async def get_multi_network_health(
-    feature_manager: Annotated[FeatureManager, Depends(get_feature_manager)],
+    multi_network_service: Annotated[Any | None, Depends(get_multi_network_service)],
+    j1939_service: Annotated[Any | None, Depends(get_j1939_service)],
+    firefly_service: Annotated[Any | None, Depends(get_firefly_service)],
+    spartan_k2_service: Annotated[Any | None, Depends(get_spartan_k2_service)],
 ) -> dict[str, Any]:
     """
     Get comprehensive health status of the multi-network system.
 
     Returns:
-        Health status including feature status, network health, and diagnostics
+        Health status including service status, network health, and diagnostics
     """
     try:
-        health_status = {"overall_status": "healthy", "features": {}, "warnings": [], "errors": []}
+        health_status = {"overall_status": "healthy", "services": {}, "warnings": [], "errors": []}
 
-        # Check each protocol feature
-        protocol_features = ["multi_network_can", "j1939", "firefly", "spartan_k2"]
+        # Check each protocol service
+        services = {
+            "multi_network_can": multi_network_service,
+            "j1939": j1939_service,
+            "firefly": firefly_service,
+            "spartan_k2": spartan_k2_service,
+        }
 
-        for feature_name in protocol_features:
-            feature = feature_manager.get_feature(feature_name)
-            if feature:
+        for service_name, service in services.items():
+            if service:
                 try:
-                    feature_health = feature.health if hasattr(feature, "health") else "unknown"
-                    health_status["features"][feature_name] = {
-                        "enabled": feature.enabled,
-                        "health": feature_health,
+                    service_health = (
+                        await service.health_check()
+                        if hasattr(service, "health_check")
+                        else {"status": "unknown"}
+                    )
+                    health_status["services"][service_name] = {
+                        "enabled": True,
+                        "health": service_health.get("status", "unknown"),
                         "status": "operational"
-                        if feature.enabled and feature_health == "healthy"
+                        if service_health.get("status") == "healthy"
                         else "degraded",
                     }
                 except Exception as e:
-                    health_status["features"][feature_name] = {
+                    health_status["services"][service_name] = {
                         "enabled": False,
                         "health": "error",
                         "status": "failed",
                         "error": str(e),
                     }
-                    health_status["errors"].append(f"{feature_name}: {e}")
+                    health_status["errors"].append(f"{service_name}: {e}")
             else:
-                health_status["features"][feature_name] = {
+                health_status["services"][service_name] = {
                     "enabled": False,
                     "health": "unavailable",
                     "status": "not_configured",
@@ -217,7 +182,7 @@ async def get_multi_network_health(
         # Determine overall status
         if health_status["errors"]:
             health_status["overall_status"] = "error"
-        elif any(f["status"] == "degraded" for f in health_status["features"].values()):
+        elif any(f["status"] == "degraded" for f in health_status["services"].values()):
             health_status["overall_status"] = "degraded"
 
         return health_status

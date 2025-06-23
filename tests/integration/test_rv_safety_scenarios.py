@@ -19,19 +19,23 @@ from backend.services.safety_service import SafetyService
 def rv_safety_service():
     """Create SafetyService configured for RV testing."""
     mock_manager = Mock()
-    mock_manager.check_system_health = AsyncMock(return_value={
-        "status": "healthy",
-        "features": {
-            "can_interface": FeatureState.HEALTHY,
-            "firefly": FeatureState.HEALTHY,
-            "spartan_k2": FeatureState.HEALTHY,
+    mock_manager.check_system_health = AsyncMock(
+        return_value={
+            "status": "healthy",
+            "features": {
+                "can_interface": FeatureState.HEALTHY,
+                "firefly": FeatureState.HEALTHY,
+                "spartan_k2": FeatureState.HEALTHY,
+            },
         }
-    })
-    mock_manager.get_safety_classification = Mock(side_effect=lambda name: {
-        "firefly": SafetyClassification.POSITION_CRITICAL,
-        "spartan_k2": SafetyClassification.POSITION_CRITICAL,
-        "can_interface": SafetyClassification.CRITICAL,
-    }.get(name))
+    )
+    mock_manager.get_safety_classification = Mock(
+        side_effect=lambda name: {
+            "firefly": SafetyClassification.POSITION_CRITICAL,
+            "spartan_k2": SafetyClassification.POSITION_CRITICAL,
+            "can_interface": SafetyClassification.CRITICAL,
+        }.get(name)
+    )
 
     service = SafetyService(
         feature_manager=mock_manager,
@@ -50,13 +54,15 @@ class TestRVSlideOperations:
         service = rv_safety_service
 
         # Set up proper parking conditions
-        service.update_system_state({
-            "vehicle_speed": 0,
-            "engine_running": False,
-            "parking_brake_engaged": True,
-            "transmission_gear": "P",
-            "slides_deployed": False,
-        })
+        service.update_system_state(
+            {
+                "vehicle_speed": 0,
+                "engine_running": False,
+                "parking_brake_engaged": True,
+                "transmission_gear": "P",
+                "slides_deployed": False,
+            }
+        )
 
         # Check if safe to deploy slides
         await service.check_all_interlocks()
@@ -78,12 +84,14 @@ class TestRVSlideOperations:
         service = rv_safety_service
 
         # Start with slides deployed
-        service.update_system_state({
-            "vehicle_speed": 0,
-            "engine_running": False,
-            "parking_brake_engaged": True,
-            "slides_deployed": True,
-        })
+        service.update_system_state(
+            {
+                "vehicle_speed": 0,
+                "engine_running": False,
+                "parking_brake_engaged": True,
+                "slides_deployed": True,
+            }
+        )
 
         # Driver prepares to leave - starts engine
         service.update_system_state({"engine_running": True})
@@ -108,17 +116,21 @@ class TestRVSlideOperations:
         service = rv_safety_service
 
         # Slides are deployed
-        service.update_system_state({
-            "vehicle_speed": 0,
-            "slides_deployed": True,
-            "parking_brake_engaged": True,
-        })
+        service.update_system_state(
+            {
+                "vehicle_speed": 0,
+                "slides_deployed": True,
+                "parking_brake_engaged": True,
+            }
+        )
 
         # RV accidentally rolls (parking brake fails)
-        service.update_system_state({
-            "vehicle_speed": 2,  # Slow roll
-            "parking_brake_engaged": False,
-        })
+        service.update_system_state(
+            {
+                "vehicle_speed": 2,  # Slow roll
+                "parking_brake_engaged": False,
+            }
+        )
 
         # Check safety
         await service.check_all_interlocks()
@@ -133,12 +145,14 @@ class TestRVSlideOperations:
         service = rv_safety_service
 
         # Start deploying slides
-        service.update_system_state({
-            "vehicle_speed": 0,
-            "parking_brake_engaged": True,
-            "slides_deployed": False,
-            "slide_in_motion": True,
-        })
+        service.update_system_state(
+            {
+                "vehicle_speed": 0,
+                "parking_brake_engaged": True,
+                "slides_deployed": False,
+                "slide_in_motion": True,
+            }
+        )
 
         # Simulate slide system failure
         service._feature_manager.check_system_health.return_value = {
@@ -192,12 +206,14 @@ class TestRVAwningOperations:
         service = rv_safety_service
 
         # Awning deployed in calm conditions
-        service.update_system_state({
-            "vehicle_speed": 0,
-            "parking_brake_engaged": True,
-            "awnings_extended": True,
-            "wind_speed": 10,  # mph - calm
-        })
+        service.update_system_state(
+            {
+                "vehicle_speed": 0,
+                "parking_brake_engaged": True,
+                "awnings_extended": True,
+                "wind_speed": 10,  # mph - calm
+            }
+        )
 
         # Safe conditions
         await service.check_all_interlocks()
@@ -222,20 +238,24 @@ class TestRVAwningOperations:
         service = rv_safety_service
 
         # Multiple awnings deployed
-        service.update_system_state({
-            "vehicle_speed": 0,
-            "parking_brake_engaged": True,
-            "awnings_extended": True,
-            "patio_awning": "extended",
-            "window_awnings": "extended",
-        })
+        service.update_system_state(
+            {
+                "vehicle_speed": 0,
+                "parking_brake_engaged": True,
+                "awnings_extended": True,
+                "patio_awning": "extended",
+                "window_awnings": "extended",
+            }
+        )
 
         # Prepare for travel - retract all awnings
-        service.update_system_state({
-            "awnings_extended": False,
-            "patio_awning": "retracted",
-            "window_awnings": "retracted",
-        })
+        service.update_system_state(
+            {
+                "awnings_extended": False,
+                "patio_awning": "retracted",
+                "window_awnings": "retracted",
+            }
+        )
 
         # Release parking brake
         service.update_system_state({"parking_brake_engaged": False})
@@ -257,13 +277,15 @@ class TestRVLevelingOperations:
         service = rv_safety_service
 
         # Arrive at campsite
-        service.update_system_state({
-            "vehicle_speed": 0,
-            "engine_running": True,
-            "transmission_gear": "P",
-            "parking_brake_engaged": True,
-            "jacks_deployed": False,
-        })
+        service.update_system_state(
+            {
+                "vehicle_speed": 0,
+                "engine_running": True,
+                "transmission_gear": "P",
+                "parking_brake_engaged": True,
+                "jacks_deployed": False,
+            }
+        )
 
         # Turn off engine for leveling
         service.update_system_state({"engine_running": False})
@@ -285,12 +307,14 @@ class TestRVLevelingOperations:
         service = rv_safety_service
 
         # Jacks deployed for camping
-        service.update_system_state({
-            "engine_running": False,
-            "parking_brake_engaged": True,
-            "transmission_gear": "P",
-            "jacks_deployed": True,
-        })
+        service.update_system_state(
+            {
+                "engine_running": False,
+                "parking_brake_engaged": True,
+                "transmission_gear": "P",
+                "jacks_deployed": True,
+            }
+        )
 
         # Someone starts engine (maybe for generator/AC)
         service.update_system_state({"engine_running": True})
@@ -309,17 +333,21 @@ class TestRVLevelingOperations:
         service = rv_safety_service
 
         # Jacks deployed
-        service.update_system_state({
-            "jacks_deployed": True,
-            "transmission_gear": "P",
-            "engine_running": False,
-        })
+        service.update_system_state(
+            {
+                "jacks_deployed": True,
+                "transmission_gear": "P",
+                "engine_running": False,
+            }
+        )
 
         # Driver accidentally shifts to Drive
-        service.update_system_state({
-            "transmission_gear": "D",
-            "engine_running": True,
-        })
+        service.update_system_state(
+            {
+                "transmission_gear": "D",
+                "engine_running": True,
+            }
+        )
 
         # Should trigger emergency
         await service.check_all_interlocks()
@@ -335,11 +363,13 @@ class TestRVLevelingOperations:
         service = rv_safety_service
 
         # Actively leveling
-        service.update_system_state({
-            "jacks_deployed": True,
-            "jack_operation_active": True,
-            "vehicle_level": False,
-        })
+        service.update_system_state(
+            {
+                "jacks_deployed": True,
+                "jack_operation_active": True,
+                "vehicle_level": False,
+            }
+        )
 
         # Jack system fails
         service._feature_manager.check_system_health.return_value = {
@@ -368,15 +398,17 @@ class TestRVDrivingScenarios:
         service = rv_safety_service
 
         # Highway driving conditions
-        service.update_system_state({
-            "vehicle_speed": 65,
-            "engine_running": True,
-            "transmission_gear": "D",
-            "parking_brake_engaged": False,
-            "slides_deployed": False,
-            "awnings_extended": False,
-            "jacks_deployed": False,
-        })
+        service.update_system_state(
+            {
+                "vehicle_speed": 65,
+                "engine_running": True,
+                "transmission_gear": "D",
+                "parking_brake_engaged": False,
+                "slides_deployed": False,
+                "awnings_extended": False,
+                "jacks_deployed": False,
+            }
+        )
 
         # All interlocks should be engaged (preventing deployment)
         await service.check_all_interlocks()
@@ -394,17 +426,21 @@ class TestRVDrivingScenarios:
         service = rv_safety_service
 
         # Driving normally
-        service.update_system_state({
-            "vehicle_speed": 55,
-            "acceleration": 0,
-        })
+        service.update_system_state(
+            {
+                "vehicle_speed": 55,
+                "acceleration": 0,
+            }
+        )
 
         # Emergency brake applied
-        service.update_system_state({
-            "vehicle_speed": 30,
-            "acceleration": -15,  # Heavy braking
-            "brake_pressure": 90,  # High pressure
-        })
+        service.update_system_state(
+            {
+                "vehicle_speed": 30,
+                "acceleration": -15,  # Heavy braking
+                "brake_pressure": 90,  # High pressure
+            }
+        )
 
         # System should maintain safety but not trigger emergency
         await service.check_all_interlocks()
@@ -425,11 +461,13 @@ class TestRVDrivingScenarios:
         states = []
 
         # 1. Driving
-        service.update_system_state({
-            "vehicle_speed": 25,
-            "engine_running": True,
-            "location": "campground_entrance",
-        })
+        service.update_system_state(
+            {
+                "vehicle_speed": 25,
+                "engine_running": True,
+                "location": "campground_entrance",
+            }
+        )
         await service.check_all_interlocks()
         states.append(("driving", service._emergency_stop_active))
 
@@ -439,10 +477,12 @@ class TestRVDrivingScenarios:
         states.append(("slowing", service._emergency_stop_active))
 
         # 3. Stopped
-        service.update_system_state({
-            "vehicle_speed": 0,
-            "transmission_gear": "P",
-        })
+        service.update_system_state(
+            {
+                "vehicle_speed": 0,
+                "transmission_gear": "P",
+            }
+        )
         await service.check_all_interlocks()
         states.append(("stopped", service._emergency_stop_active))
 
@@ -473,12 +513,14 @@ class TestRVCampingScenarios:
         service = rv_safety_service
 
         # Start from safe parked state
-        service.update_system_state({
-            "vehicle_speed": 0,
-            "engine_running": False,
-            "parking_brake_engaged": True,
-            "transmission_gear": "P",
-        })
+        service.update_system_state(
+            {
+                "vehicle_speed": 0,
+                "engine_running": False,
+                "parking_brake_engaged": True,
+                "transmission_gear": "P",
+            }
+        )
 
         # Deploy equipment in proper sequence
 
@@ -507,14 +549,16 @@ class TestRVCampingScenarios:
         service = rv_safety_service
 
         # Fully deployed for camping
-        service.update_system_state({
-            "slides_deployed": True,
-            "awnings_extended": True,
-            "jacks_deployed": True,
-            "vehicle_speed": 0,
-            "engine_running": False,
-            "parking_brake_engaged": True,
-        })
+        service.update_system_state(
+            {
+                "slides_deployed": True,
+                "awnings_extended": True,
+                "jacks_deployed": True,
+                "vehicle_speed": 0,
+                "engine_running": False,
+                "parking_brake_engaged": True,
+            }
+        )
 
         # Break camp in reverse order
 
@@ -547,20 +591,24 @@ class TestRVCampingScenarios:
         service = rv_safety_service
 
         # Camping with everything deployed
-        service.update_system_state({
-            "slides_deployed": True,
-            "awnings_extended": True,
-            "jacks_deployed": True,
-            "wind_speed": 15,
-            "weather_alert": False,
-        })
+        service.update_system_state(
+            {
+                "slides_deployed": True,
+                "awnings_extended": True,
+                "jacks_deployed": True,
+                "wind_speed": 15,
+                "weather_alert": False,
+            }
+        )
 
         # Severe weather warning
-        service.update_system_state({
-            "wind_speed": 45,
-            "weather_alert": True,
-            "alert_type": "tornado_warning",
-        })
+        service.update_system_state(
+            {
+                "wind_speed": 45,
+                "weather_alert": True,
+                "alert_type": "tornado_warning",
+            }
+        )
 
         # Trigger emergency for severe weather
         await service.trigger_emergency_stop(

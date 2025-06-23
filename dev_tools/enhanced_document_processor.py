@@ -350,10 +350,9 @@ def detect_document_type(pdf_path: Path) -> ChunkingMethod:
     # Make recommendation based on document structure
     if section_matches > 5:
         return ChunkingMethod.SECTION_OVERLAP  # Clear section structure
-    elif paragraph_breaks > 10:
+    if paragraph_breaks > 10:
         return ChunkingMethod.PARAGRAPH  # Clear paragraph structure
-    else:
-        return ChunkingMethod.SLIDING_WINDOW  # Default to sliding window
+    return ChunkingMethod.SLIDING_WINDOW  # Default to sliding window
 
 
 def process_pdf(

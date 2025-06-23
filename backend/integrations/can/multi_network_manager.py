@@ -629,27 +629,17 @@ def get_multi_network_manager() -> MultiNetworkManager:
     Returns:
         MultiNetworkManager: The multi-network manager instance
     """
-    # Try to get from app.state first (ServiceRegistry integration)
+    # Try to get from ServiceRegistry first (modern pattern)
     try:
-        # Try to access the global app instance if available
-        import backend.main
-        if hasattr(backend.main, 'app'):
-            app = backend.main.app
-            # Check ServiceRegistry
-            if hasattr(app.state, 'service_registry'):
-                service_registry = app.state.service_registry
-                if service_registry.has_service('multi_network_manager'):
-                    service = service_registry.get_service('multi_network_manager')
-                    if isinstance(service, MultiNetworkManager):
-                        return service
+        from backend.core.dependencies import get_service_registry
 
-            # Check if stored directly in app.state
-            if hasattr(app.state, 'multi_network_manager'):
-                manager = app.state.multi_network_manager
-                if isinstance(manager, MultiNetworkManager):
-                    return manager
+        service_registry = get_service_registry()
+        if service_registry.has_service("multi_network_manager"):
+            service = service_registry.get_service("multi_network_manager")
+            if isinstance(service, MultiNetworkManager):
+                return service
     except Exception:
-        # Continue to fallback
+        # ServiceRegistry not available yet
         pass
 
     # Fall back to global singleton for backward compatibility

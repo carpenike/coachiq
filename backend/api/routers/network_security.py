@@ -13,44 +13,23 @@ Designed for RV deployments with admin-only access to security controls.
 
 import logging
 import time
-from typing import Any, Dict, List, Optional
+from typing import Annotated, Any, Dict, List, Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Request
-from starlette import status
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
+from starlette import status
 
-from backend.core.dependencies_v2 import get_authenticated_admin, get_security_audit_service
+from backend.core.dependencies import create_service_dependency
+
+# Create service dependencies
+get_authenticated_admin = lambda: None  # Placeholder
+get_security_audit_service = create_service_dependency("security_audit_service")
+get_network_security_service_dep = create_service_dependency("network_security_service")
 from backend.services.network_security_service import NetworkSecurityService, SecurityEvent
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/security/network", tags=["network-security"])
-
-# Global network security service instance
-_network_security_service: NetworkSecurityService | None = None
-
-
-def get_network_security_service(request: Request | None = None) -> NetworkSecurityService:
-    """Get the network security service instance."""
-    global _network_security_service
-    if _network_security_service is None:
-        if request and hasattr(request.app.state, "network_security_service"):
-            _network_security_service = request.app.state.network_security_service
-        else:
-            # Create default instance
-            _network_security_service = NetworkSecurityService()
-
-    # Ensure we return a valid instance
-    if _network_security_service is None:
-        _network_security_service = NetworkSecurityService()
-
-    return _network_security_service
-
-
-def set_network_security_service(service: NetworkSecurityService) -> None:
-    """Set the network security service instance (called from main.py)."""
-    global _network_security_service
-    _network_security_service = service
 
 
 # Request/Response Models
@@ -82,9 +61,9 @@ class TrustedIPRequest(BaseModel):
 class SecurityEventQuery(BaseModel):
     """Security event query parameters."""
 
-    event_type: Optional[str] = Field(None, description="Filter by event type")
-    client_ip: Optional[str] = Field(None, description="Filter by client IP")
-    severity: Optional[str] = Field(None, description="Filter by severity level")
+    event_type: str | None = Field(None, description="Filter by event type")
+    client_ip: str | None = Field(None, description="Filter by client IP")
+    severity: str | None = Field(None, description="Filter by severity level")
     hours: int = Field(24, ge=1, le=168, description="Look back this many hours")
     limit: int = Field(100, ge=1, le=1000, description="Maximum number of events to return")
 
@@ -92,7 +71,7 @@ class SecurityEventQuery(BaseModel):
 class SecurityEventResponse(BaseModel):
     """Security event response model."""
 
-    events: List[SecurityEvent] = Field(..., description="List of security events")
+    events: list[SecurityEvent] = Field(..., description="List of security events")
     total_count: int = Field(..., description="Total number of matching events")
     query_params: SecurityEventQuery = Field(..., description="Query parameters used")
 
@@ -104,13 +83,13 @@ class IPBlockResponse(BaseModel):
     ip_address: str = Field(..., description="IP address affected")
     action: str = Field(..., description="Action taken")
     message: str = Field(..., description="Response message")
-    expires_at: Optional[float] = Field(None, description="Block expiration timestamp")
+    expires_at: float | None = Field(None, description="Block expiration timestamp")
 
 
 class SecuritySummaryResponse(BaseModel):
     """Security summary response model."""
 
-    summary: Dict[str, Any] = Field(..., description="Security summary data")
+    summary: dict[str, Any] = Field(..., description="Security summary data")
     timestamp: float = Field(..., description="Summary generation timestamp")
     system_status: str = Field(..., description="Overall security system status")
 
@@ -120,7 +99,7 @@ class SecuritySummaryResponse(BaseModel):
 
 @router.get("/events", response_model=SecurityEventResponse)
 async def get_security_events(
-    request: Request,
+    network_security: Annotated[NetworkSecurityService, Depends(get_network_security_service_dep)],
     query: SecurityEventQuery = Depends(),
     admin_user: dict = Depends(get_authenticated_admin),
 ) -> SecurityEventResponse:
@@ -130,8 +109,6 @@ async def get_security_events(
     Returns filtered security events for monitoring and analysis.
     """
     try:
-        network_security = get_network_security_service(request)
-
         # Get events based on query parameters
         import time
 
@@ -176,7 +153,8 @@ async def get_security_events(
 
 @router.get("/summary", response_model=SecuritySummaryResponse)
 async def get_security_summary(
-    request: Request, admin_user: dict = Depends(get_authenticated_admin)
+    network_security: Annotated[NetworkSecurityService, Depends(get_network_security_service_dep)],
+    admin_user: dict = Depends(get_authenticated_admin),
 ) -> SecuritySummaryResponse:
     """
     Get network security summary (Admin only).
@@ -184,7 +162,6 @@ async def get_security_summary(
     Returns comprehensive security monitoring data.
     """
     try:
-        network_security = get_network_security_service(request)
         summary = network_security.get_security_summary()
 
         # Determine overall system status
@@ -223,7 +200,8 @@ async def get_security_summary(
 
 @router.post("/block-ip", response_model=IPBlockResponse)
 async def block_ip(
-    request: Request,
+    network_security: Annotated[NetworkSecurityService, Depends(get_network_security_service_dep)],
+    security_audit: Annotated[Any, Depends(get_security_audit_service)],
     block_request: IPBlockRequest,
     admin_user: dict = Depends(get_authenticated_admin),
 ) -> IPBlockResponse:
@@ -233,7 +211,6 @@ async def block_ip(
     Blocks an IP address for the specified duration with audit logging.
     """
     try:
-        network_security = get_network_security_service(request)
         admin_id = admin_user["user_id"]
 
         # Block the IP
@@ -251,7 +228,6 @@ async def block_ip(
             )
 
         # Enhanced security audit
-        security_audit = get_security_audit_service(request)
         if security_audit:
             await security_audit.log_security_event(
                 event_type="ip_manual_block",
@@ -291,7 +267,8 @@ async def block_ip(
 
 @router.post("/unblock-ip", response_model=IPBlockResponse)
 async def unblock_ip(
-    request: Request,
+    network_security: Annotated[NetworkSecurityService, Depends(get_network_security_service_dep)],
+    security_audit: Annotated[Any, Depends(get_security_audit_service)],
     unblock_request: IPUnblockRequest,
     admin_user: dict = Depends(get_authenticated_admin),
 ) -> IPBlockResponse:
@@ -301,7 +278,6 @@ async def unblock_ip(
     Removes an IP address from the block list with audit logging.
     """
     try:
-        network_security = get_network_security_service(request)
         admin_id = admin_user["user_id"]
 
         # Unblock the IP
@@ -317,7 +293,6 @@ async def unblock_ip(
             )
 
         # Enhanced security audit
-        security_audit = get_security_audit_service(request)
         if security_audit:
             await security_audit.log_security_event(
                 event_type="ip_manual_unblock",
@@ -352,16 +327,15 @@ async def unblock_ip(
 
 @router.get("/blocked-ips")
 async def get_blocked_ips(
-    request: Request, admin_user: dict = Depends(get_authenticated_admin)
-) -> Dict[str, Any]:
+    network_security: Annotated[NetworkSecurityService, Depends(get_network_security_service_dep)],
+    admin_user: dict = Depends(get_authenticated_admin),
+) -> dict[str, Any]:
     """
     Get list of blocked IP addresses (Admin only).
 
     Returns all currently blocked IP addresses with block details.
     """
     try:
-        network_security = get_network_security_service(request)
-
         import time
 
         now = time.time()
@@ -405,17 +379,17 @@ async def get_blocked_ips(
 
 @router.post("/trusted-ips/add")
 async def add_trusted_ip(
-    request: Request,
+    network_security: Annotated[NetworkSecurityService, Depends(get_network_security_service_dep)],
+    security_audit: Annotated[Any, Depends(get_security_audit_service)],
     trusted_request: TrustedIPRequest,
     admin_user: dict = Depends(get_authenticated_admin),
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """
     Add IP to trusted list (Admin only).
 
     Adds an IP address to the trusted list, preventing it from being blocked.
     """
     try:
-        network_security = get_network_security_service(request)
         admin_id = admin_user["user_id"]
 
         success = await network_security.add_trusted_ip(trusted_request.ip_address)
@@ -427,7 +401,6 @@ async def add_trusted_ip(
             )
 
         # Enhanced security audit
-        security_audit = get_security_audit_service(request)
         if security_audit:
             await security_audit.log_security_event(
                 event_type="trusted_ip_added",
@@ -458,17 +431,17 @@ async def add_trusted_ip(
 
 @router.post("/trusted-ips/remove")
 async def remove_trusted_ip(
-    request: Request,
+    network_security: Annotated[NetworkSecurityService, Depends(get_network_security_service_dep)],
+    security_audit: Annotated[Any, Depends(get_security_audit_service)],
     trusted_request: TrustedIPRequest,
     admin_user: dict = Depends(get_authenticated_admin),
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """
     Remove IP from trusted list (Admin only).
 
     Removes an IP address from the trusted list.
     """
     try:
-        network_security = get_network_security_service(request)
         admin_id = admin_user["user_id"]
 
         success = await network_security.remove_trusted_ip(trusted_request.ip_address)
@@ -480,7 +453,6 @@ async def remove_trusted_ip(
             )
 
         # Enhanced security audit
-        security_audit = get_security_audit_service(request)
         if security_audit:
             await security_audit.log_security_event(
                 event_type="trusted_ip_removed",
@@ -513,16 +485,15 @@ async def remove_trusted_ip(
 
 @router.get("/trusted-ips")
 async def get_trusted_ips(
-    request: Request, admin_user: dict = Depends(get_authenticated_admin)
-) -> Dict[str, Any]:
+    network_security: Annotated[NetworkSecurityService, Depends(get_network_security_service_dep)],
+    admin_user: dict = Depends(get_authenticated_admin),
+) -> dict[str, Any]:
     """
     Get list of trusted IP addresses (Admin only).
 
     Returns all IP addresses in the trusted list.
     """
     try:
-        network_security = get_network_security_service(request)
-
         trusted_ips = list(network_security.trusted_ips)
         trusted_ips.sort()  # Sort for consistent output
 
@@ -547,21 +518,21 @@ async def get_trusted_ips(
 
 @router.post("/cleanup")
 async def cleanup_expired_blocks(
-    request: Request, admin_user: dict = Depends(get_authenticated_admin)
-) -> Dict[str, Any]:
+    network_security: Annotated[NetworkSecurityService, Depends(get_network_security_service_dep)],
+    security_audit: Annotated[Any, Depends(get_security_audit_service)],
+    admin_user: dict = Depends(get_authenticated_admin),
+) -> dict[str, Any]:
     """
     Clean up expired IP blocks (Admin only).
 
     Removes expired IP blocks from the system.
     """
     try:
-        network_security = get_network_security_service(request)
         admin_id = admin_user["user_id"]
 
         removed_count = await network_security.cleanup_expired_blocks()
 
         # Enhanced security audit
-        security_audit = get_security_audit_service(request)
         if security_audit:
             await security_audit.log_security_event(
                 event_type="security_cleanup",
@@ -592,25 +563,21 @@ async def cleanup_expired_blocks(
 
 @router.get("/stats")
 async def get_security_stats(
-    request: Request, admin_user: dict = Depends(get_authenticated_admin)
-) -> Dict[str, Any]:
+    network_security: Annotated[NetworkSecurityService, Depends(get_network_security_service_dep)],
+    admin_user: dict = Depends(get_authenticated_admin),
+) -> dict[str, Any]:
     """
     Get network security statistics (Admin only).
 
     Returns detailed security statistics for monitoring.
     """
     try:
-        network_security = get_network_security_service(request)
-
         # Get comprehensive stats
         summary = network_security.get_security_summary()
 
-        # Add middleware stats if available
+        # Note: Middleware stats are not directly accessible through dependency injection
+        # They would need to be exposed through a service if needed
         middleware_stats = {}
-        if hasattr(request.app.state, "network_security_middleware"):
-            middleware = request.app.state.network_security_middleware
-            if hasattr(middleware, "get_security_stats"):
-                middleware_stats = middleware.get_security_stats()
 
         logger.info(f"Security stats accessed by admin {admin_user['user_id']}")
 

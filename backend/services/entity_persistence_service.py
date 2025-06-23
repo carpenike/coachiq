@@ -8,6 +8,7 @@ architecture with debounced writes and background processing.
 import asyncio
 import logging
 import random
+import time
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any
 
@@ -186,10 +187,10 @@ class EntityPersistenceService:
                 batch = {first_id}
 
                 # Debounce: collect more items that arrive within the delay window
-                deadline = asyncio.get_event_loop().time() + self._debounce_delay
+                deadline = time.perf_counter() + self._debounce_delay
 
                 while len(batch) < self._max_batch_size:
-                    remaining_time = deadline - asyncio.get_event_loop().time()
+                    remaining_time = deadline - time.perf_counter()
                     if remaining_time <= 0:
                         break  # Debounce window expired
 

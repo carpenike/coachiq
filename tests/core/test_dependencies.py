@@ -15,8 +15,8 @@ from backend.core.dependencies import (
     get_config_service,
     get_docs_service,
     get_entity_service,
-    get_feature_manager_from_request,
     get_github_update_checker,
+    get_service_registry,
     get_vector_service,
 )
 
@@ -88,22 +88,30 @@ class TestDependencies:
             get_can_service(self.mock_request)
 
     @pytest.mark.unit
-    def test_get_feature_manager_from_request_success(self):
-        """Test successful retrieval of feature manager."""
-        mock_manager = Mock()
-        self.mock_app.state.feature_manager = mock_manager
+    def test_get_service_registry_success(self):
+        """Test successful retrieval of service registry."""
+        mock_registry = Mock()
+        self.mock_app.state.service_registry = mock_registry
 
-        result = get_feature_manager_from_request(self.mock_request)
+        result = get_service_registry()
 
-        assert result is mock_manager
+        assert result is mock_registry
 
     @pytest.mark.unit
-    def test_get_feature_manager_from_request_not_initialized(self):
-        """Test error when feature manager is not initialized."""
-        del self.mock_app.state.feature_manager
+    def test_get_service_registry_not_initialized(self):
+        """Test error when service registry is not initialized."""
+        # Need to mock the module-level _service_registry
+        import backend.core.dependencies
 
-        with pytest.raises(RuntimeError, match="Feature manager not initialized"):
-            get_feature_manager_from_request(self.mock_request)
+        original_registry = backend.core.dependencies._service_registry
+        backend.core.dependencies._service_registry = None
+
+        try:
+            with pytest.raises(RuntimeError, match="Service registry not initialized"):
+                get_service_registry()
+        finally:
+            # Restore original value
+            backend.core.dependencies._service_registry = original_registry
 
     @pytest.mark.unit
     def test_get_config_service_success(self):
@@ -162,50 +170,51 @@ class TestDependencies:
     @pytest.mark.unit
     def test_get_github_update_checker_success(self):
         """Test successful retrieval of GitHub update checker."""
-        mock_feature_manager = Mock()
-        mock_feature = Mock()
+        mock_service_registry = Mock()
+        mock_service = Mock()
         mock_update_checker = Mock()
 
-        # Setup feature manager
-        self.mock_app.state.feature_manager = mock_feature_manager
-        mock_feature_manager.features = {"github_update_checker": mock_feature}
-        mock_feature.enabled = True
-        mock_feature.get_update_checker.return_value = mock_update_checker
+        # Setup service registry
+        self.mock_app.state.service_registry = mock_service_registry
+        mock_service_registry.has_service.return_value = True
+        mock_service_registry.get_service.return_value = mock_service
+        mock_service.get_update_checker.return_value = mock_update_checker
 
         result = get_github_update_checker(self.mock_request)
 
         assert result is mock_update_checker
-        mock_feature.get_update_checker.assert_called_once()
+        mock_service.get_update_checker.assert_called_once()
 
     @pytest.mark.unit
-    def test_get_github_update_checker_feature_not_found(self):
-        """Test error when GitHub update checker feature is not found."""
-        mock_feature_manager = Mock()
-        self.mock_app.state.feature_manager = mock_feature_manager
-        mock_feature_manager.features = {}  # Empty features dict
+    def test_get_github_update_checker_service_not_found(self):
+        """Test error when GitHub update checker service is not found."""
+        mock_service_registry = Mock()
+        self.mock_app.state.service_registry = mock_service_registry
+        mock_service_registry.has_service.return_value = False
 
-        with pytest.raises(RuntimeError, match="GitHub update checker feature not found"):
+        with pytest.raises(RuntimeError, match="GitHub update checker service not found"):
             get_github_update_checker(self.mock_request)
 
     @pytest.mark.unit
-    def test_get_github_update_checker_feature_disabled(self):
-        """Test error when GitHub update checker feature is disabled."""
-        mock_feature_manager = Mock()
-        mock_feature = Mock()
+    def test_get_github_update_checker_service_disabled(self):
+        """Test error when GitHub update checker service is disabled."""
+        mock_service_registry = Mock()
+        mock_service = Mock()
 
-        self.mock_app.state.feature_manager = mock_feature_manager
-        mock_feature_manager.features = {"github_update_checker": mock_feature}
-        mock_feature.enabled = False
+        self.mock_app.state.service_registry = mock_service_registry
+        mock_service_registry.has_service.return_value = True
+        mock_service_registry.get_service.return_value = mock_service
+        mock_service.enabled = False
 
-        with pytest.raises(RuntimeError, match="GitHub update checker feature is not enabled"):
+        with pytest.raises(RuntimeError, match="GitHub update checker service is not enabled"):
             get_github_update_checker(self.mock_request)
 
     @pytest.mark.unit
-    def test_get_github_update_checker_feature_manager_not_initialized(self):
-        """Test error when feature manager is not initialized for GitHub update checker."""
-        del self.mock_app.state.feature_manager
+    def test_get_github_update_checker_service_registry_not_initialized(self):
+        """Test error when service registry is not initialized for GitHub update checker."""
+        del self.mock_app.state.service_registry
 
-        with pytest.raises(RuntimeError, match="Feature manager not initialized"):
+        with pytest.raises(RuntimeError, match="Service registry not initialized"):
             get_github_update_checker(self.mock_request)
 
     @pytest.mark.integration
@@ -235,11 +244,6 @@ class TestDependencies:
             (get_app_state, "app_state", "Application state not initialized"),
             (get_entity_service, "entity_service", "Entity service not initialized"),
             (get_can_service, "can_service", "CAN service not initialized"),
-            (
-                get_feature_manager_from_request,
-                "feature_manager",
-                "Feature manager not initialized",
-            ),
             (get_config_service, "config_service", "Config service not initialized"),
             (get_docs_service, "docs_service", "Docs service not initialized"),
             (get_vector_service, "vector_service", "Vector service not initialized"),

@@ -1,5 +1,5 @@
 """
-Docs Service
+Docs Service (Refactored with Repository Pattern)
 
 Handles business logic for API documentation and OpenAPI schema generation, including:
 - OpenAPI schema retrieval and formatting
@@ -11,7 +11,10 @@ This service extracts documentation-related business logic from the API router l
 """
 
 import logging
-from typing import Any
+from typing import Any, Optional
+
+from backend.core.performance import PerformanceMonitor
+from backend.repositories.docs_repository import DocsRepository
 
 logger = logging.getLogger(__name__)
 
@@ -22,16 +25,52 @@ class DocsService:
 
     This service provides business logic for documentation operations while being
     agnostic to the presentation layer (HTTP, WebSocket, etc.).
+    Refactored to use repository pattern with performance monitoring.
     """
 
-    def __init__(self, app_instance: Any | None = None):
+    def __init__(
+        self,
+        docs_repository: DocsRepository,
+        performance_monitor: PerformanceMonitor,
+        app_instance: Any | None = None,
+    ):
         """
-        Initialize the docs service.
+        Initialize the docs service with repository.
 
         Args:
+            docs_repository: Repository for documentation data
+            performance_monitor: Performance monitoring instance
             app_instance: FastAPI app instance for schema generation
         """
+        self._repository = docs_repository
+        self._monitor = performance_monitor
         self.app_instance = app_instance
+
+        # Apply performance monitoring
+        self._apply_monitoring()
+
+    def _apply_monitoring(self) -> None:
+        """Apply performance monitoring to service methods."""
+        # Wrap methods with performance monitoring
+        self.get_openapi_schema = self._monitor.monitor_service_method(
+            "DocsService", "get_openapi_schema"
+        )(self.get_openapi_schema)
+
+        self.get_api_info = self._monitor.monitor_service_method("DocsService", "get_api_info")(
+            self.get_api_info
+        )
+
+        self.get_endpoint_list = self._monitor.monitor_service_method(
+            "DocsService", "get_endpoint_list"
+        )(self.get_endpoint_list)
+
+        self.get_schema_components = self._monitor.monitor_service_method(
+            "DocsService", "get_schema_components"
+        )(self.get_schema_components)
+
+        self.validate_schema = self._monitor.monitor_service_method(
+            "DocsService", "validate_schema"
+        )(self.validate_schema)
 
     async def get_openapi_schema(self) -> dict[str, Any]:
         """
@@ -43,6 +82,12 @@ class DocsService:
         Raises:
             RuntimeError: If app instance is not available or schema generation fails
         """
+        # Try to get from cache first
+        cached_schema = await self._repository.get_cached_schema()
+        if cached_schema:
+            logger.debug("Using cached OpenAPI schema")
+            return cached_schema
+
         if not self.app_instance:
             msg = "FastAPI app instance not available for schema generation"
             raise RuntimeError(msg)
@@ -60,6 +105,9 @@ class DocsService:
             if "info" in schema:
                 schema["info"]["x-generated-by"] = "coachiq-backend"
                 schema["info"]["x-schema-version"] = "1.0"
+
+            # Cache the schema
+            await self._repository.cache_schema(schema)
 
             return schema
 
@@ -288,3 +336,50 @@ class DocsService:
                 "warnings": [],
                 "info": {},
             }
+
+    async def store_endpoint_metadata(
+        self, endpoint_path: str, method: str, metadata: dict[str, Any]
+    ) -> bool:
+        """
+        Store additional metadata for an endpoint.
+
+        Args:
+            endpoint_path: API endpoint path
+            method: HTTP method
+            metadata: Additional metadata to store
+
+        Returns:
+            True if storage successful
+        """
+        return await self._repository.store_endpoint_metadata(endpoint_path, method, metadata)
+
+    async def get_endpoint_metadata(self, endpoint_path: str, method: str) -> dict[str, Any] | None:
+        """
+        Get stored metadata for an endpoint.
+
+        Args:
+            endpoint_path: API endpoint path
+            method: HTTP method
+
+        Returns:
+            Metadata if available, None otherwise
+        """
+        return await self._repository.get_endpoint_metadata(endpoint_path, method)
+
+    async def clear_cache(self) -> bool:
+        """
+        Clear all cached documentation data.
+
+        Returns:
+            True if cache cleared successfully
+        """
+        return await self._repository.clear_cache()
+
+    def get_cache_info(self) -> dict[str, Any]:
+        """
+        Get information about current cache state.
+
+        Returns:
+            Cache information
+        """
+        return self._repository.get_cache_info()

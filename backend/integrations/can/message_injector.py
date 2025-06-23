@@ -6,17 +6,22 @@ Includes safety checks, validation, and audit logging.
 """
 
 import asyncio
-import json
+import contextlib
 import logging
 import time
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Any, Callable, Optional
+from typing import Any, Optional
 
 import can
 
-from backend.models.can_message import CANMessage
-from backend.services.feature_base import Feature
+from backend.core.safety_interfaces import (
+    SafeStateAction,
+    SafetyAware,
+    SafetyClassification,
+    SafetyStatus,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -84,9 +89,7 @@ class InjectionRequest:
             raise ValueError(f"Burst count too high: {self.count} (max 1000)")
 
         if self.mode == InjectionMode.PERIODIC and self.interval < MIN_MESSAGE_INTERVAL:
-            raise ValueError(
-                f"Interval too short: {self.interval}s (min {MIN_MESSAGE_INTERVAL}s)"
-            )
+            raise ValueError(f"Interval too short: {self.interval}s (min {MIN_MESSAGE_INTERVAL}s)")
 
 
 @dataclass
@@ -98,7 +101,7 @@ class InjectionResult:
     messages_failed: int = 0
     start_time: float = field(default_factory=time.time)
     end_time: float = field(default_factory=time.time)
-    error: Optional[str] = None
+    error: str | None = None
     warnings: list[str] = field(default_factory=list)
 
     @property
@@ -113,40 +116,37 @@ class InjectionResult:
         return (self.messages_sent / total * 100) if total > 0 else 0.0
 
 
-class CANMessageInjector(Feature):
+class CANMessageInjector(SafetyAware):
     """
-    Safe CAN message injection tool.
+    Safe CAN message injection service for testing and diagnostics.
 
-    Features:
+    This service provides safety-critical CAN message injection capabilities with:
     - Multiple injection modes (single, burst, periodic, sequence)
     - Safety validation with configurable levels
     - Rate limiting and timing controls
     - Audit logging of all injections
     - J1939 protocol support
     - Dangerous message detection
+    - Emergency stop capabilities for safety compliance
     """
 
     def __init__(
         self,
-        name: str = "can_message_injector",
-        enabled: bool = True,
-        core: bool = False,
         safety_level: SafetyLevel = SafetyLevel.MODERATE,
-        audit_callback: Optional[Callable[[InjectionRequest, InjectionResult], None]] = None,
-        **kwargs,
+        audit_callback: Callable[[InjectionRequest, InjectionResult], None] | None = None,
     ):
         """
-        Initialize CAN message injector.
+        Initialize CAN message injector service.
 
         Args:
-            name: Feature name
-            enabled: Whether feature is enabled
-            core: Whether this is a core feature
-            safety_level: Safety validation level
-            audit_callback: Optional callback for audit logging
-            **kwargs: Additional feature configuration
+            safety_level: Safety validation level for message injection
+            audit_callback: Optional callback for audit logging of all injections
         """
-        super().__init__(name=name, enabled=enabled, core=core, **kwargs)
+        # Initialize as safety-aware service
+        super().__init__(
+            safety_classification=SafetyClassification.OPERATIONAL,
+            safe_state_action=SafeStateAction.DISABLE,
+        )
 
         self.safety_level = safety_level
         self.audit_callback = audit_callback
@@ -154,6 +154,9 @@ class CANMessageInjector(Feature):
         # CAN interfaces
         self._buses: dict[str, can.BusABC] = {}
         self._active_injections: dict[str, asyncio.Task] = {}
+
+        # Service state
+        self._is_running = False
 
         # Statistics
         self._stats = {
@@ -163,18 +166,18 @@ class CANMessageInjector(Feature):
             "rate_limited": 0,
         }
 
-        logger.info(
-            "CANMessageInjector initialized: safety_level=%s",
-            safety_level.value
-        )
+        logger.info("CANMessageInjector initialized: safety_level=%s", safety_level.value)
 
-    async def startup(self) -> None:
-        """Start the message injector."""
-        logger.info("Starting CAN message injector")
+    async def start(self) -> None:
+        """Start the CAN message injector service."""
+        logger.info("Starting CAN message injector service")
+        self._is_running = True
+        self._set_safety_status(SafetyStatus.SAFE)
 
-    async def shutdown(self) -> None:
-        """Shutdown the message injector."""
-        logger.info("Shutting down CAN message injector")
+    async def stop(self) -> None:
+        """Stop the CAN message injector service."""
+        logger.info("Stopping CAN message injector service")
+        self._is_running = False
 
         # Cancel all active injections
         for task_id, task in self._active_injections.items():
@@ -183,26 +186,149 @@ class CANMessageInjector(Feature):
 
         # Wait for tasks to complete
         if self._active_injections:
-            await asyncio.gather(
-                *self._active_injections.values(),
-                return_exceptions=True
-            )
+            await asyncio.gather(*self._active_injections.values(), return_exceptions=True)
 
         # Close CAN buses
         for interface, bus in self._buses.items():
             logger.debug("Closing CAN bus: %s", interface)
-            bus.shutdown()
+            self._shutdown_bus(bus)
 
         self._buses.clear()
         self._active_injections.clear()
+
+    async def emergency_stop(self, reason: str) -> None:
+        """
+        Emergency stop all CAN message injection operations.
+
+        This method implements the SafetyAware emergency stop interface
+        for immediate cessation of all injection activities.
+
+        Args:
+            reason: Reason for emergency stop (for audit logging)
+        """
+        logger.critical("CAN message injector emergency stop: %s", reason)
+
+        # Set emergency stop state
+        self._set_emergency_stop_active(True)
+
+        # Immediately cancel all active injections
+        emergency_tasks = []
+        for task_id, task in self._active_injections.items():
+            logger.critical("Emergency cancelling injection task: %s", task_id)
+            task.cancel()
+            emergency_tasks.append(task)
+
+        # Wait for immediate cancellation
+        if emergency_tasks:
+            await asyncio.gather(*emergency_tasks, return_exceptions=True)
+
+        # Close all CAN buses immediately
+        for interface, bus in self._buses.items():
+            logger.critical("Emergency closing CAN bus: %s", interface)
+            try:
+                self._shutdown_bus(bus)
+            except Exception as e:
+                logger.error("Error closing CAN bus %s during emergency stop: %s", interface, e)
+
+        self._buses.clear()
+        self._active_injections.clear()
+        self._is_running = False
+
+        # Audit the emergency stop
+        if self.audit_callback:
+            try:
+                # Create a special emergency stop audit record
+                emergency_request = InjectionRequest(
+                    user="SYSTEM",
+                    interface="ALL",
+                    can_id=0x000,
+                    data=b"",
+                    mode=InjectionMode.SINGLE,
+                    reason=f"EMERGENCY_STOP: {reason}",
+                    description="Emergency stop of all injection operations",
+                )
+                emergency_result = InjectionResult(
+                    success=True, messages_sent=0, error=f"Emergency stop executed: {reason}"
+                )
+                self.audit_callback(emergency_request, emergency_result)
+            except Exception as e:
+                logger.error("Error during emergency stop audit: %s", e)
+
+        logger.critical("CAN message injector emergency stop completed")
+
+    async def get_safety_status(self) -> SafetyStatus:
+        """Get current safety status of the CAN message injector."""
+        if self._emergency_stop_active:
+            return SafetyStatus.EMERGENCY_STOP
+        if not self._is_running:
+            return SafetyStatus.SAFE
+        if len(self._active_injections) > 0:
+            # Check if any dangerous operations are active
+            if any(
+                "DANGEROUS" in task.get_name()
+                for task in self._active_injections.values()
+                if hasattr(task, "get_name")
+            ):
+                return SafetyStatus.DEGRADED
+            return SafetyStatus.SAFE
+        return SafetyStatus.SAFE
+
+    async def validate_safety_interlock(self, operation: str) -> bool:
+        """
+        Validate if CAN injection operation is safe to perform.
+
+        Args:
+            operation: Operation being validated (e.g., "inject_message", "start_periodic")
+
+        Returns:
+            True if operation is safe to perform
+        """
+        # Check basic safety status
+        safety_status = await self.get_safety_status()
+        if safety_status == SafetyStatus.EMERGENCY_STOP:
+            logger.warning("CAN injection operation %s blocked: emergency stop active", operation)
+            return False
+
+        if not self._is_running:
+            logger.warning("CAN injection operation %s blocked: service not running", operation)
+            return False
+
+        # Additional operation-specific validations could be added here
+        return True
+
+    # Legacy methods for backward compatibility
+    async def startup(self) -> None:
+        """Legacy startup method - delegates to start()."""
+        await self.start()
+
+    async def shutdown(self) -> None:
+        """Legacy shutdown method - delegates to stop()."""
+        await self.stop()
+
+    def _shutdown_bus(self, bus: can.BusABC) -> None:
+        """Gracefully shutdown a CAN bus with multiple fallback methods."""
+        if not bus:
+            return
+
+        # Try shutdown methods in order of preference
+        shutdown_methods = ["shutdown", "close", "stop"]
+
+        for method_name in shutdown_methods:
+            with contextlib.suppress(Exception):
+                if hasattr(bus, method_name):
+                    method = getattr(bus, method_name)
+                    if callable(method):
+                        method()
+                        logger.debug("CAN bus shutdown using method: %s", method_name)
+                        return
+
+        logger.warning("Unable to shutdown CAN bus - no shutdown method found")
 
     def _get_or_create_bus(self, interface: str) -> can.BusABC:
         """Get or create CAN bus for interface."""
         if interface not in self._buses:
             try:
-                self._buses[interface] = can.interface.Bus(
-                    interface, bustype="socketcan"
-                )
+                self._buses[interface] = can.interface.Bus(interface, bustype="socketcan")
                 logger.info("Created CAN bus for interface: %s", interface)
             except Exception as e:
                 logger.error("Failed to create CAN bus %s: %s", interface, e)
@@ -243,7 +369,7 @@ class CANMessageInjector(Feature):
             if self.safety_level == SafetyLevel.STRICT:
                 self._stats["dangerous_blocked"] += 1
                 raise ValueError(f"Safety violation: {msg}")
-            elif self.safety_level == SafetyLevel.MODERATE:
+            if self.safety_level == SafetyLevel.MODERATE:
                 warnings.append(f"Warning: {msg}")
 
         # Check for broadcast storms
@@ -287,6 +413,13 @@ class CANMessageInjector(Feature):
         result = InjectionResult(success=False)
 
         try:
+            # Check safety interlock first
+            if not await self.validate_safety_interlock("inject_message"):
+                result.error = "Safety interlock violation: injection blocked"
+                result.warnings.append("Injection blocked by safety interlock")
+                logger.warning("CAN injection blocked by safety interlock: %s", request)
+                return result
+
             # Validate safety
             warnings = self._validate_safety(request)
             result.warnings.extend(warnings)
@@ -294,8 +427,11 @@ class CANMessageInjector(Feature):
             # Log injection attempt
             logger.info(
                 "Injection request: interface=%s, can_id=0x%X, mode=%s, user=%s, reason=%s",
-                request.interface, request.can_id, request.mode.value,
-                request.user, request.reason
+                request.interface,
+                request.can_id,
+                request.mode.value,
+                request.user,
+                request.reason,
             )
 
             # Get CAN bus
@@ -387,8 +523,7 @@ class CANMessageInjector(Feature):
                     raise
 
         logger.debug(
-            "Injected burst: sent=%d, failed=%d",
-            result.messages_sent, result.messages_failed
+            "Injected burst: sent=%d, failed=%d", result.messages_sent, result.messages_failed
         )
 
     async def _inject_periodic(
@@ -447,7 +582,7 @@ class CANMessageInjector(Feature):
             except asyncio.CancelledError:
                 pass
 
-    async def stop_injection(self, pattern: Optional[str] = None) -> int:
+    async def stop_injection(self, pattern: str | None = None) -> int:
         """
         Stop active periodic injections.
 
@@ -502,16 +637,12 @@ class CANMessageInjector(Feature):
 
         if pdu_format < 240:  # PDU1 - destination specific
             can_id = (
-                (priority & 0x7) << 26 |
-                (pgn & 0x3FF00) << 8 |
-                (destination_address & 0xFF) << 8 |
-                (source_address & 0xFF)
+                (priority & 0x7) << 26
+                | (pgn & 0x3FF00) << 8
+                | (destination_address & 0xFF) << 8
+                | (source_address & 0xFF)
             )
         else:  # PDU2 - broadcast
-            can_id = (
-                (priority & 0x7) << 26 |
-                (pgn & 0x3FFFF) << 8 |
-                (source_address & 0xFF)
-            )
+            can_id = (priority & 0x7) << 26 | (pgn & 0x3FFFF) << 8 | (source_address & 0xFF)
 
         return can_id | 0x80000000  # Set extended ID bit

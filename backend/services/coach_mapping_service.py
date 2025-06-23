@@ -1,46 +1,86 @@
 """
-Coach Mapping Service
+Coach Mapping Service (Refactored with Repository Pattern)
 
 Service for managing coach mapping configurations with interface resolution.
 Integrates logical CAN interfaces with coach mapping definitions.
 """
 
+import asyncio
 import logging
-from typing import Any
+from typing import Any, Dict, List, Optional, Set
 
-import yaml
-
-from backend.core.config import get_rvc_settings
+from backend.core.performance import PerformanceMonitor
+from backend.repositories.coach_mapping_repository import CoachMappingRepository
 
 logger = logging.getLogger(__name__)
 
 
 class CoachMappingService:
-    """Service for managing coach mapping configurations."""
+    """Service for managing coach mapping configurations with performance monitoring."""
 
-    def __init__(self, can_interface_service):
-        self.rvc_settings = get_rvc_settings()
+    def __init__(
+        self,
+        coach_mapping_repository: CoachMappingRepository,
+        performance_monitor: PerformanceMonitor,
+        can_interface_service: Any | None = None,
+    ):
+        """Initialize coach mapping service with repository.
+
+        Args:
+            coach_mapping_repository: Repository for coach mapping data
+            performance_monitor: Performance monitoring instance
+            can_interface_service: Optional CAN interface service for resolution
+        """
+        self._repository = coach_mapping_repository
+        self._monitor = performance_monitor
         self.can_interface_service = can_interface_service
-        self._mapping_cache = None
+        self._resolved_cache: dict[str, Any] | None = None
+        self._cache_lock = asyncio.Lock()
 
-    def get_current_mapping(self) -> dict[str, Any]:
+        # Apply performance monitoring
+        self._apply_monitoring()
+
+    def _apply_monitoring(self) -> None:
+        """Apply performance monitoring to service methods."""
+        # Wrap methods with performance monitoring
+        self.get_current_mapping = self._monitor.monitor_service_method(
+            "CoachMappingService", "get_current_mapping"
+        )(self.get_current_mapping)
+
+        self.reload_mapping = self._monitor.monitor_service_method(
+            "CoachMappingService", "reload_mapping"
+        )(self.reload_mapping)
+
+        self.get_interface_requirements = self._monitor.monitor_service_method(
+            "CoachMappingService", "get_interface_requirements"
+        )(self.get_interface_requirements)
+
+        self.validate_interface_compatibility = self._monitor.monitor_service_method(
+            "CoachMappingService", "validate_interface_compatibility"
+        )(self.validate_interface_compatibility)
+
+        self.get_mapping_metadata = self._monitor.monitor_service_method(
+            "CoachMappingService", "get_mapping_metadata"
+        )(self.get_mapping_metadata)
+
+    async def get_current_mapping(self) -> dict[str, Any]:
         """Get current coach mapping with resolved interfaces."""
-        if self._mapping_cache is None:
-            self._load_mapping()
-        return self._mapping_cache or {}
+        async with self._cache_lock:
+            if self._resolved_cache is None:
+                await self._load_mapping()
+            return self._resolved_cache or {}
 
-    def _load_mapping(self):
-        """Load coach mapping from file with interface resolution."""
-        mapping_path = self.rvc_settings.get_coach_mapping_path()
-
-        with open(mapping_path) as f:
-            raw_mapping = yaml.safe_load(f)
+    async def _load_mapping(self) -> None:
+        """Load coach mapping from repository with interface resolution."""
+        raw_mapping = await self._repository.load_mapping()
 
         # Resolve logical interfaces to physical interfaces
-        self._mapping_cache = self._resolve_interfaces(raw_mapping)
+        self._resolved_cache = self._resolve_interfaces(raw_mapping)
 
     def _resolve_interfaces(self, mapping: dict[str, Any]) -> dict[str, Any]:
         """Resolve logical interfaces to physical interfaces throughout mapping."""
+        if not self.can_interface_service:
+            return mapping
 
         def resolve_recursive(obj):
             if isinstance(obj, dict):
@@ -51,7 +91,7 @@ class CoachMappingService:
                             logical_interface
                         )
                         obj["_logical_interface"] = logical_interface  # Keep for reference
-                    except ValueError:
+                    except (ValueError, AttributeError):
                         # Keep original if can't resolve
                         pass
 
@@ -66,23 +106,25 @@ class CoachMappingService:
         resolve_recursive(resolved)
         return resolved
 
-    def reload_mapping(self):
-        """Reload coach mapping from file."""
-        self._mapping_cache = None
-        self._load_mapping()
+    async def reload_mapping(self) -> None:
+        """Reload coach mapping from repository."""
+        async with self._cache_lock:
+            self._resolved_cache = None
+            await self._load_mapping()
 
-    def get_interface_requirements(self) -> dict[str, Any]:
-        """Get interface requirements from coach config (informational only)."""
-        mapping = self.get_current_mapping()
-        return mapping.get("interface_requirements", {})
+    async def get_interface_requirements(self) -> dict[str, Any]:
+        """Get interface requirements from coach config."""
+        return await self._repository.get_interface_requirements()
 
     def get_runtime_interface_mappings(self) -> dict[str, str]:
         """Get actual runtime interface mappings from CAN service."""
-        return self.can_interface_service.get_all_mappings()
+        if self.can_interface_service:
+            return self.can_interface_service.get_all_mappings()
+        return {}
 
-    def validate_interface_compatibility(self) -> dict[str, Any]:
+    async def validate_interface_compatibility(self) -> dict[str, Any]:
         """Validate that runtime mappings are compatible with coach requirements."""
-        requirements = self.get_interface_requirements()
+        requirements = await self.get_interface_requirements()
         runtime_mappings = self.get_runtime_interface_mappings()
 
         issues = []
@@ -118,49 +160,38 @@ class CoachMappingService:
             "runtime_mappings": runtime_mappings,
         }
 
-    def get_mapping_metadata(self) -> dict[str, Any]:
+    async def get_mapping_metadata(self) -> dict[str, Any]:
         """Get metadata about current coach mapping."""
-        mapping = self.get_current_mapping()
+        # Get data from repository
+        coach_info = await self._repository.get_coach_info()
+        file_metadata = await self._repository.get_file_metadata()
+        interface_requirements = await self._repository.get_interface_requirements()
+        device_count = await self._repository.count_devices()
+        interfaces_used = await self._repository.get_interfaces_used()
 
-        # Extract metadata
-        coach_info = mapping.get("coach_info", {})
-        file_metadata = mapping.get("file_metadata", {})
-        interface_requirements = mapping.get("interface_requirements", {})
+        # Get resolved mapping for logical/physical tracking
+        mapping = await self.get_current_mapping()
 
-        # Count devices and interfaces
-        device_count = 0
         logical_interfaces_used = set()
         physical_interfaces_used = set()
 
-        for dgn_hex, instances in mapping.items():
-            if dgn_hex.startswith(
-                (
-                    "1",
-                    "2",
-                    "3",
-                    "4",
-                    "5",
-                    "6",
-                    "7",
-                    "8",
-                    "9",
-                    "A",
-                    "B",
-                    "C",
-                    "D",
-                    "E",
-                    "F",
-                )
-            ):
-                for devices in instances.values():
-                    if isinstance(devices, list):
-                        device_count += len(devices)
-                        for device in devices:
-                            if isinstance(device, dict) and "interface" in device:
-                                # Track both resolved physical and original logical interfaces
-                                physical_interfaces_used.add(device["interface"])
-                                if "_logical_interface" in device:
-                                    logical_interfaces_used.add(device["_logical_interface"])
+        # Extract logical and physical interfaces from resolved mapping
+        def extract_interfaces(obj):
+            if isinstance(obj, dict):
+                if "interface" in obj:
+                    physical_interfaces_used.add(obj["interface"])
+                if "_logical_interface" in obj:
+                    logical_interfaces_used.add(obj["_logical_interface"])
+                for value in obj.values():
+                    extract_interfaces(value)
+            elif isinstance(obj, list):
+                for item in obj:
+                    extract_interfaces(item)
+
+        extract_interfaces(mapping)
+
+        # Validate compatibility
+        compatibility = await self.validate_interface_compatibility()
 
         return {
             "coach_info": coach_info,
@@ -169,6 +200,6 @@ class CoachMappingService:
             "logical_interfaces_used": list(logical_interfaces_used),
             "physical_interfaces_used": list(physical_interfaces_used),
             "interface_requirements": interface_requirements,
-            "interface_compatibility": self.validate_interface_compatibility(),
-            "mapping_path": str(self.rvc_settings.get_coach_mapping_path()),
+            "interface_compatibility": compatibility,
+            "mapping_path": str(self._repository.get_mapping_path()),
         }

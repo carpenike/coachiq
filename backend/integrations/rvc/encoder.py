@@ -20,7 +20,6 @@ class EncodingError(Exception):
     """Raised when encoding fails."""
 
 
-
 class RVCEncoder:
     """
     RVC protocol encoder for converting high-level commands to CAN messages.
@@ -357,7 +356,6 @@ class RVCEncoder:
         # Build 29-bit CAN ID
         # Format: [Priority(3)] [Reserved(1)] [Data Page(1)] [PDU Format(8)] [PDU Specific(8)] [Source Address(8)]
         return (priority << 26) | (pgn << 8) | source_addr
-
 
     def validate_command(self, entity_id: str, command: ControlCommand) -> tuple[bool, str]:
         """

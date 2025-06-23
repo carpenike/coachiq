@@ -6,8 +6,8 @@ import asyncio
 import tempfile
 from pathlib import Path
 
-import pytest
 import cantools
+import pytest
 from cantools.database import Database, Message, Signal
 from cantools.database.can.database import Node
 
@@ -85,7 +85,7 @@ async def dbc_file():
     """Create a temporary DBC file for testing."""
     db = create_test_dbc()
 
-    with tempfile.NamedTemporaryFile(suffix='.dbc', delete=False) as f:
+    with tempfile.NamedTemporaryFile(suffix=".dbc", delete=False) as f:
         db.save(f.name)
         filepath = Path(f.name)
 
@@ -147,12 +147,7 @@ class TestDBCDatabase:
 
     async def test_encode_message(self, dbc_db):
         """Test encoding a CAN message."""
-        data = {
-            "Temperature": 25.0,
-            "Pressure": 1.013,
-            "Status": 1,
-            "Mode": 2
-        }
+        data = {"Temperature": 25.0, "Pressure": 1.013, "Status": 1, "Mode": 2}
 
         msg_id, encoded = await dbc_db.encode_message("TestMessage", data)
 

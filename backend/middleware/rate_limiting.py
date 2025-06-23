@@ -8,6 +8,7 @@ rate limiting with configurable limits per endpoint.
 
 import logging
 from collections.abc import Callable
+from typing import Any
 
 from fastapi import Request, Response
 from slowapi import Limiter, _rate_limit_exceeded_handler
@@ -78,26 +79,58 @@ def _get_auth_client_id(request: Request) -> str:
     return client_ip
 
 
-# Create rate limiter instance
-settings = get_settings()
+# Create rate limiter instances lazily
+_limiter = None
+_auth_limiter = None
 
-# Initialize limiter with memory storage (Redis can be added later)
-limiter = Limiter(
-    key_func=_get_client_id,
-    default_limits=(
-        []
-        if not settings.security.rate_limit_enabled
-        else [f"{settings.security.rate_limit_requests}/minute"]
-    ),
-    enabled=settings.security.rate_limit_enabled,
-)
 
-# Auth-specific limiter with stricter limits
-auth_limiter = Limiter(
-    key_func=_get_auth_client_id,
-    default_limits=[],  # No default limits, defined per endpoint
-    enabled=settings.security.rate_limit_enabled,
-)
+def get_limiter():
+    """Get or create the rate limiter instance."""
+    global _limiter
+    if _limiter is None:
+        settings = get_settings()
+        # Initialize limiter with memory storage (Redis can be added later)
+        _limiter = Limiter(
+            key_func=_get_client_id,
+            default_limits=(
+                []
+                if not settings.security.rate_limit_enabled
+                else [f"{settings.security.rate_limit_requests}/minute"]
+            ),
+            enabled=settings.security.rate_limit_enabled,
+        )
+    return _limiter
+
+
+def get_auth_limiter():
+    """Get or create the auth rate limiter instance."""
+    global _auth_limiter
+    if _auth_limiter is None:
+        settings = get_settings()
+        # Auth-specific limiter with stricter limits
+        _auth_limiter = Limiter(
+            key_func=_get_auth_client_id,
+            default_limits=[],  # No default limits, defined per endpoint
+            enabled=settings.security.rate_limit_enabled,
+        )
+    return _auth_limiter
+
+
+# Module-level instances that get initialized on first access
+class LazyLimiter:
+    def __init__(self, getter):
+        self.getter = getter
+        self._instance = None
+
+    def __getattr__(self, name):
+        if self._instance is None:
+            self._instance = self.getter()
+        return getattr(self._instance, name)
+
+
+# For backward compatibility
+limiter = LazyLimiter(get_limiter)
+auth_limiter = LazyLimiter(get_auth_limiter)
 
 
 def create_auth_rate_limit() -> str:
@@ -107,6 +140,7 @@ def create_auth_rate_limit() -> str:
     Returns:
         str: Rate limit specification for auth endpoints
     """
+    settings = get_settings()
     attempts = settings.auth.rate_limit_auth_attempts
     window = settings.auth.rate_limit_window_minutes
     return f"{attempts}/{window}minutes"
@@ -192,6 +226,7 @@ def check_auth_rate_limit(request: Request, username: str | None = None) -> None
     Raises:
         HTTPException: If rate limit is exceeded
     """
+    settings = get_settings()
     if not settings.security.rate_limit_enabled:
         return
 
@@ -222,6 +257,7 @@ def get_rate_limit_decorator(limit_string: str):
     Returns:
         Decorator function for FastAPI endpoints
     """
+    settings = get_settings()
     if not settings.security.rate_limit_enabled:
         # Return a no-op decorator if rate limiting is disabled
         def no_op_decorator(func):
@@ -229,23 +265,67 @@ def get_rate_limit_decorator(limit_string: str):
 
         return no_op_decorator
 
-    return auth_limiter.limit(limit_string)
+    return get_auth_limiter().limit(limit_string)
 
 
-# Pre-configured decorators for common use cases
-auth_rate_limit = get_rate_limit_decorator(create_auth_rate_limit())
-magic_link_rate_limit = get_rate_limit_decorator("3/5minutes")  # More restrictive for email sending
-admin_api_rate_limit = get_rate_limit_decorator("10/minute")  # Moderate limits for admin APIs
+# Pre-configured decorators for common use cases - lazy initialization
+def auth_rate_limit(func):
+    return get_rate_limit_decorator(create_auth_rate_limit())(func)
+
+
+def magic_link_rate_limit(func):
+    return get_rate_limit_decorator("3/5minutes")(func)  # More restrictive for email sending
+
+
+def admin_api_rate_limit(func):
+    return get_rate_limit_decorator("10/minute")(func)  # Moderate limits for admin APIs
+
+
+def conditional_auth_rate_limit():
+    """
+    Create a dependency that applies auth rate limiting only if auth is enabled.
+
+    This prevents rate limiting from triggering on auth endpoints when
+    authentication is disabled (e.g., in development mode).
+
+    Returns:
+        A FastAPI dependency function
+    """
+
+    async def check_and_apply_limit(request: Request):
+        """Apply rate limiting only if authentication is enabled."""
+        # Import here to avoid circular imports
+        from backend.core.dependencies import get_auth_manager
+        from backend.services.auth_manager import AuthMode
+
+        # Get the auth manager
+        auth_manager = get_auth_manager()
+
+        # Only apply rate limiting if authentication is not disabled
+        if auth_manager.auth_mode != AuthMode.NONE:
+            # Get the limiter and apply the rate limit
+            limiter = get_auth_limiter()
+            limit_str = create_auth_rate_limit()
+            # Apply the limit directly
+            limit_func = limiter.limit(limit_str)
+            # The limiter.limit returns a decorator, we need to call it with the endpoint function
+            # Since we're in a dependency, we just need to check the rate limit
+            await check_auth_rate_limit(request)
+
+    return check_and_apply_limit
 
 
 # Export rate limiting state for monitoring
-def get_rate_limit_stats() -> dict[str, any]:
+def get_rate_limit_stats() -> dict[str, Any]:
     """
     Get current rate limiting statistics for monitoring.
 
     Returns:
         dict: Rate limiting statistics and configuration
     """
+    settings = get_settings()
+    limiter = get_limiter()
+    auth_limiter = get_auth_limiter()
     return {
         "enabled": settings.security.rate_limit_enabled,
         "auth_attempts_limit": settings.auth.rate_limit_auth_attempts,

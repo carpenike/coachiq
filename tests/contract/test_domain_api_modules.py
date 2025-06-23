@@ -5,8 +5,9 @@ This module tests the frontend domain-specific API modules to ensure they work
 correctly with the OpenAPI specification and provide proper fallback behavior.
 """
 
+from unittest.mock import AsyncMock, MagicMock, patch
+
 import pytest
-from unittest.mock import patch, AsyncMock, MagicMock
 
 
 class TestDomainAPIModules:
@@ -16,19 +17,19 @@ class TestDomainAPIModules:
         """Test that entities domain API module imports correctly"""
         try:
             from frontend.src.api.domains.entities import (
-                fetchEntitiesV2,
-                fetchEntityV2,
-                controlEntityV2,
                 bulkControlEntitiesV2,
-                fetchSchemasV2,
-                fetchEntitiesHealthV2,
-                bulkTurnLightsOn,
-                bulkTurnLightsOff,
                 bulkSetLightBrightness,
                 bulkToggleEntities,
+                bulkTurnLightsOff,
+                bulkTurnLightsOn,
+                controlEntityV2,
                 convertEntityLegacyToV2,
                 convertEntitySchemaToLegacy,
                 convertLegacyEntityCollection,
+                fetchEntitiesHealthV2,
+                fetchEntitiesV2,
+                fetchEntityV2,
+                fetchSchemasV2,
             )
 
             # All imports should be successful
@@ -44,16 +45,18 @@ class TestDomainAPIModules:
         """Test that domains index module imports correctly"""
         try:
             from frontend.src.api.domains.index import (
-                isDomainAPIAvailable,
-                getDomainAPIStatus,
-                withDomainAPIFallback,
                 defaultMigrationOptions,
+                getDomainAPIStatus,
+                isDomainAPIAvailable,
+                withDomainAPIFallback,
             )
 
             assert callable(isDomainAPIAvailable), "isDomainAPIAvailable should be callable"
             assert callable(getDomainAPIStatus), "getDomainAPIStatus should be callable"
             assert callable(withDomainAPIFallback), "withDomainAPIFallback should be callable"
-            assert isinstance(defaultMigrationOptions, dict), "defaultMigrationOptions should be a dict"
+            assert isinstance(defaultMigrationOptions, dict), (
+                "defaultMigrationOptions should be a dict"
+            )
 
         except ImportError as e:
             pytest.skip(f"Frontend modules not available in test environment: {e}")
@@ -62,17 +65,17 @@ class TestDomainAPIModules:
         """Test that domain types import correctly"""
         try:
             from frontend.src.api.types.domains import (
-                EntitySchema,
-                ControlCommandSchema,
                 BulkControlRequestSchema,
-                OperationResultSchema,
                 BulkOperationResultSchema,
+                ControlCommandSchema,
                 EntityCollectionSchema,
-                isEntitySchema,
+                EntitySchema,
+                OperationResultSchema,
                 isBulkOperationResult,
                 isEntityCollection,
-                validateControlCommand,
+                isEntitySchema,
                 validateBulkControlRequest,
+                validateControlCommand,
             )
 
             # Type guards should be callable
@@ -80,7 +83,9 @@ class TestDomainAPIModules:
             assert callable(isBulkOperationResult), "isBulkOperationResult should be callable"
             assert callable(isEntityCollection), "isEntityCollection should be callable"
             assert callable(validateControlCommand), "validateControlCommand should be callable"
-            assert callable(validateBulkControlRequest), "validateBulkControlRequest should be callable"
+            assert callable(validateBulkControlRequest), (
+                "validateBulkControlRequest should be callable"
+            )
 
         except ImportError as e:
             pytest.skip(f"Frontend modules not available in test environment: {e}")
@@ -130,15 +135,12 @@ class TestEntitySchemaValidation:
 
             # Valid requests
             valid_requests = [
-                {
-                    "entity_ids": ["light1", "light2"],
-                    "command": {"command": "set", "state": True}
-                },
+                {"entity_ids": ["light1", "light2"], "command": {"command": "set", "state": True}},
                 {
                     "entity_ids": ["light1"],
                     "command": {"command": "toggle"},
                     "ignore_errors": True,
-                    "timeout_seconds": 10.0
+                    "timeout_seconds": 10.0,
                 },
             ]
 
@@ -178,7 +180,7 @@ class TestEntityTypeGuards:
                 "state": {"on": True, "brightness": 75},
                 "area": "living_room",
                 "last_updated": "2025-01-11T00:00:00Z",
-                "available": True
+                "available": True,
             }
 
             assert isEntitySchema(valid_entity), "Valid entity should pass type guard"
@@ -193,7 +195,9 @@ class TestEntityTypeGuards:
             ]
 
             for entity in invalid_entities:
-                assert not isEntitySchema(entity), f"Invalid entity should fail type guard: {entity}"
+                assert not isEntitySchema(entity), (
+                    f"Invalid entity should fail type guard: {entity}"
+                )
 
         except ImportError as e:
             pytest.skip(f"Frontend modules not available in test environment: {e}")
@@ -210,7 +214,7 @@ class TestEntityTypeGuards:
                 "page": 1,
                 "page_size": 50,
                 "has_next": False,
-                "filters_applied": {}
+                "filters_applied": {},
             }
 
             assert isEntityCollection(valid_collection), "Valid collection should pass type guard"
@@ -224,7 +228,9 @@ class TestEntityTypeGuards:
             ]
 
             for collection in invalid_collections:
-                assert not isEntityCollection(collection), f"Invalid collection should fail type guard: {collection}"
+                assert not isEntityCollection(collection), (
+                    f"Invalid collection should fail type guard: {collection}"
+                )
 
         except ImportError as e:
             pytest.skip(f"Frontend modules not available in test environment: {e}")
@@ -236,8 +242,8 @@ class TestLegacyCompatibility:
     def test_legacy_to_v2_entity_conversion(self):
         """Test conversion from legacy entity to v2 format"""
         try:
-            from frontend.src.api.types.domains import EntitySchema
             from frontend.src.api.domains.entities import convertEntityLegacyToV2
+            from frontend.src.api.types.domains import EntitySchema
 
             # Mock legacy entity
             legacy_entity = {
@@ -248,7 +254,7 @@ class TestLegacyCompatibility:
                 "raw": {"on": True, "brightness": 75},
                 "suggested_area": "living_room",
                 "last_updated": "2025-01-11T00:00:00Z",
-                "available": True
+                "available": True,
             }
 
             v2_entity = convertEntityLegacyToV2(legacy_entity)
@@ -279,7 +285,7 @@ class TestLegacyCompatibility:
                 "state": {"on": True, "brightness": 75},
                 "area": "living_room",
                 "last_updated": "2025-01-11T00:00:00Z",
-                "available": True
+                "available": True,
             }
 
             legacy_entity = convertEntitySchemaToLegacy(v2_entity)
@@ -305,14 +311,14 @@ class TestLegacyCompatibility:
                     "entity_id": "light1",
                     "friendly_name": "Living Room Light",
                     "device_type": "light",
-                    "raw": {"on": True}
+                    "raw": {"on": True},
                 },
                 "light2": {
                     "entity_id": "light2",
                     "friendly_name": "Kitchen Light",
                     "device_type": "light",
-                    "raw": {"on": False}
-                }
+                    "raw": {"on": False},
+                },
             }
 
             v2_collection = convertLegacyEntityCollection(legacy_collection)

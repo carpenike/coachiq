@@ -11,7 +11,23 @@ import globals from "globals";
 import tseslint from "typescript-eslint";
 
 export default tseslint.config(
-  { ignores: ["dist", "vite.config.ts", "vitest.config.ts", "htmlcov"] },
+  {
+    ignores: [
+      "**/node_modules/**",  // Explicit node_modules
+      "dist/**",             // Build output
+      "coverage/**",         // Test coverage
+      "htmlcov/**",          // Python coverage reports
+      ".vite/**",            // Vite cache
+      "*.config.js",         // Config files
+      "*.config.ts",         // Config files
+      "**/*.d.ts",           // Type declaration files
+      ".DS_Store",           // OS files
+      "*.log",               // Log files
+      "build/**",            // Alternative build directory
+      ".next/**",            // Next.js build cache if used
+      ".cache/**",           // Generic cache
+    ]
+  },
   // Apply SonarJS recommended rules for safety-critical code
   sonarjs.configs.recommended,
   {

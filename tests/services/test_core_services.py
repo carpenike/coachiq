@@ -5,8 +5,9 @@ This module tests the CoreServices class which manages mandatory infrastructure
 services like persistence and database management that must always be available.
 """
 
-import pytest
 from unittest.mock import AsyncMock, Mock, patch
+
+import pytest
 
 from backend.core.services import (
     CoreServices,
@@ -33,10 +34,11 @@ class TestCoreServices:
         """Test successful CoreServices startup."""
         core_services = CoreServices()
 
-        with patch('backend.core.services.PersistenceService') as mock_persistence, \
-             patch('backend.core.services.DatabaseManager') as mock_db_manager, \
-             patch.object(core_services, '_validate_database_schema') as mock_validate:
-
+        with (
+            patch("backend.core.services.PersistenceService") as mock_persistence,
+            patch("backend.core.services.DatabaseManager") as mock_db_manager,
+            patch.object(core_services, "_validate_database_schema") as mock_validate,
+        ):
             mock_persistence_instance = Mock()
             mock_db_manager_instance = Mock()
             mock_persistence.return_value = mock_persistence_instance
@@ -50,17 +52,20 @@ class TestCoreServices:
             assert core_services.initialized
 
             # Verify the persistence service was configured with database manager
-            mock_persistence_instance.set_database_manager.assert_called_once_with(mock_db_manager_instance)
+            mock_persistence_instance.set_database_manager.assert_called_once_with(
+                mock_db_manager_instance
+            )
 
     @pytest.mark.asyncio
     async def test_startup_failure_cleanup(self):
         """Test that startup failure cleans up partially initialized services."""
         core_services = CoreServices()
 
-        with patch('backend.core.services.PersistenceService') as mock_persistence, \
-             patch('backend.core.services.DatabaseManager') as mock_db_manager, \
-             patch.object(core_services, '_validate_database_schema') as mock_validate:
-
+        with (
+            patch("backend.core.services.PersistenceService") as mock_persistence,
+            patch("backend.core.services.DatabaseManager") as mock_db_manager,
+            patch.object(core_services, "_validate_database_schema") as mock_validate,
+        ):
             mock_persistence.return_value = Mock()
             mock_db_manager.side_effect = Exception("Database init failed")
 
@@ -185,20 +190,21 @@ class TestCoreServices:
         """Test database schema validation during startup."""
         core_services = CoreServices()
 
-        with patch('backend.core.services.PersistenceService') as mock_persistence, \
-             patch('backend.core.services.DatabaseManager') as mock_db_manager, \
-             patch('backend.core.config.get_persistence_settings') as mock_get_settings, \
-             patch('alembic.config.Config') as mock_alembic_config, \
-             patch('alembic.script.ScriptDirectory') as mock_script_dir, \
-             patch('sqlalchemy.create_engine') as mock_create_engine:
-
+        with (
+            patch("backend.core.services.PersistenceService") as mock_persistence,
+            patch("backend.core.services.DatabaseManager") as mock_db_manager,
+            patch("backend.core.config.get_persistence_settings") as mock_get_settings,
+            patch("alembic.config.Config") as mock_alembic_config,
+            patch("alembic.script.ScriptDirectory") as mock_script_dir,
+            patch("sqlalchemy.create_engine") as mock_create_engine,
+        ):
             # Mock successful validation
             mock_persistence.return_value = Mock()
             mock_db_manager_instance = Mock()
             mock_db_manager.return_value = mock_db_manager_instance
 
             mock_settings = Mock()
-            mock_settings.get_database_dir.return_value = Mock(__truediv__=lambda x, y: f"test.db")
+            mock_settings.get_database_dir.return_value = Mock(__truediv__=lambda x, y: "test.db")
             mock_get_settings.return_value = mock_settings
 
             mock_script = Mock()
@@ -212,7 +218,7 @@ class TestCoreServices:
             mock_engine.connect.return_value.__enter__.return_value = mock_connection
             mock_create_engine.return_value = mock_engine
 
-            with patch('alembic.runtime.migration.MigrationContext') as mock_migration_context:
+            with patch("alembic.runtime.migration.MigrationContext") as mock_migration_context:
                 mock_migration_context.configure.return_value = mock_context
 
                 await core_services.startup()
@@ -228,7 +234,7 @@ class TestCoreServicesGlobalFunctions:
     @pytest.mark.asyncio
     async def test_initialize_core_services(self):
         """Test global CoreServices initialization."""
-        with patch('backend.core.services.CoreServices') as mock_core_services_class:
+        with patch("backend.core.services.CoreServices") as mock_core_services_class:
             mock_instance = AsyncMock()
             mock_core_services_class.return_value = mock_instance
 
@@ -241,7 +247,7 @@ class TestCoreServicesGlobalFunctions:
     async def test_initialize_core_services_already_initialized(self):
         """Test that initialize_core_services handles already initialized state."""
         # First call should initialize
-        with patch('backend.core.services.CoreServices') as mock_core_services_class:
+        with patch("backend.core.services.CoreServices") as mock_core_services_class:
             mock_instance = AsyncMock()
             mock_core_services_class.return_value = mock_instance
 
@@ -257,6 +263,7 @@ class TestCoreServicesGlobalFunctions:
         """Test get_core_services raises when not initialized."""
         # Reset global state
         import backend.core.services
+
         backend.core.services._core_services_instance = None
 
         with pytest.raises(RuntimeError, match="Core services not initialized"):
@@ -266,7 +273,7 @@ class TestCoreServicesGlobalFunctions:
     async def test_shutdown_core_services(self):
         """Test global CoreServices shutdown."""
         # Initialize first
-        with patch('backend.core.services.CoreServices') as mock_core_services_class:
+        with patch("backend.core.services.CoreServices") as mock_core_services_class:
             mock_instance = AsyncMock()
             mock_core_services_class.return_value = mock_instance
 
@@ -282,6 +289,7 @@ class TestCoreServicesGlobalFunctions:
         """Test shutdown when not initialized."""
         # Reset global state
         import backend.core.services
+
         backend.core.services._core_services_instance = None
 
         # Should not raise
@@ -298,7 +306,7 @@ class TestCoreServicesIntegration:
 
         core_services = CoreServices()
 
-        with patch('backend.core.config.get_persistence_settings') as mock_get_settings:
+        with patch("backend.core.config.get_persistence_settings") as mock_get_settings:
             mock_get_settings.return_value = test_database_settings
 
             # This should use real services but with test database

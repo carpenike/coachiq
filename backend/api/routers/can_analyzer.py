@@ -2,19 +2,18 @@
 API endpoints for CAN protocol analyzer functionality.
 """
 
-from typing import List, Optional, Dict, Any
 from datetime import datetime
+from typing import Annotated, Any, Dict, List, Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
 
-from backend.core.dependencies_v2 import get_feature_manager
+from backend.core.dependencies import get_can_protocol_analyzer
 from backend.integrations.can.protocol_analyzer import (
-    ProtocolAnalyzer,
     CANProtocol,
     MessageType,
+    ProtocolAnalyzer,
 )
-
 
 router = APIRouter()
 
@@ -22,50 +21,54 @@ router = APIRouter()
 # Response Models
 class DecodedFieldResponse(BaseModel):
     """Decoded message field."""
+
     name: str
     value: Any
-    unit: Optional[str] = None
-    raw_value: Optional[int] = None
+    unit: str | None = None
+    raw_value: int | None = None
     scale: float = 1.0
     offset: float = 0.0
-    min_value: Optional[float] = None
-    max_value: Optional[float] = None
+    min_value: float | None = None
+    max_value: float | None = None
     valid: bool = True
 
 
 class AnalyzedMessageResponse(BaseModel):
     """Analyzed CAN message."""
+
     timestamp: float
     can_id: str  # Hex string
     data: str  # Hex string
     interface: str
     protocol: str
     message_type: str
-    source_address: Optional[int] = None
-    destination_address: Optional[int] = None
-    pgn: Optional[str] = None  # Hex string
-    function_code: Optional[int] = None
-    decoded_fields: List[DecodedFieldResponse] = []
-    description: Optional[str] = None
-    warnings: List[str] = []
+    source_address: int | None = None
+    destination_address: int | None = None
+    pgn: str | None = None  # Hex string
+    function_code: int | None = None
+    decoded_fields: list[DecodedFieldResponse] = []
+    description: str | None = None
+    warnings: list[str] = []
 
 
 class CommunicationPatternResponse(BaseModel):
     """Communication pattern."""
+
     pattern_type: str
-    participants: List[str]  # Hex CAN IDs
-    interval_ms: Optional[float] = None
+    participants: list[str]  # Hex CAN IDs
+    interval_ms: float | None = None
     confidence: float = 0.0
 
 
 class ProtocolStatisticsResponse(BaseModel):
     """Protocol statistics."""
+
     runtime_seconds: float
     total_messages: int
     total_bytes: int
     overall_message_rate: float
     bus_utilization_percent: float
-    protocols: Dict[str, Dict[str, Any]]
+    protocols: dict[str, dict[str, Any]]
     detected_patterns: int
     buffer_usage: int
     buffer_capacity: int
@@ -73,51 +76,44 @@ class ProtocolStatisticsResponse(BaseModel):
 
 class ProtocolReportResponse(BaseModel):
     """Protocol analysis report."""
-    detected_protocols: Dict[str, Dict[str, Any]]
-    communication_patterns: List[Dict[str, Any]]
-    protocol_compliance: Dict[str, Dict[str, Any]]
-    recommendations: List[str]
+
+    detected_protocols: dict[str, dict[str, Any]]
+    communication_patterns: list[dict[str, Any]]
+    protocol_compliance: dict[str, dict[str, Any]]
+    recommendations: list[str]
 
 
 class LiveAnalysisResponse(BaseModel):
     """Live analysis data."""
-    messages: List[AnalyzedMessageResponse]
-    patterns: List[CommunicationPatternResponse]
+
+    messages: list[AnalyzedMessageResponse]
+    patterns: list[CommunicationPatternResponse]
     statistics: ProtocolStatisticsResponse
 
 
-async def get_analyzer(request: Request) -> ProtocolAnalyzer:
-    """Get protocol analyzer instance."""
-    feature_manager = get_feature_manager(request)
-    analyzer = feature_manager.get_feature("can_protocol_analyzer")
-
-    if not analyzer:
-        raise HTTPException(status_code=503, detail="CAN protocol analyzer not available")
-
-    return analyzer
-
-
 @router.get("/statistics", response_model=ProtocolStatisticsResponse)
-async def get_statistics(analyzer: ProtocolAnalyzer = Depends(get_analyzer)):
+async def get_statistics(analyzer: Annotated[ProtocolAnalyzer, Depends(get_can_protocol_analyzer)]):
     """Get current analyzer statistics."""
     stats = analyzer.get_statistics()
     return ProtocolStatisticsResponse(**stats)
 
 
 @router.get("/report", response_model=ProtocolReportResponse)
-async def get_protocol_report(analyzer: ProtocolAnalyzer = Depends(get_analyzer)):
+async def get_protocol_report(
+    analyzer: Annotated[ProtocolAnalyzer, Depends(get_can_protocol_analyzer)],
+):
     """Get detailed protocol analysis report."""
     report = analyzer.get_protocol_report()
     return ProtocolReportResponse(**report)
 
 
-@router.get("/messages", response_model=List[AnalyzedMessageResponse])
+@router.get("/messages", response_model=list[AnalyzedMessageResponse])
 async def get_recent_messages(
+    analyzer: Annotated[ProtocolAnalyzer, Depends(get_can_protocol_analyzer)],
     limit: int = Query(100, ge=1, le=1000),
-    protocol: Optional[CANProtocol] = None,
-    message_type: Optional[MessageType] = None,
-    can_id: Optional[str] = None,
-    analyzer: ProtocolAnalyzer = Depends(get_analyzer),
+    protocol: CANProtocol | None = None,
+    message_type: MessageType | None = None,
+    can_id: str | None = None,
 ):
     """Get recent analyzed messages with optional filtering."""
     messages = list(analyzer.message_buffer)
@@ -177,10 +173,10 @@ async def get_recent_messages(
     return response_messages
 
 
-@router.get("/patterns", response_model=List[CommunicationPatternResponse])
+@router.get("/patterns", response_model=list[CommunicationPatternResponse])
 async def get_communication_patterns(
-    pattern_type: Optional[str] = None,
-    analyzer: ProtocolAnalyzer = Depends(get_analyzer),
+    analyzer: Annotated[ProtocolAnalyzer, Depends(get_can_protocol_analyzer)],
+    pattern_type: str | None = None,
 ):
     """Get detected communication patterns."""
     patterns = analyzer.detected_patterns
@@ -204,8 +200,10 @@ async def get_communication_patterns(
     return response_patterns
 
 
-@router.get("/protocols", response_model=Dict[str, List[str]])
-async def get_detected_protocols(analyzer: ProtocolAnalyzer = Depends(get_analyzer)):
+@router.get("/protocols", response_model=dict[str, list[str]])
+async def get_detected_protocols(
+    analyzer: Annotated[ProtocolAnalyzer, Depends(get_can_protocol_analyzer)],
+):
     """Get detected protocols by CAN ID."""
     result = {}
 
@@ -219,10 +217,10 @@ async def get_detected_protocols(analyzer: ProtocolAnalyzer = Depends(get_analyz
 
 @router.post("/analyze")
 async def analyze_message(
+    analyzer: Annotated[ProtocolAnalyzer, Depends(get_can_protocol_analyzer)],
     can_id: str = Query(..., description="CAN ID in hex format (e.g., 0x18FEEE00)"),
     data: str = Query(..., description="Message data in hex format"),
     interface: str = Query("can0", description="CAN interface"),
-    analyzer: ProtocolAnalyzer = Depends(get_analyzer),
 ) -> AnalyzedMessageResponse:
     """Manually analyze a specific CAN message."""
     try:
@@ -277,18 +275,15 @@ async def analyze_message(
 
 @router.get("/live", response_model=LiveAnalysisResponse)
 async def get_live_analysis(
+    analyzer: Annotated[ProtocolAnalyzer, Depends(get_can_protocol_analyzer)],
     duration_seconds: int = Query(5, ge=1, le=60),
-    analyzer: ProtocolAnalyzer = Depends(get_analyzer),
 ):
     """Get live analysis data for the specified duration."""
     # Get messages from the last N seconds
     current_time = analyzer.message_buffer[-1].timestamp if analyzer.message_buffer else 0
     start_time = current_time - duration_seconds
 
-    recent_messages = [
-        msg for msg in analyzer.message_buffer
-        if msg.timestamp >= start_time
-    ]
+    recent_messages = [msg for msg in analyzer.message_buffer if msg.timestamp >= start_time]
 
     # Get recent patterns
     recent_patterns = analyzer.detected_patterns[-10:]
@@ -350,7 +345,7 @@ async def get_live_analysis(
 
 
 @router.delete("/clear")
-async def clear_analyzer(analyzer: ProtocolAnalyzer = Depends(get_analyzer)):
+async def clear_analyzer(analyzer: Annotated[ProtocolAnalyzer, Depends(get_can_protocol_analyzer)]):
     """Clear analyzer buffers and reset statistics."""
     # Clear buffers
     analyzer.message_buffer.clear()

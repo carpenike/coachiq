@@ -58,15 +58,12 @@ class AuthenticationError(Exception):
     """Base exception for authentication errors."""
 
 
-
 class InvalidTokenError(AuthenticationError):
     """Raised when a token is invalid or expired."""
 
 
-
 class UserNotFoundError(AuthenticationError):
     """Raised when a user cannot be found."""
-
 
 
 class AccountLockedError(AuthenticationError):
@@ -84,6 +81,8 @@ class AuthManager:
 
     Provides authentication services including JWT token management,
     admin user authentication, magic link generation, and mode detection.
+
+    Now operates as a facade over specialized services for better separation of concerns.
     """
 
     def __init__(
@@ -91,6 +90,11 @@ class AuthManager:
         auth_settings: AuthenticationSettings,
         notification_manager: Any | None = None,
         auth_repository: "AuthRepository | None" = None,
+        token_service: Any | None = None,
+        session_service: Any | None = None,
+        mfa_service: Any | None = None,
+        lockout_service: Any | None = None,
+        credential_repository: Any | None = None,
     ):
         """
         Initialize the authentication manager.
@@ -99,11 +103,45 @@ class AuthManager:
             auth_settings: Authentication configuration settings
             notification_manager: NotificationManager instance for magic links
             auth_repository: AuthRepository instance for database persistence (optional)
+            token_service: Optional pre-configured token service
+            session_service: Optional pre-configured session service
+            mfa_service: Optional pre-configured MFA service
+            lockout_service: Optional pre-configured lockout service
+            credential_repository: Optional pre-configured credential repository
         """
-        self.settings = auth_settings
+        self.logger = logging.getLogger(__name__)
+
+        # Ensure we have the correct settings type
+        # Check if this looks like the full Settings object (has multiple subsections)
+        if hasattr(auth_settings, "server") or hasattr(auth_settings, "database"):
+            # We were passed the full Settings object, extract AuthenticationSettings
+            if hasattr(auth_settings, "auth"):
+                self.settings = auth_settings.auth  # type: ignore[attr-defined]
+                self.logger.warning(
+                    "AuthManager received full Settings object instead of AuthenticationSettings, extracting auth settings"
+                )
+            else:
+                # This shouldn't happen, but handle gracefully
+                self.logger.error("AuthManager received Settings object without auth section")
+                raise ValueError("Invalid settings object provided to AuthManager")
+        else:
+            # We have the correct AuthenticationSettings object
+            self.settings = auth_settings
+
         self.notification_manager = notification_manager
         self.auth_repository = auth_repository
-        self.logger = logging.getLogger(__name__)
+
+        # Initialize services if provided
+        self._token_service = token_service
+        self._session_service = session_service
+        self._mfa_service = mfa_service
+        self._lockout_service = lockout_service
+        self._credential_repo = credential_repository
+
+        # Determine if we're in service mode or legacy mode
+        self._service_mode = bool(
+            token_service and session_service and mfa_service and lockout_service
+        )
 
         # Initialize password hashing context
         if JWT_AVAILABLE and BCRYPT_AVAILABLE:
@@ -115,9 +153,7 @@ class AuthManager:
             if not BCRYPT_AVAILABLE:
                 self.logger.error("bcrypt not available - password hashing will fail")
             msg = "Authentication dependencies missing. Please install with: poetry install"
-            raise RuntimeError(
-                msg
-            )
+            raise RuntimeError(msg)
 
         # Determine authentication mode
         self.auth_mode = self._detect_auth_mode()
@@ -141,9 +177,7 @@ class AuthManager:
                 "Authentication persistence is required but not available. "
                 "Ensure the database is accessible."
             )
-            raise AuthenticationError(
-                msg
-            )
+            raise AuthenticationError(msg)
 
     @property
     def repository(self) -> "AuthRepository":
@@ -157,9 +191,7 @@ class AuthManager:
                 "Authentication persistence is required but not available. "
                 "Ensure the database is accessible."
             )
-            raise AuthenticationError(
-                msg
-            )
+            raise AuthenticationError(msg)
         return self.auth_repository
 
     async def startup(self) -> None:
@@ -255,9 +287,7 @@ class AuthManager:
                 f"Failed to store admin credentials in database for user {username}. "
                 "Check database connectivity and permissions."
             )
-            raise AuthenticationError(
-                msg
-            )
+            raise AuthenticationError(msg)
 
         self.logger.info("Admin credentials stored in database")
 
@@ -283,37 +313,55 @@ class AuthManager:
         Raises:
             AuthenticationError: If JWT is not available
         """
-        if not JWT_AVAILABLE or not self.settings.secret_key:
-            msg = "JWT token generation not available"
-            raise AuthenticationError(msg)
+        if self._service_mode and self._token_service:
+            # Service mode - delegate to token service
+            try:
+                # Add username to additional claims
+                claims = additional_claims or {}
+                claims["username"] = username
+                # Note: TokenService doesn't support custom expiration, uses configured value
+                return self._token_service.generate_access_token(
+                    user_id,
+                    is_admin="admin" in user_id.lower(),  # Simple admin check
+                    additional_claims=claims,
+                )
+            except Exception as e:
+                self.logger.error(f"Failed to generate JWT token: {e}")
+                msg = "Token generation failed"
+                raise AuthenticationError(msg) from e
+        else:
+            # Legacy mode
+            if not JWT_AVAILABLE or not self.settings.secret_key:
+                msg = "JWT token generation not available"
+                raise AuthenticationError(msg)
 
-        if expires_delta is None:
-            expires_delta = timedelta(minutes=self.settings.jwt_expire_minutes)
+            if expires_delta is None:
+                expires_delta = timedelta(minutes=self.settings.jwt_expire_minutes)
 
-        expire = datetime.now(UTC) + expires_delta
+            expire = datetime.now(UTC) + expires_delta
 
-        to_encode = {
-            "sub": str(user_id),
-            "username": username,
-            "exp": expire,
-            "iat": datetime.now(UTC),
-            "iss": "coachiq",
-            "aud": "coachiq-api",
-        }
+            to_encode = {
+                "sub": str(user_id),
+                "username": username,
+                "exp": expire,
+                "iat": datetime.now(UTC),
+                "iss": "coachiq",
+                "aud": "coachiq-api",
+            }
 
-        if additional_claims:
-            to_encode.update(additional_claims)
+            if additional_claims:
+                to_encode.update(additional_claims)
 
-        try:
-            return jwt.encode(
-                to_encode,
-                self.settings.secret_key,
-                algorithm=self.settings.jwt_algorithm,
-            )
-        except Exception as e:
-            self.logger.error(f"Failed to generate JWT token: {e}")
-            msg = "Token generation failed"
-            raise AuthenticationError(msg) from e
+            try:
+                return jwt.encode(
+                    to_encode,
+                    self.settings.secret_key,
+                    algorithm=self.settings.jwt_algorithm,
+                )
+            except Exception as e:
+                self.logger.error(f"Failed to generate JWT token: {e}")
+                msg = "Token generation failed"
+                raise AuthenticationError(msg) from e
 
     def validate_token(self, token: str) -> dict[str, Any]:
         """
@@ -328,6 +376,14 @@ class AuthManager:
         Raises:
             InvalidTokenError: If the token is invalid or expired
         """
+        if self._service_mode and self._token_service:
+            # Service mode - delegate to token service
+            payload = self._token_service.validate_token(token)
+            if payload is None:
+                msg = "Invalid or expired token"
+                raise InvalidTokenError(msg)
+            return payload
+        # Legacy mode
         if not JWT_AVAILABLE or not self.settings.secret_key:
             msg = "JWT validation not available"
             raise InvalidTokenError(msg)
@@ -371,7 +427,21 @@ class AuthManager:
             msg = "Refresh tokens are disabled"
             raise AuthenticationError(msg)
 
-        if not JWT_AVAILABLE or not self.settings.refresh_token_secret:
+        if self._service_mode and self._session_service:
+            # Service mode - delegate to session service
+            try:
+                # Session service handles token generation internally
+                access_token, refresh_token = await self._session_service.create_session(
+                    user_id, {"username": username, **(additional_claims or {})}
+                )
+                # Return only the refresh token
+                return refresh_token
+            except Exception as e:
+                self.logger.error(f"Failed to generate refresh token: {e}")
+                msg = "Refresh token generation failed"
+                raise AuthenticationError(msg) from e
+        # Legacy mode
+        elif not JWT_AVAILABLE or not self.settings.refresh_token_secret:
             msg = "Refresh token generation not available"
             raise AuthenticationError(msg)
 
@@ -416,9 +486,7 @@ class AuthManager:
                     f"Failed to store refresh token in database for user {user_id}. "
                     "Check database connectivity and permissions."
                 )
-                raise AuthenticationError(
-                    msg
-                )
+                raise AuthenticationError(msg)
 
             return encoded_jwt
         except Exception as e:
@@ -552,6 +620,15 @@ class AuthManager:
             InvalidTokenError: If refresh token is invalid
             AuthenticationError: If token generation fails
         """
+        if self._service_mode and self._session_service:
+            # Service mode - delegate to session service
+            new_access_token = await self._session_service.refresh_access_token(refresh_token)
+            if not new_access_token:
+                msg = "Failed to refresh access token"
+                raise InvalidTokenError(msg)
+            # In service mode, we don't rotate refresh tokens by default
+            return new_access_token, refresh_token
+        # Legacy mode
         # Validate the refresh token
         payload = await self.validate_refresh_token(refresh_token)
 
@@ -642,14 +719,15 @@ class AuthManager:
         if is_locked:
             # Get failed attempts count from auth events
             window_start = datetime.now(UTC) - timedelta(
-            hours=self.settings.max_lockout_duration_hours
-        )
+                hours=self.settings.max_lockout_duration_hours
+            )
             failed_count = await self.repository.get_failed_attempts_count(
-                email=username.lower(),
-                since=window_start
+                email=username.lower(), since=window_start
             )
 
-            msg = f"Account locked until {lockout_until.isoformat() if lockout_until else 'unknown'}"
+            msg = (
+                f"Account locked until {lockout_until.isoformat() if lockout_until else 'unknown'}"
+            )
             raise AccountLockedError(
                 msg,
                 lockout_until,
@@ -663,7 +741,9 @@ class AuthManager:
             return None
 
         # Verify password using bcrypt
-        if not self.pwd_context or not self.pwd_context.verify(password, admin_credentials["password_hash"]):
+        if not self.pwd_context or not self.pwd_context.verify(
+            password, admin_credentials["password_hash"]
+        ):
             self.logger.warning("Invalid admin password")
             await self.record_failed_attempt(username)
             return None
@@ -713,6 +793,54 @@ class AuthManager:
             self.logger.warning(f"Admin authentication called in {self.auth_mode} mode")
             return None
 
+        if self._service_mode and self._credential_repo and self._lockout_service:
+            # Service mode - use repositories and services
+            # Check if account is locked
+            is_locked, lockout_until = await self._lockout_service.check_lockout(username)
+            if is_locked:
+                # Get lockout info for error details
+                lockout_info = await self._lockout_service.get_lockout_info(username)
+                msg = f"Account locked until {lockout_until.isoformat() if lockout_until else 'unknown'}"
+                raise AccountLockedError(
+                    msg,
+                    lockout_until,
+                    lockout_info.get("failed_attempts", 0),
+                )
+
+            # Get admin credentials
+            admin_creds = await self._credential_repo.get_admin_credentials()
+            if not admin_creds:
+                self.logger.error("No admin credentials configured")
+                return None
+
+            # Verify credentials
+            if username != admin_creds["username"]:
+                self.logger.warning(f"Invalid admin username: {username}")
+                await self._lockout_service.record_failed_attempt(username)
+                return None
+
+            # Verify password
+            is_valid = await self._credential_repo.verify_password(
+                admin_creds["username"], password
+            )
+            if not is_valid:
+                self.logger.warning("Invalid admin password")
+                await self._lockout_service.record_failed_attempt(username)
+                return None
+
+            # Generate token
+            additional_claims = {"role": "admin", "mode": "single-user"}
+            access_token = self.generate_token(
+                user_id="admin",
+                username=username,
+                additional_claims=additional_claims,
+            )
+
+            # Record successful login
+            await self._lockout_service.record_successful_login(username)
+            self.logger.info(f"Admin user authenticated: {username}")
+            return access_token
+        # Legacy mode
         # Validate persistence is available first
         self._validate_persistence_available()
 
@@ -728,14 +856,15 @@ class AuthManager:
         if is_locked:
             # Get failed attempts count from auth events
             window_start = datetime.now(UTC) - timedelta(
-            hours=self.settings.max_lockout_duration_hours
-        )
+                hours=self.settings.max_lockout_duration_hours
+            )
             failed_count = await self.repository.get_failed_attempts_count(
-                email=username.lower(),
-                since=window_start
+                email=username.lower(), since=window_start
             )
 
-            msg = f"Account locked until {lockout_until.isoformat() if lockout_until else 'unknown'}"
+            msg = (
+                f"Account locked until {lockout_until.isoformat() if lockout_until else 'unknown'}"
+            )
             raise AccountLockedError(
                 msg,
                 lockout_until,
@@ -749,7 +878,9 @@ class AuthManager:
             return None
 
         # Verify password using bcrypt
-        if not self.pwd_context or not self.pwd_context.verify(password, admin_credentials["password_hash"]):
+        if not self.pwd_context or not self.pwd_context.verify(
+            password, admin_credentials["password_hash"]
+        ):
             self.logger.warning("Invalid admin password")
             await self.record_failed_attempt(username)
             return None
@@ -919,10 +1050,7 @@ class AuthManager:
         Returns:
             Optional[Dict[str, str]]: Admin credentials if available, None otherwise
         """
-        if (
-            self.auth_mode != AuthMode.SINGLE_USER
-            or not self._generated_password
-        ):
+        if self.auth_mode != AuthMode.SINGLE_USER or not self._generated_password:
             return None
 
         # Get admin credentials from repository (fail-fast if not available)
@@ -953,10 +1081,7 @@ class AuthManager:
         Returns:
             bool: True if credentials are available for one-time display
         """
-        if (
-            self.auth_mode != AuthMode.SINGLE_USER
-            or not self._generated_password
-        ):
+        if self.auth_mode != AuthMode.SINGLE_USER or not self._generated_password:
             return False
 
         # Check if password was auto-generated from repository (fail-fast if not available)
@@ -1057,9 +1182,7 @@ class AuthManager:
                 f"Failed to store MFA secret in database for user {user_id}. "
                 "Check database connectivity and permissions."
             )
-            raise AuthenticationError(
-                msg
-            )
+            raise AuthenticationError(msg)
 
         self.logger.info(f"Generated MFA secret for user {user_id}")
 
@@ -1135,19 +1258,14 @@ class AuthManager:
             # Enable MFA for the user (fail-fast if this fails)
             now = datetime.now(UTC)
             success = await self.repository.update_user_mfa(
-                user_id=user_id,
-                is_enabled=True,
-                totp_enabled=True,
-                last_used_at=now
+                user_id=user_id, is_enabled=True, totp_enabled=True, last_used_at=now
             )
             if not success:
                 msg = (
                     f"Failed to enable MFA in database for user {user_id}. "
                     "Check database connectivity and permissions."
                 )
-                raise AuthenticationError(
-                    msg
-                )
+                raise AuthenticationError(msg)
 
             self.logger.info(f"MFA enabled for user {user_id}")
             return True
@@ -1191,19 +1309,13 @@ class AuthManager:
         # Try TOTP first
         if self._verify_totp_code(secret, code):
             # Update last used timestamp
-            await self.repository.update_user_mfa(
-                user_id=user_id,
-                last_used_at=now
-            )
+            await self.repository.update_user_mfa(user_id=user_id, last_used_at=now)
             return True
 
         # Try backup codes
         if await self._verify_backup_code(user_id, code):
             # Update last used timestamp
-            await self.repository.update_user_mfa(
-                user_id=user_id,
-                last_used_at=now
-            )
+            await self.repository.update_user_mfa(user_id=user_id, last_used_at=now)
             return True
 
         return False
@@ -1251,9 +1363,7 @@ class AuthManager:
                 f"Failed to regenerate backup codes in database for user {user_id}. "
                 "Check database connectivity and permissions."
             )
-            raise AuthenticationError(
-                msg
-            )
+            raise AuthenticationError(msg)
 
         self.logger.info(f"Regenerated backup codes for user {user_id}")
         return new_backup_codes
@@ -1287,9 +1397,7 @@ class AuthManager:
                 f"Failed to delete MFA in database for user {user_id}. "
                 "Check database connectivity and permissions."
             )
-            raise AuthenticationError(
-                msg
-            )
+            raise AuthenticationError(msg)
 
         if was_enabled:
             self.logger.info(f"MFA disabled for user {user_id} by admin {admin_user}")
@@ -1432,15 +1540,11 @@ class AuthManager:
         self._validate_persistence_available()
 
         # Calculate time window for recent failed attempts
-        window_start = datetime.now(UTC) - timedelta(
-            hours=self.settings.max_lockout_duration_hours
-        )
+        window_start = datetime.now(UTC) - timedelta(hours=self.settings.max_lockout_duration_hours)
 
         # Get recent failed login attempts from repository
         failed_events = await self.repository.get_auth_events_for_user(
-            email=username.lower(),
-            event_type="login",
-            since=window_start
+            email=username.lower(), event_type="login", since=window_start
         )
 
         # Filter for failed attempts only
@@ -1464,7 +1568,7 @@ class AuthManager:
             )
             base_duration = self.settings.lockout_duration_minutes
             escalated_duration = base_duration * (
-                self.settings.lockout_escalation_factor ** escalation_level
+                self.settings.lockout_escalation_factor**escalation_level
             )
 
             # Cap at maximum duration
@@ -1479,7 +1583,6 @@ class AuthManager:
             return False, None
 
         return False, None
-
 
     async def record_failed_attempt(self, username: str) -> None:
         """
@@ -1500,7 +1603,7 @@ class AuthManager:
             event_type="login",
             success=False,
             email=username.lower(),
-            details={"lockout_check": True}
+            details={"lockout_check": True},
         )
 
         # Check current lockout status to log appropriately
@@ -1514,9 +1617,7 @@ class AuthManager:
                 hours=self.settings.max_lockout_duration_hours
             )
             failed_events = await self.repository.get_auth_events_for_user(
-                email=username.lower(),
-                event_type="login",
-                since=window_start
+                email=username.lower(), event_type="login", since=window_start
             )
             failed_count = len([event for event in failed_events if not event.success])
             self.logger.warning(f"Failed login attempt {failed_count} for user: {username}")
@@ -1540,7 +1641,7 @@ class AuthManager:
             event_type="login",
             success=True,
             email=username.lower(),
-            details={"lockout_reset": True}
+            details={"lockout_reset": True},
         )
 
         self.logger.info(f"Successful login recorded for user {username}")
@@ -1561,13 +1662,9 @@ class AuthManager:
         self._validate_persistence_available()
 
         # Get recent auth events to calculate stats
-        window_start = datetime.now(UTC) - timedelta(
-            hours=self.settings.max_lockout_duration_hours
-        )
+        window_start = datetime.now(UTC) - timedelta(hours=self.settings.max_lockout_duration_hours)
         auth_events = await self.repository.get_auth_events_for_user(
-            email=username.lower(),
-            event_type="login",
-            since=window_start
+            email=username.lower(), event_type="login", since=window_start
         )
 
         failed_attempts = [event for event in auth_events if not event.success]
@@ -1628,7 +1725,7 @@ class AuthManager:
             event_type="admin_unlock",
             success=True,
             email=username.lower(),
-            details={"unlocked_by": admin_user, "manual_unlock": True}
+            details={"unlocked_by": admin_user, "manual_unlock": True},
         )
 
         self.logger.info(f"Account unlocked for user {username} by admin {admin_user}")
@@ -1647,12 +1744,9 @@ class AuthManager:
         all_users = set()
 
         # Get all users with auth events from the repository
-        window_start = datetime.now(UTC) - timedelta(
-            hours=self.settings.max_lockout_duration_hours
-        )
+        window_start = datetime.now(UTC) - timedelta(hours=self.settings.max_lockout_duration_hours)
         all_auth_events = await self.repository.get_auth_events_for_user(
-            event_type="login",
-            since=window_start
+            event_type="login", since=window_start
         )
 
         # Collect unique usernames from auth events

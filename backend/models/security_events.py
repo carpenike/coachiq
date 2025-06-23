@@ -48,10 +48,10 @@ class SecurityEventType(str, Enum):
 class SecuritySeverity(str, Enum):
     """Security event severity levels following industry standards."""
 
-    INFO = "info"        # Informational events, normal operation
-    LOW = "low"          # Minor security concern, no immediate action needed
-    MEDIUM = "medium"    # Security concern requiring monitoring
-    HIGH = "high"        # Serious security issue requiring immediate attention
+    INFO = "info"  # Informational events, normal operation
+    LOW = "low"  # Minor security concern, no immediate action needed
+    MEDIUM = "medium"  # Security concern requiring monitoring
+    HIGH = "high"  # Serious security issue requiring immediate attention
     CRITICAL = "critical"  # Critical security incident requiring emergency response
 
 
@@ -84,7 +84,9 @@ class SecurityEvent(BaseModel):
     payload: dict[str, Any] = Field(default_factory=dict, description="Event-specific data")
 
     # Context and metadata
-    event_metadata: dict[str, Any] | None = Field(default=None, description="Additional context", alias="metadata")
+    event_metadata: dict[str, Any] | None = Field(
+        default=None, description="Additional context", alias="metadata"
+    )
 
     # Correlation fields
     incident_id: str | None = Field(default=None, description="Associated incident ID")
@@ -101,6 +103,7 @@ class SecurityEvent(BaseModel):
 
     class Config:
         """Pydantic configuration."""
+
         use_enum_values = True
         json_encoders = {
             datetime: lambda v: v.isoformat(),
@@ -115,7 +118,7 @@ class SecurityEvent(BaseModel):
         description: str,
         source_address: int | None = None,
         pgn: int | None = None,
-        **payload_data
+        **payload_data,
     ) -> "SecurityEvent":
         """
         Factory method for creating CAN bus security events.
@@ -137,7 +140,7 @@ class SecurityEvent(BaseModel):
             "source_address_hex": f"0x{source_address:02X}" if source_address else None,
             "pgn": pgn,
             "pgn_hex": f"0x{pgn:05X}" if pgn else None,
-            **payload_data
+            **payload_data,
         }
 
         return cls(
@@ -146,7 +149,7 @@ class SecurityEvent(BaseModel):
             severity=severity,
             title=title,
             description=description,
-            payload=payload
+            payload=payload,
         )
 
     @classmethod
@@ -158,7 +161,7 @@ class SecurityEvent(BaseModel):
         description: str,
         user_id: str | None = None,
         ip_address: str | None = None,
-        **payload_data
+        **payload_data,
     ) -> "SecurityEvent":
         """
         Factory method for creating authentication security events.
@@ -175,11 +178,7 @@ class SecurityEvent(BaseModel):
         Returns:
             SecurityEvent instance configured for authentication events
         """
-        payload = {
-            "user_id": user_id,
-            "ip_address": ip_address,
-            **payload_data
-        }
+        payload = {"user_id": user_id, "ip_address": ip_address, **payload_data}
 
         return cls(
             source_component="auth_manager",
@@ -187,7 +186,7 @@ class SecurityEvent(BaseModel):
             severity=severity,
             title=title,
             description=description,
-            payload=payload
+            payload=payload,
         )
 
     @classmethod
@@ -198,7 +197,7 @@ class SecurityEvent(BaseModel):
         title: str,
         description: str,
         component: str | None = None,
-        **payload_data
+        **payload_data,
     ) -> "SecurityEvent":
         """
         Factory method for creating system security events.
@@ -214,10 +213,7 @@ class SecurityEvent(BaseModel):
         Returns:
             SecurityEvent instance configured for system events
         """
-        payload = {
-            "component": component,
-            **payload_data
-        }
+        payload = {"component": component, **payload_data}
 
         return cls(
             source_component="safety_service",
@@ -225,7 +221,7 @@ class SecurityEvent(BaseModel):
             severity=severity,
             title=title,
             description=description,
-            payload=payload
+            payload=payload,
         )
 
     def to_dict(self) -> dict[str, Any]:
@@ -277,6 +273,7 @@ class SecurityIncident(BaseModel):
 
     class Config:
         """Pydantic configuration."""
+
         use_enum_values = True
 
 

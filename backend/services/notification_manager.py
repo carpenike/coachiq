@@ -64,9 +64,7 @@ class NotificationManager:
                 "NotificationManager requires 'apprise' and 'jinja2' packages. "
                 "Please install them with: pip install apprise jinja2"
             )
-            raise ImportError(
-                msg
-            )
+            raise ImportError(msg)
 
         self.config = config
         self.logger = logging.getLogger(f"{__name__}.NotificationManager")
@@ -385,7 +383,7 @@ class NotificationManager:
         """Send notification using Apprise (async wrapper)."""
         try:
             # Run Apprise notification in thread pool to avoid blocking
-            loop = asyncio.get_event_loop()
+            loop = asyncio.get_running_loop()
             return await loop.run_in_executor(
                 None,
                 lambda: self.apprise_obj.notify(

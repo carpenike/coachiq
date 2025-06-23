@@ -8,8 +8,8 @@ Part of Phase 2R.4: Legacy Data Cleanup
 """
 
 import logging
+from datetime import UTC, datetime
 from typing import Any, Dict, Optional
-from datetime import datetime, UTC
 
 logger = logging.getLogger(__name__)
 
@@ -28,16 +28,16 @@ class DiagnosticsRepository:
     def __init__(self):
         """Initialize the diagnostics repository."""
         # Unmapped entries: configs that couldn't be matched to entities
-        self._unmapped_entries: Dict[str, Any] = {}
+        self._unmapped_entries: dict[str, Any] = {}
 
         # Unknown PGNs: messages with unrecognized PGNs
-        self._unknown_pgns: Dict[str, Any] = {}
+        self._unknown_pgns: dict[str, Any] = {}
 
         # Diagnostic counters
         self._message_count = 0
         self._error_count = 0
-        self._last_error: Optional[str] = None
-        self._last_error_time: Optional[datetime] = None
+        self._last_error: str | None = None
+        self._last_error_time: datetime | None = None
 
         logger.info("DiagnosticsRepository initialized")
 
@@ -53,7 +53,7 @@ class DiagnosticsRepository:
             del self._unmapped_entries[key]
             logger.debug(f"Removed unmapped entry: {key}")
 
-    def get_unmapped_entries(self) -> Dict[str, Any]:
+    def get_unmapped_entries(self) -> dict[str, Any]:
         """Get all unmapped entries."""
         return self._unmapped_entries.copy()
 
@@ -75,7 +75,7 @@ class DiagnosticsRepository:
             del self._unknown_pgns[pgn]
             logger.debug(f"Removed unknown PGN: {pgn}")
 
-    def get_unknown_pgns(self) -> Dict[str, Any]:
+    def get_unknown_pgns(self) -> dict[str, Any]:
         """Get all unknown PGNs."""
         return self._unknown_pgns.copy()
 
@@ -90,14 +90,14 @@ class DiagnosticsRepository:
         """Increment the message counter."""
         self._message_count += 1
 
-    def increment_error_count(self, error_message: Optional[str] = None) -> None:
+    def increment_error_count(self, error_message: str | None = None) -> None:
         """Increment the error counter and optionally record error details."""
         self._error_count += 1
         if error_message:
             self._last_error = error_message
             self._last_error_time = datetime.now(UTC)
 
-    def get_diagnostics_summary(self) -> Dict[str, Any]:
+    def get_diagnostics_summary(self) -> dict[str, Any]:
         """
         Get a summary of diagnostic information.
 
@@ -113,14 +113,16 @@ class DiagnosticsRepository:
             "last_error_time": self._last_error_time.isoformat() if self._last_error_time else None,
         }
 
-    def get_health_status(self) -> Dict[str, Any]:
+    def get_health_status(self) -> dict[str, Any]:
         """
         Get repository health status.
 
         Returns:
             Health status information
         """
-        error_rate = (self._error_count / self._message_count * 100) if self._message_count > 0 else 0
+        error_rate = (
+            (self._error_count / self._message_count * 100) if self._message_count > 0 else 0
+        )
 
         return {
             "repository": "DiagnosticsRepository",

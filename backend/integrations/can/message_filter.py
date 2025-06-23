@@ -5,18 +5,22 @@ Advanced filtering and monitoring rules for CAN bus messages.
 Supports complex filter expressions, real-time monitoring, and alerting.
 """
 
-import asyncio
 import fnmatch
 import json
 import logging
 import re
 import time
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Any, Callable, Dict, List, Optional, Set, Tuple, Union
+from typing import Any, Dict, List, Optional, Tuple
 
-from backend.services.feature_base import Feature
-from backend.services.feature_models import SafetyClassification
+from backend.core.safety_interfaces import (
+    SafeStateAction,
+    SafetyAware,
+    SafetyClassification,
+    SafetyStatus,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -75,7 +79,7 @@ class FilterCondition:
     case_sensitive: bool = True
     negate: bool = False
 
-    def evaluate(self, message: Dict[str, Any]) -> bool:
+    def evaluate(self, message: dict[str, Any]) -> bool:
         """Evaluate condition against message."""
         try:
             # Extract field value
@@ -92,40 +96,40 @@ class FilterCondition:
             logger.debug(f"Filter condition evaluation error: {e}")
             return False
 
-    def _extract_field_value(self, message: Dict[str, Any]) -> Any:
+    def _extract_field_value(self, message: dict[str, Any]) -> Any:
         """Extract field value from message."""
         if self.field == FilterField.CAN_ID:
             return message.get("can_id", message.get("arbitration_id"))
-        elif self.field == FilterField.PGN:
+        if self.field == FilterField.PGN:
             can_id = message.get("can_id", message.get("arbitration_id", 0))
             return (can_id >> 8) & 0x3FFFF
-        elif self.field == FilterField.SOURCE_ADDRESS:
+        if self.field == FilterField.SOURCE_ADDRESS:
             can_id = message.get("can_id", message.get("arbitration_id", 0))
             return can_id & 0xFF
-        elif self.field == FilterField.DESTINATION_ADDRESS:
+        if self.field == FilterField.DESTINATION_ADDRESS:
             # For J1939 PDU2 format
             can_id = message.get("can_id", message.get("arbitration_id", 0))
             pgn = (can_id >> 8) & 0x3FFFF
             if (pgn & 0xFF00) >= 0xF000:  # PDU2 format
-                return (pgn & 0xFF)
+                return pgn & 0xFF
             return None
-        elif self.field == FilterField.DATA:
+        if self.field == FilterField.DATA:
             data = message.get("data", b"")
             if isinstance(data, str):
                 return data.upper()
             return data.hex().upper()
-        elif self.field == FilterField.DATA_LENGTH:
+        if self.field == FilterField.DATA_LENGTH:
             data = message.get("data", b"")
             if isinstance(data, str):
                 return len(data) // 2
             return len(data)
-        elif self.field == FilterField.INTERFACE:
+        if self.field == FilterField.INTERFACE:
             return message.get("interface", "")
-        elif self.field == FilterField.PROTOCOL:
+        if self.field == FilterField.PROTOCOL:
             return message.get("protocol", "unknown")
-        elif self.field == FilterField.MESSAGE_TYPE:
+        if self.field == FilterField.MESSAGE_TYPE:
             return message.get("message_type", "")
-        elif self.field == FilterField.DECODED_FIELD:
+        if self.field == FilterField.DECODED_FIELD:
             # Special handling for decoded fields
             decoded = message.get("decoded", {})
             if isinstance(self.value, dict) and "name" in self.value:
@@ -136,8 +140,12 @@ class FilterCondition:
     def _compare(self, field_value: Any, filter_value: Any) -> bool:
         """Compare field value with filter value."""
         # Convert to string for string operations
-        if self.operator in [FilterOperator.CONTAINS, FilterOperator.NOT_CONTAINS,
-                            FilterOperator.MATCHES, FilterOperator.WILDCARD]:
+        if self.operator in [
+            FilterOperator.CONTAINS,
+            FilterOperator.NOT_CONTAINS,
+            FilterOperator.MATCHES,
+            FilterOperator.WILDCARD,
+        ]:
             field_str = str(field_value)
             filter_str = str(filter_value)
             if not self.case_sensitive:
@@ -146,11 +154,11 @@ class FilterCondition:
 
             if self.operator == FilterOperator.CONTAINS:
                 return filter_str in field_str
-            elif self.operator == FilterOperator.NOT_CONTAINS:
+            if self.operator == FilterOperator.NOT_CONTAINS:
                 return filter_str not in field_str
-            elif self.operator == FilterOperator.MATCHES:
+            if self.operator == FilterOperator.MATCHES:
                 return bool(re.match(filter_str, field_str))
-            elif self.operator == FilterOperator.WILDCARD:
+            if self.operator == FilterOperator.WILDCARD:
                 return fnmatch.fnmatch(field_str, filter_str)
 
         # Numeric comparisons
@@ -163,26 +171,26 @@ class FilterCondition:
 
             if self.operator == FilterOperator.EQUALS:
                 return field_value == filter_value
-            elif self.operator == FilterOperator.NOT_EQUALS:
+            if self.operator == FilterOperator.NOT_EQUALS:
                 return field_value != filter_value
-            elif self.operator == FilterOperator.GREATER_THAN:
+            if self.operator == FilterOperator.GREATER_THAN:
                 return float(field_value) > float(filter_value)
-            elif self.operator == FilterOperator.LESS_THAN:
+            if self.operator == FilterOperator.LESS_THAN:
                 return float(field_value) < float(filter_value)
-            elif self.operator == FilterOperator.GREATER_EQUAL:
+            if self.operator == FilterOperator.GREATER_EQUAL:
                 return float(field_value) >= float(filter_value)
-            elif self.operator == FilterOperator.LESS_EQUAL:
+            if self.operator == FilterOperator.LESS_EQUAL:
                 return float(field_value) <= float(filter_value)
-            elif self.operator == FilterOperator.IN:
+            if self.operator == FilterOperator.IN:
                 return field_value in filter_value
-            elif self.operator == FilterOperator.NOT_IN:
+            if self.operator == FilterOperator.NOT_IN:
                 return field_value not in filter_value
 
         except (ValueError, TypeError):
             # Fallback to string comparison
             if self.operator == FilterOperator.EQUALS:
                 return str(field_value) == str(filter_value)
-            elif self.operator == FilterOperator.NOT_EQUALS:
+            if self.operator == FilterOperator.NOT_EQUALS:
                 return str(field_value) != str(filter_value)
 
         return False
@@ -197,15 +205,17 @@ class FilterRule:
     description: str = ""
     enabled: bool = True
     priority: int = 50  # 0-100, higher = higher priority
-    conditions: List[FilterCondition] = field(default_factory=list)
+    conditions: list[FilterCondition] = field(default_factory=list)
     condition_logic: str = "AND"  # AND or OR
-    actions: List[Dict[str, Any]] = field(default_factory=list)
-    statistics: Dict[str, int] = field(default_factory=lambda: {
-        "matches": 0,
-        "last_match": 0,
-    })
+    actions: list[dict[str, Any]] = field(default_factory=list)
+    statistics: dict[str, int] = field(
+        default_factory=lambda: {
+            "matches": 0,
+            "last_match": 0,
+        }
+    )
 
-    def evaluate(self, message: Dict[str, Any]) -> Tuple[bool, List[Dict[str, Any]]]:
+    def evaluate(self, message: dict[str, Any]) -> tuple[bool, list[dict[str, Any]]]:
         """
         Evaluate rule against message.
 
@@ -232,7 +242,7 @@ class FilterRule:
         return False, []
 
 
-class MessageFilter(Feature):
+class MessageFilter(SafetyAware):
     """
     CAN message filtering system.
 
@@ -246,20 +256,15 @@ class MessageFilter(Feature):
 
     def __init__(
         self,
-        name: str = "can_message_filter",
-        enabled: bool = True,
-        core: bool = False,
         max_rules: int = 100,
-        alert_callback: Optional[Callable] = None,
+        alert_callback: Callable | None = None,
         capture_buffer_size: int = 10000,
     ):
         """Initialize message filter."""
+        # Initialize as safety-aware service
         super().__init__(
-            name=name,
-            enabled=enabled,
-            core=core,
             safety_classification=SafetyClassification.OPERATIONAL,
-            dependencies=["can_interface"],
+            safe_state_action=SafeStateAction.DISABLE,
         )
 
         self.max_rules = max_rules
@@ -267,13 +272,16 @@ class MessageFilter(Feature):
         self.capture_buffer_size = capture_buffer_size
 
         # Filter rules by ID
-        self.rules: Dict[str, FilterRule] = {}
+        self.rules: dict[str, FilterRule] = {}
 
         # Rules sorted by priority
-        self._sorted_rules: List[FilterRule] = []
+        self._sorted_rules: list[FilterRule] = []
 
         # Capture buffer for filtered messages
-        self.capture_buffer: List[Dict[str, Any]] = []
+        self.capture_buffer: list[dict[str, Any]] = []
+
+        # Service state
+        self._is_running = False
 
         # Performance tracking
         self.stats = {
@@ -289,10 +297,16 @@ class MessageFilter(Feature):
         # Default system rules
         self._initialize_default_rules()
 
+        logger.info(
+            "MessageFilter initialized: max_rules=%d, capture_buffer_size=%d",
+            max_rules,
+            capture_buffer_size,
+        )
+
     def _initialize_default_rules(self):
         """Initialize default system filter rules."""
         # Example: Block invalid CAN IDs
-        self.add_rule(FilterRule(
+        rule = FilterRule(
             id="system_invalid_can_id",
             name="Block Invalid CAN IDs",
             description="Blocks messages with invalid CAN IDs",
@@ -309,19 +323,103 @@ class MessageFilter(Feature):
                 {"action": FilterAction.BLOCK},
                 {"action": FilterAction.LOG, "level": "warning"},
             ],
-        ))
-
-    async def startup(self) -> None:
-        """Start message filter."""
-        logger.info("Starting CAN message filter")
+        )
+        # Synchronously add the rule
+        self.rules[rule.id] = rule
         self._sort_rules()
 
-    async def shutdown(self) -> None:
-        """Shutdown message filter."""
-        logger.info("Shutting down CAN message filter")
+    async def start(self) -> None:
+        """Start message filter."""
+        logger.info("Starting CAN message filter")
+        self._is_running = True
+        self._sort_rules()
+        self._set_safety_status(SafetyStatus.SAFE)
 
-    def add_rule(self, rule: FilterRule) -> bool:
+    async def stop(self) -> None:
+        """Stop message filter."""
+        logger.info("Stopping CAN message filter")
+        self._is_running = False
+
+    async def emergency_stop(self, reason: str) -> None:
+        """
+        Emergency stop all message filtering operations.
+
+        This method implements the SafetyAware emergency stop interface
+        for immediate cessation of filtering activities.
+
+        Args:
+            reason: Reason for emergency stop (for audit logging)
+        """
+        logger.critical("CAN message filter emergency stop: %s", reason)
+
+        # Set emergency stop state
+        self._set_emergency_stop_active(True)
+
+        # Clear all active filtering operations
+        self._is_running = False
+
+        # Clear capture buffer to prevent data retention
+        self.capture_buffer.clear()
+
+        # Reset all filter rules to safe state
+        for rule in self.rules.values():
+            rule.enabled = False
+
+        logger.critical("CAN message filter emergency stop completed")
+
+    async def get_safety_status(self) -> SafetyStatus:
+        """Get current safety status of the message filter."""
+        if self._emergency_stop_active:
+            return SafetyStatus.EMERGENCY_STOP
+        if not self._is_running:
+            return SafetyStatus.SAFE
+        if len(self.rules) > self.max_rules * 0.9:
+            # Near capacity - could affect performance
+            return SafetyStatus.DEGRADED
+        return SafetyStatus.SAFE
+
+    async def validate_safety_interlock(self, operation: str) -> bool:
+        """
+        Validate if filter operation is safe to perform.
+
+        Args:
+            operation: Operation being validated (e.g., "add_rule", "process_message")
+
+        Returns:
+            True if operation is safe to perform
+        """
+        # Check basic safety status
+        safety_status = await self.get_safety_status()
+        if safety_status == SafetyStatus.EMERGENCY_STOP:
+            logger.warning("Filter operation %s blocked: emergency stop active", operation)
+            return False
+
+        if not self._is_running and operation != "start":
+            logger.warning("Filter operation %s blocked: service not running", operation)
+            return False
+
+        # Additional operation-specific validations
+        if operation == "add_rule" and len(self.rules) >= self.max_rules:
+            logger.warning("Add rule operation blocked: maximum rules reached")
+            return False
+
+        return True
+
+    # Legacy methods for backward compatibility
+    async def startup(self) -> None:
+        """Legacy startup method - delegates to start()."""
+        await self.start()
+
+    async def shutdown(self) -> None:
+        """Legacy shutdown method - delegates to stop()."""
+        await self.stop()
+
+    async def add_rule(self, rule: FilterRule) -> bool:
         """Add a filter rule."""
+        # Check safety interlock
+        if not await self.validate_safety_interlock("add_rule"):
+            return False
+
         if len(self.rules) >= self.max_rules:
             logger.warning(f"Maximum number of filter rules ({self.max_rules}) reached")
             return False
@@ -335,7 +433,7 @@ class MessageFilter(Feature):
         logger.info(f"Added filter rule: {rule.name} (ID: {rule.id})")
         return True
 
-    def update_rule(self, rule_id: str, updates: Dict[str, Any]) -> bool:
+    def update_rule(self, rule_id: str, updates: dict[str, Any]) -> bool:
         """Update an existing rule."""
         if rule_id not in self.rules:
             return False
@@ -366,29 +464,29 @@ class MessageFilter(Feature):
         logger.info(f"Removed filter rule: {rule_id}")
         return True
 
-    def get_rule(self, rule_id: str) -> Optional[FilterRule]:
+    def get_rule(self, rule_id: str) -> FilterRule | None:
         """Get a specific rule."""
         return self.rules.get(rule_id)
 
-    def get_all_rules(self) -> List[FilterRule]:
+    def get_all_rules(self) -> list[FilterRule]:
         """Get all filter rules."""
         return list(self.rules.values())
 
     def _sort_rules(self):
         """Sort rules by priority (higher first)."""
-        self._sorted_rules = sorted(
-            self.rules.values(),
-            key=lambda r: r.priority,
-            reverse=True
-        )
+        self._sorted_rules = sorted(self.rules.values(), key=lambda r: r.priority, reverse=True)
 
-    async def process_message(self, message: Dict[str, Any]) -> bool:
+    async def process_message(self, message: dict[str, Any]) -> bool:
         """
         Process a CAN message through filters.
 
         Returns:
             True if message should be passed, False if blocked
         """
+        # Check safety interlock
+        if not await self.validate_safety_interlock("process_message"):
+            return True  # Pass message if safety check fails (fail-safe)
+
         start_time = time.time()
         self.stats["messages_processed"] += 1
 
@@ -421,11 +519,13 @@ class MessageFilter(Feature):
                         log_func(f"Filter match: {rule.name} - {message}")
 
                     elif action_type == FilterAction.ALERT:
-                        alerts_to_send.append({
-                            "rule": rule,
-                            "message": message,
-                            "alert_data": action,
-                        })
+                        alerts_to_send.append(
+                            {
+                                "rule": rule,
+                                "message": message,
+                                "alert_data": action,
+                            }
+                        )
 
                     elif action_type == FilterAction.CAPTURE:
                         should_capture = True
@@ -466,7 +566,7 @@ class MessageFilter(Feature):
             logger.error(f"Error processing message through filters: {e}")
             return True  # Pass on error
 
-    def _capture_message(self, message: Dict[str, Any]):
+    def _capture_message(self, message: dict[str, Any]):
         """Capture message to buffer."""
         # Add timestamp if not present
         if "timestamp" not in message:
@@ -479,7 +579,7 @@ class MessageFilter(Feature):
 
         self.stats["messages_captured"] += 1
 
-    async def _send_alert(self, alert_data: Dict[str, Any]):
+    async def _send_alert(self, alert_data: dict[str, Any]):
         """Send alert for matched rule."""
         try:
             self.stats["alerts_sent"] += 1
@@ -494,18 +594,15 @@ class MessageFilter(Feature):
 
     def get_captured_messages(
         self,
-        limit: Optional[int] = None,
-        since_timestamp: Optional[float] = None,
-    ) -> List[Dict[str, Any]]:
+        limit: int | None = None,
+        since_timestamp: float | None = None,
+    ) -> list[dict[str, Any]]:
         """Get captured messages."""
         messages = self.capture_buffer
 
         # Filter by timestamp
         if since_timestamp:
-            messages = [
-                m for m in messages
-                if m.get("timestamp", 0) > since_timestamp
-            ]
+            messages = [m for m in messages if m.get("timestamp", 0) > since_timestamp]
 
         # Limit results
         if limit:
@@ -518,7 +615,7 @@ class MessageFilter(Feature):
         self.capture_buffer.clear()
         logger.info("Cleared capture buffer")
 
-    def get_statistics(self) -> Dict[str, Any]:
+    def get_statistics(self) -> dict[str, Any]:
         """Get filter statistics."""
         self.stats["last_update"] = time.time()
         self.stats["active_rules"] = len([r for r in self.rules.values() if r.enabled])
@@ -528,14 +625,16 @@ class MessageFilter(Feature):
         # Add per-rule statistics
         rule_stats = []
         for rule in self.rules.values():
-            rule_stats.append({
-                "id": rule.id,
-                "name": rule.name,
-                "enabled": rule.enabled,
-                "priority": rule.priority,
-                "matches": rule.statistics["matches"],
-                "last_match": rule.statistics["last_match"],
-            })
+            rule_stats.append(
+                {
+                    "id": rule.id,
+                    "name": rule.name,
+                    "enabled": rule.enabled,
+                    "priority": rule.priority,
+                    "matches": rule.statistics["matches"],
+                    "last_match": rule.statistics["last_match"],
+                }
+            )
 
         return {
             **self.stats,
@@ -604,13 +703,15 @@ class MessageFilter(Feature):
                 # Create conditions
                 conditions = []
                 for cond_dict in rule_dict.get("conditions", []):
-                    conditions.append(FilterCondition(
-                        field=FilterField(cond_dict["field"]),
-                        operator=FilterOperator(cond_dict["operator"]),
-                        value=cond_dict["value"],
-                        case_sensitive=cond_dict.get("case_sensitive", True),
-                        negate=cond_dict.get("negate", False),
-                    ))
+                    conditions.append(
+                        FilterCondition(
+                            field=FilterField(cond_dict["field"]),
+                            operator=FilterOperator(cond_dict["operator"]),
+                            value=cond_dict["value"],
+                            case_sensitive=cond_dict.get("case_sensitive", True),
+                            negate=cond_dict.get("negate", False),
+                        )
+                    )
 
                 # Create rule
                 rule = FilterRule(

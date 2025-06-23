@@ -3,10 +3,12 @@
 default_language_version:
   python: python3.12
 
+# NO global exclude - let each tool manage its own exclusions
+
 repos:
   # Core file + YAML + merge conflict + whitespace checks
   - repo: https://github.com/pre-commit/pre-commit-hooks
-    rev: v4.6.0
+    rev: v5.0.0
     hooks:
       - id: trailing-whitespace
       - id: end-of-file-fixer
@@ -25,40 +27,72 @@ repos:
             resources/rvc-2023-11_chunks\.json
           )$
 
-  # # Python linting and formatting with Ruff
-  # - repo: https://github.com/astral-sh/ruff-pre-commit
-  #   rev: v0.1.11
-  #   hooks:
-  #     - id: ruff
-  #       args: [--fix, --exit-non-zero-on-fix]
-  #     - id: ruff-format
-  #       # Runs as the primary formatter in place of Black
+  # Python linting and formatting with Ruff (fast checks)
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.12.0  # Update to latest
+    hooks:
+      - id: ruff
+        args: [--fix]  # Fix what we can, report the rest
+        types_or: [python, pyi]
+      - id: ruff-format
+        types_or: [python, pyi]
 
-  # # HTML linting
-  # - repo: https://github.com/Riverside-Healthcare/djLint
-  #   rev: v1.34.0
-  #   hooks:
-  #     - id: djlint
-  #       args: [--reformat]
-  #       stages: [pre-commit]
-  #       files: ^src/core_daemon/frontend/templates/
+  # Security scanning with Bandit (CRITICAL - must pass for medium+ issues)
+  - repo: https://github.com/PyCQA/bandit
+    rev: '1.8.5'  # Update to latest
+    hooks:
+      - id: bandit
+        args: ["-c", "pyproject.toml", "--severity-level", "medium"]  # Block only on medium+ severity
+        additional_dependencies: ["bandit[toml]"]
+        types: [python]
 
-  # Frontend linting (run from frontend directory)
-  # - repo: local
-  #   hooks:
-  #     - id: eslint
-  #       name: eslint (frontend)
-  #       entry: bash -c 'cd frontend && npm run lint'
-  #       language: system
-  #       pass_filenames: false
-  #       files: ^frontend/
+  # Frontend linting (staged files only for speed)
+  - repo: local
+    hooks:
+      - id: eslint-staged
+        name: eslint (staged files)
+        entry: bash -c 'cd frontend && npx eslint --fix -- "$@"' --
+        language: system
+        files: ^frontend/.*\.(js|jsx|ts|tsx)$
+        exclude: ^frontend/(node_modules|dist|coverage)/
+        pass_filenames: true  # Only lint changed files
 
-  # # Poetry check (local)
-  # - repo: local
-  #   hooks:
-  #     - id: check-poetry-lock
-  #       name: Ensure poetry.lock is in sync with pyproject.toml
-  #       entry: poetry check --lock --no-interaction
-  #       language: system
-  #       pass_filenames: false
-  #       always_run: true
+  # ===== PRE-PUSH HOOKS (heavier checks) =====
+
+  # Python type checking with Pyright (slow, full project analysis)
+  - repo: https://github.com/RobertCraigie/pyright-python
+    rev: v1.1.402  # Latest as of June 2025
+    hooks:
+      - id: pyright
+        pass_filenames: false  # Analyze whole project
+        args: [--project=.]
+        stages: [pre-push]  # Only run on push
+
+  # Frontend full project checks
+  - repo: local
+    hooks:
+      - id: frontend-typecheck-full
+        name: TypeScript check (full project)
+        entry: bash -c 'cd frontend && npm run typecheck'
+        language: system
+        pass_filenames: false
+        stages: [pre-push]  # Only run on push
+
+      - id: frontend-build-check
+        name: Frontend build check
+        entry: bash -c 'cd frontend && npm run build'
+        language: system
+        pass_filenames: false
+        stages: [pre-push]  # Only run on push
+
+  # Poetry lock verification (push only)
+  - repo: local
+    hooks:
+      - id: check-poetry-lock
+        name: poetry-lock-check
+        description: "Ensure poetry.lock is in sync with pyproject.toml"
+        entry: poetry check --lock
+        language: system
+        pass_filenames: false
+        files: ^(pyproject\.toml|poetry\.lock)$
+        stages: [pre-push]  # Only run on push

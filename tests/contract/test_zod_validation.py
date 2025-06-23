@@ -12,11 +12,12 @@ Tests cover:
 """
 
 import json
-import pytest
-from typing import Dict, Any
-from unittest.mock import patch, MagicMock
+from typing import Any, Dict
+from unittest.mock import MagicMock, patch
 
+import pytest
 from fastapi.testclient import TestClient
+
 from backend.main import create_app
 
 
@@ -35,7 +36,9 @@ class TestZodSchemaExport:
         response = client.get("/api/schemas/")
 
         # Should either work (if features enabled) or return 503 (if disabled)
-        assert response.status_code in [200, 503], f"Schema export should be available or disabled: {response.status_code}"
+        assert response.status_code in [200, 503], (
+            f"Schema export should be available or disabled: {response.status_code}"
+        )
 
         if response.status_code == 200:
             data = response.json()
@@ -46,7 +49,9 @@ class TestZodSchemaExport:
             assert "metadata" in data, "Schema export should include metadata"
 
             # Should have safety-critical metadata
-            assert data["metadata"]["safety_critical"] == True, "Schemas should be marked as safety-critical"
+            assert data["metadata"]["safety_critical"] == True, (
+                "Schemas should be marked as safety-critical"
+            )
             assert data["metadata"]["validation_required"] == True, "Validation should be required"
 
     def test_domain_entities_schema_export(self, client):
@@ -79,7 +84,9 @@ class TestZodSchemaExport:
             pytest.skip("Domain API v2 not available in test environment")
 
         else:
-            pytest.fail(f"Unexpected response from entities schema endpoint: {response.status_code}")
+            pytest.fail(
+                f"Unexpected response from entities schema endpoint: {response.status_code}"
+            )
 
     def test_individual_schema_export(self, client):
         """Test individual schema export by name"""
@@ -95,7 +102,9 @@ class TestZodSchemaExport:
                 assert "schema_name" in data, "Individual schema should include name"
                 assert "schema" in data, "Individual schema should include schema definition"
                 assert "version" in data, "Individual schema should include version"
-                assert data["schema_name"] == schema_name, f"Schema name should match request: {schema_name}"
+                assert data["schema_name"] == schema_name, (
+                    f"Schema name should match request: {schema_name}"
+                )
 
             elif response.status_code in [404, 503]:
                 # Schema not found or feature disabled - acceptable for testing
@@ -119,7 +128,7 @@ class TestZodValidationLogic:
             "state": {"on": True, "brightness": 75},
             "area": "Living Room",
             "last_updated": "2025-01-11T10:30:00Z",
-            "available": True
+            "available": True,
         }
 
         # Test valid entity passes basic checks
@@ -142,7 +151,10 @@ class TestZodValidationLogic:
         for invalid_entity in invalid_entities:
             # These would fail Zod validation
             if "entity_id" in invalid_entity:
-                if not isinstance(invalid_entity["entity_id"], str) or len(invalid_entity["entity_id"]) == 0:
+                if (
+                    not isinstance(invalid_entity["entity_id"], str)
+                    or len(invalid_entity["entity_id"]) == 0
+                ):
                     assert True, "Invalid entity_id should fail validation"
 
             if "available" in invalid_entity:
@@ -196,7 +208,9 @@ class TestZodValidationLogic:
                 assert True, "Invalid command should fail validation"
 
             if "brightness" in cmd:
-                if not isinstance(cmd["brightness"], (int, float)) or not (0 <= cmd["brightness"] <= 100):
+                if not isinstance(cmd["brightness"], (int, float)) or not (
+                    0 <= cmd["brightness"] <= 100
+                ):
                     assert True, "Invalid brightness should fail validation"
 
             if "state" in cmd:
@@ -207,15 +221,12 @@ class TestZodValidationLogic:
         """Test bulk control request validation rules"""
         # Valid bulk requests
         valid_requests = [
-            {
-                "entity_ids": ["light1", "light2"],
-                "command": {"command": "set", "state": True}
-            },
+            {"entity_ids": ["light1", "light2"], "command": {"command": "set", "state": True}},
             {
                 "entity_ids": ["light1"],
                 "command": {"command": "toggle"},
                 "ignore_errors": True,
-                "timeout_seconds": 10.0
+                "timeout_seconds": 10.0,
             },
         ]
 
@@ -248,7 +259,11 @@ class TestZodValidationLogic:
 
         for req in invalid_requests:
             # These would fail Zod validation
-            if "entity_ids" not in req or not isinstance(req.get("entity_ids"), list) or len(req.get("entity_ids", [])) == 0:
+            if (
+                "entity_ids" not in req
+                or not isinstance(req.get("entity_ids"), list)
+                or len(req.get("entity_ids", [])) == 0
+            ):
                 assert True, "Invalid entity_ids should fail validation"
 
             if "command" not in req:
@@ -256,6 +271,7 @@ class TestZodValidationLogic:
 
     def test_safety_critical_validation_rules(self):
         """Test safety-critical validation rules that must be enforced"""
+
         # Safety rule 1: Brightness must be within safe range
         def validate_brightness_range(brightness):
             return isinstance(brightness, (int, float)) and 0 <= brightness <= 100
@@ -305,10 +321,18 @@ class TestZodIntegrationCompatibility:
                 "state": {"type": "object"},
                 "area": {"type": ["string", "null"]},
                 "last_updated": {"type": "string"},
-                "available": {"type": "boolean"}
+                "available": {"type": "boolean"},
             },
-            "required": ["entity_id", "name", "device_type", "protocol", "state", "last_updated", "available"],
-            "additionalProperties": False
+            "required": [
+                "entity_id",
+                "name",
+                "device_type",
+                "protocol",
+                "state",
+                "last_updated",
+                "available",
+            ],
+            "additionalProperties": False,
         }
 
         # Test that schema has expected structure for Zod conversion
@@ -325,10 +349,14 @@ class TestZodIntegrationCompatibility:
                 if isinstance(prop_schema["type"], list):
                     # Union type (e.g., ["string", "null"])
                     for type_option in prop_schema["type"]:
-                        assert type_option in valid_json_types, f"Type {type_option} should be valid JSON Schema type"
+                        assert type_option in valid_json_types, (
+                            f"Type {type_option} should be valid JSON Schema type"
+                        )
                 else:
                     # Single type
-                    assert prop_schema["type"] in valid_json_types, f"Type {prop_schema['type']} should be valid JSON Schema type"
+                    assert prop_schema["type"] in valid_json_types, (
+                        f"Type {prop_schema['type']} should be valid JSON Schema type"
+                    )
 
     def test_enum_validation_compatibility(self):
         """Test that enum values are properly structured for Zod"""
@@ -350,11 +378,7 @@ class TestZodIntegrationCompatibility:
         # Example nested structure (entity with state object)
         nested_example = {
             "entity_id": "light1",
-            "state": {
-                "on": True,
-                "brightness": 75,
-                "color": "warm_white"
-            }
+            "state": {"on": True, "brightness": 75, "color": "warm_white"},
         }
 
         # Test that nested structure is valid
@@ -363,7 +387,9 @@ class TestZodIntegrationCompatibility:
 
         # Test that nested values are of valid types
         for key, value in nested_example["state"].items():
-            assert isinstance(value, (str, int, float, bool)), f"State value {key} should be primitive type"
+            assert isinstance(value, (str, int, float, bool)), (
+                f"State value {key} should be primitive type"
+            )
 
 
 if __name__ == "__main__":

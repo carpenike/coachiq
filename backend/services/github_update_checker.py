@@ -15,9 +15,6 @@ from typing import Any
 
 import httpx
 
-from backend.services.feature_base import Feature
-from backend.services.feature_models import SafetyClassification
-
 logger = logging.getLogger(__name__)
 
 DEFAULT_GITHUB_OWNER = "carpenike"
@@ -151,7 +148,7 @@ class GitHubUpdateChecker:
         }
 
 
-class GitHubUpdateCheckerFeature(Feature):
+class GitHubUpdateCheckerFeature:
     """Feature wrapper for the GitHub update checker background service."""
 
     def __init__(
@@ -162,19 +159,16 @@ class GitHubUpdateCheckerFeature(Feature):
         config: dict[str, Any] | None = None,
         dependencies: list[str] | None = None,
         friendly_name: str | None = None,
-        safety_classification: SafetyClassification | None = None,
+        safety_classification: Any | None = None,
         log_state_transitions: bool = True,
     ) -> None:
-        super().__init__(
-            name=name,
-            enabled=enabled,
-            core=core,
-            config=config,
-            dependencies=dependencies or [],
-            friendly_name=friendly_name,
-            safety_classification=safety_classification,
-            log_state_transitions=log_state_transitions,
-        )
+        self.name = name
+        self.enabled = enabled
+        self.core = core
+        self.config = config or {}
+        self.dependencies = dependencies or []
+        self.friendly_name = friendly_name or "GitHub Update Checker"
+        self.log_state_transitions = log_state_transitions
         self._update_checker: GitHubUpdateChecker | None = None
 
     async def startup(self) -> None:
@@ -257,7 +251,7 @@ def register_github_update_checker_feature(
     config: dict[str, Any],
     dependencies: list[str],
     friendly_name: str | None = None,
-    safety_classification: SafetyClassification | None = None,
+    safety_classification: Any | None = None,
     log_state_transitions: bool = True,
 ) -> GitHubUpdateCheckerFeature:
     """

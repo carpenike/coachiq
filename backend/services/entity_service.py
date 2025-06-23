@@ -1,15 +1,8 @@
 """
-Entity Service
+Entity Service - Repository Pattern Implementation
 
-Handles business logic for RV-C entity management, including:
-- Entity querying and filtering
-- Entity state management
-- Light control with CAN command sending
-- History management
-- Metadata extraction
-
-This service uses the EntityManagerFeature for unified entity management,
-completely removing legacy state dictionary dependencies.
+Service for managing RV-C entities using clean repository pattern
+with no legacy AppState dependencies.
 """
 
 import logging
@@ -17,7 +10,6 @@ import time
 from typing import Any
 
 from backend.core.config import get_can_settings
-from backend.core.entity_manager import EntityManager
 from backend.integrations.can.manager import can_tx_queue
 from backend.integrations.can.message_factory import create_light_can_message
 from backend.models.entity import (
@@ -27,6 +19,7 @@ from backend.models.entity import (
     CreateEntityMappingResponse,
 )
 from backend.models.unmapped import UnknownPGNEntry, UnmappedEntryModel
+from backend.repositories import DiagnosticsRepository, EntityStateRepository, RVCConfigRepository
 from backend.websocket.handlers import WebSocketManager
 
 logger = logging.getLogger(__name__)
@@ -34,44 +27,33 @@ logger = logging.getLogger(__name__)
 
 class EntityService:
     """
-    Service for managing RV-C entities and their control operations.
+    Service for managing RV-C entities using repository pattern.
 
-    This service provides business logic for entity operations using the
-    EntityManagerFeature for unified entity management, completely removing
-    legacy state dictionary dependencies.
+    This service provides business logic for entity operations using repositories
+    directly, eliminating AppState dependency.
     """
 
     def __init__(
         self,
         websocket_manager: WebSocketManager,
-        entity_manager: EntityManager | None = None,
+        entity_state_repository: EntityStateRepository,
+        rvc_config_repository: RVCConfigRepository,
+        diagnostics_repository: DiagnosticsRepository,
     ):
         """
-        Initialize the entity service.
+        Initialize the entity service with repository dependencies.
 
         Args:
             websocket_manager: WebSocket communication manager
-            entity_manager: EntityManager instance (will be retrieved from feature manager if None)
+            entity_state_repository: Repository for entity state management
+            rvc_config_repository: Repository for RVC configuration data
+            diagnostics_repository: Repository for runtime diagnostic data
         """
         self.websocket_manager = websocket_manager
-        self._entity_manager = entity_manager
-
-    @property
-    def entity_manager(self) -> EntityManager:
-        """Get the EntityManager instance."""
-        if self._entity_manager is None:
-            # Get entity manager from feature manager
-            from backend.services.feature_manager import get_feature_manager
-
-            feature_manager = get_feature_manager()
-            entity_manager_feature = feature_manager.get_feature("entity_manager")
-            if entity_manager_feature is None:
-                msg = "EntityManager feature not found in feature manager"
-                raise RuntimeError(msg)
-
-            self._entity_manager = entity_manager_feature.get_entity_manager()
-
-        return self._entity_manager
+        self._entity_state_repo = entity_state_repository
+        self._rvc_config_repo = rvc_config_repository
+        self._diagnostics_repo = diagnostics_repository
+        logger.info("EntityService initialized with repositories")
 
     async def list_entities(
         self,
@@ -90,8 +72,8 @@ class EntityService:
         Returns:
             Dictionary of entities matching the filter criteria
         """
-        # Use EntityManager for efficient filtering
-        filtered_entities = self.entity_manager.filter_entities(
+        # Use repository's entity manager for efficient filtering
+        filtered_entities = self._entity_state_repo.entity_manager.filter_entities(
             device_type=device_type, area=area, protocol=protocol
         )
         # Convert to API format
@@ -99,7 +81,7 @@ class EntityService:
 
     async def list_entity_ids(self) -> list[str]:
         """Return all known entity IDs."""
-        return self.entity_manager.get_entity_ids()
+        return self._entity_state_repo.entity_manager.get_entity_ids()
 
     async def get_entity(self, entity_id: str) -> dict[str, Any] | None:
         """
@@ -111,7 +93,7 @@ class EntityService:
         Returns:
             The entity data or None if not found
         """
-        entity = self.entity_manager.get_entity(entity_id)
+        entity = self._entity_state_repo.entity_manager.get_entity(entity_id)
         if entity:
             return entity.to_dict()
         return None
@@ -133,7 +115,7 @@ class EntityService:
         Returns:
             List of entity history entries or None if entity not found
         """
-        entity = self.entity_manager.get_entity(entity_id)
+        entity = self._entity_state_repo.entity_manager.get_entity(entity_id)
         if entity:
             # Get history from the entity with optional filtering
             history_entries = entity.get_history(count=limit, since=since)
@@ -148,9 +130,9 @@ class EntityService:
         Returns:
             Dictionary of unmapped entries
         """
-        # Use EntityManager for unmapped entries
+        # Use diagnostics repository for unmapped entries
         result = {}
-        for key, entry in self.entity_manager.unmapped_entries.items():
+        for key, entry in self._diagnostics_repo.get_unmapped_entries().items():
             # Fill missing fields with dummy/test values for API contract
             entry = {
                 "pgn_hex": entry.get("pgn_hex", "0xFF00"),
@@ -177,7 +159,7 @@ class EntityService:
             Dictionary of unknown PGN entries
         """
         result = {}
-        for key, entry in self.entity_manager.unknown_pgns.items():
+        for key, entry in self._diagnostics_repo.get_unknown_pgns().items():
             entry = {
                 "arbitration_id_hex": entry.get("arbitration_id_hex", "0x1FFFF"),
                 "first_seen_timestamp": entry.get("first_seen_timestamp", 0.0),
@@ -196,7 +178,7 @@ class EntityService:
             Dictionary with lists of available values for each metadata category
         """
         # Aggregate metadata from all entities
-        entities = self.entity_manager.get_all_entities().values()
+        entities = self._entity_state_repo.entity_manager.get_all_entities().values()
         device_types = set()
         capabilities = set()
         suggested_areas = set()
@@ -226,7 +208,7 @@ class EntityService:
         Returns:
             Dictionary with protocol ownership statistics and entity distribution
         """
-        return self.entity_manager.get_protocol_summary()
+        return self._entity_state_repo.entity_manager.get_protocol_summary()
 
     async def create_entity_mapping(
         self, request: CreateEntityMappingRequest
@@ -246,7 +228,7 @@ class EntityService:
         """
         try:
             # Check if entity already exists
-            existing_entity = self.entity_manager.get_entity(request.entity_id)
+            existing_entity = self._entity_state_repo.entity_manager.get_entity(request.entity_id)
             if existing_entity:
                 return CreateEntityMappingResponse(
                     status="error",
@@ -265,8 +247,8 @@ class EntityService:
                 "notes": request.notes or "",
             }
 
-            # Register the new entity with the EntityManager
-            new_entity = self.entity_manager.register_entity(
+            # Register the new entity with the repository
+            new_entity = self._entity_state_repo.entity_manager.register_entity(
                 entity_id=request.entity_id,
                 config=entity_config,
             )
@@ -275,7 +257,7 @@ class EntityService:
                 return CreateEntityMappingResponse(
                     status="error",
                     entity_id=request.entity_id,
-                    message="Failed to register entity with EntityManager",
+                    message="Failed to register entity with repository",
                     entity_data=None,
                 )
 
@@ -325,7 +307,7 @@ class EntityService:
             ValueError: If entity not found or device type not supported
             RuntimeError: If control command fails
         """
-        entity = self.entity_manager.get_entity(entity_id)
+        entity = self._entity_state_repo.entity_manager.get_entity(entity_id)
         if not entity:
             msg = f"Entity '{entity_id}' not found"
             raise ValueError(msg)
@@ -335,9 +317,7 @@ class EntityService:
         if device_type == "light":
             return await self.control_light(entity_id, command)
         msg = f"Control not supported for device type '{device_type}'. Supported types: light"
-        raise ValueError(
-            msg
-        )
+        raise ValueError(msg)
 
     async def control_light(self, entity_id: str, cmd: ControlCommand) -> ControlEntityResponse:
         """
@@ -354,7 +334,7 @@ class EntityService:
             ValueError: If entity not found or command invalid
             RuntimeError: If CAN command fails to send
         """
-        entity = self.entity_manager.get_entity(entity_id)
+        entity = self._entity_state_repo.entity_manager.get_entity(entity_id)
         if not entity:
             msg = f"Entity '{entity_id}' not found"
             raise ValueError(msg)
@@ -370,7 +350,8 @@ class EntityService:
         current_on_str = current_state_data.get("state", "off")
         current_on = current_on_str.lower() == "on"
 
-        last_brightness_ui = getattr(entity, "last_known_brightness", None)
+        # Use repository to get/set last known brightness
+        last_brightness_ui = self._entity_state_repo.get_last_known_brightness(entity_id)
         if (
             last_brightness_ui is None
             or not isinstance(last_brightness_ui, int | float)
@@ -395,14 +376,18 @@ class EntityService:
                 else:
                     target_brightness_ui = cmd.brightness
                 action = f"Set ON to {target_brightness_ui}%"
-                entity.last_known_brightness = int(target_brightness_ui)
+                self._entity_state_repo.set_last_known_brightness(
+                    entity_id, int(target_brightness_ui)
+                )
                 new_state = True
                 new_brightness = int(target_brightness_ui)
                 if new_brightness <= 0:
                     new_brightness = 100
             elif cmd.state == "off":
                 if current_on:
-                    entity.last_known_brightness = int(current_brightness_ui)
+                    self._entity_state_repo.set_last_known_brightness(
+                        entity_id, int(current_brightness_ui)
+                    )
                 target_brightness_ui = 0
                 action = "Set OFF"
                 new_state = False
@@ -416,20 +401,22 @@ class EntityService:
                 new_brightness = last_brightness_ui if last_brightness_ui > 0 else 100
                 action = f"Toggled ON to {new_brightness}%"
             else:
-                entity.last_known_brightness = int(current_brightness_ui)
+                self._entity_state_repo.set_last_known_brightness(
+                    entity_id, int(current_brightness_ui)
+                )
                 new_brightness = 0
                 action = "Toggled OFF"
         elif cmd.command == "brightness_up":
             new_brightness = min(current_brightness_ui + 10, 100)
             new_state = bool(new_brightness)
             action = f"Brightness up to {new_brightness}%"
-            entity.last_known_brightness = int(new_brightness)
+            self._entity_state_repo.set_last_known_brightness(entity_id, int(new_brightness))
         elif cmd.command == "brightness_down":
             new_brightness = max(current_brightness_ui - 10, 0)
             new_state = bool(new_brightness)
             action = f"Brightness down to {new_brightness}%"
             if new_brightness > 0:
-                entity.last_known_brightness = int(new_brightness)
+                self._entity_state_repo.set_last_known_brightness(entity_id, int(new_brightness))
         else:
             msg = f"Unknown command: {cmd.command}"
             raise ValueError(msg)
@@ -442,24 +429,11 @@ class EntityService:
         new_brightness = max(new_brightness, 0)
         new_brightness = min(new_brightness, 100)
 
-        # Broadcast entity update over WebSocket after control
-        await self.websocket_manager.broadcast_to_data_clients(
-            {
-                "type": "entity_update",
-                "data": {
-                    "entity_id": entity_id,
-                    "entity_data": entity.to_dict(),
-                },
-            }
-        )
-
-        return ControlEntityResponse(
-            status="success",
+        # Execute the command
+        return await self._execute_light_command(
             entity_id=entity_id,
-            command=cmd.command,
-            state="on" if new_state else "off",
-            brightness=new_brightness,
-            action=action,
+            target_brightness_ui=new_brightness,
+            action_description=action,
         )
 
     async def _execute_light_command(
@@ -480,15 +454,13 @@ class EntityService:
             Control response with status and details
         """
         # Get entity information for CAN message creation
-        entity = self.entity_manager.get_entity(entity_id)
+        entity = self._entity_state_repo.entity_manager.get_entity(entity_id)
         if not entity:
             msg = (
-                f"Control Error: {entity_id} not found in entity manager for "
+                f"Control Error: {entity_id} not found in repository for "
                 f"action '{action_description}'"
             )
-            raise RuntimeError(
-                msg
-            )
+            raise RuntimeError(msg)
 
         # Extract info needed for CAN message creation from entity config
         entity_config = entity.config
@@ -532,7 +504,7 @@ class EntityService:
         }
 
         # Update entity state optimistically
-        entity.update_state(optimistic_payload)
+        self._entity_state_repo.update_entity_state_and_history(entity_id, optimistic_payload)
 
         # Broadcast update via WebSocket (correct structure)
         await self.websocket_manager.broadcast_to_data_clients(
@@ -547,7 +519,6 @@ class EntityService:
 
         # Create and send CAN message
         try:
-            decoded = None
             can_message = create_light_can_message(
                 pgn=0x1F0D0,  # Standard PGN for DML_COMMAND_2 light commands
                 instance=instance,
@@ -562,21 +533,8 @@ class EntityService:
 
             await can_tx_queue.put((can_message, can_interface))
 
-            # Add sniffer entry for TX tracking
-            sniffer_entry = {
-                "timestamp": ts,
-                "interface": can_interface,
-                "can_id": f"{can_message.arbitration_id:08X}",
-                "data": can_message.data.hex().upper(),
-                "dlc": len(can_message.data),
-                "is_extended": can_message.is_extended_id,
-                "decoded": decoded,
-                "origin": "self",
-            }
-            logger.debug(f"Adding TX sniffer entry: {sniffer_entry}")
-
-            # Note: Since we removed AppState dependency, we don't track pending commands
-            # This could be added to EntityManager or handled differently if needed
+            # Note: We don't have access to can_tracking_repo here for sniffer entries
+            # This could be added as another dependency if needed
             logger.debug("Successfully sent CAN command")
 
             # Broadcast the state update via WebSocket (correct structure)
@@ -602,3 +560,18 @@ class EntityService:
             logger.error(f"CAN command failed for {entity_id}: {e}")
             msg = f"CAN command failed: {e}"
             raise RuntimeError(msg) from e
+
+
+def create_entity_service() -> EntityService:
+    """
+    Factory function for creating EntityService with dependencies.
+
+    This would be registered with ServiceRegistry and automatically
+    get the repositories injected.
+    """
+    # In real usage, this would get the repositories from ServiceRegistry
+    # For now, we'll document the pattern
+    raise NotImplementedError(
+        "This factory should be registered with ServiceRegistry "
+        "to get automatic dependency injection of repositories"
+    )

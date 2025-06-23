@@ -5,12 +5,12 @@ Provides REST API for managing CAN message filters.
 """
 
 import logging
-from typing import Any, Dict, List, Optional
+from typing import Annotated, Any, Dict, List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
 
-from backend.core.dependencies_v2 import get_feature_manager
+from backend.core.dependencies import get_can_message_filter
 from backend.integrations.can.message_filter import (
     FilterAction,
     FilterCondition,
@@ -18,7 +18,6 @@ from backend.integrations.can.message_filter import (
     FilterOperator,
     FilterRule,
 )
-from backend.services.feature_manager import FeatureManager
 
 logger = logging.getLogger(__name__)
 
@@ -40,31 +39,31 @@ class FilterActionModel(BaseModel):
     """Filter action model."""
 
     action: FilterAction
-    parameters: Optional[Dict[str, Any]] = None
+    parameters: dict[str, Any] | None = None
 
 
 class FilterRuleCreate(BaseModel):
     """Create filter rule request."""
 
     name: str = Field(..., min_length=1, max_length=100)
-    description: Optional[str] = ""
+    description: str | None = ""
     enabled: bool = True
     priority: int = Field(50, ge=0, le=100)
-    conditions: List[FilterConditionModel]
+    conditions: list[FilterConditionModel]
     condition_logic: str = Field("AND", pattern="^(AND|OR)$")
-    actions: List[Dict[str, Any]]
+    actions: list[dict[str, Any]]
 
 
 class FilterRuleUpdate(BaseModel):
     """Update filter rule request."""
 
-    name: Optional[str] = Field(None, min_length=1, max_length=100)
-    description: Optional[str] = None
-    enabled: Optional[bool] = None
-    priority: Optional[int] = Field(None, ge=0, le=100)
-    conditions: Optional[List[FilterConditionModel]] = None
-    condition_logic: Optional[str] = Field(None, pattern="^(AND|OR)$")
-    actions: Optional[List[Dict[str, Any]]] = None
+    name: str | None = Field(None, min_length=1, max_length=100)
+    description: str | None = None
+    enabled: bool | None = None
+    priority: int | None = Field(None, ge=0, le=100)
+    conditions: list[FilterConditionModel] | None = None
+    condition_logic: str | None = Field(None, pattern="^(AND|OR)$")
+    actions: list[dict[str, Any]] | None = None
 
 
 class FilterRuleResponse(BaseModel):
@@ -75,10 +74,10 @@ class FilterRuleResponse(BaseModel):
     description: str
     enabled: bool
     priority: int
-    conditions: List[FilterConditionModel]
+    conditions: list[FilterConditionModel]
     condition_logic: str
-    actions: List[Dict[str, Any]]
-    statistics: Dict[str, Any]
+    actions: list[dict[str, Any]]
+    statistics: dict[str, Any]
 
 
 class FilterStatisticsResponse(BaseModel):
@@ -93,7 +92,7 @@ class FilterStatisticsResponse(BaseModel):
     active_rules: int
     total_rules: int
     capture_buffer_size: int
-    rules: List[Dict[str, Any]]
+    rules: list[dict[str, Any]]
 
 
 class CapturedMessageResponse(BaseModel):
@@ -103,38 +102,37 @@ class CapturedMessageResponse(BaseModel):
     can_id: str
     data: str
     interface: str
-    protocol: Optional[str] = "unknown"
-    message_type: Optional[str] = ""
-    decoded: Optional[Dict[str, Any]] = None
+    protocol: str | None = "unknown"
+    message_type: str | None = ""
+    decoded: dict[str, Any] | None = None
 
 
-@router.get("/status", response_model=Dict[str, Any])
+@router.get("/status", response_model=dict[str, Any])
 async def get_filter_status(
-    feature_manager: FeatureManager = Depends(get_feature_manager),
+    filter_service: Annotated[Any, Depends(get_can_message_filter)],
 ):
     """Get message filter status."""
-    filter_feature = feature_manager.get_feature("can_message_filter")
-    if not filter_feature:
-        raise HTTPException(status_code=404, detail="Message filter not available")
+    if not filter_service:
+        raise HTTPException(status_code=404, detail="Message filter service not available")
+
+    # Get current safety status
+    safety_status = await filter_service.get_safety_status()
 
     return {
-        "enabled": filter_feature.enabled,
-        "healthy": filter_feature.health == "healthy",
-        "total_rules": len(filter_feature.rules),
-        "active_rules": len([r for r in filter_feature.rules.values() if r.enabled]),
-        "statistics": filter_feature.get_statistics(),
+        "enabled": filter_service._is_running,
+        "healthy": safety_status.value != "emergency_stop",
+        "total_rules": len(filter_service.rules),
+        "active_rules": len([r for r in filter_service.rules.values() if r.enabled]),
+        "statistics": filter_service.get_statistics(),
     }
 
 
-@router.get("/rules", response_model=List[FilterRuleResponse])
+@router.get("/rules", response_model=list[FilterRuleResponse])
 async def list_filter_rules(
+    filter_feature: Annotated[Any, Depends(get_can_message_filter)],
     enabled_only: bool = Query(False, description="Only return enabled rules"),
-    feature_manager: FeatureManager = Depends(get_feature_manager),
 ):
     """List all filter rules."""
-    filter_feature = feature_manager.get_feature("can_message_filter")
-    if not filter_feature:
-        raise HTTPException(status_code=404, detail="Message filter not available")
 
     rules = filter_feature.get_all_rules()
 
@@ -169,12 +167,9 @@ async def list_filter_rules(
 @router.get("/rules/{rule_id}", response_model=FilterRuleResponse)
 async def get_filter_rule(
     rule_id: str,
-    feature_manager: FeatureManager = Depends(get_feature_manager),
+    filter_feature: Annotated[Any, Depends(get_can_message_filter)],
 ):
     """Get a specific filter rule."""
-    filter_feature = feature_manager.get_feature("can_message_filter")
-    if not filter_feature:
-        raise HTTPException(status_code=404, detail="Message filter not available")
 
     rule = filter_feature.get_rule(rule_id)
     if not rule:
@@ -205,27 +200,27 @@ async def get_filter_rule(
 @router.post("/rules", response_model=FilterRuleResponse)
 async def create_filter_rule(
     rule_data: FilterRuleCreate,
-    feature_manager: FeatureManager = Depends(get_feature_manager),
+    filter_feature: Annotated[Any, Depends(get_can_message_filter)],
 ):
     """Create a new filter rule."""
-    filter_feature = feature_manager.get_feature("can_message_filter")
-    if not filter_feature:
-        raise HTTPException(status_code=404, detail="Message filter not available")
 
     # Generate unique ID
     import uuid
+
     rule_id = f"user_{uuid.uuid4().hex[:8]}"
 
     # Create conditions
     conditions = []
     for cond_data in rule_data.conditions:
-        conditions.append(FilterCondition(
-            field=cond_data.field,
-            operator=cond_data.operator,
-            value=cond_data.value,
-            case_sensitive=cond_data.case_sensitive,
-            negate=cond_data.negate,
-        ))
+        conditions.append(
+            FilterCondition(
+                field=cond_data.field,
+                operator=cond_data.operator,
+                value=cond_data.value,
+                case_sensitive=cond_data.case_sensitive,
+                negate=cond_data.negate,
+            )
+        )
 
     # Create rule
     rule = FilterRule(
@@ -269,12 +264,9 @@ async def create_filter_rule(
 async def update_filter_rule(
     rule_id: str,
     updates: FilterRuleUpdate,
-    feature_manager: FeatureManager = Depends(get_feature_manager),
+    filter_feature: Annotated[Any, Depends(get_can_message_filter)],
 ):
     """Update an existing filter rule."""
-    filter_feature = feature_manager.get_feature("can_message_filter")
-    if not filter_feature:
-        raise HTTPException(status_code=404, detail="Message filter not available")
 
     # Check if rule exists
     rule = filter_feature.get_rule(rule_id)
@@ -292,13 +284,15 @@ async def update_filter_rule(
     if "conditions" in update_dict:
         conditions = []
         for cond_data in update_dict["conditions"]:
-            conditions.append(FilterCondition(
-                field=cond_data["field"],
-                operator=cond_data["operator"],
-                value=cond_data["value"],
-                case_sensitive=cond_data.get("case_sensitive", True),
-                negate=cond_data.get("negate", False),
-            ))
+            conditions.append(
+                FilterCondition(
+                    field=cond_data["field"],
+                    operator=cond_data["operator"],
+                    value=cond_data["value"],
+                    case_sensitive=cond_data.get("case_sensitive", True),
+                    negate=cond_data.get("negate", False),
+                )
+            )
         update_dict["conditions"] = conditions
 
     # Update rule
@@ -333,12 +327,9 @@ async def update_filter_rule(
 @router.delete("/rules/{rule_id}")
 async def delete_filter_rule(
     rule_id: str,
-    feature_manager: FeatureManager = Depends(get_feature_manager),
+    filter_feature: Annotated[Any, Depends(get_can_message_filter)],
 ):
     """Delete a filter rule."""
-    filter_feature = feature_manager.get_feature("can_message_filter")
-    if not filter_feature:
-        raise HTTPException(status_code=404, detail="Message filter not available")
 
     if not filter_feature.remove_rule(rule_id):
         raise HTTPException(status_code=404, detail="Filter rule not found")
@@ -348,12 +339,9 @@ async def delete_filter_rule(
 
 @router.get("/statistics", response_model=FilterStatisticsResponse)
 async def get_filter_statistics(
-    feature_manager: FeatureManager = Depends(get_feature_manager),
+    filter_feature: Annotated[Any, Depends(get_can_message_filter)],
 ):
     """Get filter statistics."""
-    filter_feature = feature_manager.get_feature("can_message_filter")
-    if not filter_feature:
-        raise HTTPException(status_code=404, detail="Message filter not available")
 
     stats = filter_feature.get_statistics()
     return FilterStatisticsResponse(**stats)
@@ -361,27 +349,21 @@ async def get_filter_statistics(
 
 @router.post("/statistics/reset")
 async def reset_filter_statistics(
-    feature_manager: FeatureManager = Depends(get_feature_manager),
+    filter_feature: Annotated[Any, Depends(get_can_message_filter)],
 ):
     """Reset filter statistics."""
-    filter_feature = feature_manager.get_feature("can_message_filter")
-    if not filter_feature:
-        raise HTTPException(status_code=404, detail="Message filter not available")
 
     filter_feature.reset_statistics()
     return {"status": "success"}
 
 
-@router.get("/capture", response_model=List[CapturedMessageResponse])
+@router.get("/capture", response_model=list[CapturedMessageResponse])
 async def get_captured_messages(
-    limit: Optional[int] = Query(100, ge=1, le=1000),
-    since_timestamp: Optional[float] = Query(None),
-    feature_manager: FeatureManager = Depends(get_feature_manager),
+    filter_feature: Annotated[Any, Depends(get_can_message_filter)],
+    limit: int | None = Query(100, ge=1, le=1000),
+    since_timestamp: float | None = Query(None),
 ):
     """Get captured messages."""
-    filter_feature = feature_manager.get_feature("can_message_filter")
-    if not filter_feature:
-        raise HTTPException(status_code=404, detail="Message filter not available")
 
     messages = filter_feature.get_captured_messages(
         limit=limit,
@@ -404,12 +386,9 @@ async def get_captured_messages(
 
 @router.delete("/capture")
 async def clear_capture_buffer(
-    feature_manager: FeatureManager = Depends(get_feature_manager),
+    filter_feature: Annotated[Any, Depends(get_can_message_filter)],
 ):
     """Clear the capture buffer."""
-    filter_feature = feature_manager.get_feature("can_message_filter")
-    if not filter_feature:
-        raise HTTPException(status_code=404, detail="Message filter not available")
 
     filter_feature.clear_capture_buffer()
     return {"status": "success"}
@@ -417,12 +396,9 @@ async def clear_capture_buffer(
 
 @router.get("/export")
 async def export_filter_rules(
-    feature_manager: FeatureManager = Depends(get_feature_manager),
+    filter_feature: Annotated[Any, Depends(get_can_message_filter)],
 ):
     """Export filter rules as JSON."""
-    filter_feature = feature_manager.get_feature("can_message_filter")
-    if not filter_feature:
-        raise HTTPException(status_code=404, detail="Message filter not available")
 
     rules_json = filter_feature.export_rules()
     return {
@@ -433,13 +409,10 @@ async def export_filter_rules(
 
 @router.post("/import")
 async def import_filter_rules(
-    rules_data: Dict[str, Any],
-    feature_manager: FeatureManager = Depends(get_feature_manager),
+    rules_data: dict[str, Any],
+    filter_feature: Annotated[Any, Depends(get_can_message_filter)],
 ):
     """Import filter rules from JSON."""
-    filter_feature = feature_manager.get_feature("can_message_filter")
-    if not filter_feature:
-        raise HTTPException(status_code=404, detail="Message filter not available")
 
     if "rules" not in rules_data:
         raise HTTPException(status_code=400, detail="Missing 'rules' field")

@@ -31,7 +31,7 @@ class TestPerformanceMetric:
             metric_type=MetricType.COUNTER,
             component=ComponentType.BAM_HANDLER,
             value=42.0,
-            labels={"component": "bam_handler"}
+            labels={"component": "bam_handler"},
         )
 
         assert metric.name == "test_metric"
@@ -48,7 +48,7 @@ class TestPerformanceMetric:
             metric_type=MetricType.GAUGE,
             component=ComponentType.SAFETY_ENGINE,
             value=123.45,
-            labels={"component": "safety_engine", "type": "response_time"}
+            labels={"component": "safety_engine", "type": "response_time"},
         )
 
         prometheus_line = metric.to_prometheus_format()
@@ -65,7 +65,7 @@ class TestPerformanceMetric:
             name="simple_metric",
             metric_type=MetricType.COUNTER,
             component=ComponentType.PROTOCOL_ROUTER,
-            value=100.0
+            value=100.0,
         )
 
         prometheus_line = metric.to_prometheus_format()
@@ -270,7 +270,9 @@ class TestPerformanceMonitor:
         """Test performance threshold violation detection."""
         # Record high processing times to trigger threshold
         for _ in range(10):
-            monitor.record_processing_time(ComponentType.BAM_HANDLER, 0.015)  # 15ms (> 10ms threshold)
+            monitor.record_processing_time(
+                ComponentType.BAM_HANDLER, 0.015
+            )  # 15ms (> 10ms threshold)
 
         violations = monitor.check_performance_thresholds()
 
@@ -366,7 +368,7 @@ class TestPerformanceMonitor:
             MetricType.COUNTER,
             ComponentType.BAM_HANDLER,
             42.0,
-            {"component": "bam_handler"}
+            {"component": "bam_handler"},
         )
 
         # Generate Prometheus format
@@ -447,10 +449,7 @@ class TestPerformanceMonitor:
         # Add more metrics than the limit
         for i in range(10):
             monitor._add_metric(
-                f"test_metric_{i}",
-                MetricType.COUNTER,
-                ComponentType.PROTOCOL_ROUTER,
-                float(i)
+                f"test_metric_{i}", MetricType.COUNTER, ComponentType.PROTOCOL_ROUTER, float(i)
             )
 
         # Should only retain the last 5 metrics
@@ -527,7 +526,7 @@ class TestPerformanceMonitor:
             MetricType.GAUGE,
             ComponentType.SAFETY_ENGINE,
             100.0,
-            {"environment": "test", "version": "1.0"}
+            {"environment": "test", "version": "1.0"},
         )
 
         # Check Prometheus output includes labels

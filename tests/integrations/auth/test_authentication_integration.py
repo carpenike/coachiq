@@ -560,7 +560,7 @@ class TestAuthenticationIntegrationHelpers:
 def reset_auth_state():
     """Reset authentication state between tests."""
     # This fixture ensures each test starts with a clean state
-    yield
+    return
     # Any cleanup code would go here
 
 

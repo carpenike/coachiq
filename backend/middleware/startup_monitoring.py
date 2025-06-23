@@ -9,8 +9,8 @@ performance, including initialization phases, service startup times, and health 
 import logging
 import time
 from contextlib import asynccontextmanager
-from typing import Any, Dict, List, Optional
 from dataclasses import dataclass, field
+from typing import Any, Dict, List, Optional
 
 from fastapi import FastAPI
 from starlette.middleware.base import BaseHTTPMiddleware
@@ -26,14 +26,14 @@ class StartupPhaseMetrics:
 
     phase_name: str
     start_time: float
-    end_time: Optional[float] = None
-    duration_ms: Optional[float] = None
+    end_time: float | None = None
+    duration_ms: float | None = None
     success: bool = True
-    error_message: Optional[str] = None
-    sub_phases: Dict[str, 'StartupPhaseMetrics'] = field(default_factory=dict)
-    metadata: Dict[str, Any] = field(default_factory=dict)
+    error_message: str | None = None
+    sub_phases: dict[str, "StartupPhaseMetrics"] = field(default_factory=dict)
+    metadata: dict[str, Any] = field(default_factory=dict)
 
-    def complete(self, success: bool = True, error_message: Optional[str] = None) -> None:
+    def complete(self, success: bool = True, error_message: str | None = None) -> None:
         """Mark phase as complete and calculate duration."""
         self.end_time = time.time()
         self.duration_ms = (self.end_time - self.start_time) * 1000
@@ -51,15 +51,15 @@ class StartupMetricsReport:
     """Complete startup metrics report."""
 
     total_startup_time_ms: float
-    phases: Dict[str, StartupPhaseMetrics]
-    service_registry_timing: Dict[str, float]
-    health_check_results: Dict[str, bool]
-    performance_baseline: Dict[str, float]
-    warnings: List[str] = field(default_factory=list)
-    errors: List[str] = field(default_factory=list)
+    phases: dict[str, StartupPhaseMetrics]
+    service_registry_timing: dict[str, float]
+    health_check_results: dict[str, bool]
+    performance_baseline: dict[str, float]
+    warnings: list[str] = field(default_factory=list)
+    errors: list[str] = field(default_factory=list)
     startup_timestamp: float = field(default_factory=time.time)
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         """Convert to dictionary for serialization."""
         return {
             "total_startup_time_ms": self.total_startup_time_ms,
@@ -73,11 +73,11 @@ class StartupMetricsReport:
                         sub_name: {
                             "duration_ms": sub_phase.duration_ms,
                             "success": sub_phase.success,
-                            "error_message": sub_phase.error_message
+                            "error_message": sub_phase.error_message,
                         }
                         for sub_name, sub_phase in phase.sub_phases.items()
                     },
-                    "metadata": phase.metadata
+                    "metadata": phase.metadata,
                 }
                 for name, phase in self.phases.items()
             },
@@ -86,7 +86,7 @@ class StartupMetricsReport:
             "performance_baseline": self.performance_baseline,
             "warnings": self.warnings,
             "errors": self.errors,
-            "startup_timestamp": self.startup_timestamp
+            "startup_timestamp": self.startup_timestamp,
         }
 
 
@@ -99,21 +99,21 @@ class StartupPerformanceMonitor:
     """
 
     def __init__(self):
-        self.startup_start_time: Optional[float] = None
-        self.startup_end_time: Optional[float] = None
-        self.current_phase: Optional[str] = None
-        self.phases: Dict[str, StartupPhaseMetrics] = {}
-        self.service_registry_timing: Dict[str, float] = {}
-        self.health_checks: Dict[str, bool] = {}
-        self.performance_baselines: Dict[str, float] = {
+        self.startup_start_time: float | None = None
+        self.startup_end_time: float | None = None
+        self.current_phase: str | None = None
+        self.phases: dict[str, StartupPhaseMetrics] = {}
+        self.service_registry_timing: dict[str, float] = {}
+        self.health_checks: dict[str, bool] = {}
+        self.performance_baselines: dict[str, float] = {
             # Target baselines from Phase 0-2L optimizations
             "config_loading_ms": 50.0,  # Should be cached now
             "service_registry_init_ms": 120.0,  # Current measured baseline
             "total_startup_ms": 500.0,  # Target for full startup
-            "feature_manager_init_ms": 30.0,
+            "service_startup_ms": 30.0,  # Replaced feature_manager with service startup
             "websocket_setup_ms": 20.0,
         }
-        self._phase_stack: List[str] = []
+        self._phase_stack: list[str] = []
 
     def start_monitoring(self) -> None:
         """Start startup monitoring."""
@@ -134,7 +134,7 @@ class StartupPerformanceMonitor:
             phases=self.phases,
             service_registry_timing=self.service_registry_timing,
             health_check_results=self.health_checks,
-            performance_baseline=self.performance_baselines
+            performance_baseline=self.performance_baselines,
         )
 
         # Analyze performance against baselines
@@ -144,12 +144,10 @@ class StartupPerformanceMonitor:
         return report
 
     @asynccontextmanager
-    async def monitor_phase(self, phase_name: str, metadata: Optional[Dict[str, Any]] = None):
+    async def monitor_phase(self, phase_name: str, metadata: dict[str, Any] | None = None):
         """Async context manager for monitoring a startup phase."""
         phase_metrics = StartupPhaseMetrics(
-            phase_name=phase_name,
-            start_time=time.time(),
-            metadata=metadata or {}
+            phase_name=phase_name, start_time=time.time(), metadata=metadata or {}
         )
 
         self.phases[phase_name] = phase_metrics
@@ -162,7 +160,7 @@ class StartupPerformanceMonitor:
             yield phase_metrics
             phase_metrics.complete(success=True)
         except Exception as e:
-            error_msg = f"Phase {phase_name} failed: {str(e)}"
+            error_msg = f"Phase {phase_name} failed: {e!s}"
             phase_metrics.complete(success=False, error_message=error_msg)
             logger.error(error_msg, exc_info=True)
             raise
@@ -213,11 +211,15 @@ class StartupPerformanceMonitor:
                 )
 
         # Check health status
-        failed_health_checks = [comp for comp, healthy in report.health_check_results.items() if not healthy]
+        failed_health_checks = [
+            comp for comp, healthy in report.health_check_results.items() if not healthy
+        ]
         if failed_health_checks:
             report.errors.extend([f"Health check failed: {comp}" for comp in failed_health_checks])
 
-    def generate_performance_baseline_report(self, current_report: StartupMetricsReport) -> Dict[str, Any]:
+    def generate_performance_baseline_report(
+        self, current_report: StartupMetricsReport
+    ) -> dict[str, Any]:
         """
         Generate comprehensive performance baseline comparison report.
 
@@ -251,7 +253,7 @@ class StartupPerformanceMonitor:
             "difference_ms": actual_total - baseline_total,
             "difference_percent": total_diff_pct,
             "meets_baseline": actual_total <= baseline_total,
-            "grade": self._calculate_performance_grade(actual_total, baseline_total)
+            "grade": self._calculate_performance_grade(actual_total, baseline_total),
         }
 
         # Service registry timing comparison
@@ -265,7 +267,7 @@ class StartupPerformanceMonitor:
             "difference_ms": registry_total - baseline_registry,
             "difference_percent": registry_diff_pct,
             "meets_baseline": registry_total <= baseline_registry,
-            "grade": self._calculate_performance_grade(registry_total, baseline_registry)
+            "grade": self._calculate_performance_grade(registry_total, baseline_registry),
         }
 
         # Config loading comparison (if phase data available)
@@ -280,7 +282,9 @@ class StartupPerformanceMonitor:
                 "difference_ms": config_phase.duration_ms - baseline_config,
                 "difference_percent": config_diff_pct,
                 "meets_baseline": config_phase.duration_ms <= baseline_config,
-                "grade": self._calculate_performance_grade(config_phase.duration_ms, baseline_config)
+                "grade": self._calculate_performance_grade(
+                    config_phase.duration_ms, baseline_config
+                ),
             }
 
         baseline_report["baseline_comparison"] = comparisons
@@ -306,51 +310,58 @@ class StartupPerformanceMonitor:
         recommendations = []
 
         if actual_total > baseline_total * 1.2:
-            recommendations.append({
-                "category": "startup_time",
-                "priority": "high",
-                "title": "Optimize overall startup time",
-                "description": f"Startup time {actual_total:.1f}ms exceeds baseline {baseline_total:.1f}ms by {total_diff_pct:.1f}%",
-                "suggested_actions": [
-                    "Review service initialization order",
-                    "Consider lazy loading for non-critical services",
-                    "Optimize configuration loading patterns"
-                ]
-            })
+            recommendations.append(
+                {
+                    "category": "startup_time",
+                    "priority": "high",
+                    "title": "Optimize overall startup time",
+                    "description": f"Startup time {actual_total:.1f}ms exceeds baseline {baseline_total:.1f}ms by {total_diff_pct:.1f}%",
+                    "suggested_actions": [
+                        "Review service initialization order",
+                        "Consider lazy loading for non-critical services",
+                        "Optimize configuration loading patterns",
+                    ],
+                }
+            )
 
         if registry_total > baseline_registry * 1.5:
-            recommendations.append({
-                "category": "service_registry",
-                "priority": "medium",
-                "title": "Optimize ServiceRegistry performance",
-                "description": f"ServiceRegistry timing {registry_total:.1f}ms exceeds baseline {baseline_registry:.1f}ms",
-                "suggested_actions": [
-                    "Review service dependency resolution",
-                    "Consider parallel service initialization",
-                    "Optimize service factory functions"
-                ]
-            })
+            recommendations.append(
+                {
+                    "category": "service_registry",
+                    "priority": "medium",
+                    "title": "Optimize ServiceRegistry performance",
+                    "description": f"ServiceRegistry timing {registry_total:.1f}ms exceeds baseline {baseline_registry:.1f}ms",
+                    "suggested_actions": [
+                        "Review service dependency resolution",
+                        "Consider parallel service initialization",
+                        "Optimize service factory functions",
+                    ],
+                }
+            )
 
         # Identify slow services for optimization
         slow_services = [
-            (name, timing) for name, timing in current_report.service_registry_timing.items()
+            (name, timing)
+            for name, timing in current_report.service_registry_timing.items()
             if timing > 200  # >200ms threshold
         ]
 
         if slow_services:
             slow_services.sort(key=lambda x: x[1], reverse=True)
-            recommendations.append({
-                "category": "slow_services",
-                "priority": "medium",
-                "title": "Optimize slow service initialization",
-                "description": f"Found {len(slow_services)} services with >200ms initialization time",
-                "suggested_actions": [
-                    f"Optimize {slow_services[0][0]} ({slow_services[0][1]:.1f}ms)",
-                    "Review service factory implementations",
-                    "Consider caching expensive initialization operations"
-                ],
-                "affected_services": slow_services[:5]
-            })
+            recommendations.append(
+                {
+                    "category": "slow_services",
+                    "priority": "medium",
+                    "title": "Optimize slow service initialization",
+                    "description": f"Found {len(slow_services)} services with >200ms initialization time",
+                    "suggested_actions": [
+                        f"Optimize {slow_services[0][0]} ({slow_services[0][1]:.1f}ms)",
+                        "Review service factory implementations",
+                        "Consider caching expensive initialization operations",
+                    ],
+                    "affected_services": slow_services[:5],
+                }
+            )
 
         baseline_report["improvement_recommendations"] = recommendations
 
@@ -359,12 +370,14 @@ class StartupPerformanceMonitor:
 
         for component, comparison in comparisons.items():
             if comparison["difference_percent"] > 20:  # >20% regression
-                regressions.append({
-                    "component": component,
-                    "regression_percent": comparison["difference_percent"],
-                    "severity": "high" if comparison["difference_percent"] > 50 else "medium",
-                    "description": f"{component} performance degraded by {comparison['difference_percent']:.1f}%"
-                })
+                regressions.append(
+                    {
+                        "component": component,
+                        "regression_percent": comparison["difference_percent"],
+                        "severity": "high" if comparison["difference_percent"] > 50 else "medium",
+                        "description": f"{component} performance degraded by {comparison['difference_percent']:.1f}%",
+                    }
+                )
 
         baseline_report["regression_alerts"] = regressions
 
@@ -389,18 +402,17 @@ class StartupPerformanceMonitor:
         """Calculate performance grade for a metric."""
         if actual <= baseline:
             return "A"
-        elif actual <= baseline * 1.2:
+        if actual <= baseline * 1.2:
             return "B"
-        elif actual <= baseline * 1.5:
+        if actual <= baseline * 1.5:
             return "C"
-        elif actual <= baseline * 2.0:
+        if actual <= baseline * 2.0:
             return "D"
-        else:
-            return "F"
+        return "F"
 
 
 # Global monitor instance
-_startup_monitor: Optional[StartupPerformanceMonitor] = None
+_startup_monitor: StartupPerformanceMonitor | None = None
 
 
 def get_startup_monitor() -> StartupPerformanceMonitor:
@@ -419,10 +431,10 @@ class StartupMonitoringMiddleware(BaseHTTPMiddleware):
     and provides endpoints for retrieving startup analysis.
     """
 
-    def __init__(self, app: FastAPI, monitor: Optional[StartupPerformanceMonitor] = None):
+    def __init__(self, app: FastAPI, monitor: StartupPerformanceMonitor | None = None):
         super().__init__(app)
         self.monitor = monitor or get_startup_monitor()
-        self._startup_report: Optional[StartupMetricsReport] = None
+        self._startup_report: StartupMetricsReport | None = None
 
     async def dispatch(self, request: Request, call_next) -> Response:
         """Process request and add startup metrics context."""
@@ -436,7 +448,9 @@ class StartupMonitoringMiddleware(BaseHTTPMiddleware):
 
         # Add startup performance headers for debugging
         if self._startup_report:
-            response.headers["X-Startup-Time"] = f"{self._startup_report.total_startup_time_ms:.1f}ms"
+            response.headers["X-Startup-Time"] = (
+                f"{self._startup_report.total_startup_time_ms:.1f}ms"
+            )
             if self._startup_report.warnings:
                 response.headers["X-Startup-Warnings"] = str(len(self._startup_report.warnings))
             if self._startup_report.errors:
@@ -452,6 +466,7 @@ class StartupMonitoringMiddleware(BaseHTTPMiddleware):
 
 # Utility functions for easy integration
 
+
 def start_startup_monitoring() -> StartupPerformanceMonitor:
     """Start startup monitoring and return monitor instance."""
     monitor = get_startup_monitor()
@@ -459,7 +474,7 @@ def start_startup_monitoring() -> StartupPerformanceMonitor:
     return monitor
 
 
-async def monitor_startup_phase(phase_name: str, metadata: Optional[Dict[str, Any]] = None):
+async def monitor_startup_phase(phase_name: str, metadata: dict[str, Any] | None = None):
     """Convenience function for monitoring a startup phase."""
     monitor = get_startup_monitor()
     return monitor.monitor_phase(phase_name, metadata)

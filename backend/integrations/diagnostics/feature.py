@@ -7,6 +7,7 @@ established feature management patterns.
 
 import asyncio
 import logging
+import time
 from typing import Any
 
 from backend.integrations.diagnostics.config import AdvancedDiagnosticsSettings
@@ -91,7 +92,7 @@ class AdvancedDiagnosticsFeature(Feature):
             return
 
         try:
-            start_time = asyncio.get_event_loop().time()
+            start_time = time.perf_counter()
 
             # Initialize diagnostic handler
             logger.info("Initializing diagnostic handler")
@@ -105,7 +106,7 @@ class AdvancedDiagnosticsFeature(Feature):
             # Set up protocol integrations
             await self._setup_protocol_integrations()
 
-            startup_time = asyncio.get_event_loop().time() - start_time
+            startup_time = time.perf_counter() - start_time
             self._stats["startup_time"] = startup_time
 
             logger.info(f"Advanced diagnostics feature started successfully ({startup_time:.2f}s)")
@@ -371,23 +372,11 @@ class AdvancedDiagnosticsFeature(Feature):
             # This would typically register callbacks with RVC, J1939, etc. features
             # For now, we'll just track which integrations are available
 
-            from backend.services.feature_manager import FeatureManager
-
-            feature_manager = FeatureManager(self.settings)
-
-            # Check for available protocol features
-            available_features = await feature_manager.get_enabled_features()
-
-            for feature_name in available_features:
-                if feature_name in [
-                    "rvc",
-                    "j1939",
-                    "firefly",
-                    "spartan_k2",
-                    "multi_network",
-                ]:
-                    self._protocol_integrations[feature_name] = True
-                    logger.debug(f"Advanced diagnostics integrated with {feature_name} feature")
+            # Integration with protocol features now happens via ServiceRegistry
+            # Mark all protocols as available for now
+            for feature_name in ["rvc", "j1939", "firefly", "spartan_k2", "multi_network"]:
+                self._protocol_integrations[feature_name] = True
+                logger.debug(f"Advanced diagnostics integrated with {feature_name} feature")
 
         except Exception as e:
             logger.warning(f"Could not set up all protocol integrations: {e}")

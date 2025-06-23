@@ -1,5 +1,5 @@
 """
-Dashboard Service
+Dashboard Service (Refactored with Repository Pattern)
 
 Service for aggregating dashboard data, managing activity feeds,
 and providing optimized endpoints for frontend dashboard components.
@@ -14,7 +14,7 @@ from typing import Any
 from uuid import uuid4
 
 from backend.core.config import get_features_settings
-from backend.core.entity_manager import EntityManager
+from backend.core.performance import PerformanceMonitor
 from backend.models.dashboard import (
     ActiveAlert,
     ActivityEntry,
@@ -29,9 +29,8 @@ from backend.models.dashboard import (
     SystemAnalytics,
     SystemMetrics,
 )
-from backend.services.can_service import CANService
-from backend.services.entity_service import EntityService
-from backend.websocket.handlers import WebSocketManager
+from backend.repositories.dashboard_config_repository import DashboardConfigRepository
+from backend.repositories.entity_state_repository import EntityStateRepository
 
 logger = logging.getLogger(__name__)
 
@@ -95,22 +94,28 @@ class DashboardService:
     """
     Service for aggregating dashboard data and managing system analytics.
 
-    Provides optimized endpoints for frontend dashboard components with
-    intelligent caching and real-time updates.
+    Refactored to use repository pattern with performance monitoring.
     """
 
     def __init__(
         self,
-        entity_service: EntityService,
-        can_service: CANService,
-        websocket_manager: WebSocketManager,
-        entity_manager: EntityManager | None = None,
+        dashboard_repository: DashboardConfigRepository,
+        entity_repository: EntityStateRepository,
+        performance_monitor: PerformanceMonitor,
+        # These will be injected by dependency injection later
+        entity_service: Any | None = None,
+        can_service: Any | None = None,
+        websocket_manager: Any | None = None,
     ):
-        """Initialize the dashboard service."""
-        self.entity_service = entity_service
-        self.can_service = can_service
-        self.websocket_manager = websocket_manager
-        self._entity_manager = entity_manager
+        """Initialize the dashboard service with repositories."""
+        self._dashboard_repo = dashboard_repository
+        self._entity_repo = entity_repository
+        self._monitor = performance_monitor
+
+        # Services will be injected later
+        self._entity_service = entity_service
+        self._can_service = can_service
+        self._websocket_manager = websocket_manager
 
         # Activity tracking
         features = get_features_settings()
@@ -131,21 +136,8 @@ class DashboardService:
         # Initialize default alert definitions
         self._initialize_default_alerts()
 
-    @property
-    def entity_manager(self) -> EntityManager:
-        """Get the EntityManager instance."""
-        if self._entity_manager is None:
-            from backend.services.feature_manager import get_feature_manager
-
-            feature_manager = get_feature_manager()
-            entity_manager_feature = feature_manager.get_feature("entity_manager")
-            if entity_manager_feature is None:
-                msg = "EntityManager feature not found in feature manager"
-                raise RuntimeError(msg)
-
-            self._entity_manager = entity_manager_feature.get_entity_manager()
-
-        return self._entity_manager
+        # Apply performance monitoring decorators
+        self._apply_monitoring()
 
     def _initialize_default_alerts(self) -> None:
         """Initialize default system alert definitions."""
@@ -180,6 +172,37 @@ class DashboardService:
         ]
         self._alert_definitions.extend(default_alerts)
 
+    def _apply_monitoring(self) -> None:
+        """Apply performance monitoring to service methods."""
+        # Wrap methods with performance monitoring
+        self.get_entity_summary = self._monitor.monitor_service_method(
+            "DashboardService", "get_entity_summary"
+        )(self.get_entity_summary)
+
+        self.get_system_metrics = self._monitor.monitor_service_method(
+            "DashboardService", "get_system_metrics"
+        )(self.get_system_metrics)
+
+        self.get_can_bus_summary = self._monitor.monitor_service_method(
+            "DashboardService", "get_can_bus_summary"
+        )(self.get_can_bus_summary)
+
+        self.get_dashboard_summary = self._monitor.monitor_service_method(
+            "DashboardService", "get_dashboard_summary"
+        )(self.get_dashboard_summary)
+
+        self.bulk_control_entities = self._monitor.monitor_service_method(
+            "DashboardService", "bulk_control_entities"
+        )(self.bulk_control_entities)
+
+        self.get_dashboard_config = self._monitor.monitor_service_method(
+            "DashboardService", "get_dashboard_config"
+        )(self.get_dashboard_config)
+
+        self.update_widget_layout = self._monitor.monitor_service_method(
+            "DashboardService", "update_widget_layout"
+        )(self.update_widget_layout)
+
     def _is_cache_valid(self, cache_key: str) -> bool:
         """Check if cache entry is still valid."""
         if cache_key not in self._cache_timestamps:
@@ -206,8 +229,8 @@ class DashboardService:
         if cached:
             return cached
 
-        # Get all entities
-        entities = await self.entity_service.list_entities()
+        # Get all entities from repository
+        entities = self._entity_repo.get_all_entities()
 
         total_entities = len(entities)
         online_entities = 0
@@ -217,23 +240,24 @@ class DashboardService:
 
         current_time = time.time()
 
-        for entity_data in entities.values():
+        for entity in entities.values():
             # Count by device type
-            device_type = entity_data.get("device_type", "unknown")
+            device_type = entity.config.get("device_type", "unknown")
             device_type_counts[device_type] += 1
 
             # Count by area
-            area = entity_data.get("suggested_area", "unassigned")
+            area = entity.config.get("suggested_area", "unassigned")
             area_counts[area] += 1
 
             # Check if online (seen in last 5 minutes)
-            timestamp = entity_data.get("timestamp", 0)
-            if timestamp and (current_time - timestamp) < 300:
+            if (
+                entity.current_state.timestamp
+                and (current_time - entity.current_state.timestamp) < 300
+            ):
                 online_entities += 1
 
-            # Check if active
-            state = entity_data.get("state")
-            if state in ["on", "active", "unlocked"]:
+            # Check if active (entity is considered active if it has a state other than 'unknown')
+            if entity.current_state.state != "unknown":
                 active_entities += 1
 
         # Calculate health score
@@ -259,22 +283,26 @@ class DashboardService:
         if cached:
             return cached
 
-        # Get CAN statistics
-        try:
-            can_stats = await self.can_service.get_bus_statistics()
-            summary = can_stats.get("summary", {})
-            message_rate = summary.get("message_rate", 0.0)
-            error_rate = summary.get("error_rate", 0.0)
-        except Exception as e:
-            logger.warning(f"Failed to get CAN stats for metrics: {e}")
-            message_rate = 0.0
-            error_rate = 0.0
+        # Get CAN statistics if service is available
+        message_rate = 0.0
+        error_rate = 0.0
+
+        if self._can_service:
+            try:
+                can_stats = await self._can_service.get_bus_statistics()
+                summary = can_stats.get("summary", {})
+                message_rate = summary.get("message_rate", 0.0)
+                error_rate = summary.get("error_rate", 0.0)
+            except Exception as e:
+                logger.warning(f"Failed to get CAN stats for metrics: {e}")
 
         # Calculate uptime
         uptime_seconds = int(time.time() - self._start_time)
 
         # Get WebSocket connection count
-        websocket_connections = self.websocket_manager.total_connections
+        websocket_connections = 0
+        if self._websocket_manager:
+            websocket_connections = self._websocket_manager.total_connections
 
         # TODO: Add actual memory and CPU monitoring
         memory_usage_mb = 0.0  # Placeholder
@@ -299,43 +327,45 @@ class DashboardService:
         if cached:
             return cached
 
-        try:
-            # Get CAN statistics
-            can_stats = await self.can_service.get_bus_statistics()
-            summary = can_stats.get("summary", {})
-            interfaces = can_stats.get("interfaces", {})
+        can_summary = CANBusSummary(
+            interfaces_count=0,
+            total_messages=0,
+            messages_per_minute=0.0,
+            error_count=0,
+            queue_length=0,
+            bus_load_percent=0.0,
+        )
 
-            # Get queue status
-            queue_status = await self.can_service.get_queue_status()
-            queue_length = queue_status.get("queue_length", 0)
+        if self._can_service:
+            try:
+                # Get CAN statistics
+                can_stats = await self._can_service.get_bus_statistics()
+                summary = can_stats.get("summary", {})
+                interfaces = can_stats.get("interfaces", {})
 
-            total_messages = summary.get("total_messages", 0)
-            error_count = summary.get("total_errors", 0)
-            message_rate = summary.get("message_rate", 0.0)
+                # Get queue status
+                queue_status = await self._can_service.get_queue_status()
+                queue_length = queue_status.get("queue_length", 0)
 
-            # Calculate messages per minute and bus load
-            messages_per_minute = message_rate * 60
-            bus_load_percent = min(100, (message_rate / 1000) * 100)  # Assuming 1000 msg/s max
+                total_messages = summary.get("total_messages", 0)
+                error_count = summary.get("total_errors", 0)
+                message_rate = summary.get("message_rate", 0.0)
 
-            can_summary = CANBusSummary(
-                interfaces_count=len(interfaces),
-                total_messages=total_messages,
-                messages_per_minute=messages_per_minute,
-                error_count=error_count,
-                queue_length=queue_length,
-                bus_load_percent=bus_load_percent,
-            )
+                # Calculate messages per minute and bus load
+                messages_per_minute = message_rate * 60
+                bus_load_percent = min(100, (message_rate / 1000) * 100)  # Assuming 1000 msg/s max
 
-        except Exception as e:
-            logger.warning(f"Failed to get CAN stats for summary: {e}")
-            can_summary = CANBusSummary(
-                interfaces_count=0,
-                total_messages=0,
-                messages_per_minute=0.0,
-                error_count=0,
-                queue_length=0,
-                bus_load_percent=0.0,
-            )
+                can_summary = CANBusSummary(
+                    interfaces_count=len(interfaces),
+                    total_messages=total_messages,
+                    messages_per_minute=messages_per_minute,
+                    error_count=error_count,
+                    queue_length=queue_length,
+                    bus_load_percent=bus_load_percent,
+                )
+
+            except Exception as e:
+                logger.warning(f"Failed to get CAN stats for summary: {e}")
 
         self._set_cache(cache_key, can_summary)
         return can_summary
@@ -381,9 +411,7 @@ class DashboardService:
         # Validate request size
         if len(request.entity_ids) > features.bulk_operation_limit:
             msg = f"Too many entities requested. Maximum: {features.bulk_operation_limit}"
-            raise ValueError(
-                msg
-            )
+            raise ValueError(msg)
 
         results = []
         successful = 0
@@ -392,37 +420,49 @@ class DashboardService:
         # Process each entity
         for entity_id in request.entity_ids:
             try:
-                # Use existing entity control logic
-                from backend.models.entity import ControlCommand
+                # Use entity service if available
+                if self._entity_service:
+                    from backend.models.entity import ControlCommand
 
-                # Extract state and brightness from parameters
-                state = request.parameters.get("state")
-                brightness = request.parameters.get("brightness")
+                    # Extract state and brightness from parameters
+                    state = request.parameters.get("state")
+                    brightness = request.parameters.get("brightness")
 
-                control_command = ControlCommand(
-                    command=request.command, state=state, brightness=brightness
-                )
-
-                response = await self.entity_service.control_entity(entity_id, control_command)
-
-                if response.status == "success":
-                    successful += 1
-                    results.append(
-                        BulkControlResult(
-                            entity_id=entity_id,
-                            success=True,
-                            message=f"Command '{request.command}' executed successfully",
-                            error=None,
-                        )
+                    control_command = ControlCommand(
+                        command=request.command, state=state, brightness=brightness
                     )
+
+                    response = await self._entity_service.control_entity(entity_id, control_command)
+
+                    if response.status == "success":
+                        successful += 1
+                        results.append(
+                            BulkControlResult(
+                                entity_id=entity_id,
+                                success=True,
+                                message=f"Command '{request.command}' executed successfully",
+                                error=None,
+                            )
+                        )
+                    else:
+                        failed += 1
+                        results.append(
+                            BulkControlResult(
+                                entity_id=entity_id,
+                                success=False,
+                                message=f"Command '{request.command}' failed",
+                                error=f"Status: {response.status}",
+                            )
+                        )
                 else:
+                    # No entity service available
                     failed += 1
                     results.append(
                         BulkControlResult(
                             entity_id=entity_id,
                             success=False,
-                            message=f"Command '{request.command}' failed",
-                            error=f"Status: {response.status}",
+                            message="Entity service not available",
+                            error="Service dependency missing",
                         )
                     )
 
@@ -535,6 +575,18 @@ class DashboardService:
                         "threshold": alert_def.threshold,
                     },
                 )
+
+    async def get_dashboard_config(self, user_id: str) -> dict:
+        """Get dashboard configuration for user."""
+        config = await self._dashboard_repo.get_by_user_id(user_id)
+        if not config:
+            config = await self._dashboard_repo.create_default(user_id)
+        return config.to_dict()
+
+    async def update_widget_layout(self, user_id: str, layout: dict) -> dict:
+        """Update dashboard widget layout."""
+        config = await self._dashboard_repo.update_layout(user_id, layout)
+        return config.to_dict()
 
     async def get_system_analytics(self) -> SystemAnalytics:
         """Get system analytics and monitoring data."""

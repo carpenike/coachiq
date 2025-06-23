@@ -51,12 +51,10 @@ class TestConfigurationService:
         test_spec = {
             "dgn": "0x1FED1",
             "name": "Test DGN",
-            "signals": [
-                {"name": "test_signal", "start_bit": 0, "length": 8}
-            ]
+            "signals": [{"name": "test_signal", "start_bit": 0, "length": 8}],
         }
 
-        with open(dgn_file, 'w') as f:
+        with open(dgn_file, "w") as f:
             yaml.dump(test_spec, f)
 
         # First call should load from file
@@ -83,12 +81,10 @@ class TestConfigurationService:
         test_mapping = {
             "device_type": "test_device",
             "dgns": ["0x1FED1", "0x1FED2"],
-            "configuration": {
-                "sample_rate": 100
-            }
+            "configuration": {"sample_rate": 100},
         }
 
-        with open(mapping_file, 'w') as f:
+        with open(mapping_file, "w") as f:
             yaml.dump(test_mapping, f)
 
         # First call should load from file
@@ -109,13 +105,10 @@ class TestConfigurationService:
         test_config = {
             "protocol": "rvc",
             "version": "2.0",
-            "features": {
-                "enable_encoder": True,
-                "enable_security": True
-            }
+            "features": {"enable_encoder": True, "enable_security": True},
         }
 
-        with open(protocol_file, 'w') as f:
+        with open(protocol_file, "w") as f:
             yaml.dump(test_config, f)
 
         # First call should load from file
@@ -135,14 +128,12 @@ class TestConfigurationService:
 
         test_spec = {
             "version": "2.0",
-            "dgns": {
-                "0x1FED1": {"name": "Test DGN 1"},
-                "0x1FED2": {"name": "Test DGN 2"}
-            }
+            "dgns": {"0x1FED1": {"name": "Test DGN 1"}, "0x1FED2": {"name": "Test DGN 2"}},
         }
 
         import json
-        with open(spec_file, 'w') as f:
+
+        with open(spec_file, "w") as f:
             json.dump(test_spec, f)
 
         # First call should load from file
@@ -165,7 +156,7 @@ class TestConfigurationService:
 
         test_spec = {"dgn": "0x1FED1", "name": "Test DGN"}
 
-        with open(dgn_file, 'w') as f:
+        with open(dgn_file, "w") as f:
             yaml.dump(test_spec, f)
 
         # Load spec into cache
@@ -195,7 +186,7 @@ class TestConfigurationService:
             dgn_file = dgn_dir / f"0x{0x1FED1 + i:04X}.yaml"
             test_spec = {"dgn": f"0x{0x1FED1 + i:04X}", "name": f"Test DGN {i}"}
 
-            with open(dgn_file, 'w') as f:
+            with open(dgn_file, "w") as f:
                 yaml.dump(test_spec, f)
 
         # Load specs into cache (should evict older entries)
@@ -213,7 +204,7 @@ class TestConfigurationService:
 
         initial_spec = {"dgn": "0x1FED1", "name": "Initial DGN", "version": 1}
 
-        with open(dgn_file, 'w') as f:
+        with open(dgn_file, "w") as f:
             yaml.dump(initial_spec, f)
 
         # Load initial spec
@@ -226,7 +217,7 @@ class TestConfigurationService:
         # Update the file
         updated_spec = {"dgn": "0x1FED1", "name": "Updated DGN", "version": 2}
 
-        with open(dgn_file, 'w') as f:
+        with open(dgn_file, "w") as f:
             yaml.dump(updated_spec, f)
 
         # Should load updated spec after reload
@@ -241,7 +232,7 @@ class TestConfigurationService:
 
         test_spec = {"dgn": "0x1FED1", "name": "Thread Safety Test"}
 
-        with open(dgn_file, 'w') as f:
+        with open(dgn_file, "w") as f:
             yaml.dump(test_spec, f)
 
         results = []
@@ -282,7 +273,7 @@ class TestConfigurationService:
         dgn_file = temp_config_dir / "dgn_specs" / "0x1FED1.yaml"
         dgn_file.parent.mkdir(parents=True, exist_ok=True)
 
-        with open(dgn_file, 'w') as f:
+        with open(dgn_file, "w") as f:
             f.write("invalid: yaml: content: [")
 
         # Should handle invalid YAML gracefully
@@ -322,7 +313,7 @@ class TestConfigurationService:
 
         test_spec = {"dgn": "0x1FED1", "name": "Stats Test"}
 
-        with open(dgn_file, 'w') as f:
+        with open(dgn_file, "w") as f:
             yaml.dump(test_spec, f)
 
         # Initial cache should be empty
@@ -367,13 +358,13 @@ class TestConfigurationService:
                         "name": f"signal_{j}",
                         "start_bit": j * 8,
                         "length": 8,
-                        "description": f"Test signal {j} with long description"
+                        "description": f"Test signal {j} with long description",
                     }
                     for j in range(50)  # 50 signals per DGN
-                ]
+                ],
             }
 
-            with open(dgn_file, 'w') as f:
+            with open(dgn_file, "w") as f:
                 yaml.dump(large_spec, f)
 
         # Load all specs (should trigger cache eviction)

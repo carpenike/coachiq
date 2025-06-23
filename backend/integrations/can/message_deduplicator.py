@@ -14,6 +14,7 @@ from typing import Dict, Optional, Set
 @dataclass
 class MessageSignature:
     """Unique signature for a CAN message."""
+
     can_id: int
     data: bytes
     timestamp: float
@@ -22,7 +23,7 @@ class MessageSignature:
         """Generate hash for message comparison."""
         # Include CAN ID and data, but not timestamp or interface
         content = f"{self.can_id:08X}{self.data.hex()}"
-        return hashlib.md5(content.encode()).hexdigest()[:16]
+        return hashlib.md5(content.encode(), usedforsecurity=False).hexdigest()[:16]
 
 
 class CANMessageDeduplicator:
@@ -43,7 +44,7 @@ class CANMessageDeduplicator:
         """
         self.window_ms = window_ms
         self.max_cache_size = max_cache_size
-        self.message_cache: Dict[str, float] = {}
+        self.message_cache: dict[str, float] = {}
         self.cache_order: deque = deque()
 
     def is_duplicate(self, can_id: int, data: bytes) -> bool:

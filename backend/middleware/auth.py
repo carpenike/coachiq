@@ -7,9 +7,9 @@ configured authentication mode.
 """
 
 import logging
-from typing import ClassVar
+from typing import Annotated, ClassVar
 
-from fastapi import HTTPException, Request, Response, status
+from fastapi import Depends, HTTPException, Request, Response, status
 from fastapi.security.utils import get_authorization_scheme_param
 from starlette.middleware.base import BaseHTTPMiddleware
 
@@ -81,6 +81,7 @@ class AuthenticationMiddleware(BaseHTTPMiddleware):
         """
         super().__init__(app)
         self.auth_manager = auth_manager
+        self._auth_service = None  # Cache the AuthService separately
         self.logger = logging.getLogger(__name__)
 
     async def dispatch(self, request: Request, call_next) -> Response:
@@ -98,32 +99,50 @@ class AuthenticationMiddleware(BaseHTTPMiddleware):
             HTTPException: If authentication is required but fails
         """
         # Get auth manager from ServiceRegistry if not provided during init
-        if not self.auth_manager:
+        # We need to check this each time because AuthService might not be started initially
+        auth_manager = self.auth_manager
+        if not auth_manager or (
+            hasattr(auth_manager, "get_auth_manager") and not isinstance(auth_manager, AuthManager)
+        ):
             try:
-                # Try ServiceRegistry first
-                if hasattr(request.app.state, "service_registry"):
-                    service_registry = request.app.state.service_registry
-                    if service_registry.has_service("auth_manager"):
-                        self.auth_manager = service_registry.get_service("auth_manager")
+                from backend.core.dependencies import get_service_registry
+
+                service_registry = get_service_registry()
+                if service_registry.has_service("auth_manager"):
+                    # Get the service from registry
+                    auth_service = service_registry.get_service("auth_manager")
+
+                    # Try to get the actual AuthManager from AuthService
+                    if hasattr(auth_service, "get_auth_manager"):
+                        auth_mgr = auth_service.get_auth_manager()
+                        if auth_mgr:
+                            auth_manager = auth_mgr
+                            self.auth_manager = auth_mgr  # Cache for next time
+                            self.logger.debug("Got AuthManager from AuthService")
+                        else:
+                            # Service not started yet, skip auth for now
+                            auth_manager = None
+                            self.logger.debug(
+                                "AuthService.get_auth_manager() returned None - service may not be started yet"
+                            )
+                    elif hasattr(auth_service, "auth_mode"):
+                        # It's already an AuthManager
+                        auth_manager = auth_service
+                        self.auth_manager = auth_service
+                        self.logger.debug("Using service directly as auth_manager")
                     else:
-                        # Fallback to feature manager pattern
-                        if service_registry.has_service("feature_manager"):
-                            feature_manager = service_registry.get_service("feature_manager")
-                            auth_feature = feature_manager.get_feature("authentication")
-                            if auth_feature:
-                                self.auth_manager = auth_feature.get_auth_manager()
+                        auth_manager = None
+                        self.logger.debug("Service does not appear to be an AuthManager")
                 else:
-                    # Legacy fallback to app.state
-                    feature_manager = getattr(request.app.state, "feature_manager", None)
-                    if feature_manager:
-                        auth_feature = feature_manager.get_feature("authentication")
-                        if auth_feature:
-                            self.auth_manager = auth_feature.get_auth_manager()
+                    # No auth manager available
+                    auth_manager = None
+                    self.logger.debug("Auth manager service not found in ServiceRegistry")
             except Exception as e:
+                auth_manager = None
                 self.logger.debug(f"Could not get auth manager: {e}")
 
         # Skip authentication if no auth manager available
-        if not self.auth_manager:
+        if not auth_manager:
             self.logger.debug("No auth manager available, skipping authentication")
             return await call_next(request)
 
@@ -133,7 +152,7 @@ class AuthenticationMiddleware(BaseHTTPMiddleware):
             return await call_next(request)
 
         # Skip authentication if mode is NONE
-        if self.auth_manager.auth_mode == AuthMode.NONE:
+        if auth_manager.auth_mode == AuthMode.NONE:
             self.logger.debug("Authentication mode is NONE, allowing request")
             # Add default user to request state for consistency
             request.state.user = {
@@ -157,7 +176,7 @@ class AuthenticationMiddleware(BaseHTTPMiddleware):
                 )
 
             # Validate token
-            payload = self.auth_manager.validate_token(token)
+            payload = auth_manager.validate_token(token)
 
             # Add user info to request state
             request.state.user = {
@@ -250,22 +269,54 @@ class OptionalAuthenticationMiddleware(AuthenticationMiddleware):
         Returns:
             Response: HTTP response from the route handler
         """
-        # Get auth manager from request state if not provided during init
-        if not self.auth_manager:
+        # Get auth manager from ServiceRegistry if not provided during init
+        # We need to check this each time because AuthService might not be started initially
+        auth_manager = self.auth_manager
+        if not auth_manager or (
+            hasattr(auth_manager, "get_auth_manager") and not isinstance(auth_manager, AuthManager)
+        ):
             try:
-                feature_manager = getattr(request.app.state, "feature_manager", None)
-                if feature_manager:
-                    auth_feature = feature_manager.get_feature("authentication")
-                    if auth_feature:
-                        self.auth_manager = auth_feature.get_auth_manager()
+                from backend.core.dependencies import get_service_registry
+
+                service_registry = get_service_registry()
+                if service_registry.has_service("auth_manager"):
+                    # Get the service from registry
+                    auth_service = service_registry.get_service("auth_manager")
+
+                    # Try to get the actual AuthManager from AuthService
+                    if hasattr(auth_service, "get_auth_manager"):
+                        auth_mgr = auth_service.get_auth_manager()
+                        if auth_mgr:
+                            auth_manager = auth_mgr
+                            self.auth_manager = auth_mgr  # Cache for next time
+                            self.logger.debug("Got AuthManager from AuthService (optional)")
+                        else:
+                            # Service not started yet, skip auth for now
+                            auth_manager = None
+                            self.logger.debug(
+                                "AuthService.get_auth_manager() returned None - service may not be started yet (optional)"
+                            )
+                    elif hasattr(auth_service, "auth_mode"):
+                        # It's already an AuthManager
+                        auth_manager = auth_service
+                        self.auth_manager = auth_service
+                        self.logger.debug("Using service directly as auth_manager (optional)")
+                    else:
+                        auth_manager = None
+                        self.logger.debug("Service does not appear to be an AuthManager (optional)")
+                else:
+                    # No auth manager available
+                    auth_manager = None
+                    self.logger.debug("Auth manager service not found in ServiceRegistry")
             except Exception as e:
+                auth_manager = None
                 self.logger.debug(f"Could not get auth manager: {e}")
 
         # Set default unauthenticated state
         request.state.user = None
 
         # Skip authentication if no auth manager available
-        if not self.auth_manager:
+        if not auth_manager:
             self.logger.debug("No auth manager available")
             return await call_next(request)
 
@@ -274,7 +325,7 @@ class OptionalAuthenticationMiddleware(AuthenticationMiddleware):
             return await call_next(request)
 
         # Always allow in NONE mode with default admin user
-        if self.auth_manager.auth_mode == AuthMode.NONE:
+        if auth_manager.auth_mode == AuthMode.NONE:
             request.state.user = {
                 "user_id": "admin",
                 "username": "admin",
@@ -289,7 +340,7 @@ class OptionalAuthenticationMiddleware(AuthenticationMiddleware):
             token = self._extract_token_from_request(request)
 
             if token:
-                payload = self.auth_manager.validate_token(token)
+                payload = auth_manager.validate_token(token)
                 request.state.user = {
                     "user_id": payload.get("sub"),
                     "username": payload.get("username", ""),
@@ -306,12 +357,16 @@ class OptionalAuthenticationMiddleware(AuthenticationMiddleware):
         return await call_next(request)
 
 
-def get_current_user_from_request(request: Request) -> dict | None:
+# Modern dependency injection patterns for authentication
+# These replace the legacy get_*_from_request functions
+
+
+def get_current_user(request: Request) -> dict | None:
     """
     Get the current authenticated user from the request state.
 
-    This function can be used as a FastAPI dependency to access user
-    information that was set by the authentication middleware.
+    This is a modern dependency that can be used with FastAPI's
+    dependency injection system.
 
     Args:
         request: FastAPI request object
@@ -322,12 +377,11 @@ def get_current_user_from_request(request: Request) -> dict | None:
     return getattr(request.state, "user", None)
 
 
-def require_authentication(request: Request) -> dict:
+def get_authenticated_user(request: Request) -> dict:
     """
-    Require authentication and return user information.
+    Get the authenticated user, raising an exception if not authenticated.
 
-    This function can be used as a FastAPI dependency to ensure
-    that a request is authenticated.
+    This is a modern dependency that ensures authentication.
 
     Args:
         request: FastAPI request object
@@ -338,7 +392,7 @@ def require_authentication(request: Request) -> dict:
     Raises:
         HTTPException: If the request is not authenticated
     """
-    user = get_current_user_from_request(request)
+    user = get_current_user(request)
     if not user or not user.get("authenticated"):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED, detail="Authentication required"
@@ -346,12 +400,11 @@ def require_authentication(request: Request) -> dict:
     return user
 
 
-def require_admin_role(request: Request) -> dict:
+def get_admin_user(request: Request) -> dict:
     """
-    Require admin role and return user information.
+    Get the authenticated admin user, raising an exception if not admin.
 
-    This function can be used as a FastAPI dependency to ensure
-    that a request is authenticated and has admin privileges.
+    This is a modern dependency that ensures admin privileges.
 
     Args:
         request: FastAPI request object
@@ -362,9 +415,15 @@ def require_admin_role(request: Request) -> dict:
     Raises:
         HTTPException: If the request is not authenticated or not admin
     """
-    user = require_authentication(request)
+    user = get_authenticated_user(request)
     if user.get("role") != "admin":
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN, detail="Admin privileges required"
         )
     return user
+
+
+# Type aliases for cleaner usage with Annotated
+CurrentUser = Annotated[dict | None, Depends(get_current_user)]
+AuthenticatedUser = Annotated[dict, Depends(get_authenticated_user)]
+AdminUser = Annotated[dict, Depends(get_admin_user)]

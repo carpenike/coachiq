@@ -73,10 +73,136 @@ coachiq-validate-config = "backend.core.config:validate_config_cli"
 [tool.ruff]
 line-length = 100
 target-version = "py312"
+force-exclude = true  # Critical: Respect exclusions even when pre-commit passes files explicitly
+exclude = [
+    # Version control
+    ".git",
+    ".hg",
+    ".svn",
+    # Python
+    "__pycache__",
+    "*.pyc",
+    ".venv",
+    "venv",
+    "env",
+    ".env",
+    "__pypackages__",
+    # Testing & coverage
+    ".pytest_cache",
+    ".coverage",
+    "htmlcov",
+    "coverage.xml",
+    ".tox",
+    ".nox",
+    # Type checking
+    ".mypy_cache",
+    ".pytype",
+    ".pyre",
+    # Build artifacts
+    "build",
+    "dist",
+    "_build",
+    "*.egg-info",
+    "*.egg",
+    # Caches
+    ".ruff_cache",
+    ".cache",
+    # Documentation
+    "docs/_build",
+    "site",
+    # IDE
+    ".vscode",
+    ".idea",
+    "*.swp",
+    "*.swo",
+    # OS
+    ".DS_Store",
+    "Thumbs.db",
+    # Project specific
+    "_deprecated",
+    "frontend/node_modules",
+    "frontend/dist",
+    "frontend/coverage",
+    "frontend/htmlcov",
+    # Nix
+    "result",
+    "result-*",
+    # Databases
+    "*.db",
+    "*.sqlite",
+    "*.sqlite3",
+    # Temporary files
+    "*.tmp",
+    "*.temp",
+    "tmp/",
+    "temp/",
+]
 
 [tool.pyright]
 include = [ "backend", "src/common"]
-exclude = [ "**/node_modules", "**/__pycache__", ".venv", "_deprecated"]
+exclude = [
+    # Version control
+    ".git",
+    ".hg",
+    ".svn",
+    # Python
+    "__pycache__",
+    "*.pyc",
+    ".venv",
+    "venv",
+    "env",
+    ".env",
+    "__pypackages__",
+    # Testing & coverage
+    ".pytest_cache",
+    ".coverage",
+    "htmlcov",
+    "coverage.xml",
+    ".tox",
+    ".nox",
+    # Type checking
+    ".mypy_cache",
+    ".pytype",
+    ".pyre",
+    # Build artifacts
+    "build",
+    "dist",
+    "_build",
+    "*.egg-info",
+    "*.egg",
+    # Caches
+    ".ruff_cache",
+    ".cache",
+    # Documentation
+    "docs/_build",
+    "site",
+    # IDE
+    ".vscode",
+    ".idea",
+    "*.swp",
+    "*.swo",
+    # OS
+    ".DS_Store",
+    "Thumbs.db",
+    # Project specific
+    "_deprecated",
+    "frontend/node_modules",
+    "frontend/dist",
+    "frontend/coverage",
+    "frontend/htmlcov",
+    # Nix
+    "result",
+    "result-*",
+    # Databases
+    "*.db",
+    "*.sqlite",
+    "*.sqlite3",
+    # Temporary files
+    "*.tmp",
+    "*.temp",
+    "tmp/",
+    "temp/",
+]
 # Enhanced type checking for safety-critical system
 typeCheckingMode = "strict"
 reportMissingImports = "error"
@@ -192,7 +318,9 @@ unfixable = [
     "T203",   # pprint statements (require manual review)
     "S101",   # assert statements (may be needed for safety checks)
 ]
-exclude = [ ".git", "__pycache__", ".venv", "build", "dist", "*.egg-info", "_deprecated"]
+# Treat all security and safety issues as errors
+extend-select = ["S", "B", "A", "DTZ", "ICN", "PIE", "PT", "RET", "SIM", "ARG"]
+# Exclude list inherited from [tool.ruff] section above
 
 [tool.ruff.lint.isort]
 known-first-party = [ "common", "backend"]
@@ -233,8 +361,6 @@ ban-relative-imports = "all"
 "scripts/**/*.py" = [ "T201", "T203", "S101", "PLR0913"]
 # Configuration files - allow broader imports
 "backend/core/config.py" = [ "TCH002", "TCH003" ]
-# Legacy deprecated code - minimal enforcement
-"_deprecated/**/*.py" = [ "ALL" ]
 # Development and database files - allow commented code for examples
 "backend/alembic/**/*.py" = [ "ERA001", "T201" ]
 "backend/integrations/*/tests/**/*.py" = [ "ERA001" ]
@@ -283,7 +409,28 @@ pip-audit = "^2.7.3"
 # Bandit security linting configuration
 [tool.bandit]
 # Paths to scan
-exclude_dirs = ["tests", "_deprecated", "typings"]
+exclude_dirs = [
+    "tests",
+    "_deprecated",
+    "typings",
+    ".venv",
+    "venv",
+    "env",
+    ".env",
+    "build",
+    "dist",
+    "node_modules",
+    "frontend/node_modules",
+    "frontend/dist",
+    "htmlcov",
+    ".pytest_cache",
+    ".mypy_cache",
+    ".ruff_cache",
+    "docs/_build",
+    "site",
+    "result",
+    "result-*",
+]
 # Skip specific tests for CAN bus and real-time systems
 skips = ["B101"]  # Allow assert statements in production for safety checks
 

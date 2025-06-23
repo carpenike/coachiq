@@ -27,105 +27,66 @@ class SecurityEventDB(Base):
 
     # Primary key
     id: Mapped[int] = mapped_column(
-        Integer,
-        primary_key=True,
-        autoincrement=True,
-        comment="Auto-incrementing primary key"
+        Integer, primary_key=True, autoincrement=True, comment="Auto-incrementing primary key"
     )
 
     # Core event identification
     event_id: Mapped[str] = mapped_column(
-        String(255),
-        nullable=False,
-        unique=True,
-        index=True,
-        comment="Unique event identifier"
+        String(255), nullable=False, unique=True, index=True, comment="Unique event identifier"
     )
 
     event_uuid: Mapped[str] = mapped_column(
-        String(36),
-        nullable=False,
-        unique=True,
-        comment="UUID for event"
+        String(36), nullable=False, unique=True, comment="UUID for event"
     )
 
     # Temporal information
     timestamp: Mapped[float] = mapped_column(
-        Float,
-        nullable=False,
-        index=True,
-        comment="Event timestamp (Unix timestamp)"
+        Float, nullable=False, index=True, comment="Event timestamp (Unix timestamp)"
     )
 
     timestamp_ms: Mapped[int] = mapped_column(
-        BigInteger,
-        nullable=False,
-        index=True,
-        comment="Event timestamp in milliseconds"
+        BigInteger, nullable=False, index=True, comment="Event timestamp in milliseconds"
     )
 
     # Event classification
     source_component: Mapped[str] = mapped_column(
-        String(100),
-        nullable=False,
-        index=True,
-        comment="Component that generated the event"
+        String(100), nullable=False, index=True, comment="Component that generated the event"
     )
 
     event_type: Mapped[str] = mapped_column(
-        String(100),
-        nullable=False,
-        index=True,
-        comment="Type of security event"
+        String(100), nullable=False, index=True, comment="Type of security event"
     )
 
     severity: Mapped[str] = mapped_column(
-        String(20),
-        nullable=False,
-        index=True,
-        comment="Event severity level"
+        String(20), nullable=False, index=True, comment="Event severity level"
     )
 
     # Event details
     title: Mapped[str] = mapped_column(
-        String(500),
-        nullable=False,
-        comment="Human-readable event title"
+        String(500), nullable=False, comment="Human-readable event title"
     )
 
     description: Mapped[str] = mapped_column(
-        Text,
-        nullable=False,
-        comment="Detailed event description"
+        Text, nullable=False, comment="Detailed event description"
     )
 
     # Event-specific data (flexible JSON payload)
     payload: Mapped[dict[str, Any]] = mapped_column(
-        JSON,
-        nullable=False,
-        comment="Event-specific data payload"
+        JSON, nullable=False, comment="Event-specific data payload"
     )
 
     # Context and metadata
     event_metadata: Mapped[dict[str, Any] | None] = mapped_column(
-        JSON,
-        nullable=True,
-        comment="Additional context and metadata"
+        JSON, nullable=True, comment="Additional context and metadata"
     )
 
     # Correlation fields
     incident_id: Mapped[str | None] = mapped_column(
-        String(255),
-        nullable=True,
-        index=True,
-        comment="Associated incident ID"
+        String(255), nullable=True, index=True, comment="Associated incident ID"
     )
 
     correlation_id: Mapped[str | None] = mapped_column(
-        String(255),
-        nullable=True,
-        index=True,
-        comment="Event correlation ID"
+        String(255), nullable=True, index=True, comment="Event correlation ID"
     )
 
     # Response tracking
@@ -134,46 +95,36 @@ class SecurityEventDB(Base):
         nullable=False,
         default=False,
         index=True,
-        comment="Whether event has been acknowledged"
+        comment="Whether event has been acknowledged",
     )
 
     acknowledged_by: Mapped[str | None] = mapped_column(
-        String(255),
-        nullable=True,
-        comment="User who acknowledged event"
+        String(255), nullable=True, comment="User who acknowledged event"
     )
 
     acknowledged_at: Mapped[float | None] = mapped_column(
-        Float,
-        nullable=True,
-        comment="Acknowledgment timestamp"
+        Float, nullable=True, comment="Acknowledgment timestamp"
     )
 
     # Evidence and remediation
     evidence_data: Mapped[dict[str, Any] | None] = mapped_column(
-        JSON,
-        nullable=True,
-        comment="Supporting evidence"
+        JSON, nullable=True, comment="Supporting evidence"
     )
 
     remediation_action: Mapped[str | None] = mapped_column(
-        Text,
-        nullable=True,
-        comment="Suggested remediation"
+        Text, nullable=True, comment="Suggested remediation"
     )
 
     # Database timestamps
     created_at: Mapped[datetime] = mapped_column(
-        nullable=False,
-        server_default=func.now(),
-        comment="Database record creation timestamp"
+        nullable=False, server_default=func.now(), comment="Database record creation timestamp"
     )
 
     updated_at: Mapped[datetime] = mapped_column(
         nullable=False,
         server_default=func.now(),
         onupdate=func.now(),
-        comment="Database record last update timestamp"
+        comment="Database record last update timestamp",
     )
 
     def to_dict(self) -> dict[str, Any]:
@@ -214,137 +165,90 @@ class SecurityIncidentDB(Base):
 
     # Primary key
     id: Mapped[int] = mapped_column(
-        Integer,
-        primary_key=True,
-        autoincrement=True,
-        comment="Auto-incrementing primary key"
+        Integer, primary_key=True, autoincrement=True, comment="Auto-incrementing primary key"
     )
 
     # Core incident identification
     incident_id: Mapped[str] = mapped_column(
-        String(255),
-        nullable=False,
-        unique=True,
-        comment="Unique incident identifier"
+        String(255), nullable=False, unique=True, comment="Unique incident identifier"
     )
 
     incident_uuid: Mapped[str] = mapped_column(
-        String(36),
-        nullable=False,
-        unique=True,
-        comment="UUID for incident"
+        String(36), nullable=False, unique=True, comment="UUID for incident"
     )
 
     # Temporal information
     created_at: Mapped[float] = mapped_column(
-        Float,
-        nullable=False,
-        index=True,
-        comment="Incident creation timestamp"
+        Float, nullable=False, index=True, comment="Incident creation timestamp"
     )
 
     updated_at: Mapped[float] = mapped_column(
-        Float,
-        nullable=False,
-        comment="Last update timestamp"
+        Float, nullable=False, comment="Last update timestamp"
     )
 
     closed_at: Mapped[float | None] = mapped_column(
-        Float,
-        nullable=True,
-        comment="Incident closure timestamp"
+        Float, nullable=True, comment="Incident closure timestamp"
     )
 
     # Incident details
     title: Mapped[str] = mapped_column(
-        String(500),
-        nullable=False,
-        comment="Human-readable incident title"
+        String(500), nullable=False, comment="Human-readable incident title"
     )
 
     description: Mapped[str] = mapped_column(
-        Text,
-        nullable=False,
-        comment="Detailed incident description"
+        Text, nullable=False, comment="Detailed incident description"
     )
 
     status: Mapped[str] = mapped_column(
-        String(50),
-        nullable=False,
-        default="open",
-        index=True,
-        comment="Incident status"
+        String(50), nullable=False, default="open", index=True, comment="Incident status"
     )
 
     # Severity and classification
     severity: Mapped[str] = mapped_column(
-        String(20),
-        nullable=False,
-        index=True,
-        comment="Incident severity level"
+        String(20), nullable=False, index=True, comment="Incident severity level"
     )
 
     category: Mapped[str] = mapped_column(
-        String(100),
-        nullable=False,
-        index=True,
-        comment="Incident category"
+        String(100), nullable=False, index=True, comment="Incident category"
     )
 
     # Investigation details
     assigned_to: Mapped[str | None] = mapped_column(
-        String(255),
-        nullable=True,
-        index=True,
-        comment="Assigned investigator"
+        String(255), nullable=True, index=True, comment="Assigned investigator"
     )
 
     investigation_notes: Mapped[str | None] = mapped_column(
-        Text,
-        nullable=True,
-        comment="Investigation notes"
+        Text, nullable=True, comment="Investigation notes"
     )
 
     # Event relationships
     event_count: Mapped[int] = mapped_column(
-        Integer,
-        nullable=False,
-        default=0,
-        comment="Number of associated events"
+        Integer, nullable=False, default=0, comment="Number of associated events"
     )
 
     primary_event_id: Mapped[str | None] = mapped_column(
-        String(255),
-        nullable=True,
-        index=True,
-        comment="Primary triggering event"
+        String(255), nullable=True, index=True, comment="Primary triggering event"
     )
 
     # Resolution
     resolution: Mapped[str | None] = mapped_column(
-        Text,
-        nullable=True,
-        comment="Incident resolution"
+        Text, nullable=True, comment="Incident resolution"
     )
 
     remediation_actions: Mapped[list[str] | None] = mapped_column(
-        JSON,
-        nullable=True,
-        comment="Actions taken"
+        JSON, nullable=True, comment="Actions taken"
     )
 
     # Database timestamps
     db_created_at: Mapped[datetime] = mapped_column(
-        nullable=False,
-        server_default=func.now(),
-        comment="Database record creation timestamp"
+        nullable=False, server_default=func.now(), comment="Database record creation timestamp"
     )
 
     db_updated_at: Mapped[datetime] = mapped_column(
         nullable=False,
         server_default=func.now(),
         onupdate=func.now(),
-        comment="Database record last update timestamp"
+        comment="Database record last update timestamp",
     )
 
     def to_dict(self) -> dict[str, Any]:

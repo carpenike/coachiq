@@ -246,7 +246,7 @@ class NetworkSecurityMiddleware(BaseHTTPMiddleware):
             return response
 
         except Exception as e:
-            logger.error(f"Network security middleware error: {e}")
+            logger.error(f"Network security middleware error: {e}", exc_info=True)
             return self._create_security_response(
                 "SECURITY_ERROR", "Network security check failed", status_code=500
             )

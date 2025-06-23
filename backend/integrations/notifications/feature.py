@@ -8,6 +8,7 @@ lifecycle with queue-based architecture and provides integration hooks for other
 
 import asyncio
 import logging
+import time
 from typing import Any
 
 from backend.core.config import get_notification_settings
@@ -95,7 +96,7 @@ class NotificationFeature(Feature):
             return
 
         try:
-            start_time = asyncio.get_event_loop().time()
+            start_time = time.perf_counter()
 
             # Determine if queue-based architecture should be used (Phase 1 rollout)
             use_queue_based = self.config.get("use_queue_based", True)
@@ -162,7 +163,7 @@ class NotificationFeature(Feature):
             # Start background monitoring tasks
             await self._start_background_tasks()
 
-            startup_time = asyncio.get_event_loop().time() - start_time
+            startup_time = time.perf_counter() - start_time
             self._stats["startup_time"] = startup_time
 
             architecture = "queue-based" if use_queue_based else "legacy"

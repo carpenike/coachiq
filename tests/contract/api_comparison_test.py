@@ -11,17 +11,16 @@ import asyncio
 import json
 import logging
 import time
-from typing import Any, Dict, List, Optional, Tuple, Union
-from dataclasses import dataclass, asdict
+from dataclasses import asdict, dataclass
 from datetime import datetime
+from typing import Any, Dict, List, Optional, Tuple, Union
 
-import pytest
 import httpx
+import pytest
 from fastapi.testclient import TestClient
 
-from backend.main import app
 from backend.core.config import get_settings
-
+from backend.main import app
 
 # Configure logging for detailed comparison output
 logging.basicConfig(level=logging.INFO)
@@ -31,9 +30,10 @@ logger = logging.getLogger(__name__)
 @dataclass
 class APIResponse:
     """Structured representation of API response for comparison"""
+
     status_code: int
-    data: Optional[Dict[str, Any]]
-    headers: Dict[str, str]
+    data: dict[str, Any] | None
+    headers: dict[str, str]
     response_time_ms: float
     endpoint: str
     timestamp: str
@@ -42,13 +42,14 @@ class APIResponse:
 @dataclass
 class ComparisonResult:
     """Result of comparing legacy vs v2 API responses"""
+
     endpoint: str
     legacy_response: APIResponse
     v2_response: APIResponse
     data_match: bool
     status_match: bool
     functional_equivalent: bool
-    differences: List[str]
+    differences: list[str]
     notes: str
 
 
@@ -66,10 +67,11 @@ class APIComparisonFramework:
     def __init__(self, client: TestClient):
         self.client = client
         self.settings = get_settings()
-        self.comparison_results: List[ComparisonResult] = []
+        self.comparison_results: list[ComparisonResult] = []
 
-    async def make_api_request(self, endpoint: str, method: str = "GET",
-                               data: Optional[Dict] = None) -> APIResponse:
+    async def make_api_request(
+        self, endpoint: str, method: str = "GET", data: dict | None = None
+    ) -> APIResponse:
         """Make API request and capture detailed response data"""
         start_time = time.time()
 
@@ -100,7 +102,7 @@ class APIComparisonFramework:
                 headers=dict(response.headers),
                 response_time_ms=response_time_ms,
                 endpoint=endpoint,
-                timestamp=datetime.now().isoformat()
+                timestamp=datetime.now().isoformat(),
             )
 
         except Exception as e:
@@ -113,7 +115,7 @@ class APIComparisonFramework:
                 headers={},
                 response_time_ms=response_time_ms,
                 endpoint=endpoint,
-                timestamp=datetime.now().isoformat()
+                timestamp=datetime.now().isoformat(),
             )
 
     def normalize_response_data(self, data: Any) -> Any:
@@ -125,30 +127,37 @@ class APIComparisonFramework:
             normalized = {}
             for key, value in data.items():
                 # Skip timestamp fields that will naturally differ
-                if key in ['last_updated', 'timestamp', 'created_at', 'updated_at']:
+                if key in ["last_updated", "timestamp", "created_at", "updated_at"]:
                     continue
                 # Skip response metadata that may differ
-                if key in ['response_time', 'request_id', 'trace_id']:
+                if key in ["response_time", "request_id", "trace_id"]:
                     continue
 
                 normalized[key] = self.normalize_response_data(value)
             return normalized
 
-        elif isinstance(data, list):
+        if isinstance(data, list):
             # Sort lists by id or entity_id for consistent comparison
             normalized_list = [self.normalize_response_data(item) for item in data]
-            if (normalized_list and isinstance(normalized_list[0], dict) and
-                'entity_id' in normalized_list[0]):
-                normalized_list.sort(key=lambda x: x.get('entity_id', ''))
-            elif (normalized_list and isinstance(normalized_list[0], dict) and
-                  'id' in normalized_list[0]):
-                normalized_list.sort(key=lambda x: x.get('id', ''))
+            if (
+                normalized_list
+                and isinstance(normalized_list[0], dict)
+                and "entity_id" in normalized_list[0]
+            ):
+                normalized_list.sort(key=lambda x: x.get("entity_id", ""))
+            elif (
+                normalized_list
+                and isinstance(normalized_list[0], dict)
+                and "id" in normalized_list[0]
+            ):
+                normalized_list.sort(key=lambda x: x.get("id", ""))
             return normalized_list
 
         return data
 
-    def compare_responses(self, legacy_response: APIResponse,
-                         v2_response: APIResponse) -> ComparisonResult:
+    def compare_responses(
+        self, legacy_response: APIResponse, v2_response: APIResponse
+    ) -> ComparisonResult:
         """
         Compare legacy and v2 API responses for functional equivalence
 
@@ -164,8 +173,7 @@ class APIComparisonFramework:
         status_match = legacy_response.status_code == v2_response.status_code
         if not status_match:
             differences.append(
-                f"Status code: legacy={legacy_response.status_code}, "
-                f"v2={v2_response.status_code}"
+                f"Status code: legacy={legacy_response.status_code}, v2={v2_response.status_code}"
             )
 
         # Data comparison (normalized)
@@ -196,10 +204,10 @@ class APIComparisonFramework:
             status_match=status_match,
             functional_equivalent=functional_equivalent,
             differences=differences,
-            notes=notes
+            notes=notes,
         )
 
-    def _analyze_dict_differences(self, legacy: Dict, v2: Dict, differences: List[str]):
+    def _analyze_dict_differences(self, legacy: dict, v2: dict, differences: list[str]):
         """Analyze differences between dictionary responses"""
         legacy_keys = set(legacy.keys())
         v2_keys = set(v2.keys())
@@ -219,8 +227,9 @@ class APIComparisonFramework:
             if legacy[key] != v2[key]:
                 differences.append(f"Value difference for '{key}': {legacy[key]} != {v2[key]}")
 
-    def _check_functional_equivalence(self, legacy: APIResponse, v2: APIResponse,
-                                     differences: List[str]) -> bool:
+    def _check_functional_equivalence(
+        self, legacy: APIResponse, v2: APIResponse, differences: list[str]
+    ) -> bool:
         """
         Check if responses are functionally equivalent even if data differs
 
@@ -232,11 +241,11 @@ class APIComparisonFramework:
         # If status codes match and both succeeded, check core functionality
         if legacy.status_code == v2.status_code == 200:
             # For entity endpoints, ensure entity data is preserved
-            if 'entities' in legacy.endpoint:
+            if "entities" in legacy.endpoint:
                 return self._check_entity_functional_equivalence(legacy, v2)
 
             # For control endpoints, ensure command success is preserved
-            if 'control' in legacy.endpoint:
+            if "control" in legacy.endpoint:
                 return self._check_control_functional_equivalence(legacy, v2)
 
         # For error cases, ensure appropriate error is returned
@@ -245,8 +254,7 @@ class APIComparisonFramework:
 
         return legacy.status_code == v2.status_code
 
-    def _check_entity_functional_equivalence(self, legacy: APIResponse,
-                                           v2: APIResponse) -> bool:
+    def _check_entity_functional_equivalence(self, legacy: APIResponse, v2: APIResponse) -> bool:
         """Check functional equivalence for entity endpoints"""
         legacy_data = legacy.data
         v2_data = v2.data
@@ -257,20 +265,19 @@ class APIComparisonFramework:
         # For collection responses
         if isinstance(legacy_data, dict) and isinstance(v2_data, dict):
             # Check if v2 has at least the same entities as legacy
-            if 'entities' in legacy_data and 'entities' in v2_data:
-                legacy_entities = legacy_data['entities']
-                v2_entities = v2_data['entities']
+            if "entities" in legacy_data and "entities" in v2_data:
+                legacy_entities = legacy_data["entities"]
+                v2_entities = v2_data["entities"]
 
                 # Ensure all legacy entities are present in v2
-                legacy_ids = {e.get('entity_id') for e in legacy_entities}
-                v2_ids = {e.get('entity_id') for e in v2_entities}
+                legacy_ids = {e.get("entity_id") for e in legacy_entities}
+                v2_ids = {e.get("entity_id") for e in v2_entities}
 
                 return legacy_ids.issubset(v2_ids)
 
         return True
 
-    def _check_control_functional_equivalence(self, legacy: APIResponse,
-                                            v2: APIResponse) -> bool:
+    def _check_control_functional_equivalence(self, legacy: APIResponse, v2: APIResponse) -> bool:
         """Check functional equivalence for control endpoints"""
         # Both should indicate success/failure similarly
         legacy_success = legacy.status_code == 200
@@ -278,8 +285,9 @@ class APIComparisonFramework:
 
         return legacy_success == v2_success
 
-    def _generate_comparison_notes(self, legacy: APIResponse, v2: APIResponse,
-                                 differences: List[str]) -> str:
+    def _generate_comparison_notes(
+        self, legacy: APIResponse, v2: APIResponse, differences: list[str]
+    ) -> str:
         """Generate human-readable notes about the comparison"""
         notes = []
 
@@ -292,17 +300,22 @@ class APIComparisonFramework:
 
         # Performance comparison
         if v2.response_time_ms < legacy.response_time_ms:
-            improvement = ((legacy.response_time_ms - v2.response_time_ms) /
-                          legacy.response_time_ms * 100)
+            improvement = (
+                (legacy.response_time_ms - v2.response_time_ms) / legacy.response_time_ms * 100
+            )
             notes.append(f"🚀 v2 is {improvement:.1f}% faster")
         elif v2.response_time_ms > legacy.response_time_ms * 1.5:
             notes.append("⚠️ v2 response time significantly slower")
 
         return "\n".join(notes)
 
-    async def test_endpoint_parity(self, legacy_endpoint: str, v2_endpoint: str,
-                                  method: str = "GET",
-                                  test_data: Optional[Dict] = None) -> ComparisonResult:
+    async def test_endpoint_parity(
+        self,
+        legacy_endpoint: str,
+        v2_endpoint: str,
+        method: str = "GET",
+        test_data: dict | None = None,
+    ) -> ComparisonResult:
         """Test parity between legacy and v2 endpoints"""
         logger.info(f"Testing parity: {legacy_endpoint} vs {v2_endpoint}")
 
@@ -323,7 +336,7 @@ class APIComparisonFramework:
 
         return result
 
-    def generate_report(self) -> Dict[str, Any]:
+    def generate_report(self) -> dict[str, Any]:
         """Generate comprehensive comparison report"""
         total_tests = len(self.comparison_results)
         status_matches = sum(1 for r in self.comparison_results if r.status_match)
@@ -341,7 +354,7 @@ class APIComparisonFramework:
                 "functional_match_rate": functional_matches / total_tests if total_tests > 0 else 0,
             },
             "test_results": [asdict(result) for result in self.comparison_results],
-            "generated_at": datetime.now().isoformat()
+            "generated_at": datetime.now().isoformat(),
         }
 
         return report
@@ -362,12 +375,13 @@ class TestEntityEndpointParity:
     async def test_get_entities_parity(self, comparison_framework):
         """Test GET /api/entities vs GET /api/v2/entities"""
         result = await comparison_framework.test_endpoint_parity(
-            legacy_endpoint="/api/entities",
-            v2_endpoint="/api/v2/entities"
+            legacy_endpoint="/api/entities", v2_endpoint="/api/v2/entities"
         )
 
         # Assert functional equivalence at minimum
-        assert result.functional_equivalent, f"Entity listing not functionally equivalent: {result.notes}"
+        assert result.functional_equivalent, (
+            f"Entity listing not functionally equivalent: {result.notes}"
+        )
 
     @pytest.mark.asyncio
     async def test_get_entity_by_id_parity(self, comparison_framework):
@@ -375,19 +389,22 @@ class TestEntityEndpointParity:
         # First get an entity ID to test with
         entities_response = await comparison_framework.make_api_request("/api/entities")
 
-        if (entities_response.status_code == 200 and
-            entities_response.data and
-            'entities' in entities_response.data and
-            entities_response.data['entities']):
-
-            entity_id = entities_response.data['entities'][0]['entity_id']
+        if (
+            entities_response.status_code == 200
+            and entities_response.data
+            and "entities" in entities_response.data
+            and entities_response.data["entities"]
+        ):
+            entity_id = entities_response.data["entities"][0]["entity_id"]
 
             result = await comparison_framework.test_endpoint_parity(
                 legacy_endpoint=f"/api/entities/{entity_id}",
-                v2_endpoint=f"/api/v2/entities/{entity_id}"
+                v2_endpoint=f"/api/v2/entities/{entity_id}",
             )
 
-            assert result.functional_equivalent, f"Single entity fetch not equivalent: {result.notes}"
+            assert result.functional_equivalent, (
+                f"Single entity fetch not equivalent: {result.notes}"
+            )
 
     @pytest.mark.asyncio
     async def test_control_entity_parity(self, comparison_framework):
@@ -395,16 +412,18 @@ class TestEntityEndpointParity:
         # First get a controllable entity
         entities_response = await comparison_framework.make_api_request("/api/entities")
 
-        if (entities_response.status_code == 200 and
-            entities_response.data and
-            'entities' in entities_response.data):
-
+        if (
+            entities_response.status_code == 200
+            and entities_response.data
+            and "entities" in entities_response.data
+        ):
             # Find a light entity for testing
-            light_entities = [e for e in entities_response.data['entities']
-                            if e.get('device_type') == 'light']
+            light_entities = [
+                e for e in entities_response.data["entities"] if e.get("device_type") == "light"
+            ]
 
             if light_entities:
-                entity_id = light_entities[0]['entity_id']
+                entity_id = light_entities[0]["entity_id"]
                 test_command = {"command": "toggle"}
 
                 # Note: v2 API might have different endpoint structure
@@ -412,11 +431,13 @@ class TestEntityEndpointParity:
                     legacy_endpoint=f"/api/entities/{entity_id}/control",
                     v2_endpoint="/api/v2/entities/control",
                     method="POST",
-                    test_data={"entity_id": entity_id, **test_command}
+                    test_data={"entity_id": entity_id, **test_command},
                 )
 
                 # For control operations, we expect at least functional equivalence
-                assert result.functional_equivalent, f"Entity control not equivalent: {result.notes}"
+                assert result.functional_equivalent, (
+                    f"Entity control not equivalent: {result.notes}"
+                )
 
 
 class TestBulkOperationsParity:
@@ -432,8 +453,8 @@ class TestBulkOperationsParity:
             data={
                 "entity_ids": ["test_light_1"],
                 "command": {"command": "set", "state": False},
-                "ignore_errors": True
-            }
+                "ignore_errors": True,
+            },
         )
 
         # Should return proper error or success, not 404
@@ -448,12 +469,13 @@ class TestSafetyEndpointsParity:
         """Test emergency stop functionality availability"""
         # Test v2 emergency stop endpoint
         result = await comparison_framework.make_api_request(
-            "/api/v2/entities/emergency-stop",
-            method="POST"
+            "/api/v2/entities/emergency-stop", method="POST"
         )
 
         # Should be available (even if no actual devices)
-        assert result.status_code in [200, 202, 503], f"Emergency stop should be available: {result.status_code}"
+        assert result.status_code in [200, 202, 503], (
+            f"Emergency stop should be available: {result.status_code}"
+        )
 
     @pytest.mark.asyncio
     async def test_safety_status_availability(self, comparison_framework):
@@ -474,10 +496,8 @@ async def run_comprehensive_comparison_tests():
         # Basic entity operations
         ("/api/entities", "/api/v2/entities", "GET", None),
         ("/api/health", "/api/v2/entities/health", "GET", None),
-
         # Error handling tests
         ("/api/entities/nonexistent", "/api/v2/entities/nonexistent", "GET", None),
-
         # Schema availability
         ("/api/docs", "/api/v2/entities/schemas", "GET", None),
     ]
@@ -486,9 +506,7 @@ async def run_comprehensive_comparison_tests():
 
     for legacy_endpoint, v2_endpoint, method, test_data in test_scenarios:
         try:
-            await framework.test_endpoint_parity(
-                legacy_endpoint, v2_endpoint, method, test_data
-            )
+            await framework.test_endpoint_parity(legacy_endpoint, v2_endpoint, method, test_data)
         except Exception as e:
             logger.error(f"Error testing {legacy_endpoint} vs {v2_endpoint}: {e}")
 
@@ -499,7 +517,7 @@ async def run_comprehensive_comparison_tests():
     with open("/tmp/api_comparison_report.json", "w") as f:
         json.dump(report, f, indent=2)
 
-    logger.info(f"Comparison complete. Report saved to /tmp/api_comparison_report.json")
+    logger.info("Comparison complete. Report saved to /tmp/api_comparison_report.json")
     logger.info(f"Summary: {report['summary']}")
 
     return report

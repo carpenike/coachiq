@@ -141,20 +141,30 @@ def show_configuration(settings):
 
     print("Security Configuration:")
     print(f"  External TLS Termination: {settings.security.tls_termination_is_external}")
-    print(f"  Proxy Headers: {'Enabled' if settings.security.tls_termination_is_external else 'Disabled'}")
+    print(
+        f"  Proxy Headers: {'Enabled' if settings.security.tls_termination_is_external else 'Disabled'}"
+    )
     print(f"  Rate Limiting: {settings.security.rate_limit_enabled}")
     print()
 
     print("CORS Configuration:")
-    print(f"  Allowed Origins: {', '.join(settings.cors.allow_origins) if isinstance(settings.cors.allow_origins, list) else settings.cors.allow_origins}")
+    print(
+        f"  Allowed Origins: {', '.join(settings.cors.allow_origins) if isinstance(settings.cors.allow_origins, list) else settings.cors.allow_origins}"
+    )
     print(f"  Allow Credentials: {settings.cors.allow_credentials}")
-    print(f"  Allowed Methods: {', '.join(settings.cors.allow_methods) if isinstance(settings.cors.allow_methods, list) else settings.cors.allow_methods}")
-    print(f"  Allowed Headers: {', '.join(settings.cors.allow_headers) if isinstance(settings.cors.allow_headers, list) else settings.cors.allow_headers}")
+    print(
+        f"  Allowed Methods: {', '.join(settings.cors.allow_methods) if isinstance(settings.cors.allow_methods, list) else settings.cors.allow_methods}"
+    )
+    print(
+        f"  Allowed Headers: {', '.join(settings.cors.allow_headers) if isinstance(settings.cors.allow_headers, list) else settings.cors.allow_headers}"
+    )
     print()
 
     print("CAN Bus Configuration:")
     print(f"  Bus Type: {settings.can.bustype}")
-    print(f"  Interfaces: {', '.join(settings.can.interfaces) if isinstance(settings.can.interfaces, list) else settings.can.interfaces}")
+    print(
+        f"  Interfaces: {', '.join(settings.can.interfaces) if isinstance(settings.can.interfaces, list) else settings.can.interfaces}"
+    )
     print(f"  Bitrate: {settings.can.bitrate}")
     print()
 

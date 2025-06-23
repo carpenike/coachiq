@@ -411,12 +411,12 @@ EOF
               text = ''
                 export SKIP=djlint
                 poetry install --no-root --with dev
-                poetry run pre-commit run --all-files
+                poetry run pre-commit run
               '';
             };
           }) // {
             meta = {
-              description = "Run pre-commit checks across the repo";
+              description = "Run pre-commit checks on staged files (developer workflow)";
               maintainers = [ "carpenike" ];
               license = pkgs.lib.licenses.asl20;
             };
@@ -444,22 +444,15 @@ EOF
               name = "lint";
               runtimeInputs = [ pkgs.poetry ];
               text = ''
-                # Backend linting
-                poetry install --no-root
-                poetry run ruff check .
-                poetry run pyright backend
-
-                # Frontend linting (if frontend directory exists)
-                if [ -d "frontend" ]; then
-                  cd frontend
-                  npm run lint
-                  npm run typecheck
-                fi
+                # Run all checks on all files (like CI but local)
+                export SKIP=djlint
+                poetry install --no-root --with dev
+                poetry run pre-commit run --all-files
               '';
             };
           }) // {
             meta = {
-              description = "Run Python and frontend linters";
+              description = "Run all quality checks on all files (local CI simulation)";
               maintainers = [ "carpenike" ];
               license = pkgs.lib.licenses.asl20;
             };
@@ -520,14 +513,15 @@ EOF
           ci = (flake-utils.lib.mkApp {
             drv = pkgs.writeShellApplication {
               name = "ci";
-              runtimeInputs = [ pkgs.poetry pkgs.nodejs_20 ];
+              runtimeInputs = [ pkgs.poetry pkgs.nodejs_20 pkgs.jq pkgs.git ];
               text = ''
                 set -e
-                export SKIP=djlint
+
+                # Install dependencies
                 poetry install --no-root --with dev
                 poetry check --lock --no-interaction
 
-                # Frontend deps must be installed before pre-commit
+                # Frontend deps must be installed before quality checks
                 if [ -d "frontend" ]; then
                   echo "🔍 Installing frontend dependencies..."
                   cd frontend
@@ -535,22 +529,13 @@ EOF
                   cd ..
                 fi
 
-                poetry run pre-commit run --all-files
-
-                # Frontend checks
-                # if [ -d "frontend" ]; then
-                #   echo "🔍 Running frontend checks..."
-                #   cd frontend
-                #   npm run lint
-                #   npm run typecheck
-                #   npm run build
-                #   cd ..
-                # fi
+                # Run the intelligent diff-aware quality gate
+                ./scripts/ci-quality-gate.sh
               '';
             };
           }) // {
             meta = {
-              description = "Run the full CI suite (pre-commit, tests, lint, build)";
+              description = "Run the intelligent CI quality gate (diff-aware checks)";
               maintainers = [ "carpenike" ];
               license = pkgs.lib.licenses.asl20;
             };

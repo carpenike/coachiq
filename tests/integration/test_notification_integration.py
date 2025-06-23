@@ -44,8 +44,8 @@ from backend.services.notification_manager import NotificationManager
 from backend.services.notification_queue import NotificationQueue
 from backend.services.notification_routing import (
     NotificationRouter,
-    RoutingRule,
     RoutingConditionType,
+    RoutingRule,
     SystemContext,
     UserNotificationPreferences,
 )
@@ -58,7 +58,9 @@ class IntegrationTestConfig:
     def __init__(self):
         # Test environment flags
         self.use_real_smtp = os.getenv("COACHIQ_TEST_SMTP_ENABLED", "false").lower() == "true"
-        self.use_real_pushover = os.getenv("COACHIQ_TEST_PUSHOVER_ENABLED", "false").lower() == "true"
+        self.use_real_pushover = (
+            os.getenv("COACHIQ_TEST_PUSHOVER_ENABLED", "false").lower() == "true"
+        )
         self.test_email = os.getenv("COACHIQ_TEST_EMAIL", "test@example.com")
 
         # Real service credentials (only if enabled)
@@ -99,27 +101,35 @@ async def test_notification_config(integration_config):
 
     # Configure SMTP if enabled
     if smtp_enabled:
-        config.smtp = type('SMTPSettings', (), {
-            'enabled': True,
-            'host': integration_config.smtp_config["host"],
-            'port': integration_config.smtp_config["port"],
-            'username': integration_config.smtp_config["username"],
-            'password': integration_config.smtp_config["password"],
-            'use_tls': integration_config.smtp_config["use_tls"],
-            'from_email': f"test@{integration_config.smtp_config['host']}",
-        })()
+        config.smtp = type(
+            "SMTPSettings",
+            (),
+            {
+                "enabled": True,
+                "host": integration_config.smtp_config["host"],
+                "port": integration_config.smtp_config["port"],
+                "username": integration_config.smtp_config["username"],
+                "password": integration_config.smtp_config["password"],
+                "use_tls": integration_config.smtp_config["use_tls"],
+                "from_email": f"test@{integration_config.smtp_config['host']}",
+            },
+        )()
     else:
-        config.smtp = type('SMTPSettings', (), {'enabled': False})()
+        config.smtp = type("SMTPSettings", (), {"enabled": False})()
 
     # Configure Pushover if enabled
     if integration_config.use_real_pushover:
-        config.pushover = type('PushoverSettings', (), {
-            'enabled': True,
-            'token': integration_config.pushover_config["token"],
-            'user_key': integration_config.pushover_config["user_key"],
-        })()
+        config.pushover = type(
+            "PushoverSettings",
+            (),
+            {
+                "enabled": True,
+                "token": integration_config.pushover_config["token"],
+                "user_key": integration_config.pushover_config["user_key"],
+            },
+        )()
     else:
-        config.pushover = type('PushoverSettings', (), {'enabled': False})()
+        config.pushover = type("PushoverSettings", (), {"enabled": False})()
 
     return config
 
@@ -170,7 +180,7 @@ async def notification_router():
     router = NotificationRouter()
     await router.initialize()
 
-    yield router
+    return router
 
 
 @pytest.fixture
@@ -179,10 +189,11 @@ async def email_template_manager(test_notification_config):
     manager = EmailTemplateManager(test_notification_config)
     await manager.initialize()
 
-    yield manager
+    return manager
 
 
 # Integration Test Classes
+
 
 class TestNotificationQueueIntegration:
     """Test notification queue with persistent storage."""
@@ -338,16 +349,12 @@ class TestEmailTemplateIntegration:
             "app_name": "CoachIQ",
         }
 
-        rendered_html = await email_template_manager.render_template(
-            template_name, context, "html"
-        )
+        rendered_html = await email_template_manager.render_template(template_name, context, "html")
         assert "Hello John Doe!" in rendered_html
         assert "This is a test message" in rendered_html
         assert "CoachIQ" in rendered_html
 
-        rendered_text = await email_template_manager.render_template(
-            template_name, context, "text"
-        )
+        rendered_text = await email_template_manager.render_template(template_name, context, "text")
         assert "Hello John Doe!" in rendered_text
         assert "This is a test message" in rendered_text
 
@@ -362,7 +369,7 @@ class TestEmailTemplateIntegration:
                 "invalid_template",
                 "Valid Subject",
                 "<html><body>{{invalid.variable.access}}</body></html>",
-                "Valid text"
+                "Valid text",
             )
 
     async def test_builtin_templates(self, email_template_manager):
@@ -383,9 +390,7 @@ class TestEmailTemplateIntegration:
             "support_email": "test@example.com",
         }
 
-        rendered_html = await email_template_manager.render_template(
-            "magic_link", context, "html"
-        )
+        rendered_html = await email_template_manager.render_template("magic_link", context, "html")
         assert "Test User" in rendered_html
         assert "https://example.com/auth/test-token" in rendered_html
         assert "15 minutes" in rendered_html
@@ -515,7 +520,9 @@ class TestNotificationRoutingIntegration:
 class TestSafeNotificationManagerIntegration:
     """Test complete SafeNotificationManager integration."""
 
-    async def test_end_to_end_notification_flow(self, safe_notification_manager, integration_config):
+    async def test_end_to_end_notification_flow(
+        self, safe_notification_manager, integration_config
+    ):
         """Test complete notification flow from creation to queuing."""
         # Send notification through complete system
         success = await safe_notification_manager.notify(
@@ -580,7 +587,7 @@ class TestSafeNotificationManagerIntegration:
                 "message": "This is a test email from integration testing",
                 "source_component": "IntegrationTest",
                 "level": "info",
-            }
+            },
         )
 
         assert success
@@ -593,7 +600,7 @@ class TestSafeNotificationManagerIntegration:
                 "message": "Preview message",
                 "source_component": "PreviewTest",
                 "level": "warning",
-            }
+            },
         )
 
         assert preview is not None
@@ -632,7 +639,7 @@ class TestSafeNotificationManagerIntegration:
 
     @pytest.mark.skipif(
         not os.getenv("COACHIQ_TEST_SMTP_ENABLED", "false").lower() == "true",
-        reason="Real SMTP testing not enabled"
+        reason="Real SMTP testing not enabled",
     )
     async def test_real_email_delivery(self, safe_notification_manager, integration_config):
         """Test actual email delivery (only if real SMTP enabled)."""
@@ -642,7 +649,7 @@ class TestSafeNotificationManagerIntegration:
             context={
                 "message": "This is a real email test from integration testing",
                 "app_name": "CoachIQ Integration Test",
-            }
+            },
         )
 
         assert success
@@ -699,8 +706,10 @@ class TestNotificationSystemPerformance:
         queue_stats = await safe_notification_manager.get_queue_statistics()
         assert queue_stats.pending_count >= successful_notifications * 0.9
 
-        print(f"Performance test: {notification_count} notifications in {processing_time:.2f}s "
-              f"({rate_per_second:.2f} notifications/sec)")
+        print(
+            f"Performance test: {notification_count} notifications in {processing_time:.2f}s "
+            f"({rate_per_second:.2f} notifications/sec)"
+        )
 
     async def test_rate_limiting_under_load(self, safe_notification_manager):
         """Test rate limiting behavior under high load."""
@@ -733,13 +742,16 @@ class TestNotificationSystemPerformance:
         rate_limit_status = await safe_notification_manager.get_rate_limit_status()
         manager_stats = safe_notification_manager.get_statistics()
 
-        print(f"Rate limiting test: {successful_notifications}/{rapid_notification_count} "
-              f"notifications successful, {rate_limited_notifications} rate limited")
+        print(
+            f"Rate limiting test: {successful_notifications}/{rapid_notification_count} "
+            f"notifications successful, {rate_limited_notifications} rate limited"
+        )
         print(f"Current tokens: {rate_limit_status.current_tokens}/{rate_limit_status.max_tokens}")
         print(f"Rate limited count: {manager_stats.get('rate_limited_notifications', 0)}")
 
 
 # Test fixtures for mock services
+
 
 @pytest.fixture
 async def mock_notification_manager():
@@ -800,7 +812,9 @@ class TestMockedServiceIntegration:
         assert metrics["total_processed"] >= len(notifications)
         assert metrics["successful_deliveries"] >= len(notifications)
 
-    async def test_error_handling_with_mocks(self, mock_dispatcher, notification_queue, mock_notification_manager):
+    async def test_error_handling_with_mocks(
+        self, mock_dispatcher, notification_queue, mock_notification_manager
+    ):
         """Test error handling with mocked service failures."""
         # Configure mock to fail
         mock_notification_manager.send_email.return_value = False

@@ -429,7 +429,7 @@ class TestInvitationMagicLinkIntegration:
 def reset_invitation_state():
     """Reset invitation state between tests."""
     # This fixture ensures each test starts with a clean state
-    yield
+    return
     # Any cleanup code would go here
 
 

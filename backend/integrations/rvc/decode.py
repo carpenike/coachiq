@@ -27,9 +27,9 @@ from backend.integrations.rvc.config_loader import (
     load_device_mapping,
     load_rvc_spec,
 )
+from backend.integrations.rvc.decoder_core import DecodedValue, DecodeError
 from backend.integrations.rvc.decoder_core import decode_payload as _decode_payload
 from backend.integrations.rvc.decoder_core import get_bits as _get_bits
-from backend.integrations.rvc.decoder_core import DecodedValue, DecodeError
 from backend.integrations.rvc.missing_dgns import (
     clear_missing_dgns,
     get_missing_dgns,

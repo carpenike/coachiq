@@ -66,7 +66,7 @@ class RVCtoDBCConverter:
                     name=message_name.replace(" ", "_").replace("-", "_"),
                     length=dlc,
                     is_extended_frame=True,
-                    comment=decoder_info.get("description", "")
+                    comment=decoder_info.get("description", ""),
                 )
 
                 # Add signals from fields
@@ -129,7 +129,7 @@ class RVCtoDBCConverter:
                     raw_max = (2 ** (length - 1)) - 1
                 else:
                     raw_min = 0
-                    raw_max = (2 ** length) - 1
+                    raw_max = (2**length) - 1
 
                 if minimum is None:
                     minimum = raw_min * scale + offset
@@ -152,7 +152,7 @@ class RVCtoDBCConverter:
                 minimum=minimum,
                 maximum=maximum,
                 unit=unit,
-                comment=field.get("description", "")
+                comment=field.get("description", ""),
             )
 
             # Add enumeration values if present
@@ -184,15 +184,12 @@ class RVCtoDBCConverter:
             "version": db.version or "1.0",
             "decoders": {},
             "device_types": [],
-            "nodes": []
+            "nodes": [],
         }
 
         # Convert nodes
         for node in db.nodes:
-            rvc_config["nodes"].append({
-                "name": node.name,
-                "comment": node.comment or ""
-            })
+            rvc_config["nodes"].append({"name": node.name, "comment": node.comment or ""})
 
         # Convert messages to decoders
         for message in db.messages:
@@ -203,7 +200,7 @@ class RVCtoDBCConverter:
                 "pgn": message.frame_id,
                 "length": message.length,
                 "description": message.comment or "",
-                "fields": []
+                "fields": [],
             }
 
             # Set sender if available
@@ -239,7 +236,7 @@ class RVCtoDBCConverter:
                 "scale": signal.scale,
                 "offset": signal.offset,
                 "unit": signal.unit or "",
-                "description": signal.comment or ""
+                "description": signal.comment or "",
             }
 
             # Add min/max if different from calculated
@@ -261,10 +258,7 @@ class RVCtoDBCConverter:
             return None
 
     async def convert_file(
-        self,
-        input_path: str | Path,
-        output_path: str | Path,
-        direction: str = "rvc_to_dbc"
+        self, input_path: str | Path, output_path: str | Path, direction: str = "rvc_to_dbc"
     ) -> None:
         """
         Convert between RV-C JSON and DBC files.
@@ -327,39 +321,43 @@ class RVCtoDBCConverter:
             name="DC_DIMMER_COMMAND",
             length=8,
             is_extended_frame=True,
-            senders=["RVC_Controller"]
+            senders=["RVC_Controller"],
         )
 
         # Add light control signals
-        light_msg.signals.append(Signal(
-            name="Instance",
-            start=0,
-            length=8,
-            receivers=["RVC_Light"],
-            byte_order="little_endian",
-            is_signed=False,
-            scale=1,
-            offset=0,
-            minimum=0,
-            maximum=255,
-            unit="",
-            comment="Device instance"
-        ))
+        light_msg.signals.append(
+            Signal(
+                name="Instance",
+                start=0,
+                length=8,
+                receivers=["RVC_Light"],
+                byte_order="little_endian",
+                is_signed=False,
+                scale=1,
+                offset=0,
+                minimum=0,
+                maximum=255,
+                unit="",
+                comment="Device instance",
+            )
+        )
 
-        light_msg.signals.append(Signal(
-            name="Brightness",
-            start=8,
-            length=8,
-            receivers=["RVC_Light"],
-            byte_order="little_endian",
-            is_signed=False,
-            scale=0.5,
-            offset=0,
-            minimum=0,
-            maximum=100,
-            unit="%",
-            comment="Brightness level (0-100%)"
-        ))
+        light_msg.signals.append(
+            Signal(
+                name="Brightness",
+                start=8,
+                length=8,
+                receivers=["RVC_Light"],
+                byte_order="little_endian",
+                is_signed=False,
+                scale=0.5,
+                offset=0,
+                minimum=0,
+                maximum=100,
+                unit="%",
+                comment="Brightness level (0-100%)",
+            )
+        )
 
         db.messages.append(light_msg)
 
@@ -369,38 +367,42 @@ class RVCtoDBCConverter:
             name="TEMPERATURE_STATUS",
             length=8,
             is_extended_frame=True,
-            senders=["RVC_Temperature"]
+            senders=["RVC_Temperature"],
         )
 
-        temp_msg.signals.append(Signal(
-            name="Instance",
-            start=0,
-            length=8,
-            receivers=["RVC_Controller"],
-            byte_order="little_endian",
-            is_signed=False,
-            scale=1,
-            offset=0,
-            minimum=0,
-            maximum=255,
-            unit="",
-            comment="Sensor instance"
-        ))
+        temp_msg.signals.append(
+            Signal(
+                name="Instance",
+                start=0,
+                length=8,
+                receivers=["RVC_Controller"],
+                byte_order="little_endian",
+                is_signed=False,
+                scale=1,
+                offset=0,
+                minimum=0,
+                maximum=255,
+                unit="",
+                comment="Sensor instance",
+            )
+        )
 
-        temp_msg.signals.append(Signal(
-            name="Temperature",
-            start=16,
-            length=16,
-            receivers=["RVC_Controller"],
-            byte_order="little_endian",
-            is_signed=False,
-            scale=0.03125,
-            offset=-273,
-            minimum=-273,
-            maximum=1735,
-            unit="degC",
-            comment="Temperature in Celsius"
-        ))
+        temp_msg.signals.append(
+            Signal(
+                name="Temperature",
+                start=16,
+                length=16,
+                receivers=["RVC_Controller"],
+                byte_order="little_endian",
+                is_signed=False,
+                scale=0.03125,
+                offset=-273,
+                minimum=-273,
+                maximum=1735,
+                unit="degC",
+                comment="Temperature in Celsius",
+            )
+        )
 
         db.messages.append(temp_msg)
 

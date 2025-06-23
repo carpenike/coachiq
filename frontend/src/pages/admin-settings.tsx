@@ -10,6 +10,7 @@ import { Switch } from "@/components/ui/switch"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { useAuth } from "@/contexts"
 import { PINManagementCard, SecurityStatusCard } from "@/components/pin-management"
+import { DatabaseManagementTab } from "@/components/admin/DatabaseManagementTab"
 import {
     IconAlertTriangle,
     IconDatabase,
@@ -69,6 +70,10 @@ export default function AdminSettingsPage() {
           <TabsTrigger value="system" className="flex items-center gap-2">
             <IconSettings className="h-4 w-4" />
             System Settings
+          </TabsTrigger>
+          <TabsTrigger value="database" className="flex items-center gap-2">
+            <IconDatabase className="h-4 w-4" />
+            Database
           </TabsTrigger>
         </TabsList>
 
@@ -308,6 +313,11 @@ export default function AdminSettingsPage() {
               </div>
             </CardContent>
           </Card>
+        </TabsContent>
+
+        {/* Database Management Tab */}
+        <TabsContent value="database" className="space-y-6">
+          <DatabaseManagementTab />
         </TabsContent>
         </Tabs>
       </div>

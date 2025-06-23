@@ -9,22 +9,28 @@ This module provides comprehensive protocol analysis capabilities:
 - Real-time statistics and metrics
 """
 
-import asyncio
-import time
-from typing import Dict, List, Optional, Set, Tuple, Any, Callable
-from dataclasses import dataclass, field
-from collections import defaultdict, deque
-from enum import Enum
 import logging
 import struct
+import time
+from collections import defaultdict, deque
+from collections.abc import Callable
+from dataclasses import dataclass, field
+from enum import Enum
+from typing import Any, Dict, List, Optional, Set, Tuple
 
-from backend.services.feature_base import Feature
+from backend.core.safety_interfaces import (
+    SafeStateAction,
+    SafetyAware,
+    SafetyClassification,
+    SafetyStatus,
+)
 
 logger = logging.getLogger(__name__)
 
 
 class CANProtocol(str, Enum):
     """Supported CAN protocols."""
+
     UNKNOWN = "unknown"
     RVC = "rvc"
     J1939 = "j1939"
@@ -38,6 +44,7 @@ class CANProtocol(str, Enum):
 
 class MessageType(str, Enum):
     """Message type classification."""
+
     DATA = "data"
     REMOTE = "remote"
     ERROR = "error"
@@ -52,59 +59,63 @@ class MessageType(str, Enum):
 @dataclass
 class ProtocolMetrics:
     """Protocol-specific metrics."""
+
     message_count: int = 0
     byte_count: int = 0
     error_count: int = 0
     avg_message_rate: float = 0.0
     peak_message_rate: float = 0.0
     bus_utilization: float = 0.0
-    unique_ids: Set[int] = field(default_factory=set)
-    message_types: Dict[str, int] = field(default_factory=dict)
+    unique_ids: set[int] = field(default_factory=set)
+    message_types: dict[str, int] = field(default_factory=dict)
 
 
 @dataclass
 class DecodedField:
     """Decoded message field."""
+
     name: str
     value: Any
-    unit: Optional[str] = None
-    raw_value: Optional[int] = None
+    unit: str | None = None
+    raw_value: int | None = None
     scale: float = 1.0
     offset: float = 0.0
-    min_value: Optional[float] = None
-    max_value: Optional[float] = None
+    min_value: float | None = None
+    max_value: float | None = None
     valid: bool = True
 
 
 @dataclass
 class AnalyzedMessage:
     """Analyzed CAN message with protocol information."""
+
     timestamp: float
     can_id: int
     data: bytes
     interface: str
     protocol: CANProtocol
     message_type: MessageType
-    source_address: Optional[int] = None
-    destination_address: Optional[int] = None
-    pgn: Optional[int] = None  # For J1939/RV-C
-    function_code: Optional[int] = None  # For CANopen
-    decoded_fields: List[DecodedField] = field(default_factory=list)
-    description: Optional[str] = None
-    warnings: List[str] = field(default_factory=list)
+    source_address: int | None = None
+    destination_address: int | None = None
+    pgn: int | None = None  # For J1939/RV-C
+    function_code: int | None = None  # For CANopen
+    decoded_fields: list[DecodedField] = field(default_factory=list)
+    description: str | None = None
+    warnings: list[str] = field(default_factory=list)
 
 
 @dataclass
 class CommunicationPattern:
     """Detected communication pattern."""
+
     pattern_type: str  # "request_response", "periodic", "event", "broadcast"
-    participants: List[int]  # CAN IDs involved
-    message_sequence: List[Tuple[int, bytes]]  # Sequence of messages
-    interval_ms: Optional[float] = None
+    participants: list[int]  # CAN IDs involved
+    message_sequence: list[tuple[int, bytes]]  # Sequence of messages
+    interval_ms: float | None = None
     confidence: float = 0.0
 
 
-class ProtocolAnalyzer(Feature):
+class ProtocolAnalyzer(SafetyAware):
     """
     CAN protocol analyzer for deep packet inspection.
 
@@ -118,55 +129,153 @@ class ProtocolAnalyzer(Feature):
 
     def __init__(
         self,
-        name: str = "can_protocol_analyzer",
-        enabled: bool = True,
-        core: bool = False,
         buffer_size: int = 10000,
         pattern_window_ms: float = 5000.0,
-        **kwargs,
     ):
-        super().__init__(name=name, enabled=enabled, core=core, **kwargs)
+        # Initialize as safety-aware service
+        super().__init__(
+            safety_classification=SafetyClassification.OPERATIONAL,
+            safe_state_action=SafeStateAction.DISABLE,
+        )
+
         self.buffer_size = buffer_size
         self.pattern_window_ms = pattern_window_ms
 
         # Message buffer for pattern analysis
         self.message_buffer: deque[AnalyzedMessage] = deque(maxlen=buffer_size)
 
+        # Service state
+        self._is_running = False
+
         # Protocol detection state
-        self.protocol_hints: Dict[int, Dict[CANProtocol, int]] = defaultdict(lambda: defaultdict(int))
-        self.detected_protocols: Dict[int, CANProtocol] = {}
+        self.protocol_hints: dict[int, dict[CANProtocol, int]] = defaultdict(
+            lambda: defaultdict(int)
+        )
+        self.detected_protocols: dict[int, CANProtocol] = {}
 
         # Metrics by protocol
-        self.protocol_metrics: Dict[CANProtocol, ProtocolMetrics] = defaultdict(ProtocolMetrics)
+        self.protocol_metrics: dict[CANProtocol, ProtocolMetrics] = defaultdict(ProtocolMetrics)
 
         # Pattern detection
-        self.detected_patterns: List[CommunicationPattern] = []
-        self.sequence_tracker: Dict[int, List[Tuple[float, bytes]]] = defaultdict(list)
+        self.detected_patterns: list[CommunicationPattern] = []
+        self.sequence_tracker: dict[int, list[tuple[float, bytes]]] = defaultdict(list)
 
         # Callbacks
-        self.message_callback: Optional[Callable[[AnalyzedMessage], None]] = None
-        self.pattern_callback: Optional[Callable[[CommunicationPattern], None]] = None
+        self.message_callback: Callable[[AnalyzedMessage], None] | None = None
+        self.pattern_callback: Callable[[CommunicationPattern], None] | None = None
 
         # Statistics
         self.start_time = time.time()
         self.total_messages = 0
         self.total_bytes = 0
 
+        logger.info(
+            "ProtocolAnalyzer initialized: buffer_size=%d, pattern_window_ms=%.1f",
+            buffer_size,
+            pattern_window_ms,
+        )
+
+    async def start(self) -> None:
+        """Start the analyzer."""
+        logger.info("Starting CAN protocol analyzer")
+        self._is_running = True
+        self.start_time = time.time()
+        self._set_safety_status(SafetyStatus.SAFE)
+
+    async def stop(self) -> None:
+        """Stop the analyzer."""
+        logger.info("Stopping CAN protocol analyzer")
+        self._is_running = False
+
+    async def emergency_stop(self, reason: str) -> None:
+        """
+        Emergency stop all protocol analysis operations.
+
+        This method implements the SafetyAware emergency stop interface
+        for immediate cessation of analysis activities.
+
+        Args:
+            reason: Reason for emergency stop (for audit logging)
+        """
+        logger.critical("CAN protocol analyzer emergency stop: %s", reason)
+
+        # Set emergency stop state
+        self._set_emergency_stop_active(True)
+
+        # Immediately stop all operations
+        self._is_running = False
+
+        # Clear all analysis data to prevent stale information
+        self.message_buffer.clear()
+        self.protocol_hints.clear()
+        self.detected_protocols.clear()
+        self.detected_patterns.clear()
+        self.sequence_tracker.clear()
+
+        # Reset statistics
+        self.total_messages = 0
+        self.total_bytes = 0
+        self.start_time = time.time()
+
+        # Clear protocol metrics
+        for metrics in self.protocol_metrics.values():
+            metrics.message_count = 0
+            metrics.byte_count = 0
+            metrics.error_count = 0
+            metrics.unique_ids.clear()
+            metrics.message_types.clear()
+
+        logger.critical("CAN protocol analyzer emergency stop completed")
+
+    async def get_safety_status(self) -> SafetyStatus:
+        """Get current safety status of the analyzer."""
+        if self._emergency_stop_active:
+            return SafetyStatus.EMERGENCY_STOP
+        if not self._is_running:
+            return SafetyStatus.SAFE
+        # Check buffer usage
+        buffer_usage = len(self.message_buffer) / self.buffer_size
+        if buffer_usage > 0.9:
+            return SafetyStatus.DEGRADED
+        return SafetyStatus.SAFE
+
+    async def validate_safety_interlock(self, operation: str) -> bool:
+        """
+        Validate if analyzer operation is safe to perform.
+
+        Args:
+            operation: Operation being validated (e.g., "analyze_message")
+
+        Returns:
+            True if operation is safe to perform
+        """
+        # Check basic safety status
+        safety_status = await self.get_safety_status()
+        if safety_status == SafetyStatus.EMERGENCY_STOP:
+            logger.warning("Analyzer operation %s blocked: emergency stop active", operation)
+            return False
+
+        if not self._is_running and operation != "start":
+            logger.warning("Analyzer operation %s blocked: service not running", operation)
+            return False
+
+        return True
+
+    # Legacy methods for backward compatibility
     async def startup(self) -> None:
-        """Initialize the analyzer."""
-        await super().startup()
-        logger.info("CAN Protocol Analyzer initialized")
+        """Legacy startup method - delegates to start()."""
+        await self.start()
 
     async def shutdown(self) -> None:
-        """Cleanup analyzer resources."""
-        await super().shutdown()
+        """Legacy shutdown method - delegates to stop()."""
+        await self.stop()
 
     async def analyze_message(
         self,
         can_id: int,
         data: bytes,
         interface: str,
-        timestamp: Optional[float] = None,
+        timestamp: float | None = None,
     ) -> AnalyzedMessage:
         """
         Analyze a CAN message and detect protocol.
@@ -180,6 +289,19 @@ class ProtocolAnalyzer(Feature):
         Returns:
             Analyzed message with protocol information
         """
+        # Check safety interlock
+        if not await self.validate_safety_interlock("analyze_message"):
+            # Return minimal analyzed message if safety check fails
+            return AnalyzedMessage(
+                timestamp=timestamp or time.time(),
+                can_id=can_id,
+                data=data,
+                interface=interface,
+                protocol=CANProtocol.UNKNOWN,
+                message_type=MessageType.DATA,
+                warnings=["Analysis blocked by safety interlock"],
+            )
+
         if timestamp is None:
             timestamp = time.time()
 
@@ -197,7 +319,8 @@ class ProtocolAnalyzer(Feature):
         if can_id not in self.detected_protocols:
             hint_counts = self.protocol_hints[can_id]
             if sum(hint_counts.values()) >= 5:  # Need at least 5 messages
-                self.detected_protocols[can_id] = max(hint_counts, key=hint_counts.get)
+                best_protocol = max(hint_counts.keys(), key=lambda k: hint_counts[k])
+                self.detected_protocols[can_id] = best_protocol
 
         # Use detected protocol if available
         if can_id in self.detected_protocols:
@@ -226,7 +349,9 @@ class ProtocolAnalyzer(Feature):
         metrics.message_count += 1
         metrics.byte_count += len(data)
         metrics.unique_ids.add(can_id)
-        metrics.message_types[message.message_type.value] = metrics.message_types.get(message.message_type.value, 0) + 1
+        metrics.message_types[message.message_type.value] = (
+            metrics.message_types.get(message.message_type.value, 0) + 1
+        )
 
         # Add to buffer
         self.message_buffer.append(message)
@@ -270,55 +395,51 @@ class ProtocolAnalyzer(Feature):
             # RVC typically uses specific PGN ranges
             if 0x1FE00 <= pgn <= 0x1FEFF:
                 return CANProtocol.RVC
-            elif pgn in [0xFECA, 0xFEDA, 0xFEDB, 0xFEE6, 0xFEE7, 0xFEE8, 0xFEE9]:
+            if pgn in [0xFECA, 0xFEDA, 0xFEDB, 0xFEE6, 0xFEE7, 0xFEE8, 0xFEE9]:
                 # Common J1939 diagnostic PGNs
                 return CANProtocol.J1939
-            elif 0xF000 <= pgn <= 0xFFFF:
+            if 0xF000 <= pgn <= 0xFFFF:
                 # J1939 PDU2 format
                 return CANProtocol.J1939
-            else:
-                # Could be RVC or J1939
-                return CANProtocol.J1939
-        else:
-            # Standard 11-bit ID
-            # CANopen uses specific ID ranges
-            node_id = can_id & 0x7F
-            function_code = (can_id >> 7) & 0x0F
+            # Could be RVC or J1939
+            return CANProtocol.J1939
+        # Standard 11-bit ID
+        # CANopen uses specific ID ranges
+        node_id = can_id & 0x7F
+        function_code = (can_id >> 7) & 0x0F
 
-            if function_code in [0x0, 0x1, 0x2, 0x3, 0x4, 0x5, 0x6, 0x7, 0x8, 0x9, 0xA, 0xB]:
-                return CANProtocol.CANOPEN
-            elif 0x700 <= can_id <= 0x7FF:
-                # CANopen NMT/SDO range
-                return CANProtocol.CANOPEN
-            else:
-                return CANProtocol.UNKNOWN
+        if function_code in [0x0, 0x1, 0x2, 0x3, 0x4, 0x5, 0x6, 0x7, 0x8, 0x9, 0xA, 0xB]:
+            return CANProtocol.CANOPEN
+        if 0x700 <= can_id <= 0x7FF:
+            # CANopen NMT/SDO range
+            return CANProtocol.CANOPEN
+        return CANProtocol.UNKNOWN
 
-    def _classify_message_type(self, can_id: int, data: bytes, protocol: CANProtocol) -> MessageType:
+    def _classify_message_type(
+        self, can_id: int, data: bytes, protocol: CANProtocol
+    ) -> MessageType:
         """Classify message type based on protocol and content."""
         if protocol == CANProtocol.J1939:
             pgn = (can_id >> 8) & 0x3FFFF
             if pgn == 0xFECA:  # DM1 - Diagnostic Message 1
                 return MessageType.DIAGNOSTIC
-            elif pgn in [0xFECC, 0xFECB]:  # Vehicle speed, engine speed
+            if pgn in [0xFECC, 0xFECB]:  # Vehicle speed, engine speed
                 return MessageType.STATUS
-            elif pgn >= 0xEF00 and pgn <= 0xEFFF:  # Proprietary B
+            if pgn >= 0xEF00 and pgn <= 0xEFFF:  # Proprietary B
                 return MessageType.DATA
-            else:
-                return MessageType.BROADCAST
-        elif protocol == CANProtocol.CANOPEN:
+            return MessageType.BROADCAST
+        if protocol == CANProtocol.CANOPEN:
             function_code = (can_id >> 7) & 0x0F
             if function_code == 0x0:  # NMT
                 return MessageType.COMMAND
-            elif function_code == 0x1:  # SYNC
+            if function_code == 0x1:  # SYNC
                 return MessageType.BROADCAST
-            elif function_code in [0x3, 0x4, 0x5, 0x6]:  # PDO
+            if function_code in [0x3, 0x4, 0x5, 0x6]:  # PDO
                 return MessageType.DATA
-            elif function_code in [0xB, 0xC]:  # SDO
+            if function_code in [0xB, 0xC]:  # SDO
                 return MessageType.PEER_TO_PEER
-            else:
-                return MessageType.STATUS
-        else:
-            return MessageType.DATA
+            return MessageType.STATUS
+        return MessageType.DATA
 
     def _analyze_j1939(self, message: AnalyzedMessage) -> None:
         """Analyze J1939 message."""
@@ -359,7 +480,7 @@ class ProtocolAnalyzer(Feature):
                     offset=-273.15,
                     min_value=-273.15,
                     max_value=1734.96875,
-                    valid=temp_raw != 0xFFFF
+                    valid=temp_raw != 0xFFFF,
                 )
             )
             message.description = "Engine Temperature"
@@ -377,25 +498,27 @@ class ProtocolAnalyzer(Feature):
             brightness1 = message.data[1]
             brightness2 = message.data[2]
 
-            message.decoded_fields.extend([
-                DecodedField(name="Instance", value=instance),
-                DecodedField(
-                    name="Brightness 1",
-                    value=brightness1 * 0.4 if brightness1 != 0xFF else None,
-                    unit="%",
-                    raw_value=brightness1,
-                    scale=0.4,
-                    valid=brightness1 != 0xFF
-                ),
-                DecodedField(
-                    name="Brightness 2",
-                    value=brightness2 * 0.4 if brightness2 != 0xFF else None,
-                    unit="%",
-                    raw_value=brightness2,
-                    scale=0.4,
-                    valid=brightness2 != 0xFF
-                ),
-            ])
+            message.decoded_fields.extend(
+                [
+                    DecodedField(name="Instance", value=instance),
+                    DecodedField(
+                        name="Brightness 1",
+                        value=brightness1 * 0.4 if brightness1 != 0xFF else None,
+                        unit="%",
+                        raw_value=brightness1,
+                        scale=0.4,
+                        valid=brightness1 != 0xFF,
+                    ),
+                    DecodedField(
+                        name="Brightness 2",
+                        value=brightness2 * 0.4 if brightness2 != 0xFF else None,
+                        unit="%",
+                        raw_value=brightness2,
+                        scale=0.4,
+                        valid=brightness2 != 0xFF,
+                    ),
+                ]
+            )
             message.description = "DC Dimmer Status"
 
     def _analyze_canopen(self, message: AnalyzedMessage) -> None:
@@ -421,7 +544,9 @@ class ProtocolAnalyzer(Feature):
                     0x81: "Reset Node",
                     0x82: "Reset Communication",
                 }
-                message.description = f"NMT: {commands.get(command, f'Unknown ({command})')} - Node {target_node}"
+                message.description = (
+                    f"NMT: {commands.get(command, f'Unknown ({command})')} - Node {target_node}"
+                )
 
     async def _detect_patterns(self) -> None:
         """Detect communication patterns in message buffer."""
@@ -444,12 +569,14 @@ class ProtocolAnalyzer(Feature):
             if len(messages) >= 3:
                 intervals = []
                 for i in range(1, len(messages)):
-                    interval = (messages[i].timestamp - messages[i-1].timestamp) * 1000
+                    interval = (messages[i].timestamp - messages[i - 1].timestamp) * 1000
                     intervals.append(interval)
 
                 if intervals:
                     avg_interval = sum(intervals) / len(intervals)
-                    std_dev = (sum((x - avg_interval) ** 2 for x in intervals) / len(intervals)) ** 0.5
+                    std_dev = (
+                        sum((x - avg_interval) ** 2 for x in intervals) / len(intervals)
+                    ) ** 0.5
 
                     # Check if periodic (low standard deviation)
                     if std_dev < avg_interval * 0.1:  # 10% tolerance
@@ -458,15 +585,18 @@ class ProtocolAnalyzer(Feature):
                             participants=[can_id],
                             message_sequence=[(msg.can_id, msg.data) for msg in messages[-3:]],
                             interval_ms=avg_interval,
-                            confidence=1.0 - (std_dev / avg_interval) if avg_interval > 0 else 0.0
+                            confidence=1.0 - (std_dev / avg_interval) if avg_interval > 0 else 0.0,
                         )
 
                         # Check if pattern already detected
                         existing = False
                         for existing_pattern in self.detected_patterns:
-                            if (existing_pattern.pattern_type == "periodic" and
-                                existing_pattern.participants == [can_id] and
-                                abs(existing_pattern.interval_ms - avg_interval) < 10):
+                            if (
+                                existing_pattern.pattern_type == "periodic"
+                                and existing_pattern.participants == [can_id]
+                                and existing_pattern.interval_ms is not None
+                                and abs(existing_pattern.interval_ms - avg_interval) < 10
+                            ):
                                 existing = True
                                 break
 
@@ -478,7 +608,7 @@ class ProtocolAnalyzer(Feature):
                                 except Exception as e:
                                     logger.error(f"Error in pattern callback: {e}")
 
-    def get_statistics(self) -> Dict[str, Any]:
+    def get_statistics(self) -> dict[str, Any]:
         """Get analyzer statistics."""
         runtime = time.time() - self.start_time
 
@@ -487,7 +617,9 @@ class ProtocolAnalyzer(Feature):
 
         # Calculate bus utilization (assuming 500kbps CAN bus)
         # Each message has 64 bits overhead + data
-        bits_per_message = 64 + (self.total_bytes / self.total_messages * 8) if self.total_messages > 0 else 0
+        bits_per_message = (
+            64 + (self.total_bytes / self.total_messages * 8) if self.total_messages > 0 else 0
+        )
         bus_utilization = (bits_per_message * overall_rate) / 500000.0 * 100
 
         # Protocol breakdown
@@ -500,7 +632,9 @@ class ProtocolAnalyzer(Feature):
                     "error_count": metrics.error_count,
                     "unique_ids": len(metrics.unique_ids),
                     "message_types": dict(metrics.message_types),
-                    "percentage": (metrics.message_count / self.total_messages * 100) if self.total_messages > 0 else 0
+                    "percentage": (metrics.message_count / self.total_messages * 100)
+                    if self.total_messages > 0
+                    else 0,
                 }
 
         return {
@@ -515,7 +649,7 @@ class ProtocolAnalyzer(Feature):
             "buffer_capacity": self.buffer_size,
         }
 
-    def get_protocol_report(self) -> Dict[str, Any]:
+    def get_protocol_report(self) -> dict[str, Any]:
         """Generate detailed protocol analysis report."""
         report = {
             "detected_protocols": {},
@@ -533,23 +667,27 @@ class ProtocolAnalyzer(Feature):
             report["detected_protocols"][protocol.value] = {
                 "can_ids": sorted(ids),
                 "count": len(ids),
-                "confidence": "high" if len(ids) > 10 else "medium" if len(ids) > 5 else "low"
+                "confidence": "high" if len(ids) > 10 else "medium" if len(ids) > 5 else "low",
             }
 
         # Communication patterns
         for pattern in self.detected_patterns[-20:]:  # Last 20 patterns
-            report["communication_patterns"].append({
-                "type": pattern.pattern_type,
-                "participants": pattern.participants,
-                "interval_ms": pattern.interval_ms,
-                "confidence": pattern.confidence,
-            })
+            report["communication_patterns"].append(
+                {
+                    "type": pattern.pattern_type,
+                    "participants": pattern.participants,
+                    "interval_ms": pattern.interval_ms,
+                    "confidence": pattern.confidence,
+                }
+            )
 
         # Protocol compliance (basic checks)
         for protocol, metrics in self.protocol_metrics.items():
             if metrics.message_count > 0:
                 compliance = {
-                    "error_rate": (metrics.error_count / metrics.message_count * 100) if metrics.message_count > 0 else 0,
+                    "error_rate": (metrics.error_count / metrics.message_count * 100)
+                    if metrics.message_count > 0
+                    else 0,
                     "issues": [],
                 }
 
@@ -562,8 +700,12 @@ class ProtocolAnalyzer(Feature):
         if self.total_messages > 0:
             bus_util = self.get_statistics()["bus_utilization_percent"]
             if bus_util > 80:
-                report["recommendations"].append("Bus utilization is high. Consider reducing message frequency.")
+                report["recommendations"].append(
+                    "Bus utilization is high. Consider reducing message frequency."
+                )
             if bus_util < 10:
-                report["recommendations"].append("Bus utilization is very low. System may be idle or disconnected.")
+                report["recommendations"].append(
+                    "Bus utilization is very low. System may be idle or disconnected."
+                )
 
         return report

@@ -29,14 +29,16 @@ def mock_feature_manager():
     """Create a mock feature manager for testing."""
     manager = Mock()
     manager.features = {}  # Empty features dict for now
-    manager.check_system_health = AsyncMock(return_value={
-        "status": "healthy",
-        "features": {
-            "can_interface": FeatureState.HEALTHY,
-            "firefly": FeatureState.HEALTHY,
-            "spartan_k2": FeatureState.HEALTHY,
+    manager.check_system_health = AsyncMock(
+        return_value={
+            "status": "healthy",
+            "features": {
+                "can_interface": FeatureState.HEALTHY,
+                "firefly": FeatureState.HEALTHY,
+                "spartan_k2": FeatureState.HEALTHY,
+            },
         }
-    })
+    )
     manager.get_feature = Mock(return_value=Mock(state=FeatureState.HEALTHY))
     manager.get_safety_classification = Mock(return_value=SafetyClassification.POSITION_CRITICAL)
     return manager
@@ -89,18 +91,24 @@ class TestSafetyService:
         slide_interlock = safety_service._interlocks["slide_room_safety"]
 
         # Safe condition: vehicle stopped with parking brake
-        safety_service.update_system_state({
-            "vehicle_speed": 0,
-            "parking_brake": True,
-            "leveling_jacks_down": True,
-            "transmission_gear": "PARK"
-        })
-        conditions_met, reason = await slide_interlock.check_conditions(safety_service._system_state)
+        safety_service.update_system_state(
+            {
+                "vehicle_speed": 0,
+                "parking_brake": True,
+                "leveling_jacks_down": True,
+                "transmission_gear": "PARK",
+            }
+        )
+        conditions_met, reason = await slide_interlock.check_conditions(
+            safety_service._system_state
+        )
         assert conditions_met is True
 
         # Unsafe condition: vehicle moving
         safety_service.update_system_state({"vehicle_speed": 10})
-        conditions_met, reason = await slide_interlock.check_conditions(safety_service._system_state)
+        conditions_met, reason = await slide_interlock.check_conditions(
+            safety_service._system_state
+        )
         assert conditions_met is False
         assert "vehicle_not_moving" in reason
 
@@ -110,19 +118,27 @@ class TestSafetyService:
         awning_interlock = safety_service._interlocks["awning_safety"]
 
         # Safe condition: stopped with parking brake
-        safety_service.update_system_state({
-            "vehicle_speed": 0,
-            "parking_brake": True,
-        })
-        conditions_met, reason = await awning_interlock.check_conditions(safety_service._system_state)
+        safety_service.update_system_state(
+            {
+                "vehicle_speed": 0,
+                "parking_brake": True,
+            }
+        )
+        conditions_met, reason = await awning_interlock.check_conditions(
+            safety_service._system_state
+        )
         assert conditions_met is True
 
         # Unsafe condition: no parking brake
-        safety_service.update_system_state({
-            "vehicle_speed": 0,
-            "parking_brake": False,
-        })
-        conditions_met, reason = await awning_interlock.check_conditions(safety_service._system_state)
+        safety_service.update_system_state(
+            {
+                "vehicle_speed": 0,
+                "parking_brake": False,
+            }
+        )
+        conditions_met, reason = await awning_interlock.check_conditions(
+            safety_service._system_state
+        )
         assert conditions_met is False
         assert "parking_brake_engaged" in reason
 
@@ -132,12 +148,14 @@ class TestSafetyService:
         jack_interlock = safety_service._interlocks["leveling_jack_safety"]
 
         # Safe condition: all requirements met
-        safety_service.update_system_state({
-            "vehicle_speed": 0,
-            "parking_brake": True,
-            "engine_running": False,
-            "transmission_gear": "PARK",
-        })
+        safety_service.update_system_state(
+            {
+                "vehicle_speed": 0,
+                "parking_brake": True,
+                "engine_running": False,
+                "transmission_gear": "PARK",
+            }
+        )
         conditions_met, reason = await jack_interlock.check_conditions(safety_service._system_state)
         assert conditions_met is True
 
@@ -147,10 +165,12 @@ class TestSafetyService:
         assert engaged is True
 
         # Unsafe condition: not in park
-        safety_service.update_system_state({
-            "engine_running": False,
-            "transmission_gear": "N",
-        })
+        safety_service.update_system_state(
+            {
+                "engine_running": False,
+                "transmission_gear": "N",
+            }
+        )
         engaged = await safety_service._check_interlock_conditions(jack_interlock)
         assert engaged is True
 
@@ -224,7 +244,9 @@ class TestSafetyService:
         assert timed_out is True
 
     @pytest.mark.asyncio
-    async def test_health_monitoring_with_failed_feature(self, mock_feature_manager, safety_service):
+    async def test_health_monitoring_with_failed_feature(
+        self, mock_feature_manager, safety_service
+    ):
         """Test health monitoring when critical feature fails."""
         # Mock critical feature failure
         mock_feature_manager.check_system_health.return_value = {
@@ -246,10 +268,12 @@ class TestSafetyService:
     def test_get_safety_status(self, safety_service):
         """Test getting complete safety status."""
         # Set some test conditions
-        safety_service.update_system_state({
-            "vehicle_speed": 25,
-            "parking_brake": False,
-        })
+        safety_service.update_system_state(
+            {
+                "vehicle_speed": 25,
+                "parking_brake": False,
+            }
+        )
 
         status = safety_service.get_safety_status()
 
@@ -279,12 +303,14 @@ class TestSafetyService:
     async def test_concurrent_interlock_checks(self, safety_service):
         """Test concurrent checking of multiple interlocks."""
         # Set unsafe conditions for all interlocks
-        safety_service.update_system_state({
-            "vehicle_speed": 30,
-            "parking_brake": False,
-            "engine_running": True,
-            "transmission_gear": "D",
-        })
+        safety_service.update_system_state(
+            {
+                "vehicle_speed": 30,
+                "parking_brake": False,
+                "engine_running": True,
+                "transmission_gear": "D",
+            }
+        )
 
         # Check all interlocks
         await safety_service.check_all_interlocks()
@@ -334,15 +360,17 @@ class TestSafetyServiceIntegration:
     async def test_rv_driving_scenario(self, safety_service):
         """Test safety behavior while RV is driving."""
         # Simulate driving conditions
-        safety_service.update_system_state({
-            "vehicle_speed": 55,
-            "engine_running": True,
-            "parking_brake": False,
-            "transmission_gear": "D",
-            "slides_deployed": False,
-            "awnings_extended": False,
-            "jacks_deployed": False,
-        })
+        safety_service.update_system_state(
+            {
+                "vehicle_speed": 55,
+                "engine_running": True,
+                "parking_brake": False,
+                "transmission_gear": "D",
+                "slides_deployed": False,
+                "awnings_extended": False,
+                "jacks_deployed": False,
+            }
+        )
 
         # Check interlocks
         await safety_service.check_all_interlocks()
@@ -351,22 +379,26 @@ class TestSafetyServiceIntegration:
         # All position-critical interlocks should be engaged
         for interlock in status["interlocks"]:
             assert interlock["engaged"] is True
-            assert "vehicle_moving" in interlock["violated_conditions"] or \
-                   "engine_running" in interlock["violated_conditions"]
+            assert (
+                "vehicle_moving" in interlock["violated_conditions"]
+                or "engine_running" in interlock["violated_conditions"]
+            )
 
     @pytest.mark.asyncio
     async def test_rv_camping_setup(self, safety_service):
         """Test safety behavior during camping setup."""
         # Simulate proper camping setup
-        safety_service.update_system_state({
-            "vehicle_speed": 0,
-            "engine_running": False,
-            "parking_brake": True,
-            "transmission_gear": "PARK",
-            "slides_deployed": True,
-            "awnings_extended": True,
-            "jacks_deployed": True,
-        })
+        safety_service.update_system_state(
+            {
+                "vehicle_speed": 0,
+                "engine_running": False,
+                "parking_brake": True,
+                "transmission_gear": "PARK",
+                "slides_deployed": True,
+                "awnings_extended": True,
+                "jacks_deployed": True,
+            }
+        )
 
         # Check interlocks
         await safety_service.check_all_interlocks()
@@ -381,10 +413,12 @@ class TestSafetyServiceIntegration:
     async def test_emergency_during_deployment(self, safety_service):
         """Test emergency stop during equipment deployment."""
         # Equipment deployed
-        safety_service.update_system_state({
-            "slides_deployed": True,
-            "awnings_extended": True,
-        })
+        safety_service.update_system_state(
+            {
+                "slides_deployed": True,
+                "awnings_extended": True,
+            }
+        )
 
         # Trigger emergency
         await safety_service.trigger_emergency_stop(

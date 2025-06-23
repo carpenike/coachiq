@@ -59,8 +59,7 @@ class ConnectionPool:
                 if await self._is_healthy(conn):
                     self._in_use.add(conn)
                     return conn
-                else:
-                    await self._close_connection(conn)
+                await self._close_connection(conn)
 
             # Create new connection if under limit
             if self._created_count < self.max_connections:
@@ -120,8 +119,15 @@ class ConnectionPool:
 class SMTPConnectionPool(ConnectionPool):
     """Connection pool for SMTP connections."""
 
-    def __init__(self, host: str, port: int, username: str | None = None,
-                 password: str | None = None, use_tls: bool = True, max_connections: int = 5):
+    def __init__(
+        self,
+        host: str,
+        port: int,
+        username: str | None = None,
+        password: str | None = None,
+        use_tls: bool = True,
+        max_connections: int = 5,
+    ):
         super().__init__("SMTPPool", max_connections)
         self.host = host
         self.port = port
@@ -199,8 +205,12 @@ class HTTPConnectionPool(ConnectionPool):
 class CircuitBreakerManager:
     """Manages circuit breakers for notification channels."""
 
-    def __init__(self, failure_threshold: int = 5, recovery_timeout: int = 60,
-                 expected_exception: type[Exception] = Exception):
+    def __init__(
+        self,
+        failure_threshold: int = 5,
+        recovery_timeout: int = 60,
+        expected_exception: type[Exception] = Exception,
+    ):
         self.failure_threshold = failure_threshold
         self.recovery_timeout = recovery_timeout
         self.expected_exception = expected_exception
@@ -264,25 +274,24 @@ class CircuitBreakerManager:
 
     def get_all_health(self) -> dict[str, Any]:
         """Get health status for all channels."""
-        return {
-            channel: self.get_channel_health(channel)
-            for channel in self.circuits
-        }
+        return {channel: self.get_channel_health(channel) for channel in self.circuits}
 
 
 class PerformanceMetrics:
     """Tracks performance metrics for notification delivery."""
 
     def __init__(self):
-        self.metrics: dict[str, Any] = defaultdict(lambda: {
-            "total_sent": 0,
-            "total_failed": 0,
-            "total_time_ms": 0.0,
-            "min_time_ms": float("inf"),
-            "max_time_ms": 0.0,
-            "last_success": None,
-            "last_failure": None,
-        })
+        self.metrics: dict[str, Any] = defaultdict(
+            lambda: {
+                "total_sent": 0,
+                "total_failed": 0,
+                "total_time_ms": 0.0,
+                "min_time_ms": float("inf"),
+                "max_time_ms": 0.0,
+                "last_success": None,
+                "last_failure": None,
+            }
+        )
         self.batch_metrics = {
             "total_batches": 0,
             "total_notifications": 0,
@@ -313,8 +322,7 @@ class PerformanceMetrics:
 
         # Update average batch size
         self.batch_metrics["avg_batch_size"] = (
-            self.batch_metrics["total_notifications"] /
-            self.batch_metrics["total_batches"]
+            self.batch_metrics["total_notifications"] / self.batch_metrics["total_batches"]
         )
 
     def get_channel_metrics(self, channel: str) -> dict[str, Any]:
@@ -337,10 +345,7 @@ class PerformanceMetrics:
     def get_all_metrics(self) -> dict[str, Any]:
         """Get all performance metrics."""
         return {
-            "channels": {
-                channel: self.get_channel_metrics(channel)
-                for channel in self.metrics
-            },
+            "channels": {channel: self.get_channel_metrics(channel) for channel in self.metrics},
             "batch_processing": self.batch_metrics,
             "summary": self._get_summary_metrics(),
         }
@@ -459,7 +464,7 @@ class PerformanceOptimizedNotificationManager:
             results = await asyncio.gather(*tasks, return_exceptions=True)
 
             # Process results
-            for i, (channel, result) in enumerate(zip(available_channels, results)):
+            for i, (channel, result) in enumerate(zip(available_channels, results, strict=False)):
                 channel_start = time.time()
 
                 if isinstance(result, Exception):
@@ -497,9 +502,7 @@ class PerformanceOptimizedNotificationManager:
             self.logger.error(f"Failed to send notification {notification.id}: {e}")
             return False, {"error": str(e)}
 
-    async def send_batch(
-        self, notifications: list[NotificationPayload]
-    ) -> dict[str, Any]:
+    async def send_batch(self, notifications: list[NotificationPayload]) -> dict[str, Any]:
         """
         Send a batch of notifications efficiently.
 
@@ -532,9 +535,7 @@ class PerformanceOptimizedNotificationManager:
                 else:
                     # For other channels, process individually
                     for notif in channel_notifications:
-                        tasks.append(self._send_via_apprise(
-                            notif, NotificationChannel(channel)
-                        ))
+                        tasks.append(self._send_via_apprise(notif, NotificationChannel(channel)))
 
             # Execute all batch sends
             results = await asyncio.gather(*tasks, return_exceptions=True)
@@ -641,9 +642,8 @@ class PerformanceOptimizedNotificationManager:
             ) as response:
                 if response.status >= 200 and response.status < 300:
                     return True, None
-                else:
-                    error = f"Webhook returned {response.status}"
-                    return False, error
+                error = f"Webhook returned {response.status}"
+                return False, error
 
         except Exception as e:
             self.logger.error(f"Webhook send failed: {e}")
@@ -667,7 +667,7 @@ class PerformanceOptimizedNotificationManager:
             }.get(notification.level.value, NotifyType.INFO)
 
             # Send via Apprise
-            loop = asyncio.get_event_loop()
+            loop = asyncio.get_running_loop()
             result = await loop.run_in_executor(
                 None,
                 lambda: self.apprise_obj.notify(
@@ -760,9 +760,8 @@ class PerformanceOptimizedNotificationManager:
             ) as response:
                 if response.status >= 200 and response.status < 300:
                     return [(True, None)] * len(notifications)
-                else:
-                    error = f"Webhook returned {response.status}"
-                    return [(False, error)] * len(notifications)
+                error = f"Webhook returned {response.status}"
+                return [(False, error)] * len(notifications)
 
         except Exception as e:
             self.logger.error(f"Webhook batch send failed: {e}")
@@ -791,7 +790,9 @@ class PerformanceOptimizedNotificationManager:
                     "connections": self.smtp_pool._created_count if self.smtp_pool else 0,
                     "in_use": len(self.smtp_pool._in_use) if self.smtp_pool else 0,
                     "available": len(self.smtp_pool._pool) if self.smtp_pool else 0,
-                } if self.smtp_pool else None,
+                }
+                if self.smtp_pool
+                else None,
                 "http": {
                     "active": True,
                     "connections": self.http_pool._created_count,

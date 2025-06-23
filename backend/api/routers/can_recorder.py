@@ -2,20 +2,19 @@
 API endpoints for CAN bus recording and replay functionality.
 """
 
-from typing import List, Optional, Dict, Any
-from pathlib import Path
 from datetime import datetime
+from pathlib import Path
+from typing import Annotated, Any, Optional
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 
-from backend.core.dependencies_v2 import get_feature_manager
+from backend.core.dependencies import VerifiedCANService, get_can_bus_recorder
 from backend.integrations.can.can_bus_recorder import (
     CANBusRecorder,
     RecordingFormat,
     ReplayOptions,
 )
-
 
 router = APIRouter()
 
@@ -23,47 +22,52 @@ router = APIRouter()
 # Request/Response Models
 class RecordingFilters(BaseModel):
     """Filters for recording CAN messages."""
-    can_ids: Optional[List[int]] = Field(None, description="List of CAN IDs to record")
-    interfaces: Optional[List[str]] = Field(None, description="List of interfaces to record from")
-    pgns: Optional[List[int]] = Field(None, description="List of J1939 PGNs to record")
+
+    can_ids: list[int] | None = Field(None, description="List of CAN IDs to record")
+    interfaces: list[str] | None = Field(None, description="List of interfaces to record from")
+    pgns: list[int] | None = Field(None, description="List of J1939 PGNs to record")
 
 
 class StartRecordingRequest(BaseModel):
     """Request to start a new recording."""
+
     name: str = Field(..., description="Name for the recording session")
     description: str = Field("", description="Description of the recording")
     format: RecordingFormat = Field(RecordingFormat.JSON, description="Output format")
-    filters: Optional[RecordingFilters] = Field(None, description="Recording filters")
+    filters: RecordingFilters | None = Field(None, description="Recording filters")
 
 
 class RecordingSessionResponse(BaseModel):
     """Response with recording session details."""
+
     session_id: str
     name: str
     description: str
     start_time: datetime
-    end_time: Optional[datetime]
+    end_time: datetime | None
     message_count: int
-    interfaces: List[str]
-    filters: Dict[str, Any]
+    interfaces: list[str]
+    filters: dict[str, Any]
     format: str
-    file_path: Optional[str]
+    file_path: str | None
 
 
 class RecorderStatusResponse(BaseModel):
     """Response with recorder status."""
+
     state: str
-    current_session: Optional[RecordingSessionResponse]
+    current_session: RecordingSessionResponse | None
     buffer_size: int
     buffer_capacity: int
     messages_recorded: int
     messages_dropped: int
     bytes_recorded: int
-    filters: Dict[str, Any]
+    filters: dict[str, Any]
 
 
 class RecordingListItem(BaseModel):
     """Information about a recorded file."""
+
     filename: str
     path: str
     size_bytes: int
@@ -74,33 +78,26 @@ class RecordingListItem(BaseModel):
 
 class ReplayOptionsRequest(BaseModel):
     """Options for replay operation."""
+
     speed_factor: float = Field(1.0, description="Playback speed multiplier")
     loop: bool = Field(False, description="Loop the replay")
     start_offset: float = Field(0.0, description="Start offset in seconds")
-    end_offset: Optional[float] = Field(None, description="End offset in seconds")
-    interface_mapping: Optional[Dict[str, str]] = Field(None, description="Map recorded to replay interfaces")
-    filter_can_ids: Optional[List[int]] = Field(None, description="Only replay specific CAN IDs")
+    end_offset: float | None = Field(None, description="End offset in seconds")
+    interface_mapping: dict[str, str] | None = Field(
+        None, description="Map recorded to replay interfaces"
+    )
+    filter_can_ids: list[int] | None = Field(None, description="Only replay specific CAN IDs")
 
 
 class StartReplayRequest(BaseModel):
     """Request to start replay."""
+
     filename: str = Field(..., description="Recording filename to replay")
-    options: Optional[ReplayOptionsRequest] = Field(None, description="Replay options")
-
-
-async def get_recorder(request) -> CANBusRecorder:
-    """Get CAN bus recorder instance."""
-    feature_manager = get_feature_manager(request)
-    recorder = feature_manager.get_feature("can_bus_recorder")
-
-    if not recorder:
-        raise HTTPException(status_code=503, detail="CAN bus recorder not available")
-
-    return recorder
+    options: ReplayOptionsRequest | None = Field(None, description="Replay options")
 
 
 @router.get("/status", response_model=RecorderStatusResponse)
-async def get_recorder_status(recorder: CANBusRecorder = Depends(get_recorder)):
+async def get_recorder_status(recorder: Annotated[CANBusRecorder, Depends(get_can_bus_recorder)]):
     """Get current recorder status."""
     status = recorder.get_status()
 
@@ -136,7 +133,7 @@ async def get_recorder_status(recorder: CANBusRecorder = Depends(get_recorder)):
 @router.post("/start", response_model=RecordingSessionResponse)
 async def start_recording(
     request: StartRecordingRequest,
-    recorder: CANBusRecorder = Depends(get_recorder),
+    recorder: Annotated[CANBusRecorder, Depends(get_can_bus_recorder)],
 ):
     """Start a new recording session."""
     try:
@@ -175,7 +172,7 @@ async def start_recording(
 
 
 @router.post("/stop", response_model=Optional[RecordingSessionResponse])
-async def stop_recording(recorder: CANBusRecorder = Depends(get_recorder)):
+async def stop_recording(recorder: Annotated[CANBusRecorder, Depends(get_can_bus_recorder)]):
     """Stop the current recording session."""
     session = await recorder.stop_recording()
 
@@ -197,21 +194,21 @@ async def stop_recording(recorder: CANBusRecorder = Depends(get_recorder)):
 
 
 @router.post("/pause")
-async def pause_recording(recorder: CANBusRecorder = Depends(get_recorder)):
+async def pause_recording(recorder: Annotated[CANBusRecorder, Depends(get_can_bus_recorder)]):
     """Pause the current recording."""
     await recorder.pause_recording()
     return {"status": "paused"}
 
 
 @router.post("/resume")
-async def resume_recording(recorder: CANBusRecorder = Depends(get_recorder)):
+async def resume_recording(recorder: Annotated[CANBusRecorder, Depends(get_can_bus_recorder)]):
     """Resume a paused recording."""
     await recorder.resume_recording()
     return {"status": "recording"}
 
 
-@router.get("/list", response_model=List[RecordingListItem])
-async def list_recordings(recorder: CANBusRecorder = Depends(get_recorder)):
+@router.get("/list", response_model=list[RecordingListItem])
+async def list_recordings(recorder: Annotated[CANBusRecorder, Depends(get_can_bus_recorder)]):
     """List all available recordings."""
     recordings = await recorder.list_recordings()
 
@@ -231,7 +228,7 @@ async def list_recordings(recorder: CANBusRecorder = Depends(get_recorder)):
 @router.delete("/{filename}")
 async def delete_recording(
     filename: str,
-    recorder: CANBusRecorder = Depends(get_recorder),
+    recorder: Annotated[CANBusRecorder, Depends(get_can_bus_recorder)],
 ):
     """Delete a recording file."""
     success = await recorder.delete_recording(filename)
@@ -245,21 +242,14 @@ async def delete_recording(
 @router.post("/replay/start")
 async def start_replay(
     request: StartReplayRequest,
-    recorder: CANBusRecorder = Depends(get_recorder),
+    recorder: Annotated[CANBusRecorder, Depends(get_can_bus_recorder)],
+    can_service: VerifiedCANService,
 ):
     """Start replaying a recorded session."""
     try:
-        # Get CAN sender from feature manager
-        from backend.core.dependencies_v2 import get_feature_manager
-        feature_manager = get_feature_manager(request)
-        can_feature = feature_manager.get_feature("can_feature")
-
-        if not can_feature:
-            raise HTTPException(status_code=503, detail="CAN feature not available")
-
         # Create CAN sender callback
         async def can_sender(can_id: int, data: bytes, interface: str):
-            await can_feature.send_message(can_id, data, interface)
+            await can_service.send_message(can_id, data, interface)
 
         # Configure replay options
         options = None
@@ -270,7 +260,9 @@ async def start_replay(
                 start_offset=request.options.start_offset,
                 end_offset=request.options.end_offset,
                 interface_mapping=request.options.interface_mapping,
-                filter_can_ids=set(request.options.filter_can_ids) if request.options.filter_can_ids else None,
+                filter_can_ids=set(request.options.filter_can_ids)
+                if request.options.filter_can_ids
+                else None,
             )
 
         # Start replay
@@ -288,26 +280,24 @@ async def start_replay(
 
 
 @router.post("/replay/stop")
-async def stop_replay(recorder: CANBusRecorder = Depends(get_recorder)):
+async def stop_replay(recorder: Annotated[CANBusRecorder, Depends(get_can_bus_recorder)]):
     """Stop the current replay."""
     await recorder.stop_replay()
     return {"status": "stopped"}
 
-
-# @router.post("/upload")
-# async def upload_recording(
-#     file: UploadFile = File(...),
-#     recorder: CANBusRecorder = Depends(get_recorder),
-# ):
-#     """Upload a recording file."""
-#     # Validate file extension
-#     valid_extensions = [f".{fmt.value}" for fmt in RecordingFormat]
+    # @router.post("/upload")
+    # async def upload_recording(
+    #     file: UploadFile = File(...),
+    #     recorder: CANBusRecorder = Depends(get_can_bus_recorder),
+    # ):
+    #     """Upload a recording file."""
+    #     # Validate file extension
+    #     valid_extensions = [f".{fmt.value}" for fmt in RecordingFormat]
     file_ext = Path(file.filename).suffix.lower()
 
     if file_ext not in valid_extensions:
         raise HTTPException(
-            status_code=400,
-            detail=f"Invalid file format. Supported: {valid_extensions}"
+            status_code=400, detail=f"Invalid file format. Supported: {valid_extensions}"
         )
 
     # Save uploaded file
@@ -330,7 +320,7 @@ async def stop_replay(recorder: CANBusRecorder = Depends(get_recorder)):
 @router.get("/download/{filename}")
 async def download_recording(
     filename: str,
-    recorder: CANBusRecorder = Depends(get_recorder),
+    recorder: Annotated[CANBusRecorder, Depends(get_can_bus_recorder)],
 ):
     """Download a recording file."""
     from fastapi.responses import FileResponse

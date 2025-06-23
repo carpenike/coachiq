@@ -168,9 +168,7 @@ class ConfigurationLoader:
             if not isinstance(e, ConfigurationError):
                 # Wrap unexpected errors
                 msg = f"Unexpected error during configuration loading: {e}"
-                raise ConfigurationError(
-                    msg
-                ) from e
+                raise ConfigurationError(msg) from e
             raise
 
     def _load_layer1_core_spec(self) -> dict[str, Any]:
@@ -462,9 +460,7 @@ class ConfigurationLoader:
                 f"Unsupported schema version {schema_version} in {config_type}, "
                 f"minimum required: {min_version}"
             )
-            raise ConfigVersionError(
-                msg
-            )
+            raise ConfigVersionError(msg)
 
     def _version_less_than(self, version1: str, version2: str) -> bool:
         """Compare semantic versions (simplified)."""

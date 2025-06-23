@@ -8,12 +8,14 @@ for safety-critical vehicle control applications.
 
 import logging
 from datetime import UTC, datetime, timedelta
-from typing import Any, Dict, Optional
+from typing import Any, Dict, List, Optional
 
 from pydantic import BaseModel, Field
 from starlette.responses import Response
 
 from backend.core.config import get_settings
+from backend.core.performance import PerformanceMonitor
+from backend.repositories.secure_token_repository import SecureTokenRepository
 from backend.services.auth_manager import AuthManager, InvalidTokenError
 
 logger = logging.getLogger(__name__)
@@ -35,7 +37,7 @@ class TokenRefreshResult(BaseModel):
     access_token: str = Field(..., description="New access token")
     access_token_expires_in: int = Field(..., description="Access token expiration in seconds")
     refresh_rotated: bool = Field(False, description="Whether refresh token was rotated")
-    new_refresh_token: Optional[str] = Field(None, description="New refresh token if rotated")
+    new_refresh_token: str | None = Field(None, description="New refresh token if rotated")
 
 
 class SecureTokenService:
@@ -53,7 +55,14 @@ class SecureTokenService:
     - Token invalidation and cleanup
     """
 
-    def __init__(self, auth_manager: AuthManager):
+    def __init__(
+        self,
+        secure_token_repository: SecureTokenRepository,
+        performance_monitor: PerformanceMonitor,
+        auth_manager: AuthManager,
+    ):
+        self._repository = secure_token_repository
+        self._monitor = performance_monitor
         self.auth_manager = auth_manager
         self.settings = get_settings()
 
@@ -74,8 +83,25 @@ class SecureTokenService:
         self.rotate_refresh_tokens = True  # Always rotate for safety-critical systems
         self.access_token_refresh_buffer = timedelta(minutes=5)  # Refresh 5 minutes before expiry
 
+        # Apply performance monitoring
+        self._apply_monitoring()
+
+    def _apply_monitoring(self) -> None:
+        """Apply performance monitoring to service methods."""
+        self.issue_token_pair = self._monitor.monitor_service_method(
+            "SecureTokenService", "issue_token_pair"
+        )(self.issue_token_pair)
+
+        self.refresh_access_token = self._monitor.monitor_service_method(
+            "SecureTokenService", "refresh_access_token"
+        )(self.refresh_access_token)
+
+        self.revoke_all_tokens = self._monitor.monitor_service_method(
+            "SecureTokenService", "revoke_all_tokens"
+        )(self.revoke_all_tokens)
+
     async def issue_token_pair(
-        self, user_id: str, username: str = "", additional_claims: Optional[Dict[str, Any]] = None
+        self, user_id: str, username: str = "", additional_claims: dict[str, Any] | None = None
     ) -> TokenPair:
         """
         Issue a new access/refresh token pair.
@@ -104,7 +130,10 @@ class SecureTokenService:
         )
 
         # Store refresh token in repository for tracking
-        await self._store_refresh_token(user_id, refresh_token)
+        expires_at = datetime.now(UTC) + self.refresh_token_lifetime
+        await self._repository.store_refresh_token(
+            user_id, refresh_token, expires_at, additional_claims
+        )
 
         return TokenPair(
             access_token=access_token,
@@ -141,7 +170,7 @@ class SecureTokenService:
             username = refresh_payload.get("username", "")
 
             # Verify refresh token is still valid in our tracking system
-            if not await self._is_refresh_token_valid(user_id, refresh_token):
+            if not await self._repository.is_refresh_token_valid(user_id, refresh_token):
                 raise InvalidTokenError("Refresh token has been revoked or rotated")
 
             # Generate new access token
@@ -159,11 +188,11 @@ class SecureTokenService:
                     user_id=user_id, username=username
                 )
 
-                # Invalidate old refresh token
-                await self._invalidate_refresh_token(user_id, refresh_token)
-
-                # Store new refresh token
-                await self._store_refresh_token(user_id, new_refresh_token)
+                # Rotate tokens in repository
+                expires_at = datetime.now(UTC) + self.refresh_token_lifetime
+                await self._repository.rotate_refresh_token(
+                    user_id, refresh_token, new_refresh_token, expires_at
+                )
 
                 logger.info(f"Rotated refresh token for user: {user_id}")
 
@@ -239,11 +268,11 @@ class SecureTokenService:
         """
         logger.info(f"Revoking all tokens for user: {user_id}")
 
-        # This would integrate with a token blacklist or revocation system
-        # For now, we'll implement basic tracking cleanup
-        await self._cleanup_user_tokens(user_id)
+        # Clean up all user tokens in repository
+        count = await self._repository.cleanup_user_tokens(user_id)
+        logger.info(f"Revoked {count} tokens for user: {user_id}")
 
-    def extract_access_token(self, authorization_header: Optional[str]) -> Optional[str]:
+    def extract_access_token(self, authorization_header: str | None) -> str | None:
         """
         Extract access token from Authorization header.
 
@@ -290,37 +319,23 @@ class SecureTokenService:
             logger.warning(f"Error checking token expiry: {e}")
             return True  # Assume needs refresh on error
 
-    # Private helper methods for token tracking
+    async def get_user_sessions(self, user_id: str) -> list[dict[str, Any]]:
+        """
+        Get all active sessions for a user.
 
-    async def _store_refresh_token(self, user_id: str, refresh_token: str) -> None:
-        """Store refresh token for tracking and validation"""
-        # This would integrate with the repository system
-        # For now, implement basic in-memory tracking
-        logger.debug(f"Storing refresh token for user: {user_id}")
+        Args:
+            user_id: User to get sessions for
 
-        # In production, this would use the auth repository:
-        # await self.auth_manager.repository.store_refresh_token(user_id, refresh_token)
+        Returns:
+            List of active session information
+        """
+        return await self._repository.get_user_sessions(user_id)
 
-    async def _is_refresh_token_valid(self, user_id: str, refresh_token: str) -> bool:
-        """Check if refresh token is still valid in tracking system"""
-        # This would check the repository for token validity
-        # For now, assume valid if JWT validation passed
-        logger.debug(f"Validating refresh token for user: {user_id}")
-        return True
+    async def cleanup_expired_tokens(self) -> int:
+        """
+        Clean up expired tokens from storage.
 
-        # In production:
-        # return await self.auth_manager.repository.is_refresh_token_valid(user_id, refresh_token)
-
-    async def _invalidate_refresh_token(self, user_id: str, refresh_token: str) -> None:
-        """Invalidate a specific refresh token"""
-        logger.debug(f"Invalidating refresh token for user: {user_id}")
-
-        # In production:
-        # await self.auth_manager.repository.invalidate_refresh_token(user_id, refresh_token)
-
-    async def _cleanup_user_tokens(self, user_id: str) -> None:
-        """Clean up all tokens for a user"""
-        logger.debug(f"Cleaning up all tokens for user: {user_id}")
-
-        # In production:
-        # await self.auth_manager.repository.cleanup_user_tokens(user_id)
+        Returns:
+            Number of tokens cleaned up
+        """
+        return await self._repository.cleanup_expired_tokens()

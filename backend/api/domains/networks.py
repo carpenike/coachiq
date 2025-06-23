@@ -12,19 +12,20 @@ This router integrates with existing network services.
 
 import logging
 import time
-from typing import Any, Dict, List
+from typing import Any
 
 from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel, Field
 
 from backend.api.domains import register_domain_router
-from backend.core.dependencies_v2 import get_feature_manager
 
 logger = logging.getLogger(__name__)
+
 
 # Domain-specific schemas for v2 API
 class NetworkStatus(BaseModel):
     """Network interface status"""
+
     interface_name: str = Field(..., description="Network interface name")
     protocol: str = Field(..., description="Protocol type (CAN, J1939, etc.)")
     status: str = Field(..., description="Interface status: active/inactive/error")
@@ -32,8 +33,10 @@ class NetworkStatus(BaseModel):
     error_count: int = Field(..., description="Error count")
     last_activity: float = Field(..., description="Last activity timestamp")
 
+
 class NetworkSummary(BaseModel):
     """Overall network summary"""
+
     total_interfaces: int = Field(..., description="Total network interfaces")
     active_interfaces: int = Field(..., description="Active interfaces")
     total_messages: int = Field(..., description="Total messages across all interfaces")
@@ -41,24 +44,14 @@ class NetworkSummary(BaseModel):
     networks: list[NetworkStatus] = Field(..., description="Individual network status")
     timestamp: float = Field(..., description="Summary timestamp")
 
+
 def create_networks_router() -> APIRouter:
     """Create the networks domain router with all endpoints"""
     router = APIRouter(tags=["networks-v2"])
 
-    def _check_domain_api_enabled(request: Request) -> None:
-        """Check if networks API v2 is enabled"""
-        feature_manager = get_feature_manager(request)
-        if not feature_manager.is_enabled("domain_api_v2"):
-            raise HTTPException(
-                status_code=404,
-                detail="Domain API v2 is disabled. Enable with COACHIQ_FEATURES__DOMAIN_API_V2=true"
-            )
-        # Note: networks_api_v2 feature flag doesn't exist yet, so we skip that check
-
     @router.get("/health")
     async def health_check(request: Request) -> dict[str, Any]:
         """Health check endpoint for networks domain API"""
-        _check_domain_api_enabled(request)
 
         return {
             "status": "healthy",
@@ -69,23 +62,21 @@ def create_networks_router() -> APIRouter:
                 "multi_protocol": True,
                 "real_time_stats": True,
             },
-            "timestamp": "2025-01-11T00:00:00Z"
+            "timestamp": "2025-01-11T00:00:00Z",
         }
 
     @router.get("/schemas")
     async def get_schemas(request: Request) -> dict[str, Any]:
         """Export schemas for networks domain"""
-        _check_domain_api_enabled(request)
 
         return {
             "message": "Networks domain schemas available",
-            "available_endpoints": ["/health", "/schemas", "/status", "/interfaces"]
+            "available_endpoints": ["/health", "/schemas", "/status", "/interfaces"],
         }
 
     @router.get("/status", response_model=NetworkSummary)
     async def get_network_status(request: Request) -> NetworkSummary:
         """Get overall network status and statistics"""
-        _check_domain_api_enabled(request)
 
         try:
             # Mock network interfaces for demonstration
@@ -97,7 +88,7 @@ def create_networks_router() -> APIRouter:
                     status="active",
                     message_count=12500,
                     error_count=0,
-                    last_activity=time.time()
+                    last_activity=time.time(),
                 ),
                 NetworkStatus(
                     interface_name="virtual0",
@@ -105,8 +96,8 @@ def create_networks_router() -> APIRouter:
                     status="active",
                     message_count=8300,
                     error_count=2,
-                    last_activity=time.time() - 30
-                )
+                    last_activity=time.time() - 30,
+                ),
             ]
 
             return NetworkSummary(
@@ -115,7 +106,7 @@ def create_networks_router() -> APIRouter:
                 total_messages=sum(n.message_count for n in networks),
                 total_errors=sum(n.error_count for n in networks),
                 networks=networks,
-                timestamp=time.time()
+                timestamp=time.time(),
             )
 
         except Exception as e:
@@ -125,7 +116,6 @@ def create_networks_router() -> APIRouter:
     @router.get("/interfaces")
     async def get_network_interfaces(request: Request) -> list[NetworkStatus]:
         """Get detailed information about network interfaces"""
-        _check_domain_api_enabled(request)
 
         try:
             # This would integrate with actual CAN interface discovery
@@ -136,7 +126,7 @@ def create_networks_router() -> APIRouter:
                     status="active",
                     message_count=12500,
                     error_count=0,
-                    last_activity=time.time()
+                    last_activity=time.time(),
                 ),
                 NetworkStatus(
                     interface_name="virtual0",
@@ -144,8 +134,8 @@ def create_networks_router() -> APIRouter:
                     status="active",
                     message_count=8300,
                     error_count=2,
-                    last_activity=time.time() - 30
-                )
+                    last_activity=time.time() - 30,
+                ),
             ]
 
         except Exception as e:
@@ -154,7 +144,8 @@ def create_networks_router() -> APIRouter:
 
     return router
 
+
 @register_domain_router("networks")
-def register_networks_router(app_state) -> APIRouter:
+def register_networks_router() -> APIRouter:
     """Register the networks domain router"""
     return create_networks_router()

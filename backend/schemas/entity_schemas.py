@@ -60,13 +60,16 @@ class ControlCommandSchemaV2(BaseModel):
     """Enhanced control command schema with safety validation"""
 
     command: str = Field(
-        ..., description="Command type: set, toggle, brightness_up, brightness_down, emergency_stop, clear_emergency_stop"
+        ...,
+        description="Command type: set, toggle, brightness_up, brightness_down, emergency_stop, clear_emergency_stop",
     )
     entity_ids: list[str] = Field(default_factory=list, description="Target entity IDs")
     state: bool | None = Field(None, description="Target state for set commands")
     brightness: int | None = Field(None, ge=0, le=100, description="Brightness level 0-100")
     parameters: dict[str, Any] | None = Field(None, description="Additional command parameters")
-    safety_critical: bool = Field(False, description="Whether this command affects safety-critical systems")
+    safety_critical: bool = Field(
+        False, description="Whether this command affects safety-critical systems"
+    )
     safety_confirmation: bool = Field(False, description="Explicit safety confirmation required")
     timeout_seconds: float = Field(5.0, ge=0.1, le=30.0, description="Command timeout")
     command_metadata: dict[str, Any] | None = Field(None, description="Command-specific metadata")
@@ -79,7 +82,14 @@ class ControlCommandSchemaV2(BaseModel):
             "properties": {
                 "command": {
                     "type": "string",
-                    "enum": ["set", "toggle", "brightness_up", "brightness_down", "emergency_stop", "clear_emergency_stop"],
+                    "enum": [
+                        "set",
+                        "toggle",
+                        "brightness_up",
+                        "brightness_down",
+                        "emergency_stop",
+                        "clear_emergency_stop",
+                    ],
                 },
                 "entity_ids": {"type": "array", "items": {"type": "string"}},
                 "state": {"type": ["boolean", "null"]},
@@ -111,9 +121,7 @@ class OperationResultSchemaV2(BaseModel):
     acknowledged: bool = Field(
         False, description="Whether operation was acknowledged by physical system"
     )
-    acknowledgment_time_ms: float | None = Field(
-        None, description="Time to receive acknowledgment"
-    )
+    acknowledgment_time_ms: float | None = Field(None, description="Time to receive acknowledgment")
     error_message: str | None = Field(None, description="Error details if failed")
     error_code: str | None = Field(None, description="Machine-readable error code")
     execution_time_ms: float | None = Field(None, description="Operation execution time")
@@ -150,7 +158,9 @@ class BulkOperationSchemaV2(BaseModel):
 
     operation_type: str = Field(..., description="Type of bulk operation")
     entity_ids: list[str] = Field(default_factory=list, description="List of entity IDs to control")
-    entity_filters: dict[str, Any] = Field(default_factory=dict, description="Filters to select entities")
+    entity_filters: dict[str, Any] = Field(
+        default_factory=dict, description="Filters to select entities"
+    )
     command: ControlCommandSchemaV2 = Field(..., description="Command to execute on all entities")
     ignore_errors: bool = Field(False, description="Continue on individual failures")
     safety_mode: str = Field(

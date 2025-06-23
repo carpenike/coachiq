@@ -250,16 +250,13 @@ async def test_entity_state_update_from_can():
     """Test entity state updates from CAN message responses."""
     can_feature = CANBusFeature()
 
-    # Mock entity manager
-    with patch('backend.services.feature_manager.get_feature_manager') as mock_fm:
-        mock_entity_manager = AsyncMock()
+    # Mock entity service
+    with patch('backend.core.dependencies.get_entity_service') as mock_es:
+        mock_entity_service = AsyncMock()
         mock_entity = AsyncMock()
-        mock_entity_manager.get_entity.return_value = mock_entity
-        mock_entity_manager.update_entity_state.return_value = mock_entity
-
-        mock_em_feature = AsyncMock()
-        mock_em_feature.get_entity_manager.return_value = mock_entity_manager
-        mock_fm.return_value.get_feature.return_value = mock_em_feature
+        mock_entity_service.get_entity.return_value = mock_entity
+        mock_entity_service.update_entity_state.return_value = mock_entity
+        mock_es.return_value = mock_entity_service
 
         # Test entity update
         await can_feature._update_entity_from_can_message(

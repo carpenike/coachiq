@@ -6,12 +6,12 @@ and audit logging functionality.
 """
 
 import logging
-from typing import Any
+from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 
-from backend.core.dependencies_v2 import (
+from backend.core.dependencies import (
     get_authenticated_admin,
     get_authenticated_user,
     get_safety_service,
@@ -48,8 +48,8 @@ class EmergencyStopResetRequest(BaseModel):
 
 @router.get("/status")
 async def get_safety_status(
-    safety_service=Depends(get_safety_service),  # noqa: B008
-    user: dict = Depends(get_authenticated_user),  # noqa: B008, ARG001
+    safety_service: Annotated[Any, Depends(get_safety_service)],
+    user: Annotated[dict, Depends(get_authenticated_user)],  # noqa: ARG001
 ) -> dict[str, Any]:
     """
     Get comprehensive safety system status.
@@ -72,8 +72,8 @@ async def get_safety_status(
 @router.post("/update-state")
 async def update_system_state(
     state_update: SystemStateUpdate,
-    safety_service=Depends(get_safety_service),  # noqa: B008
-    user: dict = Depends(get_authenticated_user),  # noqa: B008, ARG001
+    safety_service: Annotated[Any, Depends(get_safety_service)],
+    user: Annotated[dict, Depends(get_authenticated_user)],  # noqa: ARG001
 ) -> dict[str, Any]:
     """
     Update system state information used by safety interlocks.
@@ -108,8 +108,8 @@ async def update_system_state(
 
 @router.get("/interlocks")
 async def get_interlock_status(
-    safety_service=Depends(get_safety_service),  # noqa: B008
-    user: dict = Depends(get_authenticated_user),  # noqa: B008, ARG001
+    safety_service: Annotated[Any, Depends(get_safety_service)],
+    user: Annotated[dict, Depends(get_authenticated_user)],  # noqa: ARG001
 ) -> dict[str, Any]:
     """
     Get status of all safety interlocks.
@@ -130,8 +130,8 @@ async def get_interlock_status(
 
 @router.post("/interlocks/check")
 async def check_interlocks(
-    safety_service=Depends(get_safety_service),  # noqa: B008
-    user: dict = Depends(get_authenticated_user),  # noqa: B008, ARG001
+    safety_service: Annotated[Any, Depends(get_safety_service)],
+    user: Annotated[dict, Depends(get_authenticated_user)],  # noqa: ARG001
 ) -> dict[str, Any]:
     """
     Manually trigger safety interlock checks.
@@ -156,8 +156,8 @@ async def check_interlocks(
 @router.post("/emergency-stop")
 async def trigger_emergency_stop(
     stop_request: EmergencyStopRequest,
-    safety_service=Depends(get_safety_service),  # noqa: B008
-    admin_user: dict = Depends(get_authenticated_admin),  # noqa: B008
+    safety_service: Annotated[Any, Depends(get_safety_service)],
+    admin_user: Annotated[dict, Depends(get_authenticated_admin)],
 ) -> dict[str, str]:
     """
     Trigger emergency stop for all position-critical features.
@@ -194,8 +194,8 @@ async def trigger_emergency_stop(
 @router.post("/emergency-stop/reset")
 async def reset_emergency_stop(
     reset_request: EmergencyStopResetRequest,
-    safety_service=Depends(get_safety_service),  # noqa: B008
-    admin_user: dict = Depends(get_authenticated_admin),  # noqa: B008
+    safety_service: Annotated[Any, Depends(get_safety_service)],
+    admin_user: Annotated[dict, Depends(get_authenticated_admin)],
 ) -> dict[str, str]:
     """
     Reset emergency stop with authorization.
@@ -230,9 +230,9 @@ async def reset_emergency_stop(
 
 @router.get("/audit-log")
 async def get_audit_log(
+    safety_service: Annotated[Any, Depends(get_safety_service)],
+    admin_user: Annotated[dict, Depends(get_authenticated_admin)],  # noqa: ARG001
     max_entries: int = 100,
-    safety_service=Depends(get_safety_service),  # noqa: B008
-    admin_user: dict = Depends(get_authenticated_admin),  # noqa: B008, ARG001
 ) -> dict[str, Any]:
     """
     Get safety audit log entries.
@@ -262,8 +262,8 @@ async def get_audit_log(
 
 @router.get("/health")
 async def get_safety_health(
-    safety_service=Depends(get_safety_service),  # noqa: B008
-    user: dict = Depends(get_authenticated_user),  # noqa: B008, ARG001
+    safety_service: Annotated[Any, Depends(get_safety_service)],
+    user: Annotated[dict, Depends(get_authenticated_user)],  # noqa: ARG001
 ) -> dict[str, Any]:
     """
     Get safety service health status.
@@ -314,8 +314,8 @@ class PINEmergencyResetRequest(BaseModel):
 @router.post("/pin/emergency-stop")
 async def pin_emergency_stop(
     stop_request: PINEmergencyStopRequest,
-    safety_service=Depends(get_safety_service),  # noqa: B008
-    admin_user: dict = Depends(get_authenticated_admin),  # noqa: B008
+    safety_service: Annotated[Any, Depends(get_safety_service)],
+    admin_user: Annotated[dict, Depends(get_authenticated_admin)],
 ) -> dict[str, Any]:
     """
     Trigger emergency stop using PIN authorization (Admin Only).
@@ -360,8 +360,8 @@ async def pin_emergency_stop(
 @router.post("/pin/emergency-stop/reset")
 async def pin_emergency_reset(
     reset_request: PINEmergencyResetRequest,
-    safety_service=Depends(get_safety_service),  # noqa: B008
-    admin_user: dict = Depends(get_authenticated_admin),  # noqa: B008
+    safety_service: Annotated[Any, Depends(get_safety_service)],
+    admin_user: Annotated[dict, Depends(get_authenticated_admin)],
 ) -> dict[str, Any]:
     """
     Reset emergency stop using PIN authorization (Admin Only).
@@ -424,8 +424,8 @@ class InterlockOverrideClearRequest(BaseModel):
 @router.post("/pin/interlocks/override")
 async def pin_override_interlock(
     override_request: PINInterlockOverrideRequest,
-    safety_service=Depends(get_safety_service),  # noqa: B008
-    admin_user: dict = Depends(get_authenticated_admin),  # noqa: B008
+    safety_service: Annotated[Any, Depends(get_safety_service)],
+    admin_user: Annotated[dict, Depends(get_authenticated_admin)],
 ) -> dict[str, Any]:
     """
     Override a safety interlock using PIN authorization (Admin Only).
@@ -486,8 +486,8 @@ async def pin_override_interlock(
 @router.post("/interlocks/clear-override")
 async def clear_interlock_override(
     clear_request: InterlockOverrideClearRequest,
-    safety_service=Depends(get_safety_service),  # noqa: B008
-    admin_user: dict = Depends(get_authenticated_admin),  # noqa: B008
+    safety_service: Annotated[Any, Depends(get_safety_service)],
+    admin_user: Annotated[dict, Depends(get_authenticated_admin)],
 ) -> dict[str, Any]:
     """
     Clear an active interlock override (Admin Only).
@@ -527,8 +527,8 @@ async def clear_interlock_override(
 
 @router.get("/interlocks/overrides")
 async def get_active_overrides(
-    safety_service=Depends(get_safety_service),  # noqa: B008
-    admin_user: dict = Depends(get_authenticated_admin),  # noqa: B008, ARG001
+    safety_service: Annotated[Any, Depends(get_safety_service)],
+    admin_user: Annotated[dict, Depends(get_authenticated_admin)],  # noqa: ARG001
 ) -> dict[str, Any]:
     """
     Get all active interlock overrides (Admin Only).
@@ -593,8 +593,8 @@ class PINMaintenanceModeExitRequest(BaseModel):
 @router.post("/pin/maintenance-mode/enter")
 async def pin_enter_maintenance_mode(
     mode_request: PINMaintenanceModeRequest,
-    safety_service=Depends(get_safety_service),  # noqa: B008
-    admin_user: dict = Depends(get_authenticated_admin),  # noqa: B008
+    safety_service: Annotated[Any, Depends(get_safety_service)],
+    admin_user: Annotated[dict, Depends(get_authenticated_admin)],
 ) -> dict[str, Any]:
     """
     Enter maintenance mode using PIN authorization (Admin Only).
@@ -641,9 +641,7 @@ async def pin_enter_maintenance_mode(
             "reason": mode_request.reason,
             "duration_minutes": mode_request.duration_minutes,
             "authorization_method": "pin_session",
-            "message": (
-                f"Maintenance mode activated for {mode_request.duration_minutes} minutes"
-            ),
+            "message": (f"Maintenance mode activated for {mode_request.duration_minutes} minutes"),
         }
 
     except HTTPException:
@@ -656,8 +654,8 @@ async def pin_enter_maintenance_mode(
 @router.post("/pin/maintenance-mode/exit")
 async def pin_exit_maintenance_mode(
     exit_request: PINMaintenanceModeExitRequest,
-    safety_service=Depends(get_safety_service),  # noqa: B008
-    admin_user: dict = Depends(get_authenticated_admin),  # noqa: B008
+    safety_service: Annotated[Any, Depends(get_safety_service)],
+    admin_user: Annotated[dict, Depends(get_authenticated_admin)],
 ) -> dict[str, Any]:
     """
     Exit maintenance mode using PIN authorization (Admin Only).
@@ -706,8 +704,8 @@ async def pin_exit_maintenance_mode(
 
 @router.get("/operational-mode")
 async def get_operational_mode(
-    safety_service=Depends(get_safety_service),  # noqa: B008
-    user: dict = Depends(get_authenticated_user),  # noqa: B008, ARG001
+    safety_service: Annotated[Any, Depends(get_safety_service)],
+    user: Annotated[dict, Depends(get_authenticated_user)],  # noqa: ARG001
 ) -> dict[str, Any]:
     """
     Get current operational mode and session details.
@@ -729,10 +727,12 @@ async def get_operational_mode(
         }
 
         if mode_session:
-            result.update({
-                "session_details": mode_session,
-                "active_overrides_count": len(status.get("active_overrides", {})),
-            })
+            result.update(
+                {
+                    "session_details": mode_session,
+                    "active_overrides_count": len(status.get("active_overrides", {})),
+                }
+            )
 
         return result
 
@@ -766,8 +766,8 @@ class PINDiagnosticModeExitRequest(BaseModel):
 @router.post("/pin/diagnostic-mode/enter")
 async def pin_enter_diagnostic_mode(
     mode_request: PINDiagnosticModeRequest,
-    safety_service=Depends(get_safety_service),  # noqa: B008
-    admin_user: dict = Depends(get_authenticated_admin),  # noqa: B008
+    safety_service: Annotated[Any, Depends(get_safety_service)],
+    admin_user: Annotated[dict, Depends(get_authenticated_admin)],
 ) -> dict[str, Any]:
     """
     Enter diagnostic mode using PIN authorization (Admin Only).
@@ -817,9 +817,7 @@ async def pin_enter_diagnostic_mode(
             "reason": mode_request.reason,
             "duration_minutes": mode_request.duration_minutes,
             "authorization_method": "pin_session",
-            "message": (
-                f"Diagnostic mode activated for {mode_request.duration_minutes} minutes"
-            ),
+            "message": (f"Diagnostic mode activated for {mode_request.duration_minutes} minutes"),
             "warning": "Safety constraints may be modified during diagnostics",
         }
 
@@ -833,8 +831,8 @@ async def pin_enter_diagnostic_mode(
 @router.post("/pin/diagnostic-mode/exit")
 async def pin_exit_diagnostic_mode(
     exit_request: PINDiagnosticModeExitRequest,
-    safety_service=Depends(get_safety_service),  # noqa: B008
-    admin_user: dict = Depends(get_authenticated_admin),  # noqa: B008
+    safety_service: Annotated[Any, Depends(get_safety_service)],
+    admin_user: Annotated[dict, Depends(get_authenticated_admin)],
 ) -> dict[str, Any]:
     """
     Exit diagnostic mode using PIN authorization (Admin Only).

@@ -11,34 +11,28 @@ from unittest.mock import AsyncMock, Mock, patch
 
 import pytest
 
-from backend.services.feature_base import Feature
-from backend.services.feature_manager import FeatureManager
-from backend.services.feature_models import (
-    FeatureDefinition,
-    FeatureState,
-    SafetyClassification,
-)
+from backend.core.service_registry import ServiceStatus
 from backend.services.safety_service import SafetyService
 
 
-class MockFeature(Feature):
-    """Mock feature for testing."""
+class MockService:
+    """Mock service for testing."""
 
     def __init__(self, name, safety_classification=None, **kwargs):
-        super().__init__(name=name, **kwargs)
+        self.name = name
         self.safety_classification = safety_classification
-        self._safety_classification = safety_classification
         self.startup_called = False
         self.shutdown_called = False
         self.health_check_count = 0
+        self.state = ServiceStatus.STOPPED
 
     async def startup(self):
         self.startup_called = True
-        self.state = FeatureState.HEALTHY
+        self.state = ServiceStatus.HEALTHY
 
     async def shutdown(self):
         self.shutdown_called = True
-        self.state = FeatureState.STOPPED
+        self.state = ServiceStatus.STOPPED
 
     async def check_health(self):
         self.health_check_count += 1
@@ -46,74 +40,58 @@ class MockFeature(Feature):
 
 
 @pytest.fixture
-def mock_features():
-    """Create mock features for testing."""
-    features = {
-        "can_interface": MockFeature(
+def mock_services():
+    """Create mock services for testing."""
+    services = {
+        "can_interface": MockService(
             name="can_interface",
-            enabled=True,
-            safety_classification=SafetyClassification.CRITICAL,
-            dependencies=[],
+            safety_classification="critical",
         ),
-        "firefly": MockFeature(
+        "firefly": MockService(
             name="firefly",
-            enabled=True,
-            safety_classification=SafetyClassification.POSITION_CRITICAL,
-            dependencies=["can_interface"],
+            safety_classification="position_critical",
         ),
-        "spartan_k2": MockFeature(
+        "spartan_k2": MockService(
             name="spartan_k2",
-            enabled=True,
-            safety_classification=SafetyClassification.POSITION_CRITICAL,
-            dependencies=["can_interface"],
+            safety_classification="position_critical",
         ),
-        "analytics": MockFeature(
+        "analytics": MockService(
             name="analytics",
-            enabled=True,
-            safety_classification=SafetyClassification.OPERATIONAL,
-            dependencies=["can_interface"],
+            safety_classification="operational",
         ),
     }
-    return features
+    return services
 
 
 @pytest.fixture
-def feature_manager_with_safety(mock_features):
-    """Create a feature manager with safety features."""
-    manager = Mock(spec=FeatureManager)
-    manager._features = mock_features
-    manager._feature_states = {name: FeatureState.HEALTHY for name in mock_features}
-    manager._feature_definitions = {
-        name: Mock(
-            safety_classification=feature.safety_classification,
-            is_safety_critical=lambda: feature.safety_classification in [
-                SafetyClassification.CRITICAL,
-                SafetyClassification.SAFETY_RELATED,
-                SafetyClassification.POSITION_CRITICAL,
-            ]
-        )
-        for name, feature in mock_features.items()
-    }
+def service_registry_with_safety(mock_services):
+    """Create a service registry with safety services."""
+    registry = Mock()
+    registry._services = mock_services
+    registry._service_statuses = dict.fromkeys(mock_services, ServiceStatus.HEALTHY)
 
     async def mock_check_health():
         return {
             "status": "healthy",
-            "features": manager._feature_states,
+            "services": registry._service_statuses,
             "failed_critical": [],
         }
 
-    manager.check_system_health = AsyncMock(side_effect=mock_check_health)
-    manager.get_feature = lambda name: mock_features.get(name)
-    manager.get_safety_classification = lambda name: mock_features[name].safety_classification if name in mock_features else None
+    registry.check_system_health = AsyncMock(side_effect=mock_check_health)
+    registry.get_service = lambda name: mock_services.get(name)
+    registry.has_service = lambda name: name in mock_services
+    registry.get_service_status = lambda name: registry._service_statuses.get(
+        name, ServiceStatus.STOPPED
+    )
 
-    return manager
+    return registry
 
 
 @pytest.fixture
-def integrated_safety_service(feature_manager_with_safety):
-    """Create SafetyService integrated with feature manager."""
+def integrated_safety_service(service_registry_with_safety):
+    """Create SafetyService integrated with service registry."""
     service = SafetyService(
-        feature_manager=feature_manager_with_safety,
+        service_registry=service_registry_with_safety,
         health_check_interval=0.5,  # Fast for testing
         watchdog_timeout=2.0,
     )
@@ -124,23 +102,23 @@ class TestEmergencyStopScenarios:
     """Test emergency stop scenarios with full system integration."""
 
     @pytest.mark.asyncio
-    async def test_critical_feature_failure_cascade(self, integrated_safety_service, mock_features):
-        """Test cascading failure from critical feature."""
+    async def test_critical_service_failure_cascade(self, integrated_safety_service, mock_services):
+        """Test cascading failure from critical service."""
         service = integrated_safety_service
-        features = mock_features
+        services = mock_services
 
         # Start monitoring
         monitor_task = asyncio.create_task(service.start_monitoring())
         await asyncio.sleep(0.1)  # Let monitoring start
 
         # Simulate CAN interface failure
-        features["can_interface"].state = FeatureState.FAILED
-        service._feature_manager._feature_states["can_interface"] = FeatureState.FAILED
+        services["can_interface"].state = ServiceStatus.FAILED
+        service._service_registry._service_statuses["can_interface"] = ServiceStatus.FAILED
 
         # Update health check to return failure
-        service._feature_manager.check_system_health.return_value = {
+        service._service_registry.check_system_health.return_value = {
             "status": "critical",
-            "features": service._feature_manager._feature_states,
+            "services": service._service_registry._service_statuses,
             "failed_critical": ["can_interface"],
         }
 
@@ -151,7 +129,7 @@ class TestEmergencyStopScenarios:
         assert service._emergency_stop_active is True
         assert "can_interface" in service._emergency_stop_reason
 
-        # Position-critical features should be in safe shutdown
+        # Position-critical services should be in safe shutdown
         status = await service.get_safety_status()
         assert "position_critical_safe_shutdown" in status["active_safety_actions"]
 
@@ -168,14 +146,16 @@ class TestEmergencyStopScenarios:
         service = integrated_safety_service
 
         # Set dangerous conditions
-        service.update_system_state({
-            "vehicle_speed": 60,
-            "engine_running": True,
-            "parking_brake_engaged": False,
-            "transmission_gear": "D",
-            "slides_deployed": True,  # Dangerous!
-            "awnings_extended": True,  # Dangerous!
-        })
+        service.update_system_state(
+            {
+                "vehicle_speed": 60,
+                "engine_running": True,
+                "parking_brake_engaged": False,
+                "transmission_gear": "D",
+                "slides_deployed": True,  # Dangerous!
+                "awnings_extended": True,  # Dangerous!
+            }
+        )
 
         # Check interlocks
         await service.check_all_interlocks()
@@ -193,10 +173,9 @@ class TestEmergencyStopScenarios:
         assert service._emergency_stop_active is True
 
     @pytest.mark.asyncio
-    async def test_emergency_stop_with_recovery(self, integrated_safety_service, mock_features):
+    async def test_emergency_stop_with_recovery(self, integrated_safety_service, mock_services):
         """Test complete emergency stop and recovery cycle."""
         service = integrated_safety_service
-        features = mock_features
 
         # Trigger emergency stop
         await service.trigger_emergency_stop(
@@ -206,7 +185,7 @@ class TestEmergencyStopScenarios:
 
         assert service._emergency_stop_active is True
 
-        # Verify position-critical features are protected
+        # Verify position-critical services are protected
         status = await service.get_safety_status()
         assert "maintain_position" in str(status["active_safety_actions"])
 
@@ -268,14 +247,16 @@ class TestEmergencyStopScenarios:
             pass
 
     @pytest.mark.asyncio
-    async def test_emergency_during_state_transition(self, integrated_safety_service, mock_features):
-        """Test emergency stop during feature state transitions."""
+    async def test_emergency_during_state_transition(
+        self, integrated_safety_service, mock_services
+    ):
+        """Test emergency stop during service state transitions."""
         service = integrated_safety_service
-        features = mock_features
+        services = mock_services
 
         # Start a state transition (firefly initializing)
-        features["firefly"].state = FeatureState.INITIALIZING
-        service._feature_manager._feature_states["firefly"] = FeatureState.INITIALIZING
+        services["firefly"].state = ServiceStatus.STARTING
+        service._service_registry._service_statuses["firefly"] = ServiceStatus.STARTING
 
         # Trigger emergency during transition
         await service.trigger_emergency_stop(
@@ -283,30 +264,31 @@ class TestEmergencyStopScenarios:
             triggered_by="system",
         )
 
-        # Feature should safely handle emergency
+        # Service should safely handle emergency
         assert service._emergency_stop_active is True
 
-        # Position-critical feature should enter safe shutdown
-        # (In real system, the feature would be notified)
+        # Position-critical service should enter safe shutdown
         status = await service.get_safety_status()
         assert "position_critical_safe_shutdown" in status["active_safety_actions"]
 
     @pytest.mark.asyncio
-    async def test_partial_system_recovery(self, integrated_safety_service, mock_features):
-        """Test recovering operational features while keeping critical ones safe."""
+    async def test_partial_system_recovery(self, integrated_safety_service, mock_services):
+        """Test recovering operational services while keeping critical ones safe."""
         service = integrated_safety_service
-        features = mock_features
+        services = mock_services
 
-        # Set mixed feature states
-        features["can_interface"].state = FeatureState.HEALTHY
-        features["firefly"].state = FeatureState.FAILED
-        features["analytics"].state = FeatureState.HEALTHY
+        # Set mixed service states
+        services["can_interface"].state = ServiceStatus.HEALTHY
+        services["firefly"].state = ServiceStatus.FAILED
+        services["analytics"].state = ServiceStatus.HEALTHY
 
-        service._feature_manager._feature_states.update({
-            "can_interface": FeatureState.HEALTHY,
-            "firefly": FeatureState.FAILED,
-            "analytics": FeatureState.HEALTHY,
-        })
+        service._service_registry._service_statuses.update(
+            {
+                "can_interface": ServiceStatus.HEALTHY,
+                "firefly": ServiceStatus.FAILED,
+                "analytics": ServiceStatus.HEALTHY,
+            }
+        )
 
         # Emergency stop due to position-critical failure
         await service.trigger_emergency_stop(
@@ -320,10 +302,10 @@ class TestEmergencyStopScenarios:
             "technician",
         )
 
-        # Operational features should continue
-        assert features["analytics"].state == FeatureState.HEALTHY
+        # Operational services should continue
+        assert services["analytics"].state == ServiceStatus.HEALTHY
         # Position-critical should remain protected until manually cleared
-        assert features["firefly"].state == FeatureState.FAILED
+        assert services["firefly"].state == ServiceStatus.FAILED
 
 
 class TestRVEmergencyScenarios:
@@ -335,25 +317,29 @@ class TestRVEmergencyScenarios:
         service = integrated_safety_service
 
         # Initial safe state - parked
-        service.update_system_state({
-            "vehicle_speed": 0,
-            "engine_running": False,
-            "slides_deployed": True,
-            "parking_brake_engaged": True,
-        })
+        service.update_system_state(
+            {
+                "vehicle_speed": 0,
+                "engine_running": False,
+                "slides_deployed": True,
+                "parking_brake_engaged": True,
+            }
+        )
 
         # Start monitoring
         monitor_task = asyncio.create_task(service.start_monitoring())
         await asyncio.sleep(0.1)
 
         # Driver starts engine and begins driving with slides out!
-        service.update_system_state({
-            "vehicle_speed": 5,  # Just starting to move
-            "engine_running": True,
-            "slides_deployed": True,  # DANGER!
-            "parking_brake_engaged": False,
-            "transmission_gear": "D",
-        })
+        service.update_system_state(
+            {
+                "vehicle_speed": 5,  # Just starting to move
+                "engine_running": True,
+                "slides_deployed": True,  # DANGER!
+                "parking_brake_engaged": False,
+                "transmission_gear": "D",
+            }
+        )
 
         # Check interlocks immediately
         await service.check_all_interlocks()
@@ -380,13 +366,15 @@ class TestRVEmergencyScenarios:
         service = integrated_safety_service
 
         # Simulate system state before power loss
-        service.update_system_state({
-            "slides_deployed": True,
-            "awnings_extended": True,
-            "jacks_deployed": True,
-            "vehicle_speed": 0,
-            "parking_brake_engaged": True,
-        })
+        service.update_system_state(
+            {
+                "slides_deployed": True,
+                "awnings_extended": True,
+                "jacks_deployed": True,
+                "vehicle_speed": 0,
+                "parking_brake_engaged": True,
+            }
+        )
 
         # Simulate power loss (reset service state)
         service._last_health_check = None
@@ -411,9 +399,9 @@ class TestRVEmergencyScenarios:
         start_time = datetime.utcnow()
 
         # Simulate critical failure
-        service._feature_manager.check_system_health.return_value = {
+        service._service_registry.check_system_health.return_value = {
             "status": "critical",
-            "features": {"can_interface": FeatureState.FAILED},
+            "services": {"can_interface": ServiceStatus.FAILED},
             "failed_critical": ["can_interface"],
         }
 

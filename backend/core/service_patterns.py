@@ -14,11 +14,11 @@ Key patterns:
 import asyncio
 import logging
 from abc import ABC, abstractmethod
-from typing import Any, Dict, Optional, Set, TypeVar, Generic
+from typing import Any, Dict, Generic, Optional, Set, TypeVar
 
 logger = logging.getLogger(__name__)
 
-T = TypeVar('T')
+T = TypeVar("T")
 
 
 class ServiceProxy(Generic[T]):
@@ -39,9 +39,9 @@ class ServiceProxy(Generic[T]):
         """
         self.service_name = service_name
         self._getter_func = getter_func
-        self._cached_service: Optional[T] = None
+        self._cached_service: T | None = None
 
-    def get(self) -> Optional[T]:
+    def get(self) -> T | None:
         """Get the proxied service with caching and fallback."""
         if self._cached_service is not None:
             return self._cached_service
@@ -56,27 +56,18 @@ class ServiceProxy(Generic[T]):
             except Exception as e:
                 logger.debug(f"Failed to get {self.service_name} via custom getter: {e}")
 
-        # Try app.state (ServiceRegistry pattern)
+        # Try ServiceRegistry
         try:
-            from backend.main import app as main_app
+            from backend.core.dependencies import get_service_registry
 
-            service = getattr(main_app.state, self.service_name, None)
-            if service:
-                self._cached_service = service
-                return service
+            registry = get_service_registry()
+            if registry.has_service(self.service_name):
+                service = registry.get_service(self.service_name)
+                if service:
+                    self._cached_service = service
+                    return service
         except Exception as e:
-            logger.debug(f"Failed to get {self.service_name} from app.state: {e}")
-
-        # Try feature manager
-        try:
-            from backend.services.feature_manager import get_feature_manager
-            feature_manager = get_feature_manager()
-            service = feature_manager.get_feature(self.service_name)
-            if service:
-                self._cached_service = service
-                return service
-        except Exception as e:
-            logger.debug(f"Failed to get {self.service_name} from feature manager: {e}")
+            logger.debug(f"Failed to get {self.service_name} from ServiceRegistry: {e}")
 
         return None
 
@@ -93,7 +84,7 @@ class WebSocketHandlerBase(ABC):
     with proper service references, avoiding the request-scoped DI limitations.
     """
 
-    def __init__(self, service_dependencies: Dict[str, Any]):
+    def __init__(self, service_dependencies: dict[str, Any]):
         """
         Initialize with required service dependencies.
 
@@ -101,7 +92,7 @@ class WebSocketHandlerBase(ABC):
             service_dependencies: Dict of service_name -> service_instance
         """
         self.services = service_dependencies
-        self.clients: Set[Any] = set()
+        self.clients: set[Any] = set()
         self._lock = asyncio.Lock()
         self._is_initialized = False
 
@@ -132,17 +123,14 @@ class WebSocketHandlerBase(ABC):
     @abstractmethod
     async def _register_listeners(self) -> None:
         """Register event listeners with services. Must be implemented by subclasses."""
-        pass
 
     @abstractmethod
     async def _unregister_listeners(self) -> None:
         """Unregister event listeners from services. Must be implemented by subclasses."""
-        pass
 
     @abstractmethod
     async def _disconnect_client(self, client: Any) -> None:
         """Disconnect a specific client. Must be implemented by subclasses."""
-        pass
 
 
 class BackgroundServiceBase(ABC):
@@ -153,7 +141,7 @@ class BackgroundServiceBase(ABC):
     graceful shutdown handling.
     """
 
-    def __init__(self, service_proxies: Optional[Dict[str, ServiceProxy]] = None):
+    def __init__(self, service_proxies: dict[str, ServiceProxy] | None = None):
         """
         Initialize with optional service proxies.
 
@@ -162,9 +150,9 @@ class BackgroundServiceBase(ABC):
         """
         self.service_proxies = service_proxies or {}
         self._running = False
-        self._task: Optional[asyncio.Task] = None
+        self._task: asyncio.Task | None = None
 
-    def get_service(self, service_name: str) -> Optional[Any]:
+    def get_service(self, service_name: str) -> Any | None:
         """
         Get a service by name using proxy pattern.
 
@@ -214,17 +202,14 @@ class BackgroundServiceBase(ABC):
     @abstractmethod
     async def _initialize_services(self) -> None:
         """Initialize service connections. Must be implemented by subclasses."""
-        pass
 
     @abstractmethod
     async def _cleanup_services(self) -> None:
         """Cleanup service connections. Must be implemented by subclasses."""
-        pass
 
     @abstractmethod
     async def _run(self) -> None:
         """Main background task loop. Must be implemented by subclasses."""
-        pass
 
 
 class ServiceLifecycleManager:
@@ -237,8 +222,8 @@ class ServiceLifecycleManager:
 
     def __init__(self):
         """Initialize the lifecycle manager."""
-        self.websocket_handlers: Dict[str, WebSocketHandlerBase] = {}
-        self.background_services: Dict[str, BackgroundServiceBase] = {}
+        self.websocket_handlers: dict[str, WebSocketHandlerBase] = {}
+        self.background_services: dict[str, BackgroundServiceBase] = {}
         self._startup_order: list[str] = []
 
     def register_websocket_handler(self, name: str, handler: WebSocketHandlerBase) -> None:
@@ -287,7 +272,7 @@ class ServiceLifecycleManager:
 
 
 # Global lifecycle manager instance (deprecated - use app.state)
-_lifecycle_manager: Optional[ServiceLifecycleManager] = None
+_lifecycle_manager: ServiceLifecycleManager | None = None
 
 
 def get_lifecycle_manager() -> ServiceLifecycleManager:
@@ -300,7 +285,11 @@ def get_lifecycle_manager() -> ServiceLifecycleManager:
     # Try to get from app.state first
     try:
         from backend.main import app
-        if hasattr(app.state, 'service_lifecycle_manager') and app.state.service_lifecycle_manager is not None:
+
+        if (
+            hasattr(app.state, "service_lifecycle_manager")
+            and app.state.service_lifecycle_manager is not None
+        ):
             return app.state.service_lifecycle_manager
     except (ImportError, AttributeError, RuntimeError):
         pass

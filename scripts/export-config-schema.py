@@ -4,10 +4,11 @@ Export configuration schema to help generate Nix module options.
 This ensures Nix module stays in sync with backend expectations.
 """
 
+import json
 import sys
 from pathlib import Path
-import json
-from typing import Any, Dict, Type, get_origin, get_args
+from typing import Any, Dict, Type, get_args, get_origin
+
 from pydantic import BaseModel
 from pydantic.fields import FieldInfo
 
@@ -15,13 +16,20 @@ from pydantic.fields import FieldInfo
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from backend.core.config import (
-    Settings, ServerSettings, CORSSettings, SecuritySettings,
-    LoggingSettings, CANSettings, RVCSettings, PersistenceSettings,
-    FeatureSettings, NotificationSettings
+    CANSettings,
+    CORSSettings,
+    FeatureSettings,
+    LoggingSettings,
+    NotificationSettings,
+    PersistenceSettings,
+    RVCSettings,
+    SecuritySettings,
+    ServerSettings,
+    Settings,
 )
 
 
-def get_type_info(field_type: Type) -> Dict[str, Any]:
+def get_type_info(field_type: type) -> dict[str, Any]:
     """Extract type information for documentation."""
     origin = get_origin(field_type)
 
@@ -29,41 +37,40 @@ def get_type_info(field_type: Type) -> Dict[str, Any]:
         # Simple type
         if field_type == bool:
             return {"type": "bool", "nix_type": "lib.types.bool"}
-        elif field_type == int:
+        if field_type == int:
             return {"type": "int", "nix_type": "lib.types.int"}
-        elif field_type == float:
+        if field_type == float:
             return {"type": "float", "nix_type": "lib.types.float"}
-        elif field_type == str:
+        if field_type == str:
             return {"type": "string", "nix_type": "lib.types.str"}
-        elif issubclass(field_type, Path):
+        if issubclass(field_type, Path):
             return {"type": "path", "nix_type": "lib.types.path"}
-    else:
-        # Complex type
-        if origin is list:
-            inner = get_args(field_type)[0]
-            inner_info = get_type_info(inner)
+    # Complex type
+    elif origin is list:
+        inner = get_args(field_type)[0]
+        inner_info = get_type_info(inner)
+        return {
+            "type": f"list[{inner_info['type']}]",
+            "nix_type": f"lib.types.listOf {inner_info['nix_type']}",
+        }
+    elif origin is dict:
+        return {"type": "dict", "nix_type": "lib.types.attrs"}
+    elif origin is type(None) or (hasattr(origin, "__name__") and "Union" in origin.__name__):
+        # Optional type
+        args = get_args(field_type)
+        if type(None) in args:
+            non_none = [a for a in args if a != type(None)][0]
+            inner_info = get_type_info(non_none)
             return {
-                "type": f"list[{inner_info['type']}]",
-                "nix_type": f"lib.types.listOf {inner_info['nix_type']}"
+                "type": f"optional[{inner_info['type']}]",
+                "nix_type": f"lib.types.nullOr {inner_info['nix_type']}",
+                "optional": True,
             }
-        elif origin is dict:
-            return {"type": "dict", "nix_type": "lib.types.attrs"}
-        elif origin is type(None) or (hasattr(origin, "__name__") and "Union" in origin.__name__):
-            # Optional type
-            args = get_args(field_type)
-            if type(None) in args:
-                non_none = [a for a in args if a != type(None)][0]
-                inner_info = get_type_info(non_none)
-                return {
-                    "type": f"optional[{inner_info['type']}]",
-                    "nix_type": f"lib.types.nullOr {inner_info['nix_type']}",
-                    "optional": True
-                }
 
     return {"type": str(field_type), "nix_type": "lib.types.unspecified"}
 
 
-def extract_schema(model: Type[BaseModel], prefix: str = "") -> Dict[str, Any]:
+def extract_schema(model: type[BaseModel], prefix: str = "") -> dict[str, Any]:
     """Extract schema from Pydantic model."""
     schema = {}
 
@@ -85,14 +92,13 @@ def extract_schema(model: Type[BaseModel], prefix: str = "") -> Dict[str, Any]:
         # Handle nested models
         if hasattr(field_type, "model_fields"):
             schema[field_name]["nested"] = extract_schema(
-                field_type,
-                prefix=f"{prefix}{field_name.upper()}__"
+                field_type, prefix=f"{prefix}{field_name.upper()}__"
             )
 
     return schema
 
 
-def generate_nix_module_snippet(schema: Dict[str, Any], indent: int = 0) -> str:
+def generate_nix_module_snippet(schema: dict[str, Any], indent: int = 0) -> str:
     """Generate Nix module definition from schema."""
     lines = []
     spaces = "  " * indent
@@ -109,12 +115,12 @@ def generate_nix_module_snippet(schema: Dict[str, Any], indent: int = 0) -> str:
             lines.append(f"{spaces}  type = {info['nix_type']};")
             if info["optional"]:
                 lines.append(f"{spaces}  default = null;")
-            lines.append(f'{spaces}  description = \'\'')
-            lines.append(f'{spaces}    {info["description"]}')
+            lines.append(f"{spaces}  description = ''")
+            lines.append(f"{spaces}    {info['description']}")
             if info["default"] is not None and not info["optional"]:
-                lines.append(f'{spaces}    Default: {info["default"]}')
-            lines.append(f'{spaces}    Environment variable: {info["env_var"]}')
-            lines.append(f"{spaces}  \'\';")
+                lines.append(f"{spaces}    Default: {info['default']}")
+            lines.append(f"{spaces}    Environment variable: {info['env_var']}")
+            lines.append(f"{spaces}  '';")
             lines.append(f"{spaces}}};")
             lines.append("")
 
@@ -148,7 +154,7 @@ def main():
         f.write("# CoachIQ Environment Variables Reference\n\n")
         f.write("This document lists all environment variables recognized by CoachIQ.\n\n")
 
-        def write_env_vars(schema: Dict[str, Any], level: int = 2):
+        def write_env_vars(schema: dict[str, Any], level: int = 2):
             for field_name, info in sorted(schema.items()):
                 if "nested" in info:
                     f.write(f"{'#' * level} {field_name.title()}\n\n")
@@ -157,7 +163,7 @@ def main():
                     f.write(f"{'#' * level} `{info['env_var']}`\n\n")
                     f.write(f"- **Type**: {info['type']}\n")
                     f.write(f"- **Description**: {info['description']}\n")
-                    if info['default'] is not None:
+                    if info["default"] is not None:
                         f.write(f"- **Default**: `{info['default']}`\n")
                     f.write("\n")
 

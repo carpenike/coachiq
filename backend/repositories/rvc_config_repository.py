@@ -13,8 +13,8 @@ This repository handles:
 """
 
 import logging
-from typing import Dict, Any, Optional, Tuple
 from dataclasses import dataclass
+from typing import Any, Dict, Optional, Tuple
 
 from backend.models.common import CoachInfo
 
@@ -24,17 +24,18 @@ logger = logging.getLogger(__name__)
 @dataclass
 class RVCConfiguration:
     """Encapsulates all RV-C configuration data."""
-    raw_device_mapping: Dict[Tuple[str, str], Any]
-    pgn_hex_to_name_map: Dict[str, str]
-    coach_info: Optional[CoachInfo]
-    known_command_status_pairs: Dict[str, str]
-    spec_meta: Dict[str, Any]
-    decoder_map: Dict[str, Any]
-    mapping_dict: Dict[str, Any]
-    entity_map: Dict[str, Any]
+
+    raw_device_mapping: dict[tuple[str, str], Any]
+    pgn_hex_to_name_map: dict[str, str]
+    coach_info: CoachInfo | None
+    known_command_status_pairs: dict[str, str]
+    spec_meta: dict[str, Any]
+    decoder_map: dict[str, Any]
+    mapping_dict: dict[str, Any]
+    entity_map: dict[str, Any]
     entity_ids: list[str]
-    inst_map: Dict[str, Any]
-    unique_instances: Dict[str, Any]
+    inst_map: dict[str, Any]
+    unique_instances: dict[str, Any]
 
 
 class RVCConfigRepository:
@@ -47,21 +48,21 @@ class RVCConfigRepository:
 
     def __init__(self):
         """Initialize the RVC configuration repository."""
-        self._config: Optional[RVCConfiguration] = None
+        self._config: RVCConfiguration | None = None
         logger.info("RVCConfigRepository initialized")
 
     def load_configuration(
         self,
-        decoder_map: Dict[str, Any],
-        spec_meta: Dict[str, Any],
-        mapping_dict: Dict[str, Any],
-        entity_map: Dict[str, Any],
+        decoder_map: dict[str, Any],
+        spec_meta: dict[str, Any],
+        mapping_dict: dict[str, Any],
+        entity_map: dict[str, Any],
         entity_ids: list[str],
-        inst_map: Dict[str, Any],
-        unique_instances: Dict[str, Any],
-        pgn_hex_to_name_map: Dict[str, str],
-        dgn_pairs: Dict[str, str],
-        coach_info: Optional[CoachInfo]
+        inst_map: dict[str, Any],
+        unique_instances: dict[str, Any],
+        pgn_hex_to_name_map: dict[str, str],
+        dgn_pairs: dict[str, str],
+        coach_info: CoachInfo | None,
     ) -> None:
         """
         Load RV-C configuration data.
@@ -92,7 +93,7 @@ class RVCConfigRepository:
             entity_map=entity_map,
             entity_ids=entity_ids,
             inst_map=inst_map,
-            unique_instances=unique_instances
+            unique_instances=unique_instances,
         )
 
         logger.info(
@@ -100,7 +101,7 @@ class RVCConfigRepository:
             f"{len(pgn_hex_to_name_map)} PGNs, {len(known_pairs)} command/status pairs"
         )
 
-    def get_pgn_name(self, pgn_hex: str) -> Optional[str]:
+    def get_pgn_name(self, pgn_hex: str) -> str | None:
         """
         Get the human-readable name for a PGN.
 
@@ -114,7 +115,7 @@ class RVCConfigRepository:
             return None
         return self._config.pgn_hex_to_name_map.get(pgn_hex)
 
-    def get_command_status_pair(self, command_dgn: str) -> Optional[str]:
+    def get_command_status_pair(self, command_dgn: str) -> str | None:
         """
         Get the status DGN for a command DGN.
 
@@ -128,11 +129,11 @@ class RVCConfigRepository:
             return None
         return self._config.known_command_status_pairs.get(command_dgn.upper())
 
-    def get_coach_info(self) -> Optional[CoachInfo]:
+    def get_coach_info(self) -> CoachInfo | None:
         """Get coach information."""
         return self._config.coach_info if self._config else None
 
-    def get_entity_config(self, dgn_hex: str, instance: str) -> Optional[Dict[str, Any]]:
+    def get_entity_config(self, dgn_hex: str, instance: str) -> dict[str, Any] | None:
         """
         Get entity configuration by DGN and instance.
 
@@ -148,7 +149,7 @@ class RVCConfigRepository:
         key = (dgn_hex, instance)
         return self._config.entity_map.get(key)
 
-    def get_raw_device_mapping(self) -> Dict[Tuple[str, str], Any]:
+    def get_raw_device_mapping(self) -> dict[tuple[str, str], Any]:
         """Get raw device mapping data."""
         if not self._config:
             return {}
@@ -158,7 +159,7 @@ class RVCConfigRepository:
         """Check if configuration is loaded."""
         return self._config is not None
 
-    def get_health_status(self) -> Dict[str, Any]:
+    def get_health_status(self) -> dict[str, Any]:
         """
         Get repository health status.
 
@@ -166,20 +167,17 @@ class RVCConfigRepository:
             Health status information
         """
         if not self._config:
-            return {
-                "healthy": False,
-                "reason": "Configuration not loaded"
-            }
+            return {"healthy": False, "reason": "Configuration not loaded"}
 
         return {
             "healthy": True,
             "entity_count": len(self._config.entity_ids),
             "pgn_count": len(self._config.pgn_hex_to_name_map),
             "command_pairs": len(self._config.known_command_status_pairs),
-            "coach_info_loaded": self._config.coach_info is not None
+            "coach_info_loaded": self._config.coach_info is not None,
         }
 
-    def get_configuration_summary(self) -> Dict[str, Any]:
+    def get_configuration_summary(self) -> dict[str, Any]:
         """
         Get a summary of the loaded configuration.
 

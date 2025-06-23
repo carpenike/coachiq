@@ -6,12 +6,12 @@ Provides basic security statistics, events, and system health information.
 """
 
 import logging
-from typing import Any, Dict, List, Optional
+from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
 
-from backend.core.dependencies_v2 import get_security_event_manager
+from backend.core.dependencies import get_security_event_manager
 from backend.services.security_persistence_service import get_security_persistence_service
 from backend.websocket.security_handler import get_security_websocket_handler
 
@@ -23,24 +23,24 @@ router = APIRouter(prefix="/api/security/dashboard", tags=["security-dashboard"]
 class SecurityDashboardData(BaseModel):
     """Complete security dashboard data."""
 
-    stats: Dict[str, Any]
-    recent_events: List[Dict[str, Any]]
-    system_health: Dict[str, Any]
-    websocket_info: Dict[str, Any]
+    stats: dict[str, Any]
+    recent_events: list[dict[str, Any]]
+    system_health: dict[str, Any]
+    websocket_info: dict[str, Any]
 
 
 class SystemHealthResponse(BaseModel):
     """System health status response."""
 
     overall_status: str
-    components: Dict[str, Dict[str, Any]]
+    components: dict[str, dict[str, Any]]
     last_updated: float
 
 
 @router.get("/data", response_model=SecurityDashboardData)
 async def get_dashboard_data(
+    event_manager: Annotated[Any, Depends(get_security_event_manager)],
     limit: int = Query(default=20, description="Number of recent events to include"),
-    event_manager = Depends(get_security_event_manager)
 ) -> SecurityDashboardData:
     """
     Get complete security dashboard data.
@@ -50,9 +50,9 @@ async def get_dashboard_data(
     """
     try:
         # Use injected SecurityEventManager
-        manager_stats = event_manager.get_statistics()
-        event_stats = event_manager.get_event_stats()
-        recent_events = event_manager.get_recent_events(limit=limit)
+        manager_stats = await event_manager.get_statistics()
+        event_stats = await event_manager.get_event_stats()
+        recent_events = await event_manager.get_recent_events(limit=limit)
 
         # Get persistence service stats
         try:
@@ -72,19 +72,20 @@ async def get_dashboard_data(
         dashboard_data = SecurityDashboardData(
             stats={
                 "event_manager": manager_stats,
-                "event_stats": event_stats.dict() if hasattr(event_stats, 'dict') else event_stats,
+                "event_stats": event_stats.dict() if hasattr(event_stats, "dict") else event_stats,
                 "persistence": persistence_stats,
             },
             recent_events=[
-                event.dict() if hasattr(event, 'dict') else event
-                for event in recent_events
+                event.dict() if hasattr(event, "dict") else event for event in recent_events
             ],
             system_health={
-                "event_manager": "healthy" if manager_stats.get("events_published", 0) >= 0 else "failed",
+                "event_manager": "healthy"
+                if manager_stats.get("events_published", 0) >= 0
+                else "failed",
                 "persistence": persistence_health.get("status", "unknown"),
-                "websocket": "healthy" if websocket_stats["connected_clients"] >= 0 else "failed"
+                "websocket": "healthy" if websocket_stats["connected_clients"] >= 0 else "failed",
             },
-            websocket_info=websocket_stats
+            websocket_info=websocket_stats,
         )
 
         return dashboard_data
@@ -94,10 +95,10 @@ async def get_dashboard_data(
         raise HTTPException(status_code=500, detail="Failed to get dashboard data")
 
 
-@router.get("/stats", response_model=Dict[str, Any])
+@router.get("/stats", response_model=dict[str, Any])
 async def get_security_stats(
-    event_manager = Depends(get_security_event_manager)
-) -> Dict[str, Any]:
+    event_manager: Annotated[Any, Depends(get_security_event_manager)],
+) -> dict[str, Any]:
     """
     Get security statistics summary.
 
@@ -105,18 +106,22 @@ async def get_security_stats(
         Security statistics and metrics
     """
     try:
-        manager_stats = event_manager.get_statistics()
-        event_stats = event_manager.get_event_stats()
+        manager_stats = await event_manager.get_statistics()
+        event_stats = await event_manager.get_event_stats()
 
         return {
             "manager": manager_stats,
-            "events": event_stats.dict() if hasattr(event_stats, 'dict') else event_stats,
+            "events": event_stats.dict() if hasattr(event_stats, "dict") else event_stats,
             "summary": {
                 "total_events": manager_stats.get("events_published", 0),
-                "events_per_second": manager_stats.get("performance", {}).get("events_per_second", 0),
-                "delivery_success_rate": manager_stats.get("performance", {}).get("delivery_success_rate", 0),
-                "active_listeners": len(manager_stats.get("listeners", []))
-            }
+                "events_per_second": manager_stats.get("performance", {}).get(
+                    "events_per_second", 0
+                ),
+                "delivery_success_rate": manager_stats.get("performance", {}).get(
+                    "delivery_success_rate", 0
+                ),
+                "active_listeners": len(manager_stats.get("listeners", [])),
+            },
         }
 
     except RuntimeError:
@@ -124,16 +129,16 @@ async def get_security_stats(
         return {
             "manager": {"events_published": 0},
             "events": {"total_events": 0},
-            "summary": {"total_events": 0, "events_per_second": 0}
+            "summary": {"total_events": 0, "events_per_second": 0},
         }
 
 
 @router.get("/events/recent")
 async def get_recent_events(
+    event_manager: Annotated[Any, Depends(get_security_event_manager)],
     limit: int = Query(default=50, le=500, description="Number of events to return"),
-    severity: Optional[str] = Query(default=None, description="Filter by severity"),
-    event_manager = Depends(get_security_event_manager)
-) -> Dict[str, Any]:
+    severity: str | None = Query(default=None, description="Filter by severity"),
+) -> dict[str, Any]:
     """
     Get recent security events.
 
@@ -145,7 +150,7 @@ async def get_recent_events(
         Recent security events with metadata
     """
     try:
-        events = event_manager.get_recent_events(limit=limit)
+        events = await event_manager.get_recent_events(limit=limit)
 
         # Apply severity filter if specified
         if severity:
@@ -155,22 +160,17 @@ async def get_recent_events(
             "events": [event.dict() for event in events],
             "count": len(events),
             "filters_applied": {"severity": severity} if severity else {},
-            "available_severities": list(set(e.severity for e in events)) if events else []
+            "available_severities": list(set(e.severity for e in events)) if events else [],
         }
 
     except RuntimeError:
         logger.warning("SecurityEventManager not available")
-        return {
-            "events": [],
-            "count": 0,
-            "filters_applied": {},
-            "available_severities": []
-        }
+        return {"events": [], "count": 0, "filters_applied": {}, "available_severities": []}
 
 
 @router.get("/health", response_model=SystemHealthResponse)
 async def get_system_health(
-    event_manager = Depends(get_security_event_manager)
+    event_manager: Annotated[Any, Depends(get_security_event_manager)],
 ) -> SystemHealthResponse:
     """
     Get comprehensive system health status.
@@ -186,7 +186,7 @@ async def get_system_health(
     # Check SecurityEventManager
     components["event_manager"] = {
         "status": event_manager.health,
-        "details": event_manager.health_details
+        "details": event_manager.health_details,
     }
     if event_manager.health in ["degraded", "failed"]:
         overall_status = "degraded" if overall_status == "healthy" else "failed"
@@ -196,14 +196,14 @@ async def get_system_health(
         persistence_service = get_security_persistence_service()
         components["persistence"] = {
             "status": persistence_service.health,
-            "details": persistence_service.health_details
+            "details": persistence_service.health_details,
         }
         if persistence_service.health in ["degraded", "failed"]:
             overall_status = "degraded" if overall_status == "healthy" else "failed"
     except RuntimeError:
         components["persistence"] = {
             "status": "unavailable",
-            "details": {"reason": "Service not initialized"}
+            "details": {"reason": "Service not initialized"},
         }
         overall_status = "degraded"
 
@@ -212,23 +212,21 @@ async def get_system_health(
     handler_stats = security_handler.get_handler_stats()
     components["websocket"] = {
         "status": "healthy" if handler_stats["is_registered"] else "degraded",
-        "details": handler_stats
+        "details": handler_stats,
     }
 
     return SystemHealthResponse(
-        overall_status=overall_status,
-        components=components,
-        last_updated=time.time()
+        overall_status=overall_status, components=components, last_updated=time.time()
     )
 
 
 @router.post("/test/event")
 async def create_test_event(
+    event_manager: Annotated[Any, Depends(get_security_event_manager)],
     event_type: str = "can_rate_limit_violation",
     severity: str = "medium",
     title: str = "Test Security Event",
-    event_manager = Depends(get_security_event_manager)
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """
     Create a test security event for dashboard testing.
 
@@ -241,8 +239,13 @@ async def create_test_event(
         Information about the created test event
     """
     try:
-        from backend.models.security_events import SecurityEvent, SecurityEventType, SecuritySeverity
         import time
+
+        from backend.models.security_events import (
+            SecurityEvent,
+            SecurityEventType,
+            SecuritySeverity,
+        )
 
         # Create test event
         test_event = SecurityEvent.create_can_event(
@@ -252,7 +255,7 @@ async def create_test_event(
             description=f"Test event generated for dashboard testing at {time.time()}",
             source_address=0x27,
             pgn=0x18FEF100,
-            test_data=True
+            test_data=True,
         )
 
         # Publish through SecurityEventManager
@@ -262,7 +265,7 @@ async def create_test_event(
             "status": "success",
             "event_id": test_event.event_id,
             "message": "Test event created and published",
-            "event": test_event.dict()
+            "event": test_event.dict(),
         }
 
     except Exception as e:
@@ -271,7 +274,7 @@ async def create_test_event(
 
 
 @router.get("/websocket/info")
-async def get_websocket_info() -> Dict[str, Any]:
+async def get_websocket_info() -> dict[str, Any]:
     """
     Get WebSocket connection information.
 
@@ -287,5 +290,5 @@ async def get_websocket_info() -> Dict[str, Any]:
         "is_registered": handler_stats["is_registered"],
         "stats_cache_age": handler_stats["stats_cache_age"],
         "clients_by_view": handler_stats["clients_by_view"],
-        "status": "active" if handler_stats["is_registered"] else "inactive"
+        "status": "active" if handler_stats["is_registered"] else "inactive",
     }

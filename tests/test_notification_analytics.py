@@ -4,7 +4,7 @@ Tests for notification analytics and reporting system.
 
 import asyncio
 import json
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta, timezone
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 from uuid import uuid4
@@ -14,9 +14,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.models.notification import (
     NotificationChannel,
+    NotificationPayload,
     NotificationStatus,
     NotificationType,
-    NotificationPayload,
 )
 from backend.models.notification_analytics import (
     AggregationPeriod,
@@ -29,8 +29,8 @@ from backend.models.notification_analytics import (
 from backend.services.database_manager import DatabaseManager
 from backend.services.notification_analytics_service import NotificationAnalyticsService
 from backend.services.notification_reporting_service import (
-    NotificationReportingService,
     DailyDigestTemplate,
+    NotificationReportingService,
     WeeklyAnalyticsTemplate,
 )
 
@@ -205,8 +205,8 @@ class TestNotificationAnalyticsService:
         mock_pattern.error_message = "Connection timeout"
         mock_pattern.channel = NotificationChannel.SLACK.value
         mock_pattern.count = 25
-        mock_pattern.first_seen = datetime.now(timezone.utc) - timedelta(hours=2)
-        mock_pattern.last_seen = datetime.now(timezone.utc) - timedelta(minutes=10)
+        mock_pattern.first_seen = datetime.now(UTC) - timedelta(hours=2)
+        mock_pattern.last_seen = datetime.now(UTC) - timedelta(minutes=10)
         mock_pattern.affected_recipients = 15
 
         session_mock.execute.return_value.all.return_value = [mock_pattern]
@@ -229,13 +229,13 @@ class TestNotificationAnalyticsService:
         session_mock = db_manager.get_session.return_value.__aenter__.return_value
 
         # Create mock aggregates
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         mock_aggregates = []
         for i in range(24):
             mock_agg = MagicMock()
             mock_agg.metric_type = MetricType.DELIVERY_COUNT.value
             mock_agg.aggregation_period = AggregationPeriod.HOURLY.value
-            mock_agg.period_start = now - timedelta(hours=24-i)
+            mock_agg.period_start = now - timedelta(hours=24 - i)
             mock_agg.value = 100 + i * 10
             mock_agg.channel = None
             mock_agg.notification_type = None
@@ -265,10 +265,10 @@ class TestNotificationAnalyticsService:
 
         # Mock counts and metrics
         session_mock.scalar.side_effect = [
-            50,    # pending_count
-            200,   # processed_count
-            180,   # success_count
-            5.5,   # avg_wait_time
+            50,  # pending_count
+            200,  # processed_count
+            180,  # success_count
+            5.5,  # avg_wait_time
             0.15,  # avg_processing_time (150ms)
         ]
 
@@ -299,7 +299,7 @@ class TestNotificationReportingService:
                 total_retried=30,
                 success_rate=0.95,
                 average_delivery_time=250.0,
-                last_success=datetime.now(timezone.utc),
+                last_success=datetime.now(UTC),
                 last_failure=None,
                 error_breakdown={},
             )
@@ -310,7 +310,7 @@ class TestNotificationReportingService:
         analytics_service.analyze_errors = AsyncMock(return_value=[])
         analytics_service.get_queue_health = AsyncMock(
             return_value=NotificationQueueHealth(
-                timestamp=datetime.now(timezone.utc),
+                timestamp=datetime.now(UTC),
                 queue_depth=10,
                 processing_rate=5.0,
                 success_rate=0.95,
@@ -325,7 +325,7 @@ class TestNotificationReportingService:
         )
 
         # Generate report
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         report = await reporting_service.generate_report(
             template_name="daily_digest",
             start_date=now - timedelta(days=1),
@@ -360,7 +360,7 @@ class TestNotificationReportingService:
                 total_retried=200,
                 success_rate=0.95,
                 average_delivery_time=250.0,
-                last_success=datetime.now(timezone.utc),
+                last_success=datetime.now(UTC),
                 last_failure=None,
                 error_breakdown={},
             )
@@ -383,6 +383,7 @@ class TestNotificationReportingService:
 
         # Mock methods to return different data based on date range
         call_count = 0
+
         async def mock_get_channel_metrics(*args, **kwargs):
             nonlocal call_count
             call_count += 1
@@ -392,7 +393,7 @@ class TestNotificationReportingService:
         analytics_service.get_aggregated_metrics = AsyncMock(return_value=[])
 
         # Generate report
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         report = await reporting_service.generate_report(
             template_name="weekly_analytics",
             start_date=now - timedelta(days=7),
@@ -460,7 +461,7 @@ class TestNotificationReportingService:
             mock_report.report_id = f"report_{i}"
             mock_report.report_type = "daily_digest"
             mock_report.report_name = f"Daily Report {i}"
-            mock_report.created_at = datetime.now(timezone.utc) - timedelta(days=i)
+            mock_report.created_at = datetime.now(UTC) - timedelta(days=i)
             mock_report.format = "json"
             mock_report.file_size_bytes = 1000 + i * 100
             mock_reports.append(mock_report)
@@ -485,7 +486,7 @@ class TestNotificationReportingService:
         analytics_service.analyze_errors = AsyncMock(return_value=[])
         analytics_service.get_queue_health = AsyncMock(
             return_value=NotificationQueueHealth(
-                timestamp=datetime.now(timezone.utc),
+                timestamp=datetime.now(UTC),
                 queue_depth=0,
                 processing_rate=0,
                 success_rate=1.0,
@@ -499,7 +500,7 @@ class TestNotificationReportingService:
             )
         )
 
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
 
         # Test CSV format
         csv_report = await reporting_service.generate_report(
@@ -534,10 +535,12 @@ class TestAnalyticsIntegration:
 
     async def test_dispatcher_analytics_integration(self, analytics_service, db_manager):
         """Test dispatcher integration with analytics."""
-        from backend.services.async_notification_dispatcher_analytics import AnalyticsNotificationDispatcher
-        from backend.services.notification_queue import NotificationQueue
-        from backend.services.notification_manager import NotificationManager
         from backend.core.config import NotificationSettings
+        from backend.services.async_notification_dispatcher_analytics import (
+            AnalyticsNotificationDispatcher,
+        )
+        from backend.services.notification_manager import NotificationManager
+        from backend.services.notification_queue import NotificationQueue
 
         # Create mock components
         queue = MagicMock(spec=NotificationQueue)
@@ -609,15 +612,15 @@ class TestAnalyticsIntegration:
                     total_retried=0,
                     success_rate=0.8,
                     average_delivery_time=145.0,
-                    last_success=datetime.now(timezone.utc),
-                    last_failure=datetime.now(timezone.utc),
+                    last_success=datetime.now(UTC),
+                    last_failure=datetime.now(UTC),
                     error_breakdown={"Test error": 2},
                 )
             ]
         )
 
         # Generate report
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         report = await reporting_service.generate_report(
             template_name="daily_digest",
             start_date=now - timedelta(days=1),

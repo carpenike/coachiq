@@ -234,11 +234,13 @@ class ProtocolRouter:
                         events.append(SafetyEvent.VEHICLE_STOPPED)
 
                 # Transmission gear
-                elif ("transmission" in signal_name.lower() or "gear" in signal_name.lower()) and isinstance(result.value, str):
-                        if result.value.lower() in ["park", "p"]:
-                            events.append(SafetyEvent.TRANSMISSION_PARK)
-                        elif result.value.lower() in ["drive", "d", "reverse", "r"]:
-                            events.append(SafetyEvent.TRANSMISSION_DRIVE)
+                elif (
+                    "transmission" in signal_name.lower() or "gear" in signal_name.lower()
+                ) and isinstance(result.value, str):
+                    if result.value.lower() in ["park", "p"]:
+                        events.append(SafetyEvent.TRANSMISSION_PARK)
+                    elif result.value.lower() in ["drive", "d", "reverse", "r"]:
+                        events.append(SafetyEvent.TRANSMISSION_DRIVE)
 
         return events
 

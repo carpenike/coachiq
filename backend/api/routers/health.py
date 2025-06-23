@@ -8,24 +8,24 @@ Part of Phase 2D: Health Check System Enhancement
 """
 
 import time
-from datetime import datetime, UTC
-from typing import Any, Dict, List, Optional
+from datetime import UTC, datetime
 from enum import Enum
+from typing import Annotated, Any, Dict, List, Optional
 
-from fastapi import APIRouter, Query, Request
+from fastapi import APIRouter, Depends, Query, Request
 from fastapi.responses import Response
 from pydantic import BaseModel
 
-from backend.core.dependencies_v2 import (
-    get_app_state,
-    get_feature_manager,
+from backend.core.config import get_settings
+from backend.core.dependencies import (
+    get_service_registry,
 )
 from backend.core.service_registry import ServiceStatus
-from backend.core.config import get_settings
 
 
 class HealthStatus(str, Enum):
     """Overall health status following IETF health+json standard."""
+
     PASS = "pass"
     WARN = "warn"
     FAIL = "fail"
@@ -33,40 +33,43 @@ class HealthStatus(str, Enum):
 
 class ServiceHealthDetail(BaseModel):
     """Detailed health information for a single service."""
+
     name: str
     status: ServiceStatus
     health_status: HealthStatus
-    message: Optional[str] = None
-    last_check: Optional[datetime] = None
-    metadata: Optional[Dict[str, Any]] = None
+    message: str | None = None
+    last_check: datetime | None = None
+    metadata: dict[str, Any] | None = None
 
 
 class ComponentHealth(BaseModel):
     """Health status of a system component."""
+
     component_name: str
     component_type: str
     status: HealthStatus
-    observed_value: Optional[Any] = None
-    observed_unit: Optional[str] = None
-    message: Optional[str] = None
-    action: Optional[str] = None
-    output: Optional[str] = None
-    checks: Optional[Dict[str, Dict[str, Any]]] = None
+    observed_value: Any | None = None
+    observed_unit: str | None = None
+    message: str | None = None
+    action: str | None = None
+    output: str | None = None
+    checks: dict[str, dict[str, Any]] | None = None
 
 
 class HealthCheckResponse(BaseModel):
     """IETF-compliant health check response."""
+
     status: HealthStatus
     version: str = "1"
     service_id: str
     description: str
     timestamp: datetime
-    notes: Optional[List[str]] = None
-    output: Optional[str] = None
-    checks: Optional[Dict[str, ComponentHealth]] = None
-    links: Optional[Dict[str, str]] = None
-    service_registry: Optional[Dict[str, Any]] = None
-    startup_metrics: Optional[Dict[str, Any]] = None
+    notes: list[str] | None = None
+    output: str | None = None
+    checks: dict[str, ComponentHealth] | None = None
+    links: dict[str, str] | None = None
+    service_registry: dict[str, Any] | None = None
+    startup_metrics: dict[str, Any] | None = None
 
 
 router = APIRouter(
@@ -83,10 +86,9 @@ def service_status_to_health(status: ServiceStatus) -> HealthStatus:
     """Convert ServiceStatus to IETF HealthStatus."""
     if status == ServiceStatus.HEALTHY:
         return HealthStatus.PASS
-    elif status in (ServiceStatus.DEGRADED, ServiceStatus.STARTING):
+    if status in (ServiceStatus.DEGRADED, ServiceStatus.STARTING):
         return HealthStatus.WARN
-    else:
-        return HealthStatus.FAIL
+    return HealthStatus.FAIL
 
 
 @router.get(
@@ -96,15 +98,15 @@ def service_status_to_health(status: ServiceStatus) -> HealthStatus:
     response_class=Response,
 )
 async def health_check(
-    request: Request,
+    service_registry: Annotated[Any, Depends(get_service_registry)],
     include_registry: bool = Query(True, description="Include ServiceRegistry details"),
     include_metrics: bool = Query(True, description="Include startup metrics"),
     include_components: bool = Query(True, description="Include component health details"),
+    request: Request = None,
 ) -> Response:
     """
     Comprehensive health check endpoint that aggregates health status from:
     - ServiceRegistry (all registered services)
-    - Feature Manager (feature health)
     - Core infrastructure components
     - Safety-critical systems
 
@@ -115,9 +117,6 @@ async def health_check(
 
     try:
         # Get dependencies
-        app_state = get_app_state(request)
-        service_registry = app_state.service_registry
-        feature_manager = get_feature_manager(request)
         settings = get_settings()
 
         # Initialize response components
@@ -143,23 +142,6 @@ async def health_check(
                     checks=registry_health.get("service_details"),
                 )
 
-        # 2. Check Feature Manager health
-        if feature_manager:
-            feature_health = await check_feature_manager_health(feature_manager)
-            if feature_health["status"] != HealthStatus.PASS:
-                overall_status = max_health_status(overall_status, feature_health["status"])
-                notes.append(f"FeatureManager: {feature_health['message']}")
-
-            if include_components:
-                checks["feature_manager"] = ComponentHealth(
-                    component_name="feature_manager",
-                    component_type="core",
-                    status=feature_health["status"],
-                    message=feature_health["message"],
-                    observed_value=feature_health["healthy_count"],
-                    observed_unit="features",
-                )
-
         # 3. Check critical services
         critical_services = ["persistence_service", "database_manager", "entity_service"]
         for service_name in critical_services:
@@ -172,7 +154,7 @@ async def health_check(
                         message = "Service operational"
                     except Exception as e:
                         service_status = HealthStatus.FAIL
-                        message = f"Health check failed: {str(e)}"
+                        message = f"Health check failed: {e!s}"
                         overall_status = HealthStatus.FAIL
                         notes.append(f"{service_name}: {message}")
 
@@ -185,8 +167,9 @@ async def health_check(
                         )
 
         # 4. Check safety-critical components if enabled
-        if hasattr(app_state, "safety_service") and app_state.safety_service:
-            safety_health = await check_safety_service_health(app_state.safety_service)
+        safety_service = service_registry.get_service("safety_service")
+        if safety_service:
+            safety_health = await check_safety_service_health(safety_service)
             if safety_health["status"] == HealthStatus.FAIL:
                 overall_status = HealthStatus.FAIL
                 notes.append("Safety service critical failure")
@@ -233,14 +216,12 @@ async def health_check(
         if include_metrics:
             metrics = service_registry.get_startup_metrics()
             if metrics:
-                metrics["health_check_duration_ms"] = round(
-                    (time.time() - start_time) * 1000, 2
-                )
+                metrics["health_check_duration_ms"] = round((time.time() - start_time) * 1000, 2)
                 response.startup_metrics = metrics
 
         # Add useful links
         response.links = {
-            "self": str(request.url),
+            "self": str(request.url) if request else "/api/health",
             "health_docs": "/docs#/health",
             "metrics": "/metrics",
             "system_status": "/api/v2/system/status",
@@ -260,7 +241,7 @@ async def health_check(
         error_response = HealthCheckResponse(
             status=HealthStatus.FAIL,
             service_id="coachiq",
-            description=f"Health check error: {str(e)}",
+            description=f"Health check error: {e!s}",
             timestamp=datetime.now(UTC),
             notes=[f"Exception: {type(e).__name__}"],
         )
@@ -275,15 +256,15 @@ async def health_check(
 
 @router.get(
     "/services",
-    response_model=List[ServiceHealthDetail],
+    response_model=list[ServiceHealthDetail],
     summary="Individual service health status",
     description="Returns health status for all registered services",
 )
 async def service_health_status(
-    request: Request,
-    service_name: Optional[str] = Query(None, description="Filter by service name"),
-    status: Optional[ServiceStatus] = Query(None, description="Filter by status"),
-) -> List[ServiceHealthDetail]:
+    service_registry: Annotated[Any, Depends(get_service_registry)],
+    service_name: str | None = Query(None, description="Filter by service name"),
+    status: ServiceStatus | None = Query(None, description="Filter by status"),
+) -> list[ServiceHealthDetail]:
     """
     Get detailed health status for individual services.
 
@@ -291,9 +272,6 @@ async def service_health_status(
     registered with the ServiceRegistry, including their current status
     and any health check results.
     """
-    app_state = get_app_state(request)
-    service_registry = app_state.service_registry
-
     # Get all service statuses
     health_status = await service_registry.get_health_status()
 
@@ -327,7 +305,7 @@ async def service_health_status(
                     health_detail.message = service.health_message
 
             except Exception as e:
-                health_detail.message = f"Error retrieving service details: {str(e)}"
+                health_detail.message = f"Error retrieving service details: {e!s}"
 
         services.append(health_detail)
 
@@ -340,11 +318,9 @@ async def service_health_status(
     description="Lightweight readiness check based on ServiceRegistry status",
 )
 async def readiness_check(
-    request: Request,
-    min_healthy_services: int = Query(
-        3, description="Minimum number of healthy services required"
-    ),
-) -> Dict[str, Any]:
+    service_registry: Annotated[Any, Depends(get_service_registry)],
+    min_healthy_services: int = Query(3, description="Minimum number of healthy services required"),
+) -> dict[str, Any]:
     """
     Lightweight readiness check that uses ServiceRegistry to determine
     if the application is ready to serve traffic.
@@ -353,9 +329,6 @@ async def readiness_check(
     suitable for high-frequency monitoring.
     """
     try:
-        app_state = get_app_state(request)
-        service_registry = app_state.service_registry
-
         # Get service counts
         status_counts = service_registry.get_service_count_by_status()
         healthy_count = status_counts.get(ServiceStatus.HEALTHY, 0)
@@ -370,9 +343,7 @@ async def readiness_check(
             "total_services": total_count,
             "required_services": min_healthy_services,
             "service_breakdown": {
-                status.value: count
-                for status, count in status_counts.items()
-                if count > 0
+                status.value: count for status, count in status_counts.items() if count > 0
             },
         }
 
@@ -390,20 +361,28 @@ async def readiness_check(
     summary="Startup metrics and timing",
     description="Returns detailed startup performance metrics from ServiceRegistry",
 )
-async def startup_metrics(request: Request) -> Dict[str, Any]:
+async def startup_metrics(
+    service_registry: Annotated[Any, Depends(get_service_registry)], request: Request = None
+) -> dict[str, Any]:
     """
     Get detailed startup metrics and timing information.
 
     This endpoint exposes the ServiceRegistry's startup performance data,
     useful for optimizing startup time and debugging initialization issues.
     """
-    app_state = get_app_state(request)
-    service_registry = app_state.service_registry
     metrics = service_registry.get_startup_metrics()
 
-    # Add current uptime
-    if app_start_time := getattr(request.app.state, "start_time", None):
-        metrics["uptime_seconds"] = time.time() - app_start_time
+    # Add current uptime (use service registry's start time if available)
+    if hasattr(service_registry, "_startup_start_time") and service_registry._startup_start_time:
+        metrics["uptime_seconds"] = time.time() - service_registry._startup_start_time
+    else:
+        # Fallback: use module-level SERVER_START_TIME if available
+        try:
+            from backend.main import SERVER_START_TIME
+
+            metrics["uptime_seconds"] = time.time() - SERVER_START_TIME
+        except ImportError:
+            pass
 
     # Add initialization order if available
     if hasattr(service_registry, "_startup_stages"):
@@ -420,9 +399,10 @@ async def startup_metrics(request: Request) -> Dict[str, Any]:
 
 # Helper functions
 
+
 async def check_service_registry_health(
     service_registry,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """Check ServiceRegistry health and return standardized result."""
     try:
         status_counts = service_registry.get_service_count_by_status()
@@ -461,47 +441,12 @@ async def check_service_registry_health(
     except Exception as e:
         return {
             "status": HealthStatus.FAIL,
-            "message": f"ServiceRegistry check failed: {str(e)}",
+            "message": f"ServiceRegistry check failed: {e!s}",
             "healthy_count": 0,
         }
 
 
-async def check_feature_manager_health(feature_manager) -> Dict[str, Any]:
-    """Check FeatureManager health and return standardized result."""
-    try:
-        features = feature_manager.get_all_features()
-        healthy_count = sum(
-            1 for f in features.values()
-            if hasattr(f, "is_healthy") and f.is_healthy()
-        )
-        total_count = len(features)
-
-        if healthy_count == total_count:
-            status = HealthStatus.PASS
-            message = f"All {total_count} features healthy"
-        elif healthy_count > 0:
-            status = HealthStatus.WARN
-            message = f"{healthy_count}/{total_count} features healthy"
-        else:
-            status = HealthStatus.FAIL
-            message = "No healthy features"
-
-        return {
-            "status": status,
-            "message": message,
-            "healthy_count": healthy_count,
-            "total_count": total_count,
-        }
-
-    except Exception as e:
-        return {
-            "status": HealthStatus.FAIL,
-            "message": f"FeatureManager check failed: {str(e)}",
-            "healthy_count": 0,
-        }
-
-
-async def check_safety_service_health(safety_service) -> Dict[str, Any]:
+async def check_safety_service_health(safety_service) -> dict[str, Any]:
     """Check SafetyService health with special handling for safety-critical status."""
     try:
         # SafetyService doesn't have check_health method yet
@@ -524,7 +469,7 @@ async def check_safety_service_health(safety_service) -> Dict[str, Any]:
     except Exception as e:
         return {
             "status": HealthStatus.FAIL,
-            "message": f"Safety service check failed: {str(e)}",
+            "message": f"Safety service check failed: {e!s}",
             "action": "Investigate safety service immediately",
         }
 

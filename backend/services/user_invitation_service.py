@@ -354,3 +354,15 @@ class UserInvitationService:
         except Exception as e:
             self.logger.error(f"Exception sending invitation email to {invitation.email}: {e}")
             return False
+
+    async def get_invitations_by_admin(self, admin_id: str) -> list[UserInvitation]:
+        """
+        Get all invitations created by a specific admin.
+
+        Args:
+            admin_id: Admin user ID
+
+        Returns:
+            List of invitations
+        """
+        return await self._repository.get_invitations_by_admin(admin_id)

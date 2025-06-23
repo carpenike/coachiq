@@ -13,7 +13,6 @@ from backend.services.feature_models import SafetyClassification
 
 if TYPE_CHECKING:
     from backend.integrations.rvc.firefly_feature import FireflyFeature
-    from backend.services.feature_manager import FeatureManager
 
 logger = logging.getLogger(__name__)
 
@@ -160,29 +159,17 @@ def get_firefly_feature_info() -> dict[str, Any]:
     }
 
 
-def validate_firefly_dependencies(feature_manager: "FeatureManager") -> tuple[bool, list[str]]:
+def validate_firefly_dependencies() -> tuple[bool, list[str]]:
     """
     Validate that Firefly feature dependencies are met.
 
-    Args:
-        feature_manager: The feature manager instance
+    All dependencies are now always available per CLAUDE.md (no feature flags).
 
     Returns:
         Tuple of (dependencies_met, missing_dependencies)
     """
-    required_dependencies = ["rvc"]
-    missing_dependencies = []
-
-    for dependency in required_dependencies:
-        if not feature_manager.is_enabled(dependency):
-            missing_dependencies.append(dependency)
-
-    dependencies_met = len(missing_dependencies) == 0
-
-    if not dependencies_met:
-        logger.warning(f"Firefly feature dependencies not met. Missing: {missing_dependencies}")
-
-    return dependencies_met, missing_dependencies
+    # All features are now always enabled per CLAUDE.md - no feature flags
+    return True, []
 
 
 def get_firefly_integration_examples() -> dict[str, Any]:

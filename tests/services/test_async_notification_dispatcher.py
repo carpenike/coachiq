@@ -190,7 +190,9 @@ class TestQueueProcessing:
         metrics = dispatcher.get_metrics()
         assert metrics["total_processed"] == 0
 
-    async def test_single_notification_processing(self, dispatcher, notification_queue, sample_notification):
+    async def test_single_notification_processing(
+        self, dispatcher, notification_queue, sample_notification
+    ):
         """Test processing single notification."""
         # Add notification to queue
         await notification_queue.enqueue(sample_notification)
@@ -314,7 +316,9 @@ class TestQueueProcessing:
 class TestNotificationDelivery:
     """Test notification delivery mechanisms."""
 
-    async def test_smtp_notification_delivery(self, dispatcher, notification_queue, mock_notification_manager):
+    async def test_smtp_notification_delivery(
+        self, dispatcher, notification_queue, mock_notification_manager
+    ):
         """Test SMTP notification delivery."""
         notification = NotificationPayload(
             message="SMTP test",
@@ -335,7 +339,9 @@ class TestNotificationDelivery:
         stats = await notification_queue.get_statistics()
         assert stats.completed_count >= 1
 
-    async def test_apprise_notification_delivery(self, dispatcher, notification_queue, mock_notification_manager):
+    async def test_apprise_notification_delivery(
+        self, dispatcher, notification_queue, mock_notification_manager
+    ):
         """Test Apprise notification delivery."""
         notification = NotificationPayload(
             message="Apprise test",
@@ -350,7 +356,9 @@ class TestNotificationDelivery:
         # Verify notification was sent
         mock_notification_manager.send_notification.assert_called()
 
-    async def test_pushover_notification_delivery(self, dispatcher, notification_queue, mock_notification_manager):
+    async def test_pushover_notification_delivery(
+        self, dispatcher, notification_queue, mock_notification_manager
+    ):
         """Test Pushover notification delivery."""
         notification = NotificationPayload(
             message="Pushover test",
@@ -367,7 +375,9 @@ class TestNotificationDelivery:
         # Should call appropriate delivery method
         assert mock_notification_manager.send_notification.called
 
-    async def test_delivery_failure_handling(self, dispatcher, notification_queue, mock_notification_manager):
+    async def test_delivery_failure_handling(
+        self, dispatcher, notification_queue, mock_notification_manager
+    ):
         """Test handling of delivery failures."""
         # Mock delivery to fail
         mock_notification_manager.send_notification.return_value = False
@@ -390,7 +400,9 @@ class TestNotificationDelivery:
         stats = await notification_queue.get_statistics()
         assert stats.pending_count >= 1  # Back in queue for retry
 
-    async def test_delivery_exception_handling(self, dispatcher, notification_queue, mock_notification_manager):
+    async def test_delivery_exception_handling(
+        self, dispatcher, notification_queue, mock_notification_manager
+    ):
         """Test handling of delivery exceptions."""
         # Mock delivery to raise exception
         mock_notification_manager.send_notification.side_effect = Exception("Delivery error")
@@ -413,7 +425,9 @@ class TestNotificationDelivery:
 class TestRetryLogic:
     """Test retry logic and error handling."""
 
-    async def test_retry_after_failure(self, dispatcher, notification_queue, mock_notification_manager):
+    async def test_retry_after_failure(
+        self, dispatcher, notification_queue, mock_notification_manager
+    ):
         """Test retry logic after delivery failure."""
         # Mock to fail first time, succeed second time
         call_count = 0
@@ -442,7 +456,9 @@ class TestRetryLogic:
         stats = await notification_queue.get_statistics()
         assert stats.completed_count >= 1
 
-    async def test_maximum_retries_exceeded(self, dispatcher, notification_queue, mock_notification_manager):
+    async def test_maximum_retries_exceeded(
+        self, dispatcher, notification_queue, mock_notification_manager
+    ):
         """Test behavior when maximum retries are exceeded."""
         # Mock to always fail
         mock_notification_manager.send_notification.return_value = False
@@ -464,7 +480,9 @@ class TestRetryLogic:
         stats = await notification_queue.get_statistics()
         assert stats.dlq_count >= 1
 
-    async def test_exponential_backoff_retry_timing(self, dispatcher, notification_queue, mock_notification_manager):
+    async def test_exponential_backoff_retry_timing(
+        self, dispatcher, notification_queue, mock_notification_manager
+    ):
         """Test exponential backoff in retry timing."""
         # Mock to always fail
         mock_notification_manager.send_notification.return_value = False
@@ -497,7 +515,9 @@ class TestRetryLogic:
         # Should have some retry attempts with increasing delays
         # (This is a basic test - more sophisticated timing tests would be needed for production)
 
-    async def test_retry_with_different_error_types(self, dispatcher, notification_queue, mock_notification_manager):
+    async def test_retry_with_different_error_types(
+        self, dispatcher, notification_queue, mock_notification_manager
+    ):
         """Test retry behavior with different types of errors."""
         # Test with connection error (should retry)
         mock_notification_manager.send_notification.side_effect = ConnectionError("Network error")
@@ -613,7 +633,9 @@ class TestHealthMonitoring:
 class TestAdaptiveBehavior:
     """Test adaptive behavior and error recovery."""
 
-    async def test_backoff_multiplier_adjustment(self, dispatcher, notification_queue, mock_notification_manager):
+    async def test_backoff_multiplier_adjustment(
+        self, dispatcher, notification_queue, mock_notification_manager
+    ):
         """Test backoff multiplier adjustment based on success rate."""
         initial_multiplier = dispatcher._backoff_multiplier
 
@@ -666,8 +688,11 @@ class TestAdaptiveBehavior:
         # Restore queue function
         notification_queue.dequeue_batch = original_dequeue
 
-    async def test_graceful_degradation_under_load(self, dispatcher, notification_queue, mock_notification_manager):
+    async def test_graceful_degradation_under_load(
+        self, dispatcher, notification_queue, mock_notification_manager
+    ):
         """Test graceful degradation under high load."""
+
         # Simulate slow processing
         async def slow_delivery(*args, **kwargs):
             await asyncio.sleep(0.1)  # Slow delivery
@@ -747,7 +772,9 @@ class TestForceProcessing:
 class TestIntegrationScenarios:
     """Test complete integration scenarios."""
 
-    async def test_full_notification_lifecycle_with_dispatcher(self, dispatcher, notification_queue, mock_notification_manager):
+    async def test_full_notification_lifecycle_with_dispatcher(
+        self, dispatcher, notification_queue, mock_notification_manager
+    ):
         """Test complete notification lifecycle through dispatcher."""
         # 1. Queue notification
         notification = NotificationPayload(
@@ -778,7 +805,9 @@ class TestIntegrationScenarios:
         assert metrics["total_processed"] >= 1
         assert metrics["successful_deliveries"] >= 1
 
-    async def test_mixed_success_and_failure_processing(self, dispatcher, notification_queue, mock_notification_manager):
+    async def test_mixed_success_and_failure_processing(
+        self, dispatcher, notification_queue, mock_notification_manager
+    ):
         """Test processing with mixed success and failure results."""
         # Mock to succeed on some, fail on others
         call_count = 0
@@ -873,7 +902,9 @@ class TestIntegrationScenarios:
         metrics = dispatcher.get_metrics()
         assert metrics["total_processed"] >= 20
 
-    async def test_dispatcher_performance_under_sustained_load(self, dispatcher, notification_queue):
+    async def test_dispatcher_performance_under_sustained_load(
+        self, dispatcher, notification_queue
+    ):
         """Test dispatcher performance under sustained load."""
         await dispatcher.start()
 

@@ -58,11 +58,9 @@ class DBCDatabase:
                 raise FileNotFoundError(f"DBC file not found: {filepath}")
 
             try:
-                loop = asyncio.get_event_loop()
+                loop = asyncio.get_running_loop()
                 self.db = await loop.run_in_executor(
-                    self.executor,
-                    self._load_file_sync,
-                    str(filepath)
+                    self.executor, self._load_file_sync, str(filepath)
                 )
                 self.filepath = filepath
                 logger.info(f"Loaded DBC file: {filepath} with {len(self.db.messages)} messages")
@@ -102,7 +100,7 @@ class DBCDatabase:
         data: bytes,
         decode_choices: bool = True,
         scaling: bool = True,
-        is_extended: bool = False
+        is_extended: bool = False,
     ) -> dict[str, Any]:
         """
         Decode a CAN message using the loaded DBC.
@@ -125,7 +123,7 @@ class DBCDatabase:
             raise RuntimeError("No DBC file loaded")
 
         try:
-            loop = asyncio.get_event_loop()
+            loop = asyncio.get_running_loop()
             decoded = await loop.run_in_executor(
                 self.executor,
                 self._decode_message_sync,
@@ -133,7 +131,7 @@ class DBCDatabase:
                 data,
                 decode_choices,
                 scaling,
-                is_extended
+                is_extended,
             )
             return decoded
         except Exception as e:
@@ -145,7 +143,7 @@ class DBCDatabase:
         data: bytes,
         decode_choices: bool,
         scaling: bool,
-        is_extended: bool
+        is_extended: bool,
     ) -> dict[str, Any]:
         """Synchronous message decode operation."""
         if not self.db:
@@ -155,11 +153,7 @@ class DBCDatabase:
         message = self.db.get_message_by_frame_id(arbitration_id)
 
         # Decode the message
-        return message.decode(
-            data,
-            decode_choices=decode_choices,
-            scaling=scaling
-        )
+        return message.decode(data, decode_choices=decode_choices, scaling=scaling)
 
     async def encode_message(
         self,
@@ -167,7 +161,7 @@ class DBCDatabase:
         data: dict[str, Any],
         scaling: bool = True,
         padding: bool = True,
-        strict: bool = False
+        strict: bool = False,
     ) -> tuple[int, bytes]:
         """
         Encode data into a CAN message.
@@ -190,15 +184,9 @@ class DBCDatabase:
             raise RuntimeError("No DBC file loaded")
 
         try:
-            loop = asyncio.get_event_loop()
+            loop = asyncio.get_running_loop()
             result = await loop.run_in_executor(
-                self.executor,
-                self._encode_message_sync,
-                name_or_id,
-                data,
-                scaling,
-                padding,
-                strict
+                self.executor, self._encode_message_sync, name_or_id, data, scaling, padding, strict
             )
             return result
         except Exception as e:
@@ -210,7 +198,7 @@ class DBCDatabase:
         data: dict[str, Any],
         scaling: bool,
         padding: bool,
-        strict: bool
+        strict: bool,
     ) -> tuple[int, bytes]:
         """Synchronous message encode operation."""
         if not self.db:
@@ -223,12 +211,7 @@ class DBCDatabase:
             message = self.db.get_message_by_frame_id(name_or_id)
 
         # Encode the data
-        data_bytes = message.encode(
-            data,
-            scaling=scaling,
-            padding=padding,
-            strict=strict
-        )
+        data_bytes = message.encode(data, scaling=scaling, padding=padding, strict=strict)
 
         return message.frame_id, data_bytes
 
@@ -242,11 +225,8 @@ class DBCDatabase:
         if not self.db:
             raise RuntimeError("No DBC file loaded")
 
-        loop = asyncio.get_event_loop()
-        return await loop.run_in_executor(
-            self.executor,
-            self._get_message_list_sync
-        )
+        loop = asyncio.get_running_loop()
+        return await loop.run_in_executor(self.executor, self._get_message_list_sync)
 
     def _get_message_list_sync(self) -> list[dict[str, Any]]:
         """Get message list synchronously."""
@@ -263,7 +243,7 @@ class DBCDatabase:
                 "length": msg.length,
                 "cycle_time": msg.cycle_time,
                 "comment": msg.comment,
-                "signals": []
+                "signals": [],
             }
 
             for signal in msg.signals:
@@ -279,7 +259,7 @@ class DBCDatabase:
                     "maximum": signal.maximum,
                     "unit": signal.unit,
                     "comment": signal.comment,
-                    "choices": signal.choices if hasattr(signal, "choices") else {}
+                    "choices": signal.choices if hasattr(signal, "choices") else {},
                 }
                 message_info["signals"].append(signal_info)
 
@@ -300,12 +280,8 @@ class DBCDatabase:
         if not self.db:
             raise RuntimeError("No DBC file loaded")
 
-        loop = asyncio.get_event_loop()
-        return await loop.run_in_executor(
-            self.executor,
-            self._find_signal_sync,
-            signal_name
-        )
+        loop = asyncio.get_running_loop()
+        return await loop.run_in_executor(self.executor, self._find_signal_sync, signal_name)
 
     def _find_signal_sync(self, signal_name: str) -> dict[str, Any] | None:
         """Find signal synchronously."""
@@ -324,7 +300,7 @@ class DBCDatabase:
                         "length": signal.length,
                         "scale": signal.scale,
                         "offset": signal.offset,
-                        "unit": signal.unit
+                        "unit": signal.unit,
                     }
         return None
 
@@ -342,7 +318,7 @@ class DBCDatabase:
             "version": getattr(self.db, "version", ""),
             "messages": await self.get_message_list(),
             "nodes": [node.name for node in getattr(self.db, "nodes", [])],
-            "filepath": str(self.filepath) if self.filepath else None
+            "filepath": str(self.filepath) if self.filepath else None,
         }
 
     def __del__(self):
@@ -407,10 +383,7 @@ class DBCManager:
         return self.databases.get(name)
 
     async def decode_with_fallback(
-        self,
-        arbitration_id: int,
-        data: bytes,
-        **kwargs
+        self, arbitration_id: int, data: bytes, **kwargs
     ) -> dict[str, Any] | None:
         """
         Try to decode a message using all loaded DBCs.

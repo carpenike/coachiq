@@ -26,12 +26,28 @@ class WebSocketAuthHandler:
 
     @property
     def auth_manager(self):
-        """Lazily get the auth manager to avoid initialization issues."""
+        """Lazily get the auth manager from ServiceRegistry to avoid initialization issues."""
         if self._auth_manager is None:
-            from backend.services.feature_manager import get_feature_manager
+            try:
+                from backend.core.dependencies import get_service_registry
 
-            feature_manager = get_feature_manager()
-            self._auth_manager = feature_manager.get_feature("auth_manager")
+                service_registry = get_service_registry()
+                if service_registry.has_service("auth_manager"):
+                    auth_service = service_registry.get_service("auth_manager")
+                    # AuthService has a get_auth_manager() method that returns the actual AuthManager
+                    if hasattr(auth_service, "get_auth_manager"):
+                        self._auth_manager = auth_service.get_auth_manager()
+                        if not self._auth_manager:
+                            logger.debug(
+                                "AuthService.get_auth_manager() returned None - service may not be started yet"
+                            )
+                    else:
+                        # Fallback if it's already an AuthManager
+                        self._auth_manager = auth_service
+                else:
+                    logger.debug("Auth manager service not found in ServiceRegistry")
+            except Exception as e:
+                logger.debug("Could not get auth manager from ServiceRegistry: %s", e)
         return self._auth_manager
 
     async def authenticate_connection(  # noqa: C901
@@ -113,7 +129,7 @@ class WebSocketAuthHandler:
             if not self.auth_manager:
                 msg = "AuthManager not initialized"
                 raise ValueError(msg)
-            payload = self.auth_manager.verify_access_token(token)
+            payload = self.auth_manager.validate_token(token)
 
             # Create user info from token payload
             user_info = {

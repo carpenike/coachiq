@@ -15,18 +15,19 @@ if TYPE_CHECKING:
     from backend.models.entity_model import EntityConfig
 
 from backend.core.entity_manager import EntityManager
-from backend.services.feature_base import Feature
 from backend.repositories import (
-    EntityStateRepository,
-    RVCConfigRepository,
     CANTrackingRepository,
     DiagnosticsRepository,
+    EntityStateRepository,
+    RVCConfigRepository,
 )
+
+# Feature base removed - AppState is now a plain service class
 
 logger = logging.getLogger(__name__)
 
 
-class AppState(Feature):
+class AppState:
     """
     Core feature that manages application state.
 
@@ -45,21 +46,18 @@ class AppState(Feature):
         friendly_name: str | None = None,
         safety_classification=None,
         log_state_transitions: bool = True,
-        **kwargs
+        **kwargs,
     ) -> None:
         """
-        Initialize the AppState feature.
+        Initialize the AppState service.
         """
-        super().__init__(
-            name=name,
-            enabled=enabled,
-            core=core,
-            config=config or {},
-            dependencies=dependencies or [],
-            friendly_name=friendly_name,
-            safety_classification=safety_classification,
-            log_state_transitions=log_state_transitions,
-        )
+        # Store basic service attributes (no longer inheriting from Feature)
+        self.name = name
+        self.enabled = enabled
+        self.core = core
+        self.config = config or {}
+        self.dependencies = dependencies or []
+        self.friendly_name = friendly_name
         self.controller_source_addr: int = controller_source_addr
 
         # Initialize internal repositories (Phase 2R.1)
@@ -85,12 +83,15 @@ class AppState(Feature):
         # Try to get from ServiceRegistry first
         try:
             import backend.main
-            if hasattr(backend.main, 'app') and hasattr(backend.main.app.state, 'service_registry'):
+
+            if hasattr(backend.main, "app") and hasattr(backend.main.app.state, "service_registry"):
                 service_registry = backend.main.app.state.service_registry
 
                 # Try to get repositories from ServiceRegistry
                 if service_registry.has_service("entity_state_repository"):
-                    self._entity_state_repo = service_registry.get_service("entity_state_repository")
+                    self._entity_state_repo = service_registry.get_service(
+                        "entity_state_repository"
+                    )
                     # Share the entity manager
                     self.entity_manager = self._entity_state_repo.entity_manager
                     logger.info("Using EntityStateRepository from ServiceRegistry")
@@ -106,7 +107,9 @@ class AppState(Feature):
                     self._rvc_config_repo = RVCConfigRepository()
 
                 if service_registry.has_service("can_tracking_repository"):
-                    self._can_tracking_repo = service_registry.get_service("can_tracking_repository")
+                    self._can_tracking_repo = service_registry.get_service(
+                        "can_tracking_repository"
+                    )
                     logger.info("Using CANTrackingRepository from ServiceRegistry")
                 else:
                     self._can_tracking_repo = CANTrackingRepository()
@@ -225,7 +228,7 @@ class AppState(Feature):
         Args:
             rvc_config_provider: Optional RVCConfigProvider instance (for ServiceRegistry integration)
         """
-        # Global assignment removed - AppState is managed by FeatureManager
+        # Global assignment removed - AppState is managed by ServiceRegistry
         # and accessed via app.state.app_state or dependency injection
         logger.info("Starting AppState feature")
 
@@ -238,8 +241,14 @@ class AppState(Feature):
                 logger.info("Using shared RVCConfigProvider (ServiceRegistry mode)")
 
                 # Get configuration paths from provider
-                rvc_spec_path = str(rvc_config_provider._spec_path) if rvc_config_provider._spec_path else None
-                device_mapping_path = str(rvc_config_provider._device_mapping_path) if rvc_config_provider._device_mapping_path else None
+                rvc_spec_path = (
+                    str(rvc_config_provider._spec_path) if rvc_config_provider._spec_path else None
+                )
+                device_mapping_path = (
+                    str(rvc_config_provider._device_mapping_path)
+                    if rvc_config_provider._device_mapping_path
+                    else None
+                )
 
             else:
                 logger.info("Using legacy configuration loading (fallback mode)")
@@ -251,7 +260,9 @@ class AppState(Feature):
 
                 rvc_spec_path = str(settings.rvc_spec_path) if settings.rvc_spec_path else None
                 device_mapping_path = (
-                    str(settings.rvc_coach_mapping_path) if settings.rvc_coach_mapping_path else None
+                    str(settings.rvc_coach_mapping_path)
+                    if settings.rvc_coach_mapping_path
+                    else None
                 )
 
             logger.info(f"Using RV-C spec path: {rvc_spec_path}")
@@ -311,25 +322,22 @@ class AppState(Feature):
         """
         # Use async method synchronously - this is safe since we're not awaiting
         # TODO: Consider making this method async in future refactoring
-        loop = asyncio.get_event_loop()
+        loop = asyncio.get_running_loop()
         if loop.is_running():
             # If we're already in an async context, schedule as a task
             task = asyncio.create_task(
                 self._can_tracking_repo.try_group_response(
-                    response_entry,
-                    self.known_command_status_pairs
+                    response_entry, self.known_command_status_pairs
                 )
             )
             # Return False for now, the grouping will happen asynchronously
             return False
-        else:
-            # Synchronous context - run the coroutine
-            return loop.run_until_complete(
-                self._can_tracking_repo.try_group_response(
-                    response_entry,
-                    self.known_command_status_pairs
-                )
+        # Synchronous context - run the coroutine
+        return loop.run_until_complete(
+            self._can_tracking_repo.try_group_response(
+                response_entry, self.known_command_status_pairs
             )
+        )
 
     def get_can_sniffer_grouped(self) -> list:
         """Returns the list of grouped CAN sniffer entries."""
@@ -340,7 +348,6 @@ class AppState(Feature):
         Update the mapping of source address to the last-seen CAN sniffer entry.
         """
         # This is handled internally by add_can_sniffer_entry now
-        pass
 
     def add_can_sniffer_entry(self, entry) -> None:
         """
@@ -401,7 +408,9 @@ class AppState(Feature):
             dgn_pairs_val = rvc_config.dgn_pairs
             coach_info_val = rvc_config.coach_info
 
-            logger.info("populate_app_state: Using structured RVC configuration (load_config_data_v2)")
+            logger.info(
+                "populate_app_state: Using structured RVC configuration (load_config_data_v2)"
+            )
         else:
             # Support legacy tuple return for backward compatibility
             logger.info(f"populate_app_state: Using custom load_config_func={load_config_func}")
@@ -444,7 +453,7 @@ class AppState(Feature):
             unique_instances=unique_instances_val,
             pgn_hex_to_name_map=pgn_hex_to_name_map_val,
             dgn_pairs=dgn_pairs_val,
-            coach_info=coach_info_val
+            coach_info=coach_info_val,
         )
 
         logger.info("Application state populated from configuration data.")
@@ -500,9 +509,9 @@ class AppState(Feature):
 
         # Aggregate health
         all_healthy = (
-            entity_health.get("healthy", False) and
-            rvc_health.get("healthy", False) and
-            can_health.get("healthy", False)
+            entity_health.get("healthy", False)
+            and rvc_health.get("healthy", False)
+            and can_health.get("healthy", False)
         )
 
         return {
@@ -516,7 +525,7 @@ class AppState(Feature):
                 "entity_state": entity_health,
                 "rvc_config": rvc_health,
                 "can_tracking": can_health,
-            }
+            },
         }
 
     def start_can_sniffer(self, interface_name: str) -> None:
@@ -596,17 +605,16 @@ class CANSniffer:
 # Global app_state variable removed - use dependency injection instead
 
 
-def initialize_app_state(manager, config) -> AppState:
+def initialize_app_state(service_registry, config) -> AppState:
     """
-    Initialize the application state and register with feature manager.
+    Initialize the application state and register with service registry.
 
-    Note: The AppState instance is managed by FeatureManager and stored
+    Note: The AppState instance is managed by ServiceRegistry and stored
     in app.state. Access it via dependency injection or app.state.app_state.
     """
-    # Check if already registered with manager
-    existing = manager.get_feature("app_state")
-    if existing:
-        return existing
+    # Check if already registered with service registry
+    if service_registry.has_service("app_state"):
+        return service_registry.get_service("app_state")
 
     app_state = AppState(
         name="app_state",
@@ -615,6 +623,6 @@ def initialize_app_state(manager, config) -> AppState:
         config=config,
         dependencies=[],
     )
-    manager.register_feature(app_state)
+    service_registry.register_service("app_state", app_state)
 
     return app_state

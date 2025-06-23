@@ -21,12 +21,12 @@ from backend.api.routers import (
     can_tools,
     config,
     dashboard,
+    database_management,
     dbc,
     device_discovery,
     docs,
     health,
     logs,
-    migration,
     multi_network,
     network_security,
     notification_analytics,
@@ -42,7 +42,8 @@ from backend.api.routers import (
     security_monitoring,
     startup_monitoring,
 )
-from backend.core.dependencies_v2 import get_feature_manager_from_app
+
+# Removed deprecated import - will access feature manager directly
 from backend.websocket.routes import router as websocket_router
 
 logger = logging.getLogger(__name__)
@@ -69,6 +70,7 @@ def configure_routers(app: FastAPI) -> None:
     app.include_router(can_filter.router)
     app.include_router(config.router)
     app.include_router(dashboard.router)
+    app.include_router(database_management.router)
     app.include_router(dbc.router)
     app.include_router(docs.router)
     app.include_router(health.router)
@@ -81,7 +83,6 @@ def configure_routers(app: FastAPI) -> None:
     app.include_router(device_discovery.router)
     app.include_router(predictive_maintenance.router)
     app.include_router(schemas.router)
-    app.include_router(migration.router)
     app.include_router(safety.router)
     app.include_router(pin_auth.router)
     app.include_router(security_config.router)
@@ -101,17 +102,15 @@ def configure_routers(app: FastAPI) -> None:
     # Include startup monitoring router
     app.include_router(startup_monitoring.router)
 
+    # Repository migration router removed - file doesn't exist
+
     # Include WebSocket routes that integrate with feature manager
     app.include_router(websocket_router)
 
-    # Register domain API v2 routers if enabled
+    # Register domain API v2 routers unconditionally (per CLAUDE.md - no feature flags)
     try:
-        feature_manager = get_feature_manager_from_app(app)
-        if feature_manager.is_enabled("domain_api_v2"):
-            logger.info("Registering domain API v2 routers...")
-            register_all_domain_routers(app, feature_manager)
-        else:
-            logger.info("Domain API v2 disabled - skipping domain router registration")
+        logger.info("Registering domain API v2 routers...")
+        register_all_domain_routers(app)
     except Exception as e:
         logger.warning("Failed to register domain routers: %s", e)
 
@@ -131,6 +130,11 @@ def get_router_info() -> dict[str, Any]:
             {"prefix": "/api", "tags": ["can"], "name": "can"},
             {"prefix": "/api", "tags": ["config"], "name": "config"},
             {"prefix": "/api/dashboard", "tags": ["dashboard"], "name": "dashboard"},
+            {
+                "prefix": "/api/database",
+                "tags": ["database", "admin"],
+                "name": "database_management",
+            },
             {"prefix": "/api/dbc", "tags": ["dbc"], "name": "dbc"},
             {"prefix": "/api", "tags": ["docs"], "name": "docs"},
             {"prefix": "/api/health", "tags": ["health", "monitoring"], "name": "health"},
@@ -153,6 +157,11 @@ def get_router_info() -> dict[str, Any]:
             },
             {"prefix": "/api/schemas", "tags": ["schemas"], "name": "schemas"},
             {"prefix": "/api/migration", "tags": ["migration"], "name": "migration"},
+            {
+                "prefix": "/api/repository-migration",
+                "tags": ["repository-migration"],
+                "name": "repository_migration",
+            },
             {"prefix": "/api/safety", "tags": ["safety"], "name": "safety"},
             {
                 "prefix": "/api/notifications/dashboard",
@@ -166,7 +175,7 @@ def get_router_info() -> dict[str, Any]:
             },
             {"prefix": "/ws", "tags": ["websocket"], "name": "websocket"},
         ],
-        "total_routers": 18,
+        "total_routers": 20,
         "dependency_injection": True,
         "domain_api_v2": True,
     }

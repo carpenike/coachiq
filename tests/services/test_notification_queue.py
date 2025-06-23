@@ -46,7 +46,7 @@ async def notification_queue(temp_db_path):
     await queue.initialize()
 
     # Disable maintenance loop for testing
-    if hasattr(queue, '_maintenance_task'):
+    if hasattr(queue, "_maintenance_task"):
         queue._maintenance_task.cancel()
 
     yield queue
@@ -323,7 +323,9 @@ class TestNotificationCompletion:
         assert stats.processing_count == 0
         assert stats.completed_count == 1
 
-    async def test_mark_notification_failed_with_retry(self, notification_queue, sample_notification):
+    async def test_mark_notification_failed_with_retry(
+        self, notification_queue, sample_notification
+    ):
         """Test marking notification as failed with retry."""
         # Enqueue and dequeue notification
         await notification_queue.enqueue(sample_notification)
@@ -563,7 +565,9 @@ class TestQueueCleanup:
         stats = await notification_queue.get_statistics()
         assert stats.completed_count == 0
 
-    async def test_cleanup_preserves_recent_notifications(self, notification_queue, sample_notification):
+    async def test_cleanup_preserves_recent_notifications(
+        self, notification_queue, sample_notification
+    ):
         """Test that cleanup preserves recent notifications."""
         await notification_queue.enqueue(sample_notification)
         batch = await notification_queue.dequeue_batch(size=1)
@@ -639,10 +643,12 @@ class TestErrorHandling:
         await queue.close()
 
     @patch("aiosqlite.connect")
-    async def test_database_operation_timeout(self, mock_connect, notification_queue, sample_notification):
+    async def test_database_operation_timeout(
+        self, mock_connect, notification_queue, sample_notification
+    ):
         """Test handling of database operation timeouts."""
         # Mock database connection to raise timeout
-        mock_connect.side_effect = asyncio.TimeoutError("Database timeout")
+        mock_connect.side_effect = TimeoutError("Database timeout")
 
         # Operations should handle timeout gracefully
         result = await notification_queue.enqueue(sample_notification)

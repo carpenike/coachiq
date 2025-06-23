@@ -5,23 +5,21 @@ Provides schema export endpoints for frontend runtime validation.
 Serves Zod-compatible schemas for Domain API v2 with safety-critical validation.
 """
 
-from typing import Any
+from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import JSONResponse
 
-from backend.core.dependencies_v2 import get_auth_manager, get_feature_manager
+from backend.core.dependencies import get_auth_manager
 from backend.schemas.schema_exporter import ZodSchemaExporter
 from backend.services.auth_manager import AuthManager
-from backend.services.feature_manager import FeatureManager
 
 router = APIRouter(prefix="/api/schemas", tags=["schemas"])
 
 
 @router.get("/", summary="Get all available schemas")
 async def get_all_schemas(
-    auth_manager: AuthManager = Depends(get_auth_manager),
-    feature_manager: FeatureManager = Depends(get_feature_manager),
+    auth_manager: Annotated[AuthManager, Depends(get_auth_manager)],
 ) -> JSONResponse:
     """
     Export all Zod-compatible schemas for frontend validation.
@@ -29,9 +27,6 @@ async def get_all_schemas(
     Provides comprehensive schema definitions for Domain API v2 with
     safety-critical validation requirements.
     """
-    # Check if schema export is enabled
-    if not feature_manager.is_enabled("domain_api_v2"):
-        raise HTTPException(status_code=503, detail="Domain API v2 schemas not available")
 
     try:
         schemas = ZodSchemaExporter.export_all_schemas()
@@ -49,13 +44,8 @@ async def get_all_schemas(
 
 
 @router.get("/list", summary="Get list of available schema names")
-async def get_schema_list(
-    feature_manager: FeatureManager = Depends(get_feature_manager),
-) -> dict[str, Any]:
+async def get_schema_list() -> dict[str, Any]:
     """Get list of available schema names with metadata"""
-
-    if not feature_manager.is_enabled("domain_api_v2"):
-        raise HTTPException(status_code=503, detail="Domain API v2 schemas not available")
 
     return {
         "schemas": ZodSchemaExporter.get_schema_list(),
@@ -66,8 +56,7 @@ async def get_schema_list(
 @router.get("/{schema_name}", summary="Get specific schema by name")
 async def get_schema_by_name(
     schema_name: str,
-    auth_manager: AuthManager = Depends(get_auth_manager),
-    feature_manager: FeatureManager = Depends(get_feature_manager),
+    auth_manager: Annotated[AuthManager, Depends(get_auth_manager)],
 ) -> JSONResponse:
     """
     Get a specific schema by name for targeted validation.
@@ -75,8 +64,6 @@ async def get_schema_by_name(
     Args:
         schema_name: Name of the schema to retrieve (Entity, ControlCommand, etc.)
     """
-    if not feature_manager.is_enabled("domain_api_v2"):
-        raise HTTPException(status_code=503, detail="Domain API v2 schemas not available")
 
     try:
         schema = ZodSchemaExporter.export_schema(schema_name)
@@ -98,15 +85,12 @@ async def get_schema_by_name(
     except ValueError as e:
         raise HTTPException(status_code=404, detail=str(e))
     except Exception as e:
-        raise HTTPException(
-            status_code=500, detail=f"Failed to export schema {schema_name}: {e!s}"
-        )
+        raise HTTPException(status_code=500, detail=f"Failed to export schema {schema_name}: {e!s}")
 
 
 @router.get("/validate/integrity", summary="Validate schema integrity")
 async def validate_schema_integrity(
-    auth_manager: AuthManager = Depends(get_auth_manager),
-    feature_manager: FeatureManager = Depends(get_feature_manager),
+    auth_manager: Annotated[AuthManager, Depends(get_auth_manager)],
 ) -> JSONResponse:
     """
     Validate that all schemas can be properly exported.
@@ -114,8 +98,6 @@ async def validate_schema_integrity(
     Used for system health checks and debugging schema issues.
     Requires authentication as it's an administrative endpoint.
     """
-    if not feature_manager.is_enabled("domain_api_v2"):
-        raise HTTPException(status_code=503, detail="Domain API v2 schemas not available")
 
     # This endpoint requires authentication since it's for admin/debugging
     try:
@@ -145,7 +127,6 @@ async def validate_schema_integrity(
 
 @router.get("/docs/openapi", summary="Get OpenAPI-compatible schema definitions")
 async def get_openapi_schemas(
-    feature_manager: FeatureManager = Depends(get_feature_manager),
     include_examples: bool = Query(True, description="Include schema examples"),
 ) -> dict[str, Any]:
     """
@@ -154,8 +135,6 @@ async def get_openapi_schemas(
     This endpoint provides schemas in OpenAPI format for integration with
     API documentation tools and code generators.
     """
-    if not feature_manager.is_enabled("domain_api_v2"):
-        raise HTTPException(status_code=503, detail="Domain API v2 schemas not available")
 
     try:
         # Convert Zod schemas to OpenAPI format

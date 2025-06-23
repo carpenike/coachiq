@@ -87,6 +87,7 @@ class NotificationReportData:
 
 # SQLAlchemy Models for Persistence
 
+
 class NotificationDeliveryLog(Base, TimestampMixin):
     """
     SQLAlchemy model for notification delivery logs.
@@ -206,9 +207,7 @@ class NotificationMetricAggregate(Base, TimestampMixin):
         String(50), nullable=True, index=True, comment="Optional type filter"
     )
 
-    value: Mapped[float] = mapped_column(
-        Float, nullable=False, comment="Aggregated metric value"
-    )
+    value: Mapped[float] = mapped_column(Float, nullable=False, comment="Aggregated metric value")
 
     count: Mapped[int] = mapped_column(
         Integer, nullable=False, default=0, comment="Number of data points"
@@ -233,7 +232,9 @@ class NotificationMetricAggregate(Base, TimestampMixin):
     # Define table constraints and indexes
     __table_args__ = (
         Index("idx_metric_aggregates_period", "aggregation_period", "period_start"),
-        Index("idx_metric_aggregates_type_period", "metric_type", "aggregation_period", "period_start"),
+        Index(
+            "idx_metric_aggregates_type_period", "metric_type", "aggregation_period", "period_start"
+        ),
         Index("idx_metric_aggregates_channel", "channel", "period_start"),
     )
 
@@ -389,9 +390,7 @@ class NotificationReport(Base, TimestampMixin):
         String(100), nullable=False, index=True, comment="Type of report"
     )
 
-    report_name: Mapped[str] = mapped_column(
-        String(500), nullable=False, comment="Report name"
-    )
+    report_name: Mapped[str] = mapped_column(String(500), nullable=False, comment="Report name")
 
     start_date: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, comment="Report period start"

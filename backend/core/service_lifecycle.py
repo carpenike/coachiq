@@ -2,23 +2,23 @@
 Service Lifecycle Event System
 
 Provides interfaces and implementations for service lifecycle notifications,
-enabling coordination between ServiceRegistry and FeatureManager for
-safety-critical system operations.
+enabling coordination between services for safety-critical system operations.
 
 Part of Phase 2Q: Service Lifecycle Event System
 """
 
-from abc import ABC, abstractmethod
-from typing import Any, Dict, Optional, List, Set
-from enum import Enum
 import logging
-from datetime import datetime, UTC
+from abc import ABC, abstractmethod
+from datetime import UTC, datetime
+from enum import Enum
+from typing import Any, Dict, List, Optional, Set
 
 logger = logging.getLogger(__name__)
 
 
 class ServiceFailureReason(Enum):
     """Reasons for service failure."""
+
     INITIALIZATION_ERROR = "initialization_error"
     HEALTH_CHECK_FAILED = "health_check_failed"
     DEPENDENCY_FAILED = "dependency_failed"
@@ -37,9 +37,9 @@ class ServiceLifecycleEvent:
         service_name: str,
         timestamp: datetime,
         event_type: str,
-        failure_reason: Optional[ServiceFailureReason] = None,
-        error_message: Optional[str] = None,
-        metadata: Optional[Dict[str, Any]] = None
+        failure_reason: ServiceFailureReason | None = None,
+        error_message: str | None = None,
+        metadata: dict[str, Any] | None = None,
     ):
         self.service_name = service_name
         self.timestamp = timestamp
@@ -69,7 +69,6 @@ class IServiceLifecycleListener(ABC):
         Args:
             event: Event details including service name and metadata
         """
-        pass
 
     @abstractmethod
     def on_service_failed(self, event: ServiceLifecycleEvent) -> None:
@@ -83,7 +82,6 @@ class IServiceLifecycleListener(ABC):
         Args:
             event: Event details including failure reason and error
         """
-        pass
 
     @abstractmethod
     async def on_service_stopped(self, event: ServiceLifecycleEvent) -> None:
@@ -96,7 +94,6 @@ class IServiceLifecycleListener(ABC):
         Args:
             event: Event details including service name
         """
-        pass
 
     @abstractmethod
     async def on_service_started(self, event: ServiceLifecycleEvent) -> None:
@@ -109,7 +106,6 @@ class IServiceLifecycleListener(ABC):
         Args:
             event: Event details including service name
         """
-        pass
 
 
 class ServiceLifecycleManager:
@@ -121,8 +117,8 @@ class ServiceLifecycleManager:
     """
 
     def __init__(self):
-        self._listeners: Set[IServiceLifecycleListener] = set()
-        self._listener_priorities: Dict[IServiceLifecycleListener, int] = {}
+        self._listeners: set[IServiceLifecycleListener] = set()
+        self._listener_priorities: dict[IServiceLifecycleListener, int] = {}
 
     def add_listener(self, listener: IServiceLifecycleListener, priority: int = 0) -> None:
         """
@@ -134,7 +130,9 @@ class ServiceLifecycleManager:
         """
         self._listeners.add(listener)
         self._listener_priorities[listener] = priority
-        logger.info(f"Added lifecycle listener: {listener.__class__.__name__} with priority {priority}")
+        logger.info(
+            f"Added lifecycle listener: {listener.__class__.__name__} with priority {priority}"
+        )
 
     def remove_listener(self, listener: IServiceLifecycleListener) -> None:
         """Remove a lifecycle event listener."""
@@ -142,21 +140,21 @@ class ServiceLifecycleManager:
         self._listener_priorities.pop(listener, None)
         logger.info(f"Removed lifecycle listener: {listener.__class__.__name__}")
 
-    def _get_ordered_listeners(self) -> List[IServiceLifecycleListener]:
+    def _get_ordered_listeners(self) -> list[IServiceLifecycleListener]:
         """Get listeners ordered by priority (highest first)."""
         return sorted(
-            self._listeners,
-            key=lambda l: self._listener_priorities.get(l, 0),
-            reverse=True
+            self._listeners, key=lambda l: self._listener_priorities.get(l, 0), reverse=True
         )
 
-    async def notify_pre_shutdown(self, service_name: str, metadata: Optional[Dict[str, Any]] = None) -> None:
+    async def notify_pre_shutdown(
+        self, service_name: str, metadata: dict[str, Any] | None = None
+    ) -> None:
         """Notify listeners of impending service shutdown."""
         event = ServiceLifecycleEvent(
             service_name=service_name,
             timestamp=datetime.now(UTC),
             event_type="pre_shutdown",
-            metadata=metadata
+            metadata=metadata,
         )
 
         for listener in self._get_ordered_listeners():
@@ -169,8 +167,8 @@ class ServiceLifecycleManager:
         self,
         service_name: str,
         reason: ServiceFailureReason,
-        error_message: Optional[str] = None,
-        metadata: Optional[Dict[str, Any]] = None
+        error_message: str | None = None,
+        metadata: dict[str, Any] | None = None,
     ) -> None:
         """
         Notify listeners of service failure.
@@ -185,7 +183,7 @@ class ServiceLifecycleManager:
             event_type="failed",
             failure_reason=reason,
             error_message=error_message,
-            metadata=metadata
+            metadata=metadata,
         )
 
         # Process listeners in priority order
@@ -197,38 +195,46 @@ class ServiceLifecycleManager:
                 # Log but continue - safety transitions must complete
                 logger.error(
                     f"Error in service_failed listener {listener.__class__.__name__}: {e}",
-                    exc_info=True
+                    exc_info=True,
                 )
 
-    async def notify_service_stopped(self, service_name: str, metadata: Optional[Dict[str, Any]] = None) -> None:
+    async def notify_service_stopped(
+        self, service_name: str, metadata: dict[str, Any] | None = None
+    ) -> None:
         """Notify listeners that a service has stopped."""
         event = ServiceLifecycleEvent(
             service_name=service_name,
             timestamp=datetime.now(UTC),
             event_type="stopped",
-            metadata=metadata
+            metadata=metadata,
         )
 
         for listener in self._get_ordered_listeners():
             try:
                 await listener.on_service_stopped(event)
             except Exception as e:
-                logger.error(f"Error in service_stopped listener {listener.__class__.__name__}: {e}")
+                logger.error(
+                    f"Error in service_stopped listener {listener.__class__.__name__}: {e}"
+                )
 
-    async def notify_service_started(self, service_name: str, metadata: Optional[Dict[str, Any]] = None) -> None:
+    async def notify_service_started(
+        self, service_name: str, metadata: dict[str, Any] | None = None
+    ) -> None:
         """Notify listeners that a service has started."""
         event = ServiceLifecycleEvent(
             service_name=service_name,
             timestamp=datetime.now(UTC),
             event_type="started",
-            metadata=metadata
+            metadata=metadata,
         )
 
         for listener in self._get_ordered_listeners():
             try:
                 await listener.on_service_started(event)
             except Exception as e:
-                logger.error(f"Error in service_started listener {listener.__class__.__name__}: {e}")
+                logger.error(
+                    f"Error in service_started listener {listener.__class__.__name__}: {e}"
+                )
 
 
 class CompositeLifecycleListener(IServiceLifecycleListener):
@@ -238,7 +244,7 @@ class CompositeLifecycleListener(IServiceLifecycleListener):
     Useful for combining multiple listener implementations.
     """
 
-    def __init__(self, listeners: List[IServiceLifecycleListener]):
+    def __init__(self, listeners: list[IServiceLifecycleListener]):
         self._listeners = listeners
 
     async def on_service_pre_shutdown(self, event: ServiceLifecycleEvent) -> None:

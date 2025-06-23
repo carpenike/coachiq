@@ -43,9 +43,7 @@ class TestWebhookAuthConfig:
 
     def test_apikey_auth_valid(self):
         """Test API key authentication configuration."""
-        config = WebhookAuthConfig(
-            type="apikey", api_key="test-key", api_key_header="X-Custom-Key"
-        )
+        config = WebhookAuthConfig(type="apikey", api_key="test-key", api_key_header="X-Custom-Key")
         assert config.type == "apikey"
         assert config.api_key == "test-key"
         assert config.api_key_header == "X-Custom-Key"
@@ -74,9 +72,7 @@ class TestWebhookTarget:
 
     def test_valid_target_creation(self):
         """Test creating a valid webhook target."""
-        target = WebhookTarget(
-            name="test-webhook", url="https://example.com/webhook", enabled=True
-        )
+        target = WebhookTarget(name="test-webhook", url="https://example.com/webhook", enabled=True)
         assert target.name == "test-webhook"
         assert str(target.url) == "https://example.com/webhook"
         assert target.enabled is True
@@ -84,9 +80,7 @@ class TestWebhookTarget:
 
     def test_custom_method_validation(self):
         """Test HTTP method validation."""
-        target = WebhookTarget(
-            name="test", url="https://example.com/webhook", method="PUT"
-        )
+        target = WebhookTarget(name="test", url="https://example.com/webhook", method="PUT")
         assert target.method == "PUT"
 
     def test_invalid_method(self):
@@ -452,7 +446,7 @@ class TestWebhookDelivery:
 
         with patch("aiohttp.ClientSession.request") as mock_request:
             # Mock timeout error
-            mock_request.side_effect = asyncio.TimeoutError()
+            mock_request.side_effect = TimeoutError()
 
             async with channel:
                 result = await channel.send_notification(test_notification)

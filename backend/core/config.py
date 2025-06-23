@@ -21,7 +21,7 @@ from importlib import resources
 from pathlib import Path
 from typing import Any
 
-from pydantic import Field, SecretStr, field_validator
+from pydantic import Field, SecretStr, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -36,7 +36,10 @@ class ServerSettings(BaseSettings):
 
     model_config = SettingsConfigDict(env_prefix="COACHIQ_SERVER__", case_sensitive=False)
 
-    host: str = Field(default="0.0.0.0", description="Server host address")
+    host: str = Field(
+        default="127.0.0.1",
+        description="Server host address. Use '0.0.0.0' only in controlled networks as it binds to all interfaces.",
+    )
     port: int = Field(default=8000, description="Server port", ge=1, le=65535)
     reload: bool = Field(default=False, description="Enable auto-reload in development")
     workers: int = Field(default=1, description="Number of worker processes", ge=1, le=32)
@@ -111,7 +114,12 @@ class CORSSettings(BaseSettings):
     enabled: bool = Field(default=True, description="Enable CORS middleware")
     allow_origins: str | list[str] = Field(
         default_factory=lambda: (
-            ["http://localhost:3000", "http://127.0.0.1:3000", "http://localhost:5173", "http://127.0.0.1:5173"]
+            [
+                "http://localhost:3000",
+                "http://127.0.0.1:3000",
+                "http://localhost:5173",
+                "http://127.0.0.1:5173",
+            ]
             if __import__("os").getenv("COACHIQ_ENVIRONMENT", "development") == "development"
             else []
         ),
@@ -181,11 +189,9 @@ class SecuritySettings(BaseSettings):
 
     model_config = SettingsConfigDict(env_prefix="COACHIQ_SECURITY__", case_sensitive=False)
 
-    secret_key: SecretStr = Field(
-        default_factory=lambda: SecretStr(
-            "your-secret-key-change-in-production-" + __import__("secrets").token_urlsafe(32)
-        ),
-        description="Secret key for session management",
+    secret_key: SecretStr | None = Field(
+        default=None,
+        description="Secret key for session management (required in production, set via COACHIQ_SECURITY__SECRET_KEY)",
     )
     api_key: SecretStr | None = Field(default=None, description="API key for authentication")
     allowed_ips: list[str] = Field(default=[], description="Allowed IP addresses")
@@ -199,7 +205,7 @@ class SecuritySettings(BaseSettings):
             "When True, the application assumes it's behind a TLS-terminating reverse proxy. "
             "The proxy is responsible for HTTP->HTTPS redirection and HSTS headers. "
             "The application MUST be run with --proxy-headers for this to be secure."
-        )
+        ),
     )
 
     @field_validator("allowed_ips", mode="before")
@@ -209,6 +215,27 @@ class SecuritySettings(BaseSettings):
         if isinstance(v, str):
             return [ip.strip() for ip in v.split(",") if ip.strip()]
         return v
+
+    @model_validator(mode="after")
+    def validate_secret_key(self) -> "SecuritySettings":
+        """Ensure secret key is provided in production environments."""
+        # Check if we're in a production-like environment
+        import os
+
+        env = os.environ.get("COACHIQ_ENV", "development").lower()
+
+        if env in ["production", "prod", "staging"] and not self.secret_key:
+            raise ValueError(
+                "Security secret key is required in production environments. "
+                "Please set COACHIQ_SECURITY__SECRET_KEY environment variable with a secure random value. "
+                "Generate one with: openssl rand -hex 32"
+            )
+
+        # Provide a development default if not in production
+        if not self.secret_key:
+            self.secret_key = SecretStr("development-only-secret-key-do-not-use-in-production")
+
+        return self
 
 
 class LoggingSettings(BaseSettings):
@@ -716,16 +743,19 @@ class WebhookChannelConfig(BaseSettings):
     )
 
     enabled: bool = Field(default=False, description="Enable webhook notifications")
-    default_timeout: int = Field(default=30, description="Default request timeout in seconds", ge=1, le=300)
+    default_timeout: int = Field(
+        default=30, description="Default request timeout in seconds", ge=1, le=300
+    )
     max_retries: int = Field(default=3, description="Default maximum retry attempts", ge=0, le=10)
     verify_ssl: bool = Field(default=True, description="Verify SSL certificates by default")
-    rate_limit_requests: int = Field(default=100, description="Rate limit requests per window", ge=1)
+    rate_limit_requests: int = Field(
+        default=100, description="Rate limit requests per window", ge=1
+    )
     rate_limit_window: int = Field(default=60, description="Rate limit window in seconds", ge=1)
 
     # Webhook targets configuration (simplified for environment variables)
     targets: dict[str, Any] = Field(
-        default_factory=dict,
-        description="Webhook target configurations"
+        default_factory=dict, description="Webhook target configurations"
     )
 
 
@@ -783,7 +813,10 @@ class AuthenticationSettings(BaseSettings):
 
     # Core authentication settings
     enabled: bool = Field(default=False, description="Enable authentication system")
-    secret_key: str = Field(default="", description="Secret key for JWT tokens")
+    secret_key: str = Field(
+        default="",
+        description="Secret key for JWT tokens - MUST be set via COACHIQ_AUTH__SECRET_KEY env var",
+    )
     jwt_algorithm: str = Field(default="HS256", description="JWT algorithm")
     jwt_expire_minutes: int = Field(
         default=15, description="JWT access token expiration in minutes"
@@ -794,7 +827,8 @@ class AuthenticationSettings(BaseSettings):
         default=7, description="Refresh token expiration in days"
     )
     refresh_token_secret: str = Field(
-        default="", description="Separate secret key for refresh tokens"
+        default="",
+        description="Separate secret key for refresh tokens - defaults to secret_key if not set",
     )
     enable_refresh_tokens: bool = Field(
         default=True, description="Enable refresh token functionality"
@@ -871,6 +905,23 @@ class AuthenticationSettings(BaseSettings):
     mfa_backup_code_length: int = Field(
         default=8, description="Length of backup codes", ge=6, le=16
     )
+
+    @model_validator(mode="after")
+    def validate_jwt_secret(self) -> "AuthenticationSettings":
+        """Ensure JWT secret is provided when authentication is enabled."""
+        if self.enabled and not self.secret_key:
+            raise ValueError(
+                "JWT secret key is required when authentication is enabled. "
+                "Please set COACHIQ_AUTH__SECRET_KEY environment variable with a secure random value. "
+                "Generate one with: openssl rand -hex 32"
+            )
+
+        # Set refresh token secret to main secret if not provided
+        if self.enabled and self.enable_refresh_tokens and not self.refresh_token_secret:
+            self.refresh_token_secret = self.secret_key
+
+        return self
+
     require_mfa_for_admin: bool = Field(default=False, description="Require MFA for admin users")
     allow_mfa_bypass: bool = Field(default=True, description="Allow MFA bypass during grace period")
     mfa_setup_grace_period_hours: int = Field(
@@ -920,6 +971,14 @@ class FeaturesSettings(BaseSettings):
         default=True, description="Enable activity feed tracking"
     )
 
+    # Domain API v2 features
+    domain_api_v2: bool = Field(default=True, description="Enable domain API v2")
+    entities_api_v2: bool = Field(default=True, description="Enable entities API v2")
+    diagnostics_api_v2: bool = Field(default=True, description="Enable diagnostics API v2")
+    analytics_api_v2: bool = Field(default=True, description="Enable analytics API v2")
+    networks_api_v2: bool = Field(default=True, description="Enable networks API v2")
+    system_api_v2: bool = Field(default=True, description="Enable system API v2")
+
     # Performance and optimization settings
     dashboard_cache_ttl: int = Field(
         default=30, description="Dashboard data cache TTL in seconds", ge=1
@@ -931,28 +990,21 @@ class FeaturesSettings(BaseSettings):
         default=100, description="Maximum activity feed entries", ge=10, le=1000
     )
 
-    # Domain API v2 Features (Safety-Critical Implementation)
-    # --- API V2 MIGRATION COMPLETE ---
-    # The following flags are now defaulted to True as of 2025-01-13
-    # following the full migration to Domain API v2. Legacy API endpoints have been removed.
-    # These flags are now considered candidates for complete removal in a future iteration.
-    domain_api_v2: bool = Field(
-        default=True, description="Domain-driven API v2 with safety-critical command/acknowledgment patterns (MIGRATION COMPLETE)"
+    # Domain API Features - Migration Complete
+    # Note: V2 flags removed per pre-release development policy
+    diagnostics_api: bool = Field(
+        default=False, description="Domain-specific diagnostics API with enhanced fault correlation"
     )
-    entities_api_v2: bool = Field(
-        default=True, description="Domain-specific entities API v2 with bulk operations and safety interlocks (MIGRATION COMPLETE)"
+    analytics_api: bool = Field(
+        default=False, description="Domain-specific analytics API with advanced telemetry"
     )
-    diagnostics_api_v2: bool = Field(
-        default=False, description="Domain-specific diagnostics API v2 with enhanced fault correlation"
+    networks_api: bool = Field(
+        default=False,
+        description="Domain-specific networks API with CAN bus monitoring and interface management",
     )
-    analytics_api_v2: bool = Field(
-        default=False, description="Domain-specific analytics API v2 with advanced telemetry"
-    )
-    networks_api_v2: bool = Field(
-        default=False, description="Domain-specific networks API v2 with CAN bus monitoring and interface management"
-    )
-    system_api_v2: bool = Field(
-        default=False, description="Domain-specific system API v2 with configuration management and service monitoring"
+    system_api: bool = Field(
+        default=False,
+        description="Domain-specific system API with configuration management and service monitoring",
     )
 
 
@@ -1457,8 +1509,7 @@ class APIDomainSettings(BaseSettings):
     # Core domain API settings
     enabled: bool = Field(default=False, description="Enable Domain API v2 architecture")
     safety_mode: str = Field(
-        default="strict",
-        description="Safety mode: strict, permissive, emergency_stop"
+        default="strict", description="Safety mode: strict, permissive, emergency_stop"
     )
 
     # Validation and schema settings
@@ -1469,8 +1520,7 @@ class APIDomainSettings(BaseSettings):
         default=True, description="Enable Pydantic to TypeScript schema export"
     )
     validation_mode: str = Field(
-        default="strict",
-        description="Validation mode: strict, lenient, development"
+        default="strict", description="Validation mode: strict, lenient, development"
     )
 
     # Command execution and safety settings
@@ -1607,6 +1657,12 @@ class Settings(BaseSettings):
     )
     controller_source_addr: str = Field(default="0xF9", description="Controller source address")
 
+    # Protocol enablement settings
+    # These control whether protocols are enabled, separate from their configuration
+    rvc_enabled: bool = Field(default=True, description="Enable RV-C protocol (always true)")
+    j1939_enabled: bool = Field(default=False, description="Enable J1939 protocol")
+    firefly_enabled: bool = Field(default=False, description="Enable Firefly protocol")
+
     # Nested settings
     server: ServerSettings = Field(default_factory=ServerSettings)
     cors: CORSSettings = Field(default_factory=CORSSettings)
@@ -1647,6 +1703,25 @@ class Settings(BaseSettings):
             if "performance_analytics" not in data:
                 data["performance_analytics"] = None
 
+        # Import here to avoid circular dependency and initialize database field
+        try:
+            from backend.services.database_engine import DatabaseSettings
+
+            if "database" not in data:
+                data["database"] = DatabaseSettings()
+        except ImportError:
+            # Database module not available - use default DatabaseSettings
+            # Create a minimal class if needed
+            class MinimalDatabaseSettings:
+                def get_database_url(self):
+                    return "sqlite:///backend/data/coachiq.db"
+
+                def get_database_path(self):
+                    return "backend/data/coachiq.db"
+
+            if "database" not in data:
+                data["database"] = MinimalDatabaseSettings()
+
         super().__init__(**data)
 
     # Add the fields with defaults
@@ -1656,6 +1731,12 @@ class Settings(BaseSettings):
     performance_analytics: Any = Field(
         default=None, exclude=True, description="Performance analytics settings"
     )
+    database: Any = Field(default=None, exclude=True, description="Database configuration settings")
+
+    @property
+    def data_dir(self) -> Path:
+        """Convenience property to access persistence.data_dir."""
+        return self.persistence.data_dir
 
     @field_validator("environment", mode="before")
     @classmethod
@@ -1741,6 +1822,11 @@ class Settings(BaseSettings):
             config["reload"] = False
 
         return config
+
+    @property
+    def data_dir(self) -> Path:
+        """Convenience property to access persistence.data_dir directly."""
+        return self.persistence.data_dir
 
     def get_uvicorn_ssl_config(self) -> dict[str, Any]:
         """

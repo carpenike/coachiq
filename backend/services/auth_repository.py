@@ -70,7 +70,9 @@ class AuthRepository:
         """Execute a database operation that returns bool."""
         database_url = self.db_manager.engine.settings.get_database_url()
         if database_url == "null://memory":
-            self.logger.debug(f"Auth repository {operation.__name__} called but persistence is disabled")
+            self.logger.debug(
+                f"Auth repository {operation.__name__} called but persistence is disabled"
+            )
             return False
 
         try:
@@ -85,7 +87,9 @@ class AuthRepository:
         """Execute a database operation that returns int."""
         database_url = self.db_manager.engine.settings.get_database_url()
         if database_url == "null://memory":
-            self.logger.debug(f"Auth repository {operation.__name__} called but persistence is disabled")
+            self.logger.debug(
+                f"Auth repository {operation.__name__} called but persistence is disabled"
+            )
             return 0
 
         try:
@@ -100,7 +104,9 @@ class AuthRepository:
         """Execute a database operation that returns list."""
         database_url = self.db_manager.engine.settings.get_database_url()
         if database_url == "null://memory":
-            self.logger.debug(f"Auth repository {operation.__name__} called but persistence is disabled")
+            self.logger.debug(
+                f"Auth repository {operation.__name__} called but persistence is disabled"
+            )
             return []
 
         try:
@@ -118,8 +124,7 @@ class AuthRepository:
 
         async def _get_setting(session: AsyncSession, setting_key: str) -> str | None:
             result = await session.execute(
-                select(AdminSettings.setting_value)
-                .where(AdminSettings.setting_key == setting_key)
+                select(AdminSettings.setting_value).where(AdminSettings.setting_key == setting_key)
             )
             row = result.first()
             return row[0] if row else None
@@ -132,7 +137,7 @@ class AuthRepository:
         value: str,
         setting_type: str = "string",
         description: str | None = None,
-        is_secret: bool = False
+        is_secret: bool = False,
     ) -> bool:
         """Set an admin setting value."""
 
@@ -142,7 +147,7 @@ class AuthRepository:
             setting_value: str,
             setting_type: str,
             description: str | None,
-            is_secret: bool
+            is_secret: bool,
         ) -> bool:
             try:
                 # Check if setting exists
@@ -161,7 +166,7 @@ class AuthRepository:
                             setting_type=setting_type,
                             description=description,
                             is_secret=is_secret,
-                            updated_at=datetime.now(UTC)
+                            updated_at=datetime.now(UTC),
                         )
                     )
                 else:
@@ -213,8 +218,11 @@ class AuthRepository:
             try:
                 # Get all admin-related settings
                 result = await session.execute(
-                    select(AdminSettings.setting_key, AdminSettings.setting_value, AdminSettings.setting_type)
-                    .where(AdminSettings.setting_key.like("admin_%"))
+                    select(
+                        AdminSettings.setting_key,
+                        AdminSettings.setting_value,
+                        AdminSettings.setting_type,
+                    ).where(AdminSettings.setting_key.like("admin_%"))
                 )
                 rows = result.fetchall()
 
@@ -239,7 +247,9 @@ class AuthRepository:
                         "username": credentials["admin_username"],
                         "password_hash": credentials["admin_password_hash"],
                         "created_at": credentials.get("admin_created_at"),
-                        "password_auto_generated": credentials.get("admin_password_auto_generated", False),
+                        "password_auto_generated": credentials.get(
+                            "admin_password_auto_generated", False
+                        ),
                     }
 
                 return None
@@ -269,9 +279,20 @@ class AuthRepository:
                 # Store admin credentials as multiple settings
                 settings = [
                     ("admin_username", admin_username, "string", "Admin username"),
-                    ("admin_password_hash", admin_password_hash, "string", "Admin password hash", True),
+                    (
+                        "admin_password_hash",
+                        admin_password_hash,
+                        "string",
+                        "Admin password hash",
+                        True,
+                    ),
                     ("admin_created_at", now.isoformat(), "datetime", "Admin creation timestamp"),
-                    ("admin_password_auto_generated", str(admin_auto_generated), "boolean", "Whether password was auto-generated"),
+                    (
+                        "admin_password_auto_generated",
+                        str(admin_auto_generated),
+                        "boolean",
+                        "Whether password was auto-generated",
+                    ),
                 ]
 
                 for key, value, setting_type, description, *is_secret in settings:
@@ -293,7 +314,7 @@ class AuthRepository:
                                 setting_type=setting_type,
                                 description=description,
                                 is_secret=secret,
-                                updated_at=now
+                                updated_at=now,
                             )
                         )
                     else:
@@ -315,7 +336,9 @@ class AuthRepository:
                 self.logger.error(f"Failed to set admin credentials: {e}")
                 return False
 
-        return await self._execute_bool_operation(_set_credentials, username, password_hash, auto_generated)
+        return await self._execute_bool_operation(
+            _set_credentials, username, password_hash, auto_generated
+        )
 
     # User Operations
 
@@ -423,8 +446,7 @@ class AuthRepository:
                 return None
 
         return await self._execute_with_session(
-            _create_session, user_id, session_token, expires_at,
-            ip_address, user_agent, device_info
+            _create_session, user_id, session_token, expires_at, ip_address, user_agent, device_info
         )
 
     async def get_user_session(self, session_token: str) -> UserSession | None:
@@ -482,9 +504,7 @@ class AuthRepository:
         async def _revoke_all_sessions(session: AsyncSession, uid: str) -> int:
             try:
                 result = await session.execute(
-                    update(UserSession)
-                    .where(UserSession.user_id == uid)
-                    .values(is_active=False)
+                    update(UserSession).where(UserSession.user_id == uid).values(is_active=False)
                 )
                 await session.commit()
                 return result.rowcount
@@ -564,8 +584,16 @@ class AuthRepository:
                 return None
 
         return await self._execute_with_session(
-            _create_event, user_id, event_type, success, provider,
-            ip_address, user_agent, email, details, error_message
+            _create_event,
+            user_id,
+            event_type,
+            success,
+            provider,
+            ip_address,
+            user_agent,
+            email,
+            details,
+            error_message,
         )
 
     async def get_auth_events_for_user(
@@ -633,7 +661,7 @@ class AuthRepository:
                 query = select(func.count(AuthEvent.id)).where(
                     and_(
                         not AuthEvent.success,
-                        AuthEvent.event_type.in_(["login", "token_refresh", "admin_login"])
+                        AuthEvent.event_type.in_(["login", "token_refresh", "admin_login"]),
                     )
                 )
 
@@ -653,9 +681,7 @@ class AuthRepository:
                 self.logger.error(f"Failed to count failed attempts: {e}")
                 return 0
 
-        return await self._execute_int_operation(
-            _count_failed_attempts, user_id, email, since
-        )
+        return await self._execute_int_operation(_count_failed_attempts, user_id, email, since)
 
     # Magic Link Token Operations
 
@@ -699,8 +725,7 @@ class AuthRepository:
                 return None
 
         return await self._execute_with_session(
-            _create_token, email, token_hash, expires_at,
-            redirect_url, ip_address, user_agent
+            _create_token, email, token_hash, expires_at, redirect_url, ip_address, user_agent
         )
 
     async def get_magic_link_token(self, token_hash: str) -> MagicLinkToken | None:
@@ -796,6 +821,7 @@ class AuthRepository:
                     for code in backup_codes_list:
                         # Hash the backup code for storage
                         import hashlib
+
                         code_hash = hashlib.sha256(code.upper().encode()).hexdigest()
 
                         backup_code = UserMFABackupCode(
@@ -854,9 +880,7 @@ class AuthRepository:
                     update_values["recovery_codes"] = recovery_codes_list
 
                 result = await session.execute(
-                    update(UserMFA)
-                    .where(UserMFA.user_id == uid)
-                    .values(**update_values)
+                    update(UserMFA).where(UserMFA.user_id == uid).values(**update_values)
                 )
                 await session.commit()
                 return result.rowcount > 0
@@ -874,9 +898,7 @@ class AuthRepository:
 
         async def _delete_mfa(session: AsyncSession, uid: str) -> bool:
             try:
-                result = await session.execute(
-                    delete(UserMFA).where(UserMFA.user_id == uid)
-                )
+                result = await session.execute(delete(UserMFA).where(UserMFA.user_id == uid))
                 await session.commit()
                 return result.rowcount > 0
             except Exception as e:
@@ -911,6 +933,7 @@ class AuthRepository:
             try:
                 # Hash the code to match stored hash
                 import hashlib
+
                 code_hash = hashlib.sha256(backup_code.upper().encode()).hexdigest()
 
                 # Find and update the backup code
@@ -939,14 +962,10 @@ class AuthRepository:
     async def regenerate_backup_codes(self, user_id: str, new_backup_codes: list[str]) -> bool:
         """Replace all backup codes for a user with new ones."""
 
-        async def _regenerate_codes(
-            session: AsyncSession, uid: str, codes: list[str]
-        ) -> bool:
+        async def _regenerate_codes(session: AsyncSession, uid: str, codes: list[str]) -> bool:
             try:
                 # Get the UserMFA record
-                mfa_result = await session.execute(
-                    select(UserMFA.id).where(UserMFA.user_id == uid)
-                )
+                mfa_result = await session.execute(select(UserMFA.id).where(UserMFA.user_id == uid))
                 mfa_record = mfa_result.first()
                 if not mfa_record:
                     return False
@@ -960,6 +979,7 @@ class AuthRepository:
 
                 # Create new backup codes
                 import hashlib
+
                 for code in codes:
                     code_hash = hashlib.sha256(code.upper().encode()).hexdigest()
                     backup_code = UserMFABackupCode(
@@ -992,6 +1012,7 @@ class AuthRepository:
         async def _verify_code(session: AsyncSession, uid: str, backup_code: str) -> bool:
             try:
                 import hashlib
+
                 code_hash = hashlib.sha256(backup_code.upper().encode()).hexdigest()
 
                 result = await session.execute(
@@ -1039,9 +1060,7 @@ class AuthRepository:
 
         async def _get_all_mfa(session: AsyncSession) -> list[UserMFA]:
             try:
-                result = await session.execute(
-                    select(UserMFA).order_by(UserMFA.created_at)
-                )
+                result = await session.execute(select(UserMFA).order_by(UserMFA.created_at))
                 return list(result.scalars().all())
             except Exception as e:
                 self.logger.error(f"Failed to get all MFA settings: {e}")

@@ -1,5 +1,29 @@
 # Python Backend Instructions
 
+## MCP Server Usage for Backend Development
+
+When developing backend features, leverage MCP servers effectively:
+
+1. **@context7** - Primary source for FastAPI, Pydantic, SQLAlchemy patterns
+2. **@zen analyze/codereview** - Service architecture and code quality validation
+3. **@serena** - Navigate backend codebase and find symbol definitions
+4. **@perplexity** - Research protocols (RV-C, CAN bus) and general patterns
+
+### Backend Development MCP Workflow
+
+```
+# Starting a new service:
+1. @context7 FastAPI service patterns with dependency injection
+2. @serena find_symbol ServiceRegistry - understand existing patterns
+3. @zen analyze backend/services - review architecture
+4. @zen codereview - validate implementation
+
+# Debugging backend issues:
+1. @serena find_symbol [ServiceName] - locate the service
+2. @zen debug - systematic investigation
+3. @context7 Python asyncio debugging patterns
+```
+
 ## Technology Stack
 
 - **Python 3.12+** with Poetry dependency management
@@ -112,22 +136,22 @@ pending_commands = [cmd for cmd in pending_commands
 - **DiagnosticsHandler** (`backend/integrations/diagnostics/handler.py`): Cross-protocol diagnostics with fault correlation
 - **PerformanceAnalyticsFeature** (`backend/integrations/analytics/feature.py`): Performance monitoring with Prometheus metrics
 
-#### Service Access Pattern (UPDATED - Use dependencies_v2)
+#### Service Access Pattern (UPDATED December 2024)
 ```python
-# 🚨 CRITICAL: ALWAYS use dependencies_v2 for service access
-from backend.core.dependencies_v2 import (
-    get_feature_manager, get_entity_service, get_app_state,
+# 🚨 CRITICAL: ALWAYS use backend.core.dependencies for service access
+from backend.core.dependencies import (
+    get_feature_manager, get_entity_service,
     get_database_manager, get_persistence_service, get_config_service,
     get_can_service, get_can_interface_service, get_websocket_manager
 )
 
 # Multi-Protocol Service Dependencies (REQUIRED for advanced integrations)
-from backend.core.dependencies_v2 import (
+from backend.core.dependencies import (
     get_j1939_service, get_firefly_service, get_spartan_k2_service,
     get_multi_network_manager, get_diagnostics_handler, get_performance_analytics
 )
 
-# ALWAYS use type annotations with Depends()
+# ALWAYS use type annotations with Annotated[Type, Depends()]
 from typing import Annotated
 from fastapi import Depends
 
@@ -137,6 +161,12 @@ async def get_entities(
     feature_manager: Annotated[FeatureManager, Depends(get_feature_manager)]
 ):
     """Use EntityService for entity operations, FeatureManager for feature access."""
+
+# ❌ NEVER DO THIS:
+# - Direct app.state access: request.app.state.entity_service
+# - Old patterns: get_entity_service_from_request(request)
+# - Global variables: global_entity_service = EntityService()
+# - app_state in constructors: EntityService(app_state=app_state)
     entities = await entity_service.list_entities()  # Note: method names may differ
     return entities
 
@@ -164,34 +194,52 @@ async def get_network_status(
     return {"networks": network_health, "performance": performance_metrics}
 ```
 
-#### Feature Registration Pattern
+#### Service Registration Pattern
 ```python
-# ALL features must extend Feature base class and register with FeatureManager
-from backend.services.feature_base import Feature
-from backend.services.feature_manager import FeatureManager
+# Services are registered with ServiceRegistry using dependency injection
+from backend.core.service_registry import ServiceRegistry
 
-class MyFeature(Feature):
-    def __init__(self, friendly_name: str = "My Feature"):
-        super().__init__(friendly_name)
-
-    async def start(self) -> None:
-        """Initialize feature resources."""
-        pass
-
-    async def stop(self) -> None:
-        """Cleanup feature resources."""
-        pass
-
-# Register in feature_manager.py
-feature_manager = FeatureManager()
-feature_manager.register_feature("my_feature", MyFeature())
+# Services should be registered in backend/core/services.py
+def register_services(service_registry: ServiceRegistry):
+    """Register all application services."""
+    service_registry.register_service(
+        name="my_service",
+        factory=lambda: MyService(),
+        dependencies=["dependency1", "dependency2"]
+    )
 ```
 
 ### Service-Oriented Architecture
+
+#### Service Constructor Pattern (TARGET STATE)
+```python
+# ✅ ONLY PATTERN TO USE: Repository injection only
+class MyService:
+    def __init__(
+        self,
+        # Required repositories
+        my_repository: MyRepository,
+        other_repository: OtherRepository,
+        # Optional config
+        config: dict[str, Any] | None = None,
+        # NO app_state parameter!
+    ):
+        self._my_repository = my_repository
+        self._other_repository = other_repository
+        self._config = config or {}
+
+# ❌ DELETE ON SIGHT: Any service with app_state
+class BadService:
+    def __init__(self, app_state: AppState):  # DELETE THIS CLASS
+        self.app_state = app_state
+```
+
 - **Domain Services**: Business logic in `backend/services/` (e.g., `entity_service.py`, `can_service.py`)
 - **Models**: Pydantic models in `backend/models/` for data validation
 - **API Routers**: FastAPI routers in `backend/api/routers/` organized by domain
 - **Core Components**: Management services in `backend/core/` and `backend/services/`
+- **Migration Adapters**: Gradual V1→V2 migration via `*_migration_adapter.py` files
+- **Service Facades**: Monolithic services can delegate to specialized Group 2 services
 
 ### Feature Management System
 - **Feature Flags**: YAML-driven configuration in `backend/services/feature_flags.yaml`
@@ -221,6 +269,38 @@ These services handle specific business domains and should be used via dependenc
 - **RVCService**: RV-C protocol-specific operations, message translation
 - **DashboardService**: Dashboard data aggregation, activity feeds, bulk operations
 - **WebSocketManager**: Client connection management, real-time broadcasting
+
+### NO Migration Patterns - Target State Only
+
+#### Service Implementation
+```python
+# ✅ ONLY USE V2 IMPLEMENTATIONS
+entity_service: Annotated[EntityServiceV2, Depends(get_entity_service)]
+# Should ONLY return EntityServiceV2, never adapters
+
+# ❌ DELETE THESE FILES:
+# - entity_service_migration_adapter.py
+# - can_service_migration_adapter.py
+# - rvc_service_migration_adapter.py
+# - Any *_migration_adapter.py files
+```
+
+#### Specialized Services (Use Directly)
+```python
+# Instead of facades, use specialized services directly:
+entity_query_service: Annotated[EntityQueryService, Depends(get_entity_query_service)]
+entity_control_service: Annotated[EntityControlService, Depends(get_entity_control_service)]
+entity_management_service: Annotated[EntityManagementService, Depends(get_entity_management_service)]
+```
+
+#### Feature Flags to Remove
+```yaml
+# DELETE these feature flags from backend/services/feature_flags.yaml:
+# - USE_ENTITY_SERVICE_V2
+# - USE_CAN_SERVICE_V2
+# - repository_pattern migration settings
+# - Any V1/V2 selection flags
+```
 
 ### Advanced Protocol Integration Patterns (NEW)
 For comprehensive RV and chassis system integration:

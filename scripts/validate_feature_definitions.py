@@ -39,7 +39,9 @@ def load_yaml_features(yaml_path: Path) -> dict[str, Any]:
         sys.exit(1)
 
 
-def validate_features(features_data: dict[str, Any], verbose: bool = False) -> FeatureConfigurationSet:
+def validate_features(
+    features_data: dict[str, Any], verbose: bool = False
+) -> FeatureConfigurationSet:
     """Validate features against Pydantic models."""
 
     print(f"🔍 Validating {len(features_data)} feature definitions...")
@@ -92,7 +94,7 @@ def validate_features(features_data: dict[str, Any], verbose: bool = False) -> F
 def analyze_feature_set(config_set: FeatureConfigurationSet, verbose: bool = False) -> None:
     """Analyze and report on the feature set."""
 
-    print(f"\n📊 Feature Set Analysis:")
+    print("\n📊 Feature Set Analysis:")
     print(f"  Total Features: {len(config_set.features)}")
 
     # Count by safety classification
@@ -111,17 +113,17 @@ def analyze_feature_set(config_set: FeatureConfigurationSet, verbose: bool = Fal
     critical_features = config_set.get_critical_features()
     toggleable_features = config_set.get_toggleable_features()
 
-    print(f"\n🛡️  Safety Analysis:")
+    print("\n🛡️  Safety Analysis:")
     print(f"  Safety-Critical Features: {len(critical_features)}")
     print(f"  Runtime Toggleable Features: {len(toggleable_features)}")
 
     # Dependency analysis
     startup_order = config_set.get_startup_order()
-    print(f"\n🚀 Startup Order (first 10):")
+    print("\n🚀 Startup Order (first 10):")
     for i, feature_name in enumerate(startup_order[:10]):
         feature_def = config_set.features[feature_name]
         deps = ", ".join(feature_def.dependencies) if feature_def.dependencies else "none"
-        print(f"  {i+1:2d}. {feature_name} (deps: {deps})")
+        print(f"  {i + 1:2d}. {feature_name} (deps: {deps})")
 
     if len(startup_order) > 10:
         print(f"     ... and {len(startup_order) - 10} more")
@@ -130,19 +132,21 @@ def analyze_feature_set(config_set: FeatureConfigurationSet, verbose: bool = Fal
 def generate_migration_report(config_set: FeatureConfigurationSet) -> None:
     """Generate a report for migrating from old core/enabled structure."""
 
-    print(f"\n📝 Migration Report:")
+    print("\n📝 Migration Report:")
 
     # Find features that might need attention
     critical_features = config_set.get_features_by_classification(SafetyClassification.CRITICAL)
-    position_critical = config_set.get_features_by_classification(SafetyClassification.POSITION_CRITICAL)
+    position_critical = config_set.get_features_by_classification(
+        SafetyClassification.POSITION_CRITICAL
+    )
 
     if critical_features:
-        print(f"\n⚠️  Critical Features (cannot be toggled at runtime):")
+        print("\n⚠️  Critical Features (cannot be toggled at runtime):")
         for feature in critical_features:
             print(f"  - {feature.name}: {feature.description}")
 
     if position_critical:
-        print(f"\n🔒 Position-Critical Features (maintain position in safe state):")
+        print("\n🔒 Position-Critical Features (maintain position in safe state):")
         for feature in position_critical:
             print(f"  - {feature.name}: {feature.description}")
 
@@ -153,18 +157,25 @@ def generate_migration_report(config_set: FeatureConfigurationSet) -> None:
         # Check if safety classification matches expected patterns
         if "slide" in feature.name.lower() or "awning" in feature.name.lower():
             if feature.safety_classification != SafetyClassification.POSITION_CRITICAL:
-                issues.append(f"'{feature.name}' controls physical positioning but is not position_critical")
+                issues.append(
+                    f"'{feature.name}' controls physical positioning but is not position_critical"
+                )
 
         if "brake" in feature.name.lower() or "steering" in feature.name.lower():
-            if feature.safety_classification not in [SafetyClassification.CRITICAL, SafetyClassification.SAFETY_RELATED]:
-                issues.append(f"'{feature.name}' appears safety-related but has classification: {feature.safety_classification}")
+            if feature.safety_classification not in [
+                SafetyClassification.CRITICAL,
+                SafetyClassification.SAFETY_RELATED,
+            ]:
+                issues.append(
+                    f"'{feature.name}' appears safety-related but has classification: {feature.safety_classification}"
+                )
 
     if issues:
-        print(f"\n⚠️  Potential Classification Issues:")
+        print("\n⚠️  Potential Classification Issues:")
         for issue in issues:
             print(f"  - {issue}")
     else:
-        print(f"\n✅ No obvious classification issues detected")
+        print("\n✅ No obvious classification issues detected")
 
 
 def main():
@@ -174,17 +185,18 @@ def main():
         "--yaml-path",
         type=Path,
         default=Path(__file__).parent.parent / "backend" / "services" / "feature_flags.yaml",
-        help="Path to feature_flags.yaml file"
+        help="Path to feature_flags.yaml file",
     )
     parser.add_argument(
-        "--verbose", "-v",
+        "--verbose",
+        "-v",
         action="store_true",
-        help="Verbose output showing details for each feature"
+        help="Verbose output showing details for each feature",
     )
     parser.add_argument(
         "--migration-report",
         action="store_true",
-        help="Generate migration report for safety classifications"
+        help="Generate migration report for safety classifications",
     )
 
     args = parser.parse_args()
@@ -194,7 +206,7 @@ def main():
         print(f"❌ YAML file not found: {args.yaml_path}")
         sys.exit(1)
 
-    print(f"🔧 Feature Definitions Validator")
+    print("🔧 Feature Definitions Validator")
     print(f"📄 YAML File: {args.yaml_path}")
     print("=" * 60)
 
@@ -202,7 +214,7 @@ def main():
     features_data = load_yaml_features(args.yaml_path)
     config_set = validate_features(features_data, verbose=args.verbose)
 
-    print(f"✅ All feature definitions are valid!")
+    print("✅ All feature definitions are valid!")
 
     # Generate analysis
     analyze_feature_set(config_set, verbose=args.verbose)
@@ -211,7 +223,7 @@ def main():
     if args.migration_report:
         generate_migration_report(config_set)
 
-    print(f"\n🎉 Validation completed successfully!")
+    print("\n🎉 Validation completed successfully!")
 
 
 if __name__ == "__main__":

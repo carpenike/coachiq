@@ -23,32 +23,35 @@ logger = logging.getLogger(__name__)
 
 class DependencyError(Exception):
     """Raised when dependency resolution fails."""
-    pass
 
 
 class DependencyType(Enum):
     """Types of service dependencies."""
+
     REQUIRED = "required"  # Service cannot start without this dependency
     OPTIONAL = "optional"  # Service can start but with reduced functionality
-    RUNTIME = "runtime"    # Dependency needed only after startup
+    RUNTIME = "runtime"  # Dependency needed only after startup
 
 
 @dataclass
 class ServiceDependency:
     """Enhanced dependency information."""
+
     name: str
     type: DependencyType = DependencyType.REQUIRED
-    version: Optional[str] = None
-    fallback: Optional[str] = None  # Alternative service if primary unavailable
+    version: str | None = None
+    fallback: str | None = None  # Alternative service if primary unavailable
+    inject_as: str | None = None  # Parameter name for dependency injection
 
 
 @dataclass
 class DependencyNode:
     """Node in the dependency graph."""
+
     name: str
-    dependencies: List[ServiceDependency]
-    dependents: Set[str]  # Services that depend on this one
-    stage: Optional[int] = None
+    dependencies: list[ServiceDependency]
+    dependents: set[str]  # Services that depend on this one
+    stage: int | None = None
     depth: int = 0  # Distance from root nodes
 
 
@@ -61,17 +64,13 @@ class ServiceDependencyResolver:
     """
 
     def __init__(self):
-        self._nodes: Dict[str, DependencyNode] = {}
-        self._dependency_graph: Dict[str, Set[str]] = defaultdict(set)
-        self._reverse_graph: Dict[str, Set[str]] = defaultdict(set)
-        self._stages: Dict[int, List[str]] = {}
-        self._circular_paths: List[List[str]] = []
+        self._nodes: dict[str, DependencyNode] = {}
+        self._dependency_graph: dict[str, set[str]] = defaultdict(set)
+        self._reverse_graph: dict[str, set[str]] = defaultdict(set)
+        self._stages: dict[int, list[str]] = {}
+        self._circular_paths: list[list[str]] = []
 
-    def add_service(
-        self,
-        name: str,
-        dependencies: List[ServiceDependency]
-    ) -> None:
+    def add_service(self, name: str, dependencies: list[ServiceDependency]) -> None:
         """
         Add a service with its dependencies.
 
@@ -79,11 +78,7 @@ class ServiceDependencyResolver:
             name: Service name
             dependencies: List of service dependencies
         """
-        node = DependencyNode(
-            name=name,
-            dependencies=dependencies,
-            dependents=set()
-        )
+        node = DependencyNode(name=name, dependencies=dependencies, dependents=set())
         self._nodes[name] = node
 
         # Build dependency graphs
@@ -92,7 +87,7 @@ class ServiceDependencyResolver:
                 self._dependency_graph[name].add(dep.name)
                 self._reverse_graph[dep.name].add(name)
 
-    def resolve_dependencies(self) -> Dict[int, List[str]]:
+    def resolve_dependencies(self) -> dict[int, list[str]]:
         """
         Resolve all dependencies and calculate optimal startup stages.
 
@@ -151,7 +146,7 @@ class ServiceDependencyResolver:
         visited = set()
         rec_stack = set()
 
-        def dfs(node: str, path: List[str]) -> bool:
+        def dfs(node: str, path: list[str]) -> bool:
             visited.add(node)
             rec_stack.add(node)
             path.append(node)
@@ -180,8 +175,8 @@ class ServiceDependencyResolver:
                         cycles_str.append(" → ".join(cycle))
 
                     raise DependencyError(
-                        f"Circular dependencies detected:\n" +
-                        "\n".join(f"  • {cycle}" for cycle in cycles_str)
+                        "Circular dependencies detected:\n"
+                        + "\n".join(f"  • {cycle}" for cycle in cycles_str)
                     )
 
     def _calculate_stages(self) -> None:
@@ -238,10 +233,7 @@ class ServiceDependencyResolver:
     def _calculate_depths(self) -> None:
         """Calculate depth of each node from root nodes."""
         # Find root nodes (no dependencies)
-        roots = [
-            name for name, deps in self._dependency_graph.items()
-            if not deps
-        ]
+        roots = [name for name, deps in self._dependency_graph.items() if not deps]
 
         # Add nodes with no entry in dependency graph (isolated nodes)
         for name in self._nodes:
@@ -307,13 +299,11 @@ class ServiceDependencyResolver:
         for stage_num in sorted(self._stages.keys()):
             services = self._stages[stage_num]
             if len(services) > 1:
-                lines.append(
-                    f"  Stage {stage_num}: {len(services)} services can start in parallel"
-                )
+                lines.append(f"  Stage {stage_num}: {len(services)} services can start in parallel")
 
         return "\n".join(lines)
 
-    def get_startup_order(self) -> List[str]:
+    def get_startup_order(self) -> list[str]:
         """
         Get flat list of services in startup order.
 
@@ -325,10 +315,7 @@ class ServiceDependencyResolver:
             order.extend(sorted(self._stages[stage_num]))
         return order
 
-    def validate_runtime_dependencies(
-        self,
-        available_services: Set[str]
-    ) -> Dict[str, List[str]]:
+    def validate_runtime_dependencies(self, available_services: set[str]) -> dict[str, list[str]]:
         """
         Validate runtime dependencies are satisfied.
 
@@ -355,7 +342,7 @@ class ServiceDependencyResolver:
 
         return missing
 
-    def get_impacted_services(self, failed_service: str) -> Set[str]:
+    def get_impacted_services(self, failed_service: str) -> set[str]:
         """
         Get all services impacted by a service failure.
 

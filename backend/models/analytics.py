@@ -86,9 +86,7 @@ class AnalyticsMetric(Base, TimestampMixin):
         String(255), nullable=False, index=True, comment="Name of the metric"
     )
 
-    value: Mapped[float] = mapped_column(
-        Float, nullable=False, comment="Metric value"
-    )
+    value: Mapped[float] = mapped_column(Float, nullable=False, comment="Metric value")
 
     baseline_deviation: Mapped[float] = mapped_column(
         Float, nullable=False, default=0.0, comment="Percentage deviation from baseline"
@@ -157,9 +155,7 @@ class AnalyticsInsight(Base, TimestampMixin):
         String(100), nullable=False, index=True, comment="Insight category"
     )
 
-    title: Mapped[str] = mapped_column(
-        String(500), nullable=False, comment="Insight title"
-    )
+    title: Mapped[str] = mapped_column(String(500), nullable=False, comment="Insight title")
 
     description: Mapped[str | None] = mapped_column(
         Text, nullable=True, comment="Detailed insight description"
@@ -169,7 +165,7 @@ class AnalyticsInsight(Base, TimestampMixin):
         String(20),
         nullable=False,
         index=True,
-        comment="Severity level (low, medium, high, critical)"
+        comment="Severity level (low, medium, high, critical)",
     )
 
     confidence: Mapped[float] = mapped_column(
@@ -256,7 +252,7 @@ class AnalyticsPattern(Base, TimestampMixin):
         String(100),
         nullable=False,
         index=True,
-        comment="Pattern type (cyclical, trending, anomalous, baseline)"
+        comment="Pattern type (cyclical, trending, anomalous, baseline)",
     )
 
     description: Mapped[str | None] = mapped_column(

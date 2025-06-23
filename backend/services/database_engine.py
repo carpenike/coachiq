@@ -322,7 +322,7 @@ class DatabaseEngine:
             logger.info(
                 "Initializing database engine for %s with URL: %s://***",
                 self._settings.backend.value,
-                database_url.split("://", 1)[0]
+                database_url.split("://", 1)[0],
             )
 
             self._engine = create_async_engine(database_url, **engine_kwargs)

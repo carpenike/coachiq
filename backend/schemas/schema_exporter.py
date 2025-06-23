@@ -45,9 +45,7 @@ class ZodSchemaExporter:
 
         for name, schema_class in cls.SCHEMA_REGISTRY.items():
             try:
-                if hasattr(schema_class, "to_zod_schema") and callable(
-                    schema_class.to_zod_schema
-                ):
+                if hasattr(schema_class, "to_zod_schema") and callable(schema_class.to_zod_schema):
                     schemas[name] = schema_class.to_zod_schema()  # type: ignore
                 else:
                     # Fallback to basic Pydantic schema conversion
@@ -78,9 +76,7 @@ class ZodSchemaExporter:
 
         schema_class = cls.SCHEMA_REGISTRY[schema_name]
 
-        if hasattr(schema_class, "to_zod_schema") and callable(
-            schema_class.to_zod_schema
-        ):
+        if hasattr(schema_class, "to_zod_schema") and callable(schema_class.to_zod_schema):
             return schema_class.to_zod_schema()  # type: ignore
         return cls._convert_pydantic_to_zod(schema_class)
 
@@ -149,9 +145,7 @@ class ZodSchemaExporter:
         for name, schema_class in cls.SCHEMA_REGISTRY.items():
             try:
                 # Attempt to export the schema
-                if hasattr(schema_class, "to_zod_schema") and callable(
-                    schema_class.to_zod_schema
-                ):
+                if hasattr(schema_class, "to_zod_schema") and callable(schema_class.to_zod_schema):
                     schema_class.to_zod_schema()  # type: ignore
                 else:
                     cls._convert_pydantic_to_zod(schema_class)

@@ -2,21 +2,40 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
-## 🚨 CRITICAL UPDATE: Service Access Patterns Have Changed
+## 🚨 CRITICAL: Target Architecture (Pre-Release Development)
 
-**IMPORTANT**: The codebase has completed a major architectural transformation. All service access now uses modern dependency injection patterns through `backend.core.dependencies_v2`.
+**IMPORTANT**: We are in pre-release development. Make breaking changes to reach the ideal architecture. Do NOT maintain backward compatibility.
 
-**DO NOT USE**:
-- ❌ `backend.core.dependencies` (old module)
-- ❌ `get_*_from_request()` functions
-- ❌ Direct `app.state.*` access
-- ❌ Global service variables
+**TARGET PATTERNS ONLY**:
+- ✅ `backend.core.dependencies` for all service access
+- ✅ FastAPI `Depends()` with `Annotated[Type, Depends()]` pattern
+- ✅ ServiceRegistry for service lifecycle management
+- ✅ Repository injection ONLY (no app_state parameters)
+- ✅ Facades PREFERRED for safety-critical coordination
+- ✅ Direct repository usage in simple services
 
-**ALWAYS USE**:
-- ✅ `backend.core.dependencies_v2`
-- ✅ FastAPI `Depends()` with type annotations
-- ✅ ServiceRegistry for service lifecycle
-- ✅ See [`service-patterns.md`](.claude/instructions/service-patterns.md) for details
+**REMOVE ON SIGHT**:
+- ❌ ALL `app_state` parameters in constructors
+- ❌ ALL migration adapters (EntityServiceMigrationAdapter, etc.)
+- ❌ ALL V1 service implementations
+- ❌ ALL compatibility facades (for backward compatibility only)
+- ❌ ALL backward compatibility code
+- ❌ ALL feature flags for V1/V2 selection
+- ❌ ALL FeatureManager usage and references
+
+**KEEP AND PREFER THESE**:
+- ✅ **Safety-critical facades** (RVCProtocolFacade, SafetyOperationsFacade, EntityControlFacade)
+- ✅ **Multi-service coordination facades** (audit trails, real-time operations)
+- ✅ **Complex subsystem facades** (DatabaseManager, AuthManager)
+- ✅ **Facades that enforce safety boundaries** and centralized validation
+
+**WHEN YOU ENCOUNTER LEGACY CODE**:
+- DELETE the old implementation
+- REPLACE with clean V2 implementation
+- DO NOT add deprecation warnings
+- DO NOT maintain compatibility
+- DO NOT create adapters
+- Just make it work the right way
 
 ## Modular Claude Instructions
 
@@ -32,6 +51,8 @@ Each file contains targeted guidance for specific development workflows and cont
 - [`api-patterns.md`](.claude/instructions/api-patterns.md): Entity control, WebSocket, and REST API patterns
 - [`domain-api.md`](.claude/instructions/domain-api.md): Domain API v2 development patterns, bulk operations, and migration strategies
 - 🆕 [`service-patterns.md`](.claude/instructions/service-patterns.md): **CRITICAL - Modern service access patterns, ServiceRegistry, and dependency injection**
+- 🆕 [`safety-system-patterns.md`](.claude/instructions/safety-system-patterns.md): **CRITICAL - ISO 26262-compliant safety patterns, SafetyServiceRegistry, and emergency stop coordination**
+- 🆕 [`security-patterns.md`](.claude/instructions/security-patterns.md): **CRITICAL - Security best practices, authentication, rate limiting, and sensitive data protection**
 
 **Available commands:**
 
@@ -54,6 +75,7 @@ Each file contains targeted guidance for specific development workflows and cont
 - `/check-service-health` - Verify all services have proper health checks and dependencies
 - `/check-memory-safety` - Ensure memory management patterns for real-time CAN operations
 - `/check-safety-patterns` - Verify safety-critical patterns for RV-C vehicle control
+- `/check-security-patterns` - Audit code for security best practices and vulnerabilities
 - `/check-async-patterns` - Validate proper async/await usage and identify blocking operations
 - `/check-tech-debt` - Find and categorize TODOs, FIXMEs, and technical debt
 - `/dev-health-check` - Comprehensive development environment health diagnostics
@@ -66,6 +88,7 @@ Each file contains targeted guidance for specific development workflows and cont
 - **All Python scripts must be run using Poetry.** Use `poetry run python <script>.py` or `poetry run <command>`, never `python <script>.py` directly.
 - **MANDATORY CODE QUALITY GATES**: ALL code changes must pass linting, type checking, and build verification BEFORE proceeding to the next task. Run quality checks incrementally throughout development, not just at the end.
 - **SAFETY-CRITICAL VALIDATION**: This is an RV-C vehicle control system. Code quality failures can result in dangerous malfunctions. ALL safety-critical validation MUST pass.
+- **SECURITY-FIRST DEVELOPMENT**: Security vulnerabilities can lead to vehicle compromise. Follow security patterns in `.claude/instructions/security-patterns.md` without exception. No hardcoded secrets, no fallback values, proper rate limiting, and sensitive data protection are MANDATORY.
 - **Use Domain API v2 for new development**: All new API integrations should use `/api/v2/{domain}` endpoints (e.g., `/api/v2/entities`) with domain-driven architecture patterns.
 - **Legacy API compatibility**: Legacy `/api/entities` endpoints remain available but prefer Domain API v2 for enhanced features, bulk operations, and better performance.
 - **All API endpoints require comprehensive documentation** with examples, descriptions, and response schemas to maintain the OpenAPI specification.
@@ -228,16 +251,14 @@ const result = await executeBulkOperation({ command: { command: 'set', state: fa
 3. **Verify** - Run `nix flake check` to ensure Nix build compatibility
 
 ### When Adding New Features or Protocols:
-1. **`backend/services/feature_flags.yaml`** - Add feature definition with dependencies and configuration
-2. **`flake.nix`** - Add NixOS module options in the `settings` section
-3. **`flake.nix`** - Add environment variable mapping in the `systemd.services.coachiq.environment` section
-4. **`.env.example`** - Add example environment variables with documentation
-5. **Documentation** - Update relevant files in `docs/` if applicable
+1. **`flake.nix`** - Add NixOS module options in the `settings` section
+2. **`flake.nix`** - Add environment variable mapping in the `systemd.services.coachiq.environment` section
+3. **`.env.example`** - Add example environment variables with documentation
+4. **Documentation** - Update relevant files in `docs/` if applicable
 
 ### Configuration File Checklist:
 ```bash
 # When adding features, verify these files are updated:
-□ backend/services/feature_flags.yaml    # Feature definition
 □ flake.nix (settings section)           # NixOS module options
 □ flake.nix (environment section)        # Environment variable mapping
 □ .env.example                           # Environment variable examples
@@ -252,19 +273,15 @@ const result = await executeBulkOperation({ command: { command: 'set', state: fa
 - **Protocol settings**: `COACHIQ_PROTOCOL__SETTING` (e.g., `COACHIQ_RVC__ENABLE_ENCODER`)
 
 ### Example: Adding a New Protocol
-```yaml
-# 1. backend/services/feature_flags.yaml
-new_protocol:
-  enabled: false
-  core: false
-  depends_on: [can_interface]
-  description: "New protocol integration"
-  custom_setting: true
-```
 
 ```nix
-# 2. flake.nix - Add to settings section
+# 1. flake.nix - Add to settings section
 newProtocol = {
+  enabled = lib.mkOption {
+    type = lib.types.bool;
+    default = false;
+    description = "Enable new protocol integration";
+  };
   customSetting = lib.mkOption {
     type = lib.types.bool;
     default = true;
@@ -272,13 +289,13 @@ newProtocol = {
   };
 };
 
-# 3. flake.nix - Add to environment section
-COACHIQ_NEW_PROTOCOL__ENABLED = lib.mkIf config.coachiq.settings.features.enableNewProtocol "true";
+# 2. flake.nix - Add to environment section
+COACHIQ_NEW_PROTOCOL__ENABLED = lib.mkIf config.coachiq.settings.newProtocol.enabled "true";
 COACHIQ_NEW_PROTOCOL__CUSTOM_SETTING = lib.mkIf (!config.coachiq.settings.newProtocol.customSetting) "false";
 ```
 
 ```bash
-# 4. .env.example - Add documentation
+# 3. .env.example - Add documentation
 # =============================================================================
 # NEW PROTOCOL CONFIGURATION
 # =============================================================================
@@ -292,7 +309,6 @@ COACHIQ_NEW_PROTOCOL__CUSTOM_SETTING=true
 
 | File | Purpose | Update When |
 |------|---------|-------------|
-| `backend/services/feature_flags.yaml` | Feature definitions and settings | Adding any new feature or capability |
 | `flake.nix` (settings section) | NixOS module configuration options | Adding configurable parameters |
 | `flake.nix` (environment section) | Environment variable mapping for systemd | Adding any new setting |
 | `.env.example` | Environment variable documentation | Adding any new environment variable |
@@ -307,9 +323,8 @@ CoachIQ is an intelligent RV-C network management system with advanced analytics
 
 **Key Architecture:**
 
-- **Backend**: FastAPI-based service-oriented architecture with feature management system
+- **Backend**: FastAPI-based service-oriented architecture with ServiceRegistry
 - **Frontend**: Modern React SPA with Vite, TypeScript, TailwindCSS, and shadcn/ui
-- **Feature System**: YAML-driven feature flags with dependency resolution (backend/services/feature_flags.yaml)
 - **Configuration**: Pydantic-based settings with environment variable support
 - **CAN Integration**: Multiple CAN interface support with RV-C protocol decoding
 
@@ -399,12 +414,11 @@ nix run .#ci            # Full CI suite
 ### Backend Structure
 
 - **ServiceRegistry**: Centralized service lifecycle management with dependency resolution
-- **Feature Management**: Features defined in `backend/services/feature_flags.yaml` with dependency resolution
 - **Services**: Service classes in `backend/services/` handle business logic
 - **Models**: Pydantic models in `backend/models/` for data validation
 - **API Routers**: FastAPI routers in `backend/api/routers/` organized by domain
 - **Configuration**: Centralized in `backend/core/config.py` using Pydantic Settings
-- **Dependencies**: Modern dependency injection via `backend/core/dependencies_v2.py` (NOT dependencies.py)
+- **Dependencies**: Modern dependency injection via `backend/core/dependencies.py`
 
 ### Frontend Structure
 
@@ -434,19 +448,10 @@ COACHIQ_CAN__INTERFACES=can0,can1
 COACHIQ_FEATURES__ENABLE_VECTOR_SEARCH=true
 ```
 
-### Feature Flags
-
-Features can be enabled/disabled via:
-
-1. `backend/services/feature_flags.yaml` (default configuration)
-2. Environment variables: `COACHIQ_FEATURES__ENABLE_FEATURE_NAME=true`
-3. Settings overrides in code
-
 ### Configuration Files
 
 - **RV-C Spec**: `config/rvc.json` (bundled resources prioritized for Nix compatibility)
 - **Coach Mapping**: `config/coach_mapping.default.yml` or `config/{model}.yml`
-- **Feature Flags**: `backend/services/feature_flags.yaml`
 
 ## Testing
 
@@ -533,7 +538,7 @@ Features can be enabled/disabled via:
 ### Service Access Patterns (CRITICAL - NEW)
 
 **MANDATORY**: All new code MUST use the modern service access patterns:
-1. Import from `backend.core.dependencies_v2` (never use the old dependencies.py)
+1. Import from `backend.core.dependencies`
 2. Use `Annotated[Type, Depends(get_service)]` for type-safe dependency injection
 3. Never access `app.state` directly - always use ServiceRegistry through DI
 4. Run `/check-service-patterns` to verify your code follows modern patterns
@@ -580,36 +585,196 @@ This helps verify that components work correctly during development without manu
 
 ## MCP Tools Integration
 
-**IMPORTANT**: Always default to `@context7` for any library or framework questions before falling back to LLM-generated answers. This ensures you get current, correct API information rather than outdated or hallucinated answers.
+**IMPORTANT**: Use the appropriate MCP server for each task to ensure efficient and accurate development. Each MCP server has specific strengths and should be used according to the decision matrix below.
 
-### Priority Order for Research:
-1. **@context7**: For library/framework questions (FastAPI, React, TypeScript, Python libraries)
-2. **@perplexity**: For general concepts, protocols, and research not found in codebase
-3. **@github**: For repository exploration, issue research, and project history
+### Available MCP Servers
 
-### Example Usage:
-- `@context7 FastAPI WebSocket authentication patterns`
-- `@context7 React useState with TypeScript generics`
-- `@context7 Pydantic model with nested validation`
-- `@perplexity CANbus protocol best practices`
-- `@github search repository issues related to WebSocket reconnection`
+1. **@context7** - Library & Framework Documentation
+   - **Use for**: FastAPI, React, TypeScript, Python libraries, framework-specific patterns
+   - **Strengths**: Up-to-date API documentation, correct usage examples, best practices
+   - **Example**: `@context7 FastAPI dependency injection with Annotated`
 
-### Project Context Queries:
-- `@context7 Domain API v2 development patterns` (reference: `docs/development/domain-api-development.md`)
-- `@context7 bulk operations implementation` (reference: `docs/api/domain-api-v2.md`)
-- `@context7 entity service implementation patterns`
-- `@context7 API migration strategies` (reference: `docs/migration/legacy-to-domain-api-migration.md`)
-- `@context7 existing component architecture`
-- `@context7 API endpoint documentation examples`
-- `@context7 WebSocket message handling patterns`
+2. **@perplexity** - Web Research & General Concepts
+   - **Use for**: Protocols, general concepts, industry standards, external research
+   - **Strengths**: Real-time information, broad knowledge base, cited sources
+   - **Example**: `@perplexity RV-C J1939 protocol specifications`
 
-### Team Configuration
+3. **@github** - Repository & Code Exploration
+   - **Use for**: Issue tracking, repository history, code search across GitHub
+   - **Strengths**: Repository insights, issue patterns, community solutions
+   - **Example**: `@github search similar WebSocket reconnection issues`
 
-The project includes `.mcp.json` configuration for team-wide MCP tool access:
-- **context7**: Up-to-date library documentation and examples
-- **github**: Repository and issue exploration
-- **perplexity**: External research capabilities
-- **filesystem**: Local codebase exploration
+4. **@zen** - Code Analysis & Refactoring
+   - **Use for**: Deep code analysis, refactoring suggestions, architecture reviews, debugging
+   - **Strengths**: Multi-model consensus, comprehensive analysis, refactoring patterns
+   - **Available tools**: `thinkdeep`, `codereview`, `debug`, `analyze`, `refactor`, `testgen`
+   - **Example**: `@zen codereview` for comprehensive code quality analysis
+
+5. **@playwright** - Browser Automation & UI Testing
+   - **Use for**: UI verification during development, E2E testing, visual regression
+   - **Strengths**: Real browser interaction, accessibility testing, screenshot capture
+   - **Example**: Use `browser_snapshot()` to verify React component rendering
+
+6. **@serena** - Semantic Code Navigation
+   - **Use for**: Project-specific code exploration, symbol analysis, file navigation
+   - **Strengths**: Context-aware code understanding, efficient file traversal
+   - **Example**: `find_symbol` for precise code location and editing
+
+### MCP Server Selection Matrix
+
+| Task Type | Primary MCP Server | Secondary/Alternative |
+|-----------|-------------------|----------------------|
+| Library/Framework API questions | @context7 | @perplexity (if not in docs) |
+| Bug investigation | @zen debug | @serena (for code navigation) |
+| Code quality review | @zen codereview | @serena (for symbol analysis) |
+| UI component testing | @playwright | - |
+| Protocol/Standard research | @perplexity | @context7 (for implementation) |
+| Repository exploration | @github | @serena (for local code) |
+| Refactoring suggestions | @zen refactor | @serena (for impact analysis) |
+| Test generation | @zen testgen | @context7 (for testing patterns) |
+| Architecture analysis | @zen analyze | @perplexity (for patterns) |
+| Code navigation | @serena | - |
+
+### Best Practices
+
+1. **Context-First Approach**: Always check @context7 for library-specific questions before using general research
+2. **Leverage Specialization**: Use each server for its intended purpose to get the best results
+3. **Combine for Complex Tasks**:
+   - Use @serena to navigate to code, then @zen for analysis
+   - Use @context7 for API docs, then @zen testgen for test creation
+4. **Validate with Multiple Sources**: For critical decisions, cross-reference between servers
+5. **Document Server Usage**: When sharing solutions, indicate which MCP server provided the information
+
+### Common Workflows
+
+**Debugging a Complex Issue:**
+```
+1. @serena find_symbol - Locate the problematic code
+2. @zen debug - Systematic root cause analysis
+3. @context7 - Check correct API usage
+4. @zen codereview - Verify the fix
+```
+
+**Implementing New Feature:**
+```
+1. @context7 - Research framework patterns
+2. @perplexity - Understand domain concepts
+3. @serena - Navigate existing code structure
+4. @zen analyze - Understand current architecture
+5. @playwright - Verify UI implementation
+```
+
+**Code Quality Improvement:**
+```
+1. @zen codereview - Identify issues
+2. @zen refactor - Get refactoring suggestions
+3. @serena - Navigate to affected code
+4. @zen testgen - Generate missing tests
+```
+
+### Project-Specific MCP Queries
+
+- `@context7 Domain API v2 patterns` - Modern API development patterns
+- `@zen analyze backend/services` - Service architecture review
+- `@serena find_symbol EntityService` - Navigate to entity management code
+- `@playwright browser_snapshot` - Verify UI component state
+- `@perplexity RV-C CAN bus best practices` - Protocol implementation guidance
+- `@github CoachIQ WebSocket issues` - Historical issue patterns
+
+### MCP Usage Examples & Anti-Patterns
+
+#### ✅ Good MCP Usage Patterns
+
+**Library Research - Use @context7 First:**
+```
+# GOOD: Check documentation first
+@context7 FastAPI WebSocket authentication with JWT
+
+# GOOD: Fall back to @perplexity only if needed
+@perplexity WebSocket subprotocol negotiation RFC 6455
+```
+
+**Debugging Complex Issues - Combine Tools:**
+```
+# GOOD: Use @serena to navigate, then @zen to analyze
+1. @serena find_symbol RVCService handle_message
+2. @zen debug - investigate message parsing issue
+3. @context7 asyncio exception handling patterns
+```
+
+**Code Quality - Use Specialized Tools:**
+```
+# GOOD: Use @zen for comprehensive reviews
+@zen codereview backend/services/rvc_service.py
+
+# GOOD: Generate tests with context
+@zen testgen backend/services/entity_service.py
+```
+
+#### ❌ Common Anti-Patterns to Avoid
+
+**Don't Use General Research for Library Questions:**
+```
+# BAD: Using @perplexity for library-specific questions
+@perplexity how to use FastAPI Depends
+
+# GOOD: Use @context7 for framework specifics
+@context7 FastAPI Depends with Annotated pattern
+```
+
+**Don't Skip Code Navigation:**
+```
+# BAD: Guessing file locations
+"I think the EntityService is in backend/services/entity_service.py"
+
+# GOOD: Use @serena to find exact locations
+@serena find_symbol EntityService
+```
+
+**Don't Use Wrong Tool for Task:**
+```
+# BAD: Using @github for local code search
+@github search this repository for WebSocket handlers
+
+# GOOD: Use @serena for local code
+@serena search_for_pattern "class.*WebSocket.*Handler"
+```
+
+**Don't Ignore Tool Specialization:**
+```
+# BAD: Manual debugging without tools
+"Let me read through this code to find the bug"
+
+# GOOD: Use @zen debug for systematic investigation
+@zen debug - WebSocket connection drops after 30 seconds
+```
+
+### MCP Integration with Project Workflows
+
+**Service Migration Pattern:**
+```
+1. @serena find_symbol OldService - Locate legacy code
+2. @zen analyze - Understand current implementation
+3. @context7 FastAPI dependency injection patterns
+4. @zen refactor - Get migration suggestions
+5. @zen codereview - Validate new implementation
+```
+
+**Feature Implementation Pattern:**
+```
+1. @context7 React hooks best practices
+2. @serena get_symbols_overview frontend/src/hooks
+3. @zen analyze - Review existing patterns
+4. @playwright browser_snapshot - Verify UI behavior
+```
+
+**Performance Investigation Pattern:**
+```
+1. @zen analyze backend/services - Find bottlenecks
+2. @perplexity Python asyncio performance patterns
+3. @zen refactor - Optimize critical paths
+4. @zen codereview - Verify improvements
+```
 
 ## important-instruction-reminders
 Do what has been asked; nothing more, nothing less.

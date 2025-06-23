@@ -9,22 +9,27 @@ import asyncio
 import logging
 import time
 from collections import defaultdict, deque
+from collections.abc import Callable
 from dataclasses import dataclass, field
-from typing import Dict, List, Optional, Callable, Any
 from enum import Enum
+from typing import Any, Dict, List, Optional
 
 logger = logging.getLogger(__name__)
 
+
 class CriticalOperation(Enum):
     """Safety-critical operations requiring deadline monitoring"""
+
     BRAKE_COMMAND = "brake_command"
     BRAKE_ACKNOWLEDGMENT = "brake_acknowledgment"
     EMERGENCY_STOP = "emergency_stop"
     SAFETY_INTERLOCK = "safety_interlock"
 
+
 @dataclass
 class DeadlineViolation:
     """Records a safety deadline violation"""
+
     operation: CriticalOperation
     entity_id: str
     command_timestamp: float
@@ -32,18 +37,21 @@ class DeadlineViolation:
     deadline_ms: float
     actual_response_time_ms: float
     severity: str  # "WARNING", "CRITICAL"
-    pgn: Optional[int] = None
-    data: Optional[str] = None
+    pgn: int | None = None
+    data: str | None = None
+
 
 @dataclass
 class SafetyMetrics:
     """Safety performance metrics for health monitoring"""
+
     total_operations: int = 0
     deadline_violations: int = 0
     critical_violations: int = 0
     average_response_time_ms: float = 0.0
     max_response_time_ms: float = 0.0
-    last_violation_time: Optional[float] = None
+    last_violation_time: float | None = None
+
 
 class BrakeSafetyMonitor:
     """
@@ -73,10 +81,10 @@ class BrakeSafetyMonitor:
     }
 
     def __init__(self):
-        self.pending_operations: Dict[str, Dict[str, Any]] = {}
+        self.pending_operations: dict[str, dict[str, Any]] = {}
         self.deadline_violations: deque = deque(maxlen=1000)  # Keep last 1000 violations
         self.metrics = SafetyMetrics()
-        self.violation_callbacks: List[Callable] = []
+        self.violation_callbacks: list[Callable] = []
         self._enabled = True
 
         logger.info("Brake safety monitor initialized with 50ms deadline monitoring")
@@ -89,7 +97,8 @@ class BrakeSafetyMonitor:
         # Consider unhealthy if critical violations in last 5 minutes
         cutoff_time = time.time() - 300  # 5 minutes ago
         recent_critical = sum(
-            1 for v in self.deadline_violations
+            1
+            for v in self.deadline_violations
             if v.response_timestamp > cutoff_time and v.severity == "CRITICAL"
         )
 
@@ -99,19 +108,20 @@ class BrakeSafetyMonitor:
         """Get IETF-compliant health status"""
         if not self._enabled:
             return "disabled"
-        elif not self.is_healthy():
+        if not self.is_healthy():
             return "failed"
-        elif self.deadline_violations and self.deadline_violations[-1].response_timestamp > (time.time() - 60):
+        if self.deadline_violations and self.deadline_violations[-1].response_timestamp > (
+            time.time() - 60
+        ):
             return "degraded"  # Warning violations in last minute
-        else:
-            return "healthy"
+        return "healthy"
 
     async def track_critical_operation(
         self,
         operation: CriticalOperation,
         entity_id: str,
-        pgn: Optional[int] = None,
-        command_data: Optional[Dict] = None
+        pgn: int | None = None,
+        command_data: dict | None = None,
     ) -> str:
         """
         Start tracking a critical operation with deadline monitoring.
@@ -145,10 +155,8 @@ class BrakeSafetyMonitor:
         return operation_id
 
     async def complete_critical_operation(
-        self,
-        operation_id: str,
-        response_data: Optional[Dict] = None
-    ) -> Optional[DeadlineViolation]:
+        self, operation_id: str, response_data: dict | None = None
+    ) -> DeadlineViolation | None:
         """
         Mark operation as complete and check for deadline violations.
 
@@ -164,9 +172,9 @@ class BrakeSafetyMonitor:
         # Update metrics
         self.metrics.total_operations += 1
         self.metrics.average_response_time_ms = (
-            (self.metrics.average_response_time_ms * (self.metrics.total_operations - 1) + response_time_ms)
-            / self.metrics.total_operations
-        )
+            self.metrics.average_response_time_ms * (self.metrics.total_operations - 1)
+            + response_time_ms
+        ) / self.metrics.total_operations
         self.metrics.max_response_time_ms = max(self.metrics.max_response_time_ms, response_time_ms)
 
         # Check for deadline violation
@@ -178,9 +186,11 @@ class BrakeSafetyMonitor:
                 response_timestamp=response_time,
                 deadline_ms=op_data["deadline_ms"],
                 actual_response_time_ms=response_time_ms,
-                severity="CRITICAL" if response_time_ms > (op_data["deadline_ms"] * 2) else "WARNING",
+                severity="CRITICAL"
+                if response_time_ms > (op_data["deadline_ms"] * 2)
+                else "WARNING",
                 pgn=op_data.get("pgn"),
-                data=str(response_data) if response_data else None
+                data=str(response_data) if response_data else None,
             )
 
             self.deadline_violations.append(violation)
@@ -242,9 +252,11 @@ class BrakeSafetyMonitor:
                 logger.error(f"Error in violation callback: {e}")
 
         # For critical brake violations, trigger additional safety measures
-        if (violation.operation in [CriticalOperation.BRAKE_COMMAND, CriticalOperation.EMERGENCY_STOP]
-            and violation.severity == "CRITICAL"):
-
+        if (
+            violation.operation
+            in [CriticalOperation.BRAKE_COMMAND, CriticalOperation.EMERGENCY_STOP]
+            and violation.severity == "CRITICAL"
+        ):
             logger.critical(
                 f"CRITICAL BRAKE SAFETY VIOLATION - "
                 f"brake response exceeded {violation.deadline_ms}ms deadline"
@@ -263,12 +275,12 @@ class BrakeSafetyMonitor:
         """Get current safety performance metrics"""
         return self.metrics
 
-    def get_recent_violations(self, limit: int = 10) -> List[DeadlineViolation]:
+    def get_recent_violations(self, limit: int = 10) -> list[DeadlineViolation]:
         """Get recent deadline violations"""
         violations = list(self.deadline_violations)
         return violations[-limit:] if violations else []
 
-    def get_active_operations(self) -> Dict[str, Dict]:
+    def get_active_operations(self) -> dict[str, dict]:
         """Get currently active operations"""
         return dict(self.pending_operations)
 
@@ -293,6 +305,7 @@ class BrakeSafetyMonitor:
     def enabled(self) -> bool:
         """Check if monitoring is enabled"""
         return self._enabled
+
 
 # Global instance for integration with feature system
 brake_safety_monitor = BrakeSafetyMonitor()

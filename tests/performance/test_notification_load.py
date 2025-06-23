@@ -7,18 +7,17 @@ the system can handle the load on a Raspberry Pi.
 
 import asyncio
 import logging
-import time
-import statistics
-from datetime import datetime
-from typing import List, Dict, Any
 import random
+import statistics
+import time
+from datetime import datetime
+from typing import Any, Dict, List
 
 import pytest
 
 from backend.core.config import NotificationSettings
-from backend.services.notification_lightweight import LightweightNotificationManager
 from backend.models.notification import NotificationType
-
+from backend.services.notification_lightweight import LightweightNotificationManager
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -39,11 +38,11 @@ class LoadTestScenario:
             "errors": [],
         }
 
-    async def run(self, manager: LightweightNotificationManager) -> Dict[str, Any]:
+    async def run(self, manager: LightweightNotificationManager) -> dict[str, Any]:
         """Run the scenario and collect metrics."""
         raise NotImplementedError
 
-    def get_summary(self) -> Dict[str, Any]:
+    def get_summary(self) -> dict[str, Any]:
         """Get test summary statistics."""
         response_times = self.results["response_times"]
 
@@ -53,19 +52,28 @@ class LoadTestScenario:
             "total_requests": self.results["total_sent"] + self.results["total_failed"],
             "successful": self.results["total_sent"],
             "failed": self.results["total_failed"],
-            "success_rate": self.results["total_sent"] / (self.results["total_sent"] + self.results["total_failed"])
-                           if (self.results["total_sent"] + self.results["total_failed"]) > 0 else 0,
+            "success_rate": self.results["total_sent"]
+            / (self.results["total_sent"] + self.results["total_failed"])
+            if (self.results["total_sent"] + self.results["total_failed"]) > 0
+            else 0,
             "response_time_ms": {
                 "min": min(response_times) if response_times else 0,
                 "max": max(response_times) if response_times else 0,
                 "avg": statistics.mean(response_times) if response_times else 0,
                 "p50": statistics.median(response_times) if response_times else 0,
-                "p95": statistics.quantiles(response_times, n=20)[18] if len(response_times) > 20 else 0,
-                "p99": statistics.quantiles(response_times, n=100)[98] if len(response_times) > 100 else 0,
+                "p95": statistics.quantiles(response_times, n=20)[18]
+                if len(response_times) > 20
+                else 0,
+                "p99": statistics.quantiles(response_times, n=100)[98]
+                if len(response_times) > 100
+                else 0,
             },
-            "requests_per_second": (self.results["total_sent"] + self.results["total_failed"]) / self.duration_seconds,
+            "requests_per_second": (self.results["total_sent"] + self.results["total_failed"])
+            / self.duration_seconds,
             "memory_mb": {
-                "avg": statistics.mean(self.results["memory_usage"]) if self.results["memory_usage"] else 0,
+                "avg": statistics.mean(self.results["memory_usage"])
+                if self.results["memory_usage"]
+                else 0,
                 "max": max(self.results["memory_usage"]) if self.results["memory_usage"] else 0,
             },
             "errors": len(self.results["errors"]),
@@ -78,7 +86,7 @@ class SingleUserScenario(LoadTestScenario):
     def __init__(self):
         super().__init__("Single User", duration_seconds=60)
 
-    async def run(self, manager: LightweightNotificationManager) -> Dict[str, Any]:
+    async def run(self, manager: LightweightNotificationManager) -> dict[str, Any]:
         """Single user sending notifications every 5 seconds."""
         start_time = time.time()
 
@@ -154,7 +162,9 @@ class MultiUserScenario(LoadTestScenario):
                     title=f"Alert from User {user_id}",
                     level=level,
                     channels=["webhook", "smtp"] if level in ["error", "critical"] else ["webhook"],
-                    recipient=f"user{user_id}@example.com" if level in ["error", "critical"] else None,
+                    recipient=f"user{user_id}@example.com"
+                    if level in ["error", "critical"]
+                    else None,
                 )
 
                 response_time = (time.time() - send_start) * 1000
@@ -176,9 +186,9 @@ class MultiUserScenario(LoadTestScenario):
                     await asyncio.sleep(10 + random.randint(0, 10))
 
             except Exception as e:
-                self.results["errors"].append(f"User {user_id}: {str(e)}")
+                self.results["errors"].append(f"User {user_id}: {e!s}")
 
-    async def run(self, manager: LightweightNotificationManager) -> Dict[str, Any]:
+    async def run(self, manager: LightweightNotificationManager) -> dict[str, Any]:
         """Run multi-user scenario."""
         start_time = time.time()
 
@@ -213,7 +223,7 @@ class BurstScenario(LoadTestScenario):
     def __init__(self):
         super().__init__("Burst Pattern", duration_seconds=60)
 
-    async def run(self, manager: LightweightNotificationManager) -> Dict[str, Any]:
+    async def run(self, manager: LightweightNotificationManager) -> dict[str, Any]:
         """Run burst scenario with periodic high-volume sends."""
         start_time = time.time()
         burst_count = 0
@@ -247,9 +257,9 @@ class BurstScenario(LoadTestScenario):
 
                 burst_tasks = []
                 for i in range(10):
-                    task = asyncio.create_task(self._send_burst_notification(
-                        manager, f"Burst notification {i+1}"
-                    ))
+                    task = asyncio.create_task(
+                        self._send_burst_notification(manager, f"Burst notification {i + 1}")
+                    )
                     burst_tasks.append(task)
 
                 # Wait for burst to complete
@@ -266,7 +276,9 @@ class BurstScenario(LoadTestScenario):
 
         return self.get_summary()
 
-    async def _send_burst_notification(self, manager: LightweightNotificationManager, message: str) -> None:
+    async def _send_burst_notification(
+        self, manager: LightweightNotificationManager, message: str
+    ) -> None:
         """Send a single burst notification."""
         try:
             send_start = time.time()
@@ -296,7 +308,7 @@ class MemoryStressScenario(LoadTestScenario):
     def __init__(self):
         super().__init__("Memory Stress", duration_seconds=120)
 
-    async def run(self, manager: LightweightNotificationManager) -> Dict[str, Any]:
+    async def run(self, manager: LightweightNotificationManager) -> dict[str, Any]:
         """Run memory stress test with large messages."""
         start_time = time.time()
         message_count = 0
@@ -311,8 +323,12 @@ class MemoryStressScenario(LoadTestScenario):
         while time.time() - start_time < self.duration_seconds:
             try:
                 # Create a large message
-                message = f"System report with {len(large_context['sensors'])} sensors: " + \
-                         ", ".join([f"{k}={v:.2f}" for k, v in list(large_context['readings'].items())[:10]])
+                message = (
+                    f"System report with {len(large_context['sensors'])} sensors: "
+                    + ", ".join(
+                        [f"{k}={v:.2f}" for k, v in list(large_context["readings"].items())[:10]]
+                    )
+                )
 
                 send_start = time.time()
 
@@ -340,7 +356,9 @@ class MemoryStressScenario(LoadTestScenario):
                     if "memory" in health["metrics"] and health["metrics"]["memory"]:
                         memory_mb = health["metrics"]["memory"]["current_mb"]
                         self.results["memory_usage"].append(memory_mb)
-                        logger.info(f"Memory usage after {message_count} messages: {memory_mb:.1f} MB")
+                        logger.info(
+                            f"Memory usage after {message_count} messages: {memory_mb:.1f} MB"
+                        )
 
                 # Small delay
                 await asyncio.sleep(0.5)
@@ -352,7 +370,7 @@ class MemoryStressScenario(LoadTestScenario):
         return self.get_summary()
 
 
-async def run_load_tests(config: NotificationSettings) -> Dict[str, Any]:
+async def run_load_tests(config: NotificationSettings) -> dict[str, Any]:
     """Run all load test scenarios."""
     results = {}
 
@@ -366,10 +384,10 @@ async def run_load_tests(config: NotificationSettings) -> Dict[str, Any]:
     ]
 
     for scenario in scenarios:
-        logger.info(f"\n{'='*60}")
+        logger.info(f"\n{'=' * 60}")
         logger.info(f"Running scenario: {scenario.name}")
         logger.info(f"Duration: {scenario.duration_seconds} seconds")
-        logger.info(f"{'='*60}")
+        logger.info(f"{'=' * 60}")
 
         # Create fresh manager for each scenario
         manager = LightweightNotificationManager(config)
@@ -391,7 +409,7 @@ async def run_load_tests(config: NotificationSettings) -> Dict[str, Any]:
 
             # Get final health check
             health = await manager.get_health()
-            logger.info(f"\nFinal health check:")
+            logger.info("\nFinal health check:")
             logger.info(f"- Circuit breakers: {len(health['circuit_breakers'])} channels")
             logger.info(f"- Cache hit rate: {health['cache']['hit_rate']:.2%}")
             logger.info(f"- Batching efficiency: {health['batcher']['efficiency']:.2%}")
@@ -405,18 +423,18 @@ async def run_load_tests(config: NotificationSettings) -> Dict[str, Any]:
     return results
 
 
-def print_final_report(results: Dict[str, Any]) -> None:
+def print_final_report(results: dict[str, Any]) -> None:
     """Print final test report."""
-    print("\n" + "="*80)
+    print("\n" + "=" * 80)
     print("LOAD TEST FINAL REPORT")
-    print("="*80)
+    print("=" * 80)
 
     # Overall statistics
     total_requests = sum(r["total_requests"] for r in results.values())
     total_successful = sum(r["successful"] for r in results.values())
     overall_success_rate = total_successful / total_requests if total_requests > 0 else 0
 
-    print(f"\nOverall Statistics:")
+    print("\nOverall Statistics:")
     print(f"- Total requests: {total_requests}")
     print(f"- Total successful: {total_successful}")
     print(f"- Overall success rate: {overall_success_rate:.2%}")
@@ -428,15 +446,19 @@ def print_final_report(results: Dict[str, Any]) -> None:
     # Performance by scenario
     print("\nPerformance by Scenario:")
     print("-" * 80)
-    print(f"{'Scenario':<20} {'Requests':<10} {'Success':<10} {'Avg RT (ms)':<12} {'P95 RT (ms)':<12} {'Errors':<8}")
+    print(
+        f"{'Scenario':<20} {'Requests':<10} {'Success':<10} {'Avg RT (ms)':<12} {'P95 RT (ms)':<12} {'Errors':<8}"
+    )
     print("-" * 80)
 
     for name, result in results.items():
-        print(f"{name:<20} {result['total_requests']:<10} "
-              f"{result['success_rate']*100:<9.1f}% "
-              f"{result['response_time_ms']['avg']:<12.1f} "
-              f"{result['response_time_ms']['p95']:<12.1f} "
-              f"{result['errors']:<8}")
+        print(
+            f"{name:<20} {result['total_requests']:<10} "
+            f"{result['success_rate'] * 100:<9.1f}% "
+            f"{result['response_time_ms']['avg']:<12.1f} "
+            f"{result['response_time_ms']['p95']:<12.1f} "
+            f"{result['errors']:<8}"
+        )
 
     # Raspberry Pi suitability
     print("\nRaspberry Pi Suitability:")
@@ -481,12 +503,7 @@ async def test_notification_load():
         enabled=True,
         webhook={
             "enabled": True,
-            "targets": {
-                "default": {
-                    "url": "http://localhost:8080/webhook",
-                    "enabled": True
-                }
-            }
+            "targets": {"default": {"url": "http://localhost:8080/webhook", "enabled": True}},
         },
         smtp={
             "enabled": True,

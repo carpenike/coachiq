@@ -20,181 +20,60 @@ from backend.integrations.can.message_injector import (
     SafetyLevel,
 )
 from backend.integrations.can.protocol_analyzer import ProtocolAnalyzer
-from backend.services.feature_manager import FeatureManager
 
 logger = logging.getLogger(__name__)
 
 
-def register_can_tools_features(feature_manager: FeatureManager) -> None:
+def _register_with_service_registry(service_name: str, service_instance: Any) -> None:
     """
-    Register CAN tools features with the feature manager.
+    Register a service with ServiceRegistry if available.
 
     Args:
-        feature_manager: Feature manager instance
+        service_name: Name to register the service under
+        service_instance: Service instance to register
     """
-    logger.info("Registering CAN tools features")
-
-    # Load the raw YAML to get custom fields
-    yaml_path = Path(__file__).parent.parent.parent / "services" / "feature_flags.yaml"
-    try:
-        with open(yaml_path) as f:
-            raw_config = yaml.safe_load(f)
-    except Exception as e:
-        logger.error(f"Failed to load feature flags YAML: {e}")
-        return
-
-    # Register CAN message injector
-    injector_def = feature_manager.feature_definitions.get("can_message_injector")
-    if not injector_def:
-        logger.warning("CAN message injector not found in feature definitions")
-        return
-
-    # Get raw config with custom fields
-    injector_raw_config = raw_config.get("can_message_injector", {})
-    injector_config = injector_def.dict()
-
-    if injector_config.get("enabled_by_default", False):
-        # Parse safety level from raw config
-        safety_level_str = injector_raw_config.get("safety_level", "moderate").lower()
-        safety_level_map = {
-            "strict": SafetyLevel.STRICT,
-            "moderate": SafetyLevel.MODERATE,
-            "permissive": SafetyLevel.PERMISSIVE,
-        }
-        safety_level = safety_level_map.get(safety_level_str, SafetyLevel.MODERATE)
-
-        # Create audit callback if enabled
-        audit_callback = None
-        if injector_raw_config.get("audit_enabled", True):
-            audit_callback = create_audit_callback(feature_manager)
-
-        # Create and register message injector
-        injector = CANMessageInjector(
-            name="can_message_injector",
-            enabled=True,
-            core=injector_config.get("core", False),
-            safety_level=safety_level,
-            audit_callback=audit_callback,
-        )
-
-        feature_manager.register_feature(injector)
-        logger.info(
-            "Registered CAN message injector: safety_level=%s, audit=%s",
-            safety_level.value,
-            injector_raw_config.get("audit_enabled", True),
-        )
-    else:
-        logger.info("CAN message injector is disabled")
-
-    # Register CAN bus recorder
-    recorder_def = feature_manager.feature_definitions.get("can_bus_recorder")
-    if not recorder_def:
-        logger.info("CAN bus recorder not found in feature definitions")
-        recorder_raw_config = raw_config.get("can_bus_recorder", {})
-    else:
-        recorder_raw_config = raw_config.get("can_bus_recorder", {})
-        recorder_config = recorder_def.dict()
-
-    if recorder_def and recorder_config.get("enabled_by_default", False):
-        # Create and register recorder
-        recorder = CANBusRecorder(
-            name="can_bus_recorder",
-            enabled=True,
-            core=recorder_config.get("core", False),
-            buffer_size=recorder_raw_config.get("buffer_size", 100000),
-            auto_save_interval=recorder_raw_config.get("auto_save_interval", 60.0),
-            max_file_size_mb=recorder_raw_config.get("max_file_size_mb", 100.0),
-        )
-
-        feature_manager.register_feature(recorder)
-        logger.info(
-            "Registered CAN bus recorder: buffer_size=%d, auto_save=%fs",
-            recorder.buffer_size,
-            recorder.auto_save_interval,
-        )
-    else:
-        logger.info("CAN bus recorder is disabled")
-
-    # Register CAN protocol analyzer
-    analyzer_def = feature_manager.feature_definitions.get("can_protocol_analyzer")
-    if not analyzer_def:
-        logger.info("CAN protocol analyzer not found in feature definitions")
-        analyzer_raw_config = raw_config.get("can_protocol_analyzer", {})
-    else:
-        analyzer_raw_config = raw_config.get("can_protocol_analyzer", {})
-        analyzer_config = analyzer_def.dict()
-
-    if analyzer_def and analyzer_config.get("enabled_by_default", False):
-        # Create and register analyzer
-        analyzer = ProtocolAnalyzer(
-            name="can_protocol_analyzer",
-            enabled=True,
-            core=analyzer_config.get("core", False),
-            buffer_size=analyzer_raw_config.get("buffer_size", 10000),
-            pattern_window_ms=analyzer_raw_config.get("pattern_window_ms", 5000.0),
-        )
-
-        feature_manager.register_feature(analyzer)
-        logger.info(
-            "Registered CAN protocol analyzer: buffer_size=%d, pattern_window=%fms",
-            analyzer.buffer_size,
-            analyzer.pattern_window_ms,
-        )
-    else:
-        logger.info("CAN protocol analyzer is disabled")
-
-    # Register CAN message filter
-    filter_def = feature_manager.feature_definitions.get("can_message_filter")
-    if not filter_def:
-        logger.info("CAN message filter not found in feature definitions")
-        filter_raw_config = raw_config.get("can_message_filter", {})
-    else:
-        filter_raw_config = raw_config.get("can_message_filter", {})
-        filter_config = filter_def.dict()
-
-    if filter_def and filter_config.get("enabled_by_default", False):
-        # Create alert callback if needed
-        alert_callback = None
-        if filter_raw_config.get("enable_alerts", True):
-            alert_callback = create_alert_callback(feature_manager)
-
-        # Create and register message filter
-        message_filter = MessageFilter(
-            name="can_message_filter",
-            enabled=True,
-            core=filter_config.get("core", False),
-            max_rules=filter_raw_config.get("max_rules", 100),
-            alert_callback=alert_callback,
-            capture_buffer_size=filter_raw_config.get("capture_buffer_size", 10000),
-        )
-
-        feature_manager.register_feature(message_filter)
-        logger.info(
-            "Registered CAN message filter: max_rules=%d, capture_buffer=%d",
-            message_filter.max_rules,
-            message_filter.capture_buffer_size,
-        )
-    else:
-        logger.info("CAN message filter is disabled")
+    # Note: ServiceRegistry registration should happen during application startup,
+    # not at runtime. This function is kept for backward compatibility but
+    # effectively does nothing now. Services should be registered in main.py
+    # during the application startup phase.
+    logger.debug(
+        "Skipping runtime ServiceRegistry registration for %s. "
+        "Services should be registered during application startup.",
+        service_name,
+    )
 
 
-def create_audit_callback(
-    feature_manager: FeatureManager,
-) -> Callable[[InjectionRequest, InjectionResult], None] | None:
+def register_can_tools_features() -> None:
+    """
+    Register CAN tools features (DEPRECATED).
+
+    This function is kept for backward compatibility but does nothing.
+    CAN tools are now managed by ServiceRegistry.
+    """
+    logger.info("CAN tools registration called but deprecated - use ServiceRegistry")
+
+
+def create_audit_callback() -> Callable[[InjectionRequest, InjectionResult], None] | None:
     """
     Create audit callback for message injection logging.
-
-    Args:
-        feature_manager: Feature manager instance
 
     Returns:
         Audit callback function or None
     """
+
     def audit_injection(request: InjectionRequest, result: InjectionResult) -> None:
         """Log injection attempt for audit trail."""
         try:
-            # Get security audit service if available
-            security_audit = feature_manager.get_feature("security_audit")
+            # Get security audit service if available from ServiceRegistry
+            security_audit = None
+            try:
+                from backend.core.dependencies import get_service_registry
+
+                service_registry = get_service_registry()
+                if service_registry.has_service("security_audit_service"):
+                    security_audit = service_registry.get_service("security_audit_service")
+            except Exception as e:
+                logger.debug("Could not get security audit service: %s", e)
 
             if security_audit:
                 # Log to security audit
@@ -224,7 +103,10 @@ def create_audit_callback(
                 # Log audit event
                 logger.info(
                     "CAN injection audit: user=%s, can_id=0x%X, success=%s, severity=%s",
-                    request.user, request.can_id, result.success, severity
+                    request.user,
+                    request.can_id,
+                    result.success,
+                    severity,
                 )
 
                 # TODO: Call security audit service method when available
@@ -235,9 +117,14 @@ def create_audit_callback(
                 logger.info(
                     "CAN message injection: user=%s, interface=%s, can_id=0x%X, "
                     "mode=%s, success=%s, sent=%d, duration=%.3fs, reason=%s",
-                    request.user, request.interface, request.can_id,
-                    request.mode.value, result.success, result.messages_sent,
-                    result.duration, request.reason
+                    request.user,
+                    request.interface,
+                    request.can_id,
+                    request.mode.value,
+                    result.success,
+                    result.messages_sent,
+                    result.duration,
+                    request.reason,
                 )
 
                 if result.warnings:
@@ -252,18 +139,14 @@ def create_audit_callback(
     return audit_injection
 
 
-def create_alert_callback(
-    feature_manager: FeatureManager,
-) -> Callable[[dict[str, Any]], Any] | None:
+def create_alert_callback() -> Callable[[dict[str, Any]], Any] | None:
     """
     Create alert callback for message filter alerts.
-
-    Args:
-        feature_manager: Feature manager instance
 
     Returns:
         Alert callback function or None
     """
+
     async def send_filter_alert(alert_data: dict[str, Any]) -> None:
         """Send alert for matched filter rule."""
         try:
@@ -283,8 +166,16 @@ def create_alert_callback(
                 message.get("interface", "unknown"),
             )
 
-            # Get notification service if available
-            notifications = feature_manager.get_feature("notifications")
+            # Get notification service if available from ServiceRegistry
+            notifications = None
+            try:
+                from backend.core.dependencies import get_service_registry
+
+                service_registry = get_service_registry()
+                if service_registry.has_service("notifications"):
+                    notifications = service_registry.get_service("notifications")
+            except Exception as e:
+                logger.debug("Could not get notifications service: %s", e)
 
             if notifications:
                 # Send notification
@@ -308,8 +199,16 @@ def create_alert_callback(
                 # TODO: Call notification service when method is available
                 # await notifications.send_notification(notification_data)
 
-            # Update WebSocket clients if available
-            websocket = feature_manager.get_feature("websocket")
+            # Update WebSocket clients if available from ServiceRegistry
+            websocket = None
+            try:
+                from backend.core.dependencies import get_service_registry
+
+                service_registry = get_service_registry()
+                if service_registry.has_service("websocket_manager"):
+                    websocket = service_registry.get_service("websocket_manager")
+            except Exception as e:
+                logger.debug("Could not get websocket service: %s", e)
             if websocket:
                 ws_message = {
                     "type": "can_filter_alert",

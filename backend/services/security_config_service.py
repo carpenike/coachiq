@@ -12,14 +12,25 @@ Designed for RV-C vehicle control systems with enhanced security requirements.
 """
 
 import logging
+import os
 import time
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 from pydantic import BaseModel, Field, validator
 
+from backend.core.performance import PerformanceMonitor
+from backend.repositories.security_config_repository import SecurityConfigRepository
+
 logger = logging.getLogger(__name__)
+
+
+class RateLimitRule(BaseModel):
+    """Rate limit configuration for an endpoint."""
+
+    requests: int = Field(..., description="Number of requests allowed")
+    window: int = Field(..., description="Time window in seconds")
 
 
 class PINSecurityPolicy(BaseModel):
@@ -96,11 +107,11 @@ class RateLimitingPolicy(BaseModel):
     )
 
     # Network Policies
-    trusted_networks: List[str] = Field(
+    trusted_networks: list[str] = Field(
         default_factory=lambda: ["192.168.0.0/16", "10.0.0.0/8", "172.16.0.0/12"],
         description="Trusted IP networks (CIDR notation)",
     )
-    blocked_networks: List[str] = Field(
+    blocked_networks: list[str] = Field(
         default_factory=list, description="Blocked IP networks (CIDR)"
     )
 
@@ -139,6 +150,26 @@ class AuthenticationPolicy(BaseModel):
     # Brute Force Protection
     max_login_attempts: int = Field(5, ge=3, le=20, description="Max login attempts before lockout")
     login_lockout_minutes: int = Field(15, ge=5, le=60, description="Login lockout duration")
+    login_attempt_window_minutes: int = Field(
+        15, ge=5, le=60, description="Time window for counting failed login attempts"
+    )
+
+    # JWT Configuration
+    jwt_algorithm: str = Field("HS256", description="JWT algorithm to use (e.g., HS256, RS256)")
+    access_token_expire_minutes: int = Field(
+        60, ge=1, le=1440, description="Access token expiration time in minutes"
+    )
+    magic_link_expire_minutes: int = Field(
+        15, ge=1, le=60, description="Magic link token expiration time in minutes"
+    )
+    refresh_token_expire_days: int = Field(
+        7, ge=1, le=365, description="Refresh token expiration time in days"
+    )
+
+    # Feature Flags
+    enable_magic_links: bool = Field(True, description="Enable magic link authentication")
+    enable_oauth: bool = Field(False, description="Enable OAuth authentication")
+    enable_mfa: bool = Field(False, description="Enable multi-factor authentication")
 
 
 class AuditPolicy(BaseModel):
@@ -182,11 +213,11 @@ class NetworkSecurityPolicy(BaseModel):
 
     # IP Filtering
     enable_ip_whitelist: bool = Field(False, description="Enable IP whitelist mode")
-    whitelist_networks: List[str] = Field(
+    whitelist_networks: list[str] = Field(
         default_factory=list, description="Whitelisted IP networks"
     )
     enable_geoip_blocking: bool = Field(False, description="Enable GeoIP-based blocking")
-    blocked_countries: List[str] = Field(default_factory=list, description="Blocked country codes")
+    blocked_countries: list[str] = Field(default_factory=list, description="Blocked country codes")
 
     # DDoS Protection
     enable_ddos_protection: bool = Field(True, description="Enable DDoS protection")
@@ -250,21 +281,34 @@ class SecurityConfigService:
     for RV-C vehicle control systems.
     """
 
-    def __init__(self, config_path: Optional[Path] = None):
+    def __init__(
+        self,
+        security_config_repository: SecurityConfigRepository,
+        performance_monitor: PerformanceMonitor,
+        config_path: Path | None = None,
+    ):
         """
         Initialize security configuration service.
 
         Args:
+            security_config_repository: Repository for security configuration data
+            performance_monitor: Performance monitoring instance
             config_path: Path to security configuration file
         """
+        self._repository = security_config_repository
+        self._monitor = performance_monitor
         self.config_path = config_path or Path("config/security.yml")
-        self._config: Optional[SecurityConfiguration] = None
+        self._config: SecurityConfiguration | None = None
         self._last_reload = 0.0
         self._reload_interval = 300  # 5 minutes
+        self._init_rate_limit_config()
+
+        # Apply performance monitoring
+        self._apply_monitoring()
 
         logger.info("Security Configuration Service initialized")
 
-    def get_config(self, force_reload: bool = False) -> SecurityConfiguration:
+    async def get_config(self, force_reload: bool = False) -> SecurityConfiguration:
         """
         Get current security configuration.
 
@@ -277,7 +321,7 @@ class SecurityConfigService:
         now = time.time()
 
         if self._config is None or force_reload or now - self._last_reload > self._reload_interval:
-            self._load_config()
+            await self._load_config()
             self._last_reload = now
 
         # Ensure we have a valid config
@@ -286,27 +330,49 @@ class SecurityConfigService:
 
         return self._config
 
-    def _load_config(self) -> None:
-        """Load configuration from file or create defaults."""
-        try:
-            if self.config_path.exists():
-                import yaml
+    def _apply_monitoring(self) -> None:
+        """Apply performance monitoring to service methods."""
+        self.get_config = self._monitor.monitor_service_method(
+            "SecurityConfigService", "get_config"
+        )(self.get_config)
 
-                with open(self.config_path, "r") as f:
-                    config_data = yaml.safe_load(f)
+        self.save_config = self._monitor.monitor_service_method(
+            "SecurityConfigService", "save_config"
+        )(self.save_config)
+
+        self.validate_configuration = self._monitor.monitor_service_method(
+            "SecurityConfigService", "validate_configuration"
+        )(self.validate_configuration)
+
+    async def _load_config(self) -> None:
+        """Load configuration from repository or create defaults."""
+        try:
+            # Try to get cached config first
+            cached_config = await self._repository.get_cached_config()
+            if cached_config:
+                self._config = SecurityConfiguration(**cached_config)
+                return
+
+            # Load from file via repository
+            config_data = await self._repository.load_config(self.config_path)
+            if config_data:
                 self._config = SecurityConfiguration(**config_data)
                 logger.info(f"Loaded security configuration from {self.config_path}")
             else:
-                self._config = SecurityConfiguration()
+                # Get default config from repository
+                default_config = await self._repository.get_default_config()
+                self._config = SecurityConfiguration(**default_config)
                 logger.info("Using default security configuration")
 
         except Exception as e:
             logger.error(f"Error loading security configuration: {e}")
-            self._config = SecurityConfiguration()
+            # Fallback to basic defaults
+            default_config = await self._repository.get_default_config()
+            self._config = SecurityConfiguration(**default_config)
 
-    def save_config(self, config: SecurityConfiguration, updated_by: str = "system") -> bool:
+    async def save_config(self, config: SecurityConfiguration, updated_by: str = "system") -> bool:
         """
-        Save security configuration to file.
+        Save security configuration via repository.
 
         Args:
             config: Security configuration to save
@@ -316,74 +382,68 @@ class SecurityConfigService:
             bool: True if saved successfully
         """
         try:
-            # Update metadata
-            config.last_updated = datetime.now(UTC).isoformat()
-            config.updated_by = updated_by
+            # Convert to dict for repository
+            config_data = config.model_dump()
 
-            # Ensure config directory exists
-            self.config_path.parent.mkdir(parents=True, exist_ok=True)
+            # Save via repository
+            success = await self._repository.save_config(self.config_path, config_data, updated_by)
 
-            # Save to YAML
-            import yaml
+            if success:
+                # Update cached config
+                self._config = config
+                self._last_reload = time.time()
+                logger.info(f"Security configuration saved by {updated_by}")
 
-            with open(self.config_path, "w") as f:
-                yaml.dump(config.model_dump(), f, default_flow_style=False, indent=2)
-
-            # Update cached config
-            self._config = config
-            self._last_reload = time.time()
-
-            logger.info(f"Security configuration saved by {updated_by}")
-            return True
+            return success
 
         except Exception as e:
             logger.error(f"Error saving security configuration: {e}")
             return False
 
-    def get_pin_config(self) -> Dict[str, Any]:
+    async def get_pin_config(self) -> dict[str, Any]:
         """Get PIN manager configuration."""
-        config = self.get_config()
-        return {
-            "min_pin_length": config.pin_policy.min_pin_length,
-            "max_pin_length": config.pin_policy.max_pin_length,
-            "require_numeric_only": config.pin_policy.require_numeric_only,
-            "emergency_pin_expires_minutes": config.pin_policy.emergency_session_timeout_minutes,
-            "max_failed_attempts": config.pin_policy.max_failed_attempts,
-            "lockout_duration_minutes": config.pin_policy.lockout_duration_minutes,
-            "session_timeout_minutes": config.pin_policy.override_session_timeout_minutes,
-            "max_concurrent_sessions": config.pin_policy.max_concurrent_sessions_per_user,
-            "enable_pin_rotation": config.pin_policy.enable_pin_rotation,
-            "pin_rotation_days": config.pin_policy.pin_rotation_days,
-            "require_pin_confirmation": config.pin_policy.require_pin_confirmation,
-        }
+        config = await self.get_config()
 
-    def get_rate_limit_config(self) -> Dict[str, Any]:
+        # Convert to dict and use repository method for consistency
+        config_data = config.model_dump()
+        return await self._repository.get_pin_config(config_data)
+
+    async def get_rate_limit_config(self) -> dict[str, Any]:
         """Get rate limiting configuration."""
-        config = self.get_config()
-        return {
-            "requests_per_minute": config.rate_limiting.general_requests_per_minute,
-            "burst_limit": config.rate_limiting.burst_limit,
-            "safety_operations_per_minute": config.rate_limiting.safety_operations_per_minute,
-            "emergency_operations_per_hour": config.rate_limiting.emergency_operations_per_hour,
-            "pin_attempts_per_minute": config.rate_limiting.pin_attempts_per_minute,
-            "max_failed_operations_per_hour": config.rate_limiting.max_failed_operations_per_hour,
-            "trusted_networks": config.rate_limiting.trusted_networks,
-            "admin_multiplier": config.rate_limiting.admin_rate_multiplier,
-        }
+        config = await self.get_config()
 
-    def get_auth_config(self) -> Dict[str, Any]:
-        """Get authentication configuration."""
-        config = self.get_config()
-        return {
-            "session_timeout_minutes": config.authentication.session_timeout_minutes,
-            "admin_session_timeout_minutes": config.authentication.admin_session_timeout_minutes,
-            "require_pin_for_safety": config.authentication.require_pin_for_safety,
-            "require_auth_for_read": config.authentication.require_auth_for_read,
-            "max_login_attempts": config.authentication.max_login_attempts,
-            "login_lockout_minutes": config.authentication.login_lockout_minutes,
-        }
+        # Convert to dict and use repository method for consistency
+        config_data = config.model_dump()
+        return await self._repository.get_rate_limit_config(config_data)
 
-    def update_security_mode(self, mode: str, updated_by: str = "admin") -> bool:
+    async def get_auth_config(self) -> dict[str, Any]:
+        """Get authentication configuration with secure JWT secret handling."""
+        config = await self.get_config()
+
+        # Convert to dict and use repository method for consistency
+        config_data = config.model_dump()
+        auth_config = await self._repository.get_auth_config(config_data)
+
+        # Securely inject JWT secret from environment variable
+        # This overrides any value from YAML for security reasons
+        jwt_secret = os.environ.get("COACHIQ_AUTH__SECRET_KEY")
+        if jwt_secret:
+            auth_config["jwt_secret"] = jwt_secret
+        else:
+            # No fallback - JWT secret MUST be provided via environment variable
+            logger.error(
+                "CRITICAL: JWT secret not found in environment variable COACHIQ_AUTH__SECRET_KEY. "
+                "This is required for secure authentication. "
+                "Please set COACHIQ_AUTH__SECRET_KEY to a secure random value."
+            )
+            raise ValueError(
+                "JWT secret must be provided via COACHIQ_AUTH__SECRET_KEY environment variable. "
+                "Generate a secure secret with: openssl rand -hex 32"
+            )
+
+        return auth_config
+
+    async def update_security_mode(self, mode: str, updated_by: str = "admin") -> bool:
         """
         Update security mode and apply corresponding policies.
 
@@ -395,85 +455,48 @@ class SecurityConfigService:
             bool: True if updated successfully
         """
         try:
-            config = self.get_config()
-            config.security_mode = mode
+            config = await self.get_config()
 
-            # Apply mode-specific adjustments
-            if mode == "minimal":
-                config.rate_limiting.general_requests_per_minute = 120
-                config.rate_limiting.safety_operations_per_minute = 10
-                config.pin_policy.max_failed_attempts = 5
-            elif mode == "strict":
-                config.rate_limiting.safety_operations_per_minute = 3
-                config.pin_policy.max_failed_attempts = 2
-                config.pin_policy.lockout_duration_minutes = 30
-            elif mode == "paranoid":
-                config.rate_limiting.safety_operations_per_minute = 2
-                config.rate_limiting.emergency_operations_per_hour = 1
-                config.pin_policy.max_failed_attempts = 1
-                config.pin_policy.lockout_duration_minutes = 60
-                config.network.enable_ip_whitelist = True
+            # Convert to dict for repository processing
+            config_data = config.model_dump()
 
-            return self.save_config(config, updated_by)
+            # Apply security mode via repository
+            updated_config_data = await self._repository.apply_security_mode(config_data, mode)
+
+            # Create new config object from updated data
+            updated_config = SecurityConfiguration(**updated_config_data)
+
+            # Save the updated configuration
+            return await self.save_config(updated_config, updated_by)
 
         except Exception as e:
             logger.error(f"Error updating security mode: {e}")
             return False
 
-    def validate_configuration(self) -> Dict[str, Any]:
+    async def validate_configuration(self) -> dict[str, Any]:
         """
         Validate current security configuration.
 
         Returns:
             dict: Validation results with issues and recommendations
         """
-        config = self.get_config()
-        issues = []
-        recommendations = []
+        config = await self.get_config()
 
-        # Validate PIN policy
-        if config.pin_policy.max_failed_attempts > 5:
-            recommendations.append("Consider reducing max_failed_attempts for better security")
+        # Convert to dict for repository validation
+        config_data = config.model_dump()
 
-        if config.pin_policy.lockout_duration_minutes < 10:
-            recommendations.append("Consider increasing lockout duration for better protection")
+        # Use repository validation method
+        return await self._repository.validate_config(config_data)
 
-        # Validate rate limiting
-        if config.rate_limiting.safety_operations_per_minute > 10:
-            issues.append("Safety operations rate limit is too high for RV deployment")
-
-        # Validate network security
-        if not config.network.require_https and config.rv_deployment_mode:
-            issues.append("HTTPS should be required for RV deployments")
-
-        # Check for RV-specific configurations
-        if config.rv_deployment_mode:
-            if not config.authentication.require_pin_for_safety:
-                issues.append("PIN should be required for safety operations in RV mode")
-
-            if len(config.rate_limiting.trusted_networks) == 0:
-                recommendations.append(
-                    "Consider adding trusted RV networks to rate limiting policy"
-                )
-
-        return {
-            "valid": len(issues) == 0,
-            "issues": issues,
-            "recommendations": recommendations,
-            "last_validated": datetime.now(UTC).isoformat(),
-            "config_version": config.config_version,
-            "security_mode": config.security_mode,
-        }
-
-    def get_security_summary(self) -> Dict[str, Any]:
+    async def get_security_summary(self) -> dict[str, Any]:
         """
         Get security configuration summary for monitoring.
 
         Returns:
             dict: Security configuration summary
         """
-        config = self.get_config()
-        validation = self.validate_configuration()
+        config = await self.get_config()
+        validation = await self.validate_configuration()
 
         return {
             "security_mode": config.security_mode,
@@ -495,5 +518,108 @@ class SecurityConfigService:
                 "safety_ops_per_minute": config.rate_limiting.safety_operations_per_minute,
                 "emergency_ops_per_hour": config.rate_limiting.emergency_operations_per_hour,
                 "session_timeout_minutes": config.authentication.session_timeout_minutes,
+            },
+        }
+
+    async def get_config_history(self, limit: int = 10) -> list[dict[str, Any]]:
+        """
+        Get configuration history.
+
+        Args:
+            limit: Maximum entries to return
+
+        Returns:
+            List of historical configurations
+        """
+        return await self._repository.get_config_history(limit)
+
+    def _init_rate_limit_config(self):
+        """Initialize rate limiting configuration placeholder.
+
+        Note: Actual configuration comes from SecurityConfiguration.rate_limiting
+        This is kept for backward compatibility during initialization.
+        """
+        # Will be populated from SecurityConfiguration
+        self._rate_limit_config = None
+
+    async def get_rate_limit_for_endpoint(
+        self, endpoint: str, category: str = "api"
+    ) -> dict[str, int]:
+        """
+        Get rate limit configuration for an endpoint.
+
+        Args:
+            endpoint: The endpoint path
+            category: The endpoint category (auth, api, safety)
+
+        Returns:
+            Rate limit configuration with requests and window
+        """
+        # Get configuration from SecurityConfiguration
+        config = await self.get_config()
+        rate_policy = config.rate_limiting
+
+        # Determine appropriate limits based on endpoint
+        if "/auth/login" in endpoint or "/auth/signin" in endpoint:
+            # Use PIN attempts limit for login (more restrictive)
+            return {"requests": rate_policy.pin_attempts_per_minute, "window": 60}
+        if "/auth/reset-password" in endpoint:
+            # Password reset - very restrictive
+            return {"requests": 3, "window": 3600}  # 3 per hour
+        if "/auth/register" in endpoint:
+            # Registration - restrictive
+            return {"requests": 3, "window": 3600}  # 3 per hour
+        if "/auth/refresh" in endpoint or "/token" in endpoint:
+            # Token operations - moderate
+            return {"requests": 10, "window": 300}  # 10 per 5 minutes
+        if "/emergency" in endpoint:
+            # Emergency operations - use configured limit
+            return {"requests": rate_policy.emergency_operations_per_hour, "window": 3600}
+        if "/pin" in endpoint:
+            # PIN operations - use configured limit
+            return {"requests": rate_policy.pin_attempts_per_minute, "window": 60}
+        if "/safety" in endpoint:
+            # Safety operations - use configured limit
+            return {"requests": rate_policy.safety_operations_per_minute, "window": 60}
+        if "/export" in endpoint:
+            # Export operations - restrictive
+            return {"requests": 5, "window": 300}  # 5 per 5 minutes
+        if "/search" in endpoint:
+            # Search operations - moderate
+            return {"requests": 30, "window": 60}  # 30 per minute
+        # Default API rate limit
+        return {"requests": rate_policy.general_requests_per_minute, "window": 60}
+
+    async def get_rate_limit_config(self) -> dict[str, Any]:
+        """
+        Get the complete rate limiting configuration.
+
+        Returns:
+            Complete rate limit configuration
+        """
+        # Get configuration from SecurityConfiguration
+        config = await self.get_config()
+        rate_policy = config.rate_limiting
+
+        # Build rate limit configuration from policy
+        return {
+            "auth": {
+                "login": {"requests": rate_policy.pin_attempts_per_minute, "window": 60},
+                "password_reset": {"requests": 3, "window": 3600},
+                "register": {"requests": 3, "window": 3600},
+                "token_refresh": {"requests": 10, "window": 300},
+            },
+            "api": {
+                "default": {"requests": rate_policy.general_requests_per_minute, "window": 60},
+                "search": {"requests": 30, "window": 60},
+                "export": {"requests": 5, "window": 300},
+            },
+            "safety": {
+                "default": {"requests": rate_policy.safety_operations_per_minute, "window": 60},
+                "emergency": {
+                    "requests": rate_policy.emergency_operations_per_hour,
+                    "window": 3600,
+                },
+                "pin_validation": {"requests": rate_policy.pin_attempts_per_minute, "window": 60},
             },
         }

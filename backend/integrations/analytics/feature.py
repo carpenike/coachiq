@@ -106,7 +106,7 @@ class PerformanceAnalyticsFeature(Feature):
             return
 
         try:
-            start_time = asyncio.get_event_loop().time()
+            start_time = time.perf_counter()
 
             # Initialize telemetry collector
             logger.info("Initializing telemetry collector")
@@ -134,7 +134,7 @@ class PerformanceAnalyticsFeature(Feature):
             # Set up integration hooks
             await self._setup_integration_hooks()
 
-            startup_time = asyncio.get_event_loop().time() - start_time
+            startup_time = time.perf_counter() - start_time
             self._stats["startup_time"] = startup_time
 
             logger.info(f"Performance analytics feature started successfully ({startup_time:.2f}s)")

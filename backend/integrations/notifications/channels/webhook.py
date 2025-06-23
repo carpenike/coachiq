@@ -207,7 +207,7 @@ class WebhookNotificationChannel:
                 connector=connector,
                 headers={
                     "User-Agent": "CoachIQ-Webhook-Client/1.0",
-                }
+                },
             )
 
     async def _close_session(self) -> None:
@@ -222,10 +222,7 @@ class WebhookNotificationChannel:
 
         # Remove old timestamps outside the window
         cutoff_time = current_time - self.rate_limit_window
-        self._request_timestamps = [
-            ts for ts in self._request_timestamps
-            if ts > cutoff_time
-        ]
+        self._request_timestamps = [ts for ts in self._request_timestamps if ts > cutoff_time]
 
         # Check if we can make another request
         if len(self._request_timestamps) >= self.rate_limit_requests:
@@ -236,7 +233,9 @@ class WebhookNotificationChannel:
         self._request_timestamps.append(current_time)
         return True
 
-    def _build_payload(self, notification: NotificationPayload, target: WebhookTarget) -> dict[str, Any]:
+    def _build_payload(
+        self, notification: NotificationPayload, target: WebhookTarget
+    ) -> dict[str, Any]:
         """Build webhook payload from notification."""
         if target.payload_template:
             # Use custom template (would implement Jinja2 rendering here)
@@ -265,7 +264,7 @@ class WebhookNotificationChannel:
                 "app_name": "CoachIQ",
                 "version": "1.0",
                 "environment": getattr(self.settings, "environment", "production"),
-            }
+            },
         }
 
         # Add context data if available
@@ -290,6 +289,7 @@ class WebhookNotificationChannel:
             headers[target.auth.api_key_header] = target.auth.api_key
         elif target.auth.type == "basic" and target.auth.username and target.auth.password:
             import base64
+
             credentials = base64.b64encode(
                 f"{target.auth.username}:{target.auth.password}".encode()
             ).decode()
@@ -302,15 +302,15 @@ class WebhookNotificationChannel:
         if target.secret_key:
             payload_str = json.dumps(payload, separators=(",", ":"), sort_keys=True)
             signature = hmac.new(
-                target.secret_key.encode(),
-                payload_str.encode(),
-                hashlib.sha256
+                target.secret_key.encode(), payload_str.encode(), hashlib.sha256
             ).hexdigest()
             headers[target.signature_header] = f"sha256={signature}"
 
         return headers
 
-    def _should_deliver_to_target(self, notification: NotificationPayload, target: WebhookTarget) -> bool:
+    def _should_deliver_to_target(
+        self, notification: NotificationPayload, target: WebhookTarget
+    ) -> bool:
         """Check if notification should be delivered to target."""
         if not target.enabled:
             return False
@@ -327,9 +327,7 @@ class WebhookNotificationChannel:
         return True
 
     async def _deliver_to_target(
-        self,
-        notification: NotificationPayload,
-        target: WebhookTarget
+        self, notification: NotificationPayload, target: WebhookTarget
     ) -> WebhookDeliveryResult:
         """Deliver notification to specific webhook target."""
         start_time = time.time()
@@ -359,7 +357,7 @@ class WebhookNotificationChannel:
                 url=str(target.url),
                 data=request_data,
                 headers=headers,
-                timeout=aiohttp.ClientTimeout(total=target.timeout)
+                timeout=aiohttp.ClientTimeout(total=target.timeout),
             ) as response:
                 response_body = await response.text()
 

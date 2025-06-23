@@ -143,10 +143,12 @@ class TestDeviceProfile:
 
         # Add message history to simulate previous messages
         base_time = time.time()
-        device_profile.message_history.extend([
-            (0x1FED1, base_time - 2.0, 8),
-            (0x1FED1, base_time - 1.0, 8),
-        ])
+        device_profile.message_history.extend(
+            [
+                (0x1FED1, base_time - 2.0, 8),
+                (0x1FED1, base_time - 1.0, 8),
+            ]
+        )
 
         test_data = b"\x01\x02\x03\x04\x05\x06\x07\x08"
 
@@ -158,7 +160,9 @@ class TestDeviceProfile:
 
         # Test very fast timing (should be anomalous)
         is_anomalous, reason, confidence = device_profile.is_message_anomalous(
-            0x1FED1, base_time + 0.05, test_data  # Much faster than expected 1s
+            0x1FED1,
+            base_time + 0.05,
+            test_data,  # Much faster than expected 1s
         )
         assert is_anomalous is True
         assert "Timing anomaly" in reason
@@ -206,7 +210,7 @@ class TestDeviceProfile:
         assert is_anomalous is False  # 7/8 bytes match = 87.5% similarity > 80% threshold
 
         # Test very different data (should be anomalous)
-        different_data = b"\xFF\xFE\xFD\xFC\xFB\xFA\xF9\xF8"
+        different_data = b"\xff\xfe\xfd\xfc\xfb\xfa\xf9\xf8"
         is_anomalous, reason, confidence = device_profile.is_message_anomalous(
             0x1FED1, timestamp, different_data
         )
@@ -223,12 +227,12 @@ class TestDeviceProfile:
 
         # Test completely different data
         data1 = b"\x01\x02\x03\x04"
-        data2 = b"\xFF\xFE\xFD\xFC"
+        data2 = b"\xff\xfe\xfd\xfc"
         assert device_profile._data_similarity(data1, data2) == 0.0
 
         # Test partially similar data
         data1 = b"\x01\x02\x03\x04"
-        data2 = b"\x01\x02\xFF\xFF"
+        data2 = b"\x01\x02\xff\xff"
         assert device_profile._data_similarity(data1, data2) == 0.5
 
         # Test different length data
@@ -271,7 +275,7 @@ class TestAdaptiveSecurityManager:
         return AdaptiveSecurityManager(
             learning_duration=1.0,  # Short learning for testing
             max_profiles=10,
-            anomaly_threshold=0.5
+            anomaly_threshold=0.5,
         )
 
     def test_initialization(self, security_manager):
@@ -290,7 +294,9 @@ class TestAdaptiveSecurityManager:
         assert security_manager.validate_frame(valid_frame) is True
 
         # Invalid source address
-        invalid_frame = MockCANFrame(0x1FED1, 0x80, b"\x01\x02\x03\x04")  # Outside legitimate ranges
+        invalid_frame = MockCANFrame(
+            0x1FED1, 0x80, b"\x01\x02\x03\x04"
+        )  # Outside legitimate ranges
         assert security_manager.validate_frame(invalid_frame) is False
 
         # Invalid PGN
@@ -298,7 +304,9 @@ class TestAdaptiveSecurityManager:
         assert security_manager.validate_frame(invalid_pgn_frame) is False
 
         # Oversized data
-        oversized_frame = MockCANFrame(0x1FED1, 0x42, b"\x01\x02\x03\x04\x05\x06\x07\x08\x09")  # 9 bytes
+        oversized_frame = MockCANFrame(
+            0x1FED1, 0x42, b"\x01\x02\x03\x04\x05\x06\x07\x08\x09"
+        )  # 9 bytes
         assert security_manager.validate_frame(oversized_frame) is False
 
     def test_device_profile_creation(self, security_manager):
@@ -516,31 +524,40 @@ class TestAdaptiveSecurityManager:
         assert threat == ThreatLevel.HIGH
 
         # Test high confidence burst anomaly
-        threat = security_manager._assess_threat_level(
-            "Burst anomaly: 20 messages", 0.95, frame
-        )
+        threat = security_manager._assess_threat_level("Burst anomaly: 20 messages", 0.95, frame)
         assert threat == ThreatLevel.MEDIUM
 
         # Test medium confidence anomaly
-        threat = security_manager._assess_threat_level(
-            "Timing anomaly", 0.75, frame
-        )
+        threat = security_manager._assess_threat_level("Timing anomaly", 0.75, frame)
         assert threat == ThreatLevel.LOW
 
         # Test low confidence anomaly
-        threat = security_manager._assess_threat_level(
-            "Data pattern anomaly", 0.5, frame
-        )
+        threat = security_manager._assess_threat_level("Data pattern anomaly", 0.5, frame)
         assert threat == ThreatLevel.INFO
 
     def test_anomaly_type_classification(self, security_manager):
         """Test anomaly type classification."""
         # Test different anomaly reason classifications
-        assert security_manager._classify_anomaly_type("Unexpected PGN 0x9999") == AnomalyType.UNEXPECTED_PGN
-        assert security_manager._classify_anomaly_type("Timing anomaly: fast") == AnomalyType.TIMING_ANOMALY
-        assert security_manager._classify_anomaly_type("Burst anomaly: too many") == AnomalyType.BURST_ANOMALY
-        assert security_manager._classify_anomaly_type("Data pattern anomaly") == AnomalyType.DATA_ANOMALY
-        assert security_manager._classify_anomaly_type("Unknown issue") == AnomalyType.PROTOCOL_VIOLATION
+        assert (
+            security_manager._classify_anomaly_type("Unexpected PGN 0x9999")
+            == AnomalyType.UNEXPECTED_PGN
+        )
+        assert (
+            security_manager._classify_anomaly_type("Timing anomaly: fast")
+            == AnomalyType.TIMING_ANOMALY
+        )
+        assert (
+            security_manager._classify_anomaly_type("Burst anomaly: too many")
+            == AnomalyType.BURST_ANOMALY
+        )
+        assert (
+            security_manager._classify_anomaly_type("Data pattern anomaly")
+            == AnomalyType.DATA_ANOMALY
+        )
+        assert (
+            security_manager._classify_anomaly_type("Unknown issue")
+            == AnomalyType.PROTOCOL_VIOLATION
+        )
 
     def test_concurrent_access(self, security_manager):
         """Test concurrent access to security manager."""

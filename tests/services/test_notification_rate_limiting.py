@@ -214,7 +214,8 @@ class TestNotificationDebouncer:
     async def test_memory_protection(self):
         """Test that debouncer limits memory usage."""
         debouncer = NotificationDebouncer(
-            suppress_window_minutes=60, max_tracked_items=5  # Small limit for testing
+            suppress_window_minutes=60,
+            max_tracked_items=5,  # Small limit for testing
         )
 
         # Add more items than limit
@@ -677,9 +678,7 @@ class TestRateLimitingPerformance:
         batch_results = await asyncio.gather(*batch_tasks)
 
         # Count total allowed requests
-        total_allowed = sum(
-            sum(1 for result in batch if result) for batch in batch_results
-        )
+        total_allowed = sum(sum(1 for result in batch if result) for batch in batch_results)
 
         # Should not exceed token limit significantly
         # (may slightly exceed due to concurrent access, but should be close)

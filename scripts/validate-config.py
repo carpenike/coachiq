@@ -11,13 +11,14 @@ from pathlib import Path
 # Add backend to path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from backend.core.config import get_settings
-from backend.services.feature_flags import load_feature_flags
 import json
 from typing import Any, Dict
 
+from backend.core.config import get_settings
+from backend.services.feature_flags import load_feature_flags
 
-def get_env_vars() -> Dict[str, str]:
+
+def get_env_vars() -> dict[str, str]:
     """Get all COACHIQ_ environment variables."""
     return {k: v for k, v in os.environ.items() if k.startswith("COACHIQ_")}
 
@@ -32,13 +33,15 @@ def validate_config():
         print("Environment Variables Set:")
         for key, value in sorted(env_vars.items()):
             # Mask sensitive values
-            if any(sensitive in key.lower() for sensitive in ["secret", "key", "password", "token"]):
+            if any(
+                sensitive in key.lower() for sensitive in ["secret", "key", "password", "token"]
+            ):
                 value = "***MASKED***"
             print(f"  {key}={value}")
     else:
         print("No COACHIQ_ environment variables set")
 
-    print("\n" + "="*50 + "\n")
+    print("\n" + "=" * 50 + "\n")
 
     # Load actual settings
     try:
@@ -64,7 +67,7 @@ def validate_config():
             },
             "logging": {
                 "level": settings.logging.level,
-            }
+            },
         }
 
         print(json.dumps(config_dict, indent=2))
@@ -73,7 +76,7 @@ def validate_config():
         print(f"ERROR loading configuration: {e}")
         return 1
 
-    print("\n" + "="*50 + "\n")
+    print("\n" + "=" * 50 + "\n")
 
     # Validate feature flags
     try:

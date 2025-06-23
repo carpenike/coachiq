@@ -22,13 +22,12 @@ from fastapi import (
     APIRouter,
     Depends,
     HTTPException,
-    Request,
     WebSocket,
     WebSocketDisconnect,
 )
 from pydantic import BaseModel, Field
 
-from backend.core.dependencies_v2 import get_can_service, get_feature_manager
+from backend.core.dependencies import VerifiedCANService
 
 # Import buses from the old structure for compatibility
 from backend.integrations.can.manager import buses
@@ -57,11 +56,17 @@ router = APIRouter(prefix="/api/can", tags=["can"])
 canbus_scan_ws_clients: set[WebSocket] = set()
 
 
-def _check_can_interface_feature_enabled(request: Request) -> None:
-    """Check if can_interface feature is enabled, raise 404 if disabled."""
-    feature_manager = get_feature_manager(request)
-    if not feature_manager.is_enabled("can_interface"):
-        raise HTTPException(status_code=404, detail="can_interface feature is disabled")
+async def verify_can_interface_enabled():
+    """
+    Dependency to verify that CAN interfaces are available.
+
+    This is a placeholder that was referenced but not defined.
+    In production, this would check if CAN interfaces are properly configured.
+    """
+    if not CAN_SUPPORTED:
+        raise HTTPException(
+            status_code=503, detail="CAN interfaces are not supported on this platform"
+        )
 
 
 @router.get(
@@ -72,8 +77,8 @@ def _check_can_interface_feature_enabled(request: Request) -> None:
     response_description="Queue status including length and capacity information",
 )
 async def get_queue_status(
-    request: Request,
-    can_service: Annotated[Any, Depends(get_can_service)],
+    can_service: VerifiedCANService,
+    _: Annotated[None, Depends(verify_can_interface_enabled)],
 ) -> dict[str, Any]:
     """
     Return the current status of the CAN transmission queue.
@@ -82,7 +87,6 @@ async def get_queue_status(
     waiting to be transmitted.
     """
     logger.debug("GET /can/queue/status - Retrieving CAN queue status")
-    _check_can_interface_feature_enabled(request)
 
     try:
         status = await can_service.get_queue_status()
@@ -125,6 +129,7 @@ class BackendComputedCANStatistics(BaseModel):
 # Backend-First CANMetrics Response Model
 class BackendComputedCANMetrics(BaseModel):
     """Backend-computed CAN metrics in the exact format expected by frontend."""
+
     model_config = {"alias_generator": lambda field_name: field_name}
 
     message_rate: float = Field(
@@ -133,9 +138,7 @@ class BackendComputedCANMetrics(BaseModel):
     total_messages: int = Field(
         ..., description="Total messages processed", serialization_alias="totalMessages"
     )
-    error_count: int = Field(
-        ..., description="Total error count", serialization_alias="errorCount"
-    )
+    error_count: int = Field(..., description="Total error count", serialization_alias="errorCount")
     uptime: float = Field(..., description="System uptime in seconds")
 
 
@@ -146,8 +149,8 @@ class BackendComputedCANMetrics(BaseModel):
     description="Enhanced CAN statistics with business logic computed on backend, including PGN analysis",
 )
 async def get_enhanced_can_statistics(
-    request: Request,
-    can_service: Annotated[Any, Depends(get_can_service)],
+    can_service: VerifiedCANService,
+    _: Annotated[None, Depends(verify_can_interface_enabled)],
 ) -> BackendComputedCANStatistics:
     """
     Get comprehensive CAN statistics with backend-computed business logic and PGN-level analysis.
@@ -156,7 +159,6 @@ async def get_enhanced_can_statistics(
     including PGN-level message aggregation that was previously done in the frontend.
     """
     logger.debug("GET /can/statistics/enhanced - Retrieving enhanced CAN statistics")
-    _check_can_interface_feature_enabled(request)
 
     try:
         # Get basic statistics from CAN service
@@ -265,8 +267,8 @@ async def get_enhanced_can_statistics(
     description="Backend-computed CAN metrics with exact field mapping for frontend consumption",
 )
 async def get_computed_can_metrics(
-    request: Request,
-    can_service: Annotated[Any, Depends(get_can_service)],
+    can_service: VerifiedCANService,
+    _: Annotated[None, Depends(verify_can_interface_enabled)],
 ) -> BackendComputedCANMetrics:
     """
     Get CAN metrics with backend computation and exact frontend field mapping.
@@ -275,7 +277,6 @@ async def get_computed_can_metrics(
     the CANMetrics format directly from the backend with proper field names.
     """
     logger.debug("GET /can/metrics/computed - Retrieving backend-computed CAN metrics")
-    _check_can_interface_feature_enabled(request)
 
     try:
         # Get basic statistics from CAN service
@@ -315,8 +316,8 @@ async def get_computed_can_metrics(
     response_description="List of interface names",
 )
 async def get_interfaces(
-    request: Request,
-    can_service: Annotated[Any, Depends(get_can_service)],
+    can_service: VerifiedCANService,
+    _: Annotated[None, Depends(verify_can_interface_enabled)],
 ) -> list[str]:
     """
     Return a list of active CAN interfaces.
@@ -325,7 +326,6 @@ async def get_interfaces(
     CAN bus interfaces in the system.
     """
     logger.debug("GET /can/interfaces - Retrieving CAN interfaces")
-    _check_can_interface_feature_enabled(request)
 
     try:
         interfaces = await can_service.get_interfaces()
@@ -344,8 +344,8 @@ async def get_interfaces(
     response_description="Dictionary mapping interface names to their details",
 )
 async def get_interface_details(
-    request: Request,
-    can_service: Annotated[Any, Depends(get_can_service)],
+    can_service: VerifiedCANService,
+    _: Annotated[None, Depends(verify_can_interface_enabled)],
 ) -> dict[str, dict[str, Any]]:
     """
     Return detailed information about all CAN interfaces.
@@ -354,7 +354,6 @@ async def get_interface_details(
     CAN interface including status, statistics, and configuration.
     """
     logger.debug("GET /can/interfaces/details - Retrieving detailed interface information")
-    _check_can_interface_feature_enabled(request)
 
     try:
         details = await can_service.get_interface_details()
@@ -374,11 +373,11 @@ async def get_interface_details(
     response_description="Send operation result",
 )
 async def send_raw_message(
-    request: Request,
     arbitration_id: int,
     data: str,
     interface: str,
-    can_service: Annotated[Any, Depends(get_can_service)],
+    can_service: VerifiedCANService,
+    _: Annotated[None, Depends(verify_can_interface_enabled)],
 ) -> dict[str, Any]:
     """
     Send a raw CAN message to the specified interface.
@@ -397,7 +396,6 @@ async def send_raw_message(
     logger.info(
         f"POST /can/send - Sending CAN message: ID=0x{arbitration_id:X}, data='{data}', interface='{interface}'"
     )
-    _check_can_interface_feature_enabled(request)
 
     # Convert hex string to bytes
     try:
@@ -434,8 +432,8 @@ async def send_raw_message(
     response_description="List of recent CAN messages with metadata",
 )
 async def get_recent_can_messages(
-    request: Request,
-    can_service: Annotated[Any, Depends(get_can_service)],
+    can_service: VerifiedCANService,
+    _: Annotated[None, Depends(verify_can_interface_enabled)],
     limit: int = 100,
 ) -> list[dict[str, Any]]:
     """
@@ -451,7 +449,6 @@ async def get_recent_can_messages(
         HTTPException: 503 if CAN interfaces are not available or connected
     """
     logger.debug(f"GET /can/recent - Retrieving recent CAN messages (limit={limit})")
-    _check_can_interface_feature_enabled(request)
 
     try:
         messages = await can_service.get_recent_messages(limit)
@@ -475,8 +472,8 @@ async def get_recent_can_messages(
     response_description="Dictionary containing bus statistics and metrics",
 )
 async def get_bus_statistics(
-    request: Request,
-    can_service: Annotated[Any, Depends(get_can_service)],
+    can_service: VerifiedCANService,
+    _: Annotated[None, Depends(verify_can_interface_enabled)],
 ) -> dict[str, Any]:
     """
     Return statistics for all CAN bus interfaces.
@@ -485,7 +482,6 @@ async def get_bus_statistics(
     performance, message counts, and error rates.
     """
     logger.debug("GET /can/statistics - Retrieving CAN bus statistics")
-    _check_can_interface_feature_enabled(request)
 
     try:
         statistics = await can_service.get_bus_statistics()
@@ -615,8 +611,8 @@ def get_stats_from_pyroute2_link(link: Any) -> CANInterfaceStats:
 
 @router.get("/status", response_model=AllCANStats)
 async def get_can_status(
-    request: Request,
-    can_service: Annotated[Any, Depends(get_can_service)],
+    can_service: VerifiedCANService,
+    _: Annotated[None, Depends(verify_can_interface_enabled)],
 ) -> AllCANStats:
     """
     Retrieves detailed status for all CAN interfaces the service is listening on.
@@ -624,7 +620,6 @@ async def get_can_status(
     On non-Linux platforms, returns a platform-specific message.
     """
     logger.debug("GET /can/status - Retrieving detailed CAN status")
-    _check_can_interface_feature_enabled(request)
 
     interfaces_data: dict[str, CANInterfaceStats] = {}
 

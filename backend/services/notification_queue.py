@@ -171,12 +171,13 @@ class NotificationQueue:
 
                 # Mark as processing to prevent duplicate processing
                 if notification_ids:
+                    # Generate safe parameterized query with correct number of placeholders
                     await db.execute(
-                        """
+                        """  # nosec B608
                         UPDATE notifications
                         SET status = 'processing', last_attempt = ?
                         WHERE id IN ({})
-                    """.format(",".join("?" * len(notification_ids))),
+                    """.format(",".join("?" * len(notification_ids))),  # nosec B608
                         [datetime.utcnow().isoformat(), *notification_ids],
                     )
                     await db.commit()
@@ -443,23 +444,24 @@ class NotificationQueue:
             List of dead letter entries
         """
         try:
-            async with aiosqlite.connect(self.db_path) as db, db.execute(
-                """
+            async with (
+                aiosqlite.connect(self.db_path) as db,
+                db.execute(
+                    """
                     SELECT id, original_data, failed_at, failure_reason,
                            total_attempts, error_history, reviewed, can_retry, retry_after
                     FROM dead_letter_queue
                     ORDER BY failed_at DESC
                     LIMIT ?
                 """,
-                (limit,),
-            ) as cursor:
+                    (limit,),
+                ) as cursor,
+            ):
                 entries = []
                 async for row in cursor:
                     try:
                         original_data = json.loads(row[1])
-                        original_notification = NotificationPayload.model_validate(
-                            original_data
-                        )
+                        original_notification = NotificationPayload.model_validate(original_data)
 
                         error_history = json.loads(row[5]) if row[5] else []
 

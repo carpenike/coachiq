@@ -7,12 +7,13 @@ Integrates with the feature management system and provides health monitoring.
 
 import logging
 import time
-from typing import Optional, Dict, Any
+from typing import Any, Dict, Optional
 
+from backend.services.brake_safety_monitor import CriticalOperation, brake_safety_monitor
 from backend.services.feature_base import FeatureBase
-from backend.services.brake_safety_monitor import brake_safety_monitor, CriticalOperation
 
 logger = logging.getLogger(__name__)
+
 
 class BrakeSafetyMonitoringFeature(FeatureBase):
     """
@@ -21,24 +22,26 @@ class BrakeSafetyMonitoringFeature(FeatureBase):
     Provides IETF health check compliance and integrates with the feature management system.
     """
 
-    def __init__(self, config: Dict[str, Any]):
+    def __init__(self, config: dict[str, Any]):
         super().__init__(config)
         self.brake_monitor = brake_safety_monitor
         self._last_health_check = 0
         self._health_check_interval = config.get("safety_monitoring_interval_seconds", 1.0)
 
         # Configure deadlines from feature config
-        if hasattr(self.brake_monitor, 'CRITICAL_DEADLINES'):
+        if hasattr(self.brake_monitor, "CRITICAL_DEADLINES"):
             brake_deadline = config.get("brake_response_deadline_ms", 50.0)
             emergency_deadline = config.get("emergency_brake_deadline_ms", 25.0)
             interlock_deadline = config.get("safety_interlock_deadline_ms", 100.0)
 
-            self.brake_monitor.CRITICAL_DEADLINES.update({
-                CriticalOperation.BRAKE_COMMAND: brake_deadline,
-                CriticalOperation.BRAKE_ACKNOWLEDGMENT: brake_deadline,
-                CriticalOperation.EMERGENCY_STOP: emergency_deadline,
-                CriticalOperation.SAFETY_INTERLOCK: interlock_deadline,
-            })
+            self.brake_monitor.CRITICAL_DEADLINES.update(
+                {
+                    CriticalOperation.BRAKE_COMMAND: brake_deadline,
+                    CriticalOperation.BRAKE_ACKNOWLEDGMENT: brake_deadline,
+                    CriticalOperation.EMERGENCY_STOP: emergency_deadline,
+                    CriticalOperation.SAFETY_INTERLOCK: interlock_deadline,
+                }
+            )
 
         logger.info(f"Brake safety monitoring feature initialized with {brake_deadline}ms deadline")
 
@@ -87,7 +90,7 @@ class BrakeSafetyMonitoringFeature(FeatureBase):
         # Rate limit health checks to avoid performance impact
         current_time = time.time()
         if current_time - self._last_health_check < self._health_check_interval:
-            return getattr(self, '_last_health_status', True)
+            return getattr(self, "_last_health_status", True)
 
         self._last_health_check = current_time
 
@@ -105,13 +108,13 @@ class BrakeSafetyMonitoringFeature(FeatureBase):
 
         return self.brake_monitor.get_health_status()
 
-    def get_status(self) -> Dict[str, Any]:
+    def get_status(self) -> dict[str, Any]:
         """Get detailed brake safety monitoring status"""
         if not self._enabled:
             return {
                 "status": "disabled",
                 "enabled": False,
-                "message": "Brake safety monitoring is disabled"
+                "message": "Brake safety monitoring is disabled",
             }
 
         metrics = self.brake_monitor.get_metrics()
@@ -138,7 +141,8 @@ class BrakeSafetyMonitoringFeature(FeatureBase):
                     "actual_response_time_ms": round(v.actual_response_time_ms, 2),
                     "severity": v.severity,
                     "timestamp": v.response_timestamp,
-                } for v in recent_violations
+                }
+                for v in recent_violations
             ],
             "active_operations": len(active_operations),
             "configuration": {
@@ -149,7 +153,7 @@ class BrakeSafetyMonitoringFeature(FeatureBase):
                     CriticalOperation.EMERGENCY_STOP, 25.0
                 ),
                 "monitoring_enabled": self.brake_monitor.enabled,
-            }
+            },
         }
 
     async def _handle_emergency_violation(self, violation):
@@ -167,9 +171,9 @@ class BrakeSafetyMonitoringFeature(FeatureBase):
         # 4. Potentially initiate emergency stop sequence
 
         # For now, just ensure it's logged as a critical safety event
-        if hasattr(self, 'safety_logger'):
+        if hasattr(self, "safety_logger"):
             self.safety_logger.critical(
-                f"SAFETY_VIOLATION",
+                "SAFETY_VIOLATION",
                 extra={
                     "violation_type": "brake_deadline_exceeded",
                     "operation": violation.operation.value,
@@ -177,10 +181,12 @@ class BrakeSafetyMonitoringFeature(FeatureBase):
                     "deadline_ms": violation.deadline_ms,
                     "actual_ms": violation.actual_response_time_ms,
                     "severity": violation.severity,
-                }
+                },
             )
 
-    async def track_brake_command(self, entity_id: str, pgn: Optional[int] = None, command_data: Optional[Dict] = None) -> str:
+    async def track_brake_command(
+        self, entity_id: str, pgn: int | None = None, command_data: dict | None = None
+    ) -> str:
         """
         Track a brake command with deadline monitoring.
 
@@ -190,13 +196,12 @@ class BrakeSafetyMonitoringFeature(FeatureBase):
             return ""
 
         return await self.brake_monitor.track_critical_operation(
-            CriticalOperation.BRAKE_COMMAND,
-            entity_id,
-            pgn=pgn,
-            command_data=command_data
+            CriticalOperation.BRAKE_COMMAND, entity_id, pgn=pgn, command_data=command_data
         )
 
-    async def track_brake_acknowledgment(self, entity_id: str, pgn: Optional[int] = None, response_data: Optional[Dict] = None) -> str:
+    async def track_brake_acknowledgment(
+        self, entity_id: str, pgn: int | None = None, response_data: dict | None = None
+    ) -> str:
         """
         Track a brake acknowledgment with deadline monitoring.
 
@@ -206,18 +211,17 @@ class BrakeSafetyMonitoringFeature(FeatureBase):
             return ""
 
         return await self.brake_monitor.track_critical_operation(
-            CriticalOperation.BRAKE_ACKNOWLEDGMENT,
-            entity_id,
-            pgn=pgn,
-            command_data=response_data
+            CriticalOperation.BRAKE_ACKNOWLEDGMENT, entity_id, pgn=pgn, command_data=response_data
         )
 
-    async def complete_brake_operation(self, operation_id: str, response_data: Optional[Dict] = None):
+    async def complete_brake_operation(self, operation_id: str, response_data: dict | None = None):
         """Complete a brake operation and check for deadline violations"""
         if not self._enabled or not operation_id:
             return
 
-        violation = await self.brake_monitor.complete_critical_operation(operation_id, response_data)
+        violation = await self.brake_monitor.complete_critical_operation(
+            operation_id, response_data
+        )
 
         if violation and violation.severity == "CRITICAL":
             # Additional safety measures for critical violations
@@ -226,7 +230,7 @@ class BrakeSafetyMonitoringFeature(FeatureBase):
                 f"operation {violation.operation.value} exceeded safety deadline"
             )
 
-    def get_performance_metrics(self) -> Dict[str, Any]:
+    def get_performance_metrics(self) -> dict[str, Any]:
         """Get performance metrics for monitoring dashboard"""
         if not self._enabled:
             return {}
@@ -238,11 +242,13 @@ class BrakeSafetyMonitoringFeature(FeatureBase):
                 "total_operations": metrics.total_operations,
                 "violation_rate": (
                     metrics.deadline_violations / max(metrics.total_operations, 1) * 100
-                    if metrics.total_operations > 0 else 0
+                    if metrics.total_operations > 0
+                    else 0
                 ),
                 "critical_violation_rate": (
                     metrics.critical_violations / max(metrics.total_operations, 1) * 100
-                    if metrics.total_operations > 0 else 0
+                    if metrics.total_operations > 0
+                    else 0
                 ),
                 "average_response_time_ms": metrics.average_response_time_ms,
                 "max_response_time_ms": metrics.max_response_time_ms,
@@ -251,7 +257,8 @@ class BrakeSafetyMonitoringFeature(FeatureBase):
             }
         }
 
+
 # Feature factory function
-def create_feature(config: Dict[str, Any]) -> BrakeSafetyMonitoringFeature:
+def create_feature(config: dict[str, Any]) -> BrakeSafetyMonitoringFeature:
     """Create and return a brake safety monitoring feature instance"""
     return BrakeSafetyMonitoringFeature(config)

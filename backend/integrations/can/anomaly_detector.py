@@ -340,34 +340,41 @@ class CANAnomalyDetector:
         """Start the anomaly detector."""
         self._running = True
 
-        # Initialize security event manager connection
-        if self._enable_event_publishing:
-            try:
-                from backend.services.security_event_manager import get_security_event_manager
-
-                self._security_event_manager = get_security_event_manager()
-                logger.info("Connected to SecurityEventManager for event publishing")
-            except RuntimeError as e:
-                # SecurityEventManager not initialized yet - try getting from feature manager
-                logger.info("SecurityEventManager not initialized via singleton, trying feature manager")
-                try:
-                    from backend.services.feature_manager import get_feature_manager
-                    feature_manager = get_feature_manager()
-                    self._security_event_manager = feature_manager.get_feature("security_event_manager")
-                    if self._security_event_manager:
-                        logger.info("Connected to SecurityEventManager via feature manager")
-                    else:
-                        logger.warning("SecurityEventManager feature not found in feature manager")
-                        self._security_event_manager = None
-                except Exception as fm_e:
-                    logger.warning("Failed to get SecurityEventManager from feature manager: %s", fm_e)
-                    self._security_event_manager = None
-            except Exception as e:
-                logger.warning("Failed to connect to SecurityEventManager: %s", e)
-                self._security_event_manager = None
+        # Initialize security event manager connection (with late binding support)
+        await self._connect_to_security_event_manager()
 
         self._cleanup_task = asyncio.create_task(self._periodic_cleanup())
         logger.info("CAN Anomaly Detector started")
+
+    async def _connect_to_security_event_manager(self):
+        """Connect to SecurityEventManager with support for late binding."""
+        if not self._enable_event_publishing:
+            return
+
+        try:
+            from backend.core.dependencies import get_service_registry
+
+            service_registry = get_service_registry()
+            if service_registry.has_service("security_event_manager"):
+                self._security_event_manager = service_registry.get_service(
+                    "security_event_manager"
+                )
+                logger.info("Connected to SecurityEventManager for event publishing")
+            else:
+                logger.info(
+                    "SecurityEventManager not yet available - will attempt to connect later"
+                )
+                self._security_event_manager = None
+        except RuntimeError:
+            # ServiceRegistry not initialized yet
+            logger.info(
+                "ServiceRegistry not initialized - will attempt to connect to "
+                "SecurityEventManager later"
+            )
+            self._security_event_manager = None
+        except Exception as e:
+            logger.warning("Failed to connect to SecurityEventManager: %s", e)
+            self._security_event_manager = None
 
     async def stop(self):
         """Stop the anomaly detector."""
@@ -627,7 +634,7 @@ class CANAnomalyDetector:
         logger.log(log_level, "Security Alert [%s]: %s", alert.alert_id, description)
 
         # Publish security event if manager is available
-        if self._security_event_manager and self._enable_event_publishing:
+        if self._security_event_manager is not None and self._enable_event_publishing:
             await self._publish_security_event(
                 alert, anomaly_type, severity, source_address, pgn, description, evidence
             )
@@ -635,11 +642,16 @@ class CANAnomalyDetector:
         return alert
 
     async def _periodic_cleanup(self):
-        """Periodic cleanup of old data."""
+        """Periodic cleanup of old data and reconnection attempts."""
         while self._running:
             try:
                 await asyncio.sleep(self.cleanup_interval)
                 await self._cleanup_old_data()
+
+                # Attempt to reconnect to SecurityEventManager if not connected
+                if self._security_event_manager is None and self._enable_event_publishing:
+                    await self._connect_to_security_event_manager()
+
             except asyncio.CancelledError:
                 break
             except Exception as e:

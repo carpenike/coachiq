@@ -6,17 +6,17 @@ and reporting functionality.
 """
 
 from datetime import UTC, datetime, timedelta
-from typing import Any
+from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
 
-from backend.core.dependencies_v2 import (
+from backend.core.dependencies import (
     get_analytics_service,
     get_reporting_service,
 )
-from backend.middleware.auth import require_authentication
+from backend.middleware.auth import AuthenticatedUser
 from backend.models.notification import NotificationChannel, NotificationType
 from backend.models.notification_analytics import (
     AggregationPeriod,
@@ -28,13 +28,13 @@ from backend.services.notification_reporting_service import NotificationReportin
 
 # Request/Response Models
 
+
 class MetricsRequest(BaseModel):
     """Request model for metrics queries."""
 
     metric_type: MetricType = Field(..., description="Type of metric to retrieve")
     aggregation_period: AggregationPeriod = Field(
-        AggregationPeriod.HOURLY,
-        description="Aggregation period"
+        AggregationPeriod.HOURLY, description="Aggregation period"
     )
     start_date: datetime = Field(..., description="Start of period")
     end_date: datetime | None = Field(None, description="End of period")
@@ -105,22 +105,20 @@ class DashboardMetrics(BaseModel):
 router = APIRouter(
     prefix="/api/notification-analytics",
     tags=["notification-analytics"],
-    dependencies=[Depends(require_authentication)],
 )
 
 
 @router.get("/metrics", response_model=list[NotificationMetric])
 async def get_metrics(
+    analytics_service: Annotated[NotificationAnalyticsService, Depends(get_analytics_service)],
     metric_type: MetricType = Query(..., description="Type of metric"),
-    aggregation_period: AggregationPeriod = Query(
-        AggregationPeriod.HOURLY,
-        description="Aggregation period"
-    ),
     start_date: datetime = Query(..., description="Start date"),
+    aggregation_period: AggregationPeriod = Query(
+        AggregationPeriod.HOURLY, description="Aggregation period"
+    ),
     end_date: datetime | None = Query(None, description="End date"),
     channel: NotificationChannel | None = Query(None, description="Filter by channel"),
     notification_type: NotificationType | None = Query(None, description="Filter by type"),
-    analytics_service: NotificationAnalyticsService = Depends(get_analytics_service),
 ) -> list[NotificationMetric]:
     """
     Get aggregated notification metrics.
@@ -142,10 +140,10 @@ async def get_metrics(
 
 @router.get("/channels", response_model=ChannelMetricsResponse)
 async def get_channel_metrics(
+    analytics_service: Annotated[NotificationAnalyticsService, Depends(get_analytics_service)],
     start_date: datetime | None = Query(None, description="Start date"),
     end_date: datetime | None = Query(None, description="End date"),
     channel: NotificationChannel | None = Query(None, description="Specific channel"),
-    analytics_service: NotificationAnalyticsService = Depends(get_analytics_service),
 ) -> ChannelMetricsResponse:
     """
     Get performance metrics for notification channels.
@@ -195,10 +193,10 @@ async def get_channel_metrics(
 
 @router.get("/errors", response_model=ErrorAnalysisResponse)
 async def analyze_errors(
+    analytics_service: Annotated[NotificationAnalyticsService, Depends(get_analytics_service)],
     start_date: datetime | None = Query(None, description="Start date"),
     end_date: datetime | None = Query(None, description="End date"),
     min_occurrences: int = Query(5, description="Minimum occurrences"),
-    analytics_service: NotificationAnalyticsService = Depends(get_analytics_service),
 ) -> ErrorAnalysisResponse:
     """
     Analyze notification delivery errors.
@@ -268,7 +266,7 @@ async def analyze_errors(
 
 @router.get("/queue/health", response_model=QueueHealthResponse)
 async def get_queue_health(
-    analytics_service: NotificationAnalyticsService = Depends(get_analytics_service),
+    analytics_service: Annotated[NotificationAnalyticsService, Depends(get_analytics_service)],
 ) -> QueueHealthResponse:
     """
     Get current notification queue health status.
@@ -318,8 +316,8 @@ async def get_queue_health(
 @router.post("/reports/generate", response_model=dict)
 async def generate_report(
     request: ReportRequest,
-    current_user: Any = Depends(require_authentication),
-    reporting_service: NotificationReportingService = Depends(get_reporting_service),
+    current_user: AuthenticatedUser,
+    reporting_service: Annotated[NotificationReportingService, Depends(get_reporting_service)],
 ) -> dict:
     """
     Generate a notification analytics report.
@@ -352,7 +350,7 @@ async def generate_report(
 @router.get("/reports/{report_id}")
 async def get_report(
     report_id: str,
-    reporting_service: NotificationReportingService = Depends(get_reporting_service),
+    reporting_service: Annotated[NotificationReportingService, Depends(get_reporting_service)],
 ) -> dict:
     """
     Get report metadata by ID.
@@ -382,7 +380,7 @@ async def get_report(
 @router.get("/reports/{report_id}/download")
 async def download_report(
     report_id: str,
-    reporting_service: NotificationReportingService = Depends(get_reporting_service),
+    reporting_service: Annotated[NotificationReportingService, Depends(get_reporting_service)],
 ) -> FileResponse:
     """
     Download a generated report.
@@ -413,12 +411,12 @@ async def download_report(
 
 @router.get("/reports")
 async def list_reports(
+    reporting_service: Annotated[NotificationReportingService, Depends(get_reporting_service)],
+    current_user: AuthenticatedUser,
     report_type: str | None = Query(None, description="Filter by report type"),
     start_date: datetime | None = Query(None, description="Filter by generation date start"),
     end_date: datetime | None = Query(None, description="Filter by generation date end"),
     limit: int = Query(100, description="Maximum results", le=1000),
-    reporting_service: NotificationReportingService = Depends(get_reporting_service),
-    current_user: Any = Depends(require_authentication),
 ) -> dict:
     """
     List generated reports.
@@ -452,8 +450,8 @@ async def list_reports(
 @router.post("/reports/schedule")
 async def schedule_report(
     request: ReportScheduleRequest,
-    reporting_service: NotificationReportingService = Depends(get_reporting_service),
-    current_user: Any = Depends(require_authentication),
+    reporting_service: Annotated[NotificationReportingService, Depends(get_reporting_service)],
+    current_user: AuthenticatedUser,
 ) -> dict:
     """
     Schedule a recurring report.
@@ -484,7 +482,7 @@ async def schedule_report(
 @router.delete("/reports/schedule/{schedule_id}")
 async def unschedule_report(
     schedule_id: str,
-    reporting_service: NotificationReportingService = Depends(get_reporting_service),
+    reporting_service: Annotated[NotificationReportingService, Depends(get_reporting_service)],
 ) -> dict:
     """
     Remove a scheduled report.
@@ -501,7 +499,7 @@ async def unschedule_report(
 
 @router.get("/dashboard", response_model=DashboardMetrics)
 async def get_dashboard_metrics(
-    analytics_service: NotificationAnalyticsService = Depends(get_analytics_service),
+    analytics_service: Annotated[NotificationAnalyticsService, Depends(get_analytics_service)],
 ) -> DashboardMetrics:
     """
     Get dashboard metrics for real-time monitoring.
@@ -554,8 +552,8 @@ async def get_dashboard_metrics(
             "total_24h": sum(m.total_sent for m in channel_metrics),
             "delivered_24h": sum(m.total_delivered for m in channel_metrics),
             "failed_24h": sum(m.total_failed for m in channel_metrics),
-            "success_rate_24h": sum(m.total_delivered for m in channel_metrics) /
-                               max(sum(m.total_sent for m in channel_metrics), 1),
+            "success_rate_24h": sum(m.total_delivered for m in channel_metrics)
+            / max(sum(m.total_sent for m in channel_metrics), 1),
             "active_channels": len([m for m in channel_metrics if m.total_sent > 0]),
         },
         channels=[
@@ -583,16 +581,20 @@ async def get_dashboard_metrics(
         trending={
             "volume_trend_percent": volume_trend,
             "last_hour_count": last_hour_total,
-            "trend_direction": "up" if volume_trend > 0 else "down" if volume_trend < 0 else "stable",
+            "trend_direction": "up"
+            if volume_trend > 0
+            else "down"
+            if volume_trend < 0
+            else "stable",
         },
     )
 
 
 @router.post("/engagement/{notification_id}")
 async def track_engagement(
+    analytics_service: Annotated[NotificationAnalyticsService, Depends(get_analytics_service)],
     notification_id: str,
     action: str = Query(..., description="Action type: opened, clicked, dismissed"),
-    analytics_service: NotificationAnalyticsService = Depends(get_analytics_service),
 ) -> dict:
     """
     Track user engagement with a notification.

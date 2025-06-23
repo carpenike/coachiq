@@ -12,10 +12,11 @@ Contract testing ensures:
 """
 
 import json
+from typing import Any, Dict
+
 import pytest
-from typing import Dict, Any
 from fastapi.testclient import TestClient
-from jsonschema import validate, ValidationError
+from jsonschema import ValidationError, validate
 
 from backend.main import create_app
 
@@ -33,7 +34,15 @@ class ContractTestConfig:
     # Expected OpenAPI v3 schemas (extracted from OPENAPI_V3_SPECIFICATION.md)
     ENTITY_SCHEMA = {
         "type": "object",
-        "required": ["entity_id", "name", "device_type", "protocol", "state", "last_updated", "available"],
+        "required": [
+            "entity_id",
+            "name",
+            "device_type",
+            "protocol",
+            "state",
+            "last_updated",
+            "available",
+        ],
         "properties": {
             "entity_id": {"type": "string"},
             "name": {"type": "string"},
@@ -42,24 +51,21 @@ class ContractTestConfig:
             "state": {"type": "object"},
             "area": {"type": ["string", "null"]},
             "last_updated": {"type": "string"},
-            "available": {"type": "boolean"}
-        }
+            "available": {"type": "boolean"},
+        },
     }
 
     ENTITY_COLLECTION_SCHEMA = {
         "type": "object",
         "required": ["entities", "total_count", "page", "page_size", "has_next", "filters_applied"],
         "properties": {
-            "entities": {
-                "type": "array",
-                "items": ENTITY_SCHEMA
-            },
+            "entities": {"type": "array", "items": ENTITY_SCHEMA},
             "total_count": {"type": "integer"},
             "page": {"type": "integer"},
             "page_size": {"type": "integer"},
             "has_next": {"type": "boolean"},
-            "filters_applied": {"type": "object"}
-        }
+            "filters_applied": {"type": "object"},
+        },
     }
 
     OPERATION_RESULT_SCHEMA = {
@@ -70,24 +76,28 @@ class ContractTestConfig:
             "status": {"type": "string", "enum": ["success", "failed", "timeout", "unauthorized"]},
             "error_message": {"type": ["string", "null"]},
             "error_code": {"type": ["string", "null"]},
-            "execution_time_ms": {"type": ["number", "null"]}
-        }
+            "execution_time_ms": {"type": ["number", "null"]},
+        },
     }
 
     BULK_OPERATION_RESULT_SCHEMA = {
         "type": "object",
-        "required": ["operation_id", "total_count", "success_count", "failed_count", "results", "total_execution_time_ms"],
+        "required": [
+            "operation_id",
+            "total_count",
+            "success_count",
+            "failed_count",
+            "results",
+            "total_execution_time_ms",
+        ],
         "properties": {
             "operation_id": {"type": "string"},
             "total_count": {"type": "integer"},
             "success_count": {"type": "integer"},
             "failed_count": {"type": "integer"},
-            "results": {
-                "type": "array",
-                "items": OPERATION_RESULT_SCHEMA
-            },
-            "total_execution_time_ms": {"type": "number"}
-        }
+            "results": {"type": "array", "items": OPERATION_RESULT_SCHEMA},
+            "total_execution_time_ms": {"type": "number"},
+        },
     }
 
     HEALTH_CHECK_SCHEMA = {
@@ -99,8 +109,8 @@ class ContractTestConfig:
             "version": {"type": "string"},
             "features": {"type": "object"},
             "entity_count": {"type": "integer"},
-            "timestamp": {"type": "string"}
-        }
+            "timestamp": {"type": "string"},
+        },
     }
 
 
@@ -113,10 +123,12 @@ def api_client(monkeypatch):
 
     # Clear any cached feature manager to force reload with new env vars
     import backend.services.feature_manager
+
     backend.services.feature_manager._feature_manager = None
 
     # Clear settings cache to force reload
     import backend.core.config
+
     backend.core.config._settings = None
 
     app = create_app()
@@ -125,7 +137,9 @@ def api_client(monkeypatch):
     return client
 
 
-def validate_response_schema(response_data: Dict[str, Any], expected_schema: Dict[str, Any], endpoint: str):
+def validate_response_schema(
+    response_data: dict[str, Any], expected_schema: dict[str, Any], endpoint: str
+):
     """
     Validate response data against expected JSON schema
 
@@ -137,7 +151,9 @@ def validate_response_schema(response_data: Dict[str, Any], expected_schema: Dic
     try:
         validate(instance=response_data, schema=expected_schema)
     except ValidationError as e:
-        pytest.fail(f"Contract violation for {endpoint}: {e.message}\\nResponse: {json.dumps(response_data, indent=2)}")
+        pytest.fail(
+            f"Contract violation for {endpoint}: {e.message}\\nResponse: {json.dumps(response_data, indent=2)}"
+        )
 
 
 class TestEntitiesContractCompliance:
@@ -152,9 +168,7 @@ class TestEntitiesContractCompliance:
 
         if response.status_code == 200:
             validate_response_schema(
-                response.json(),
-                ContractTestConfig.HEALTH_CHECK_SCHEMA,
-                "/api/v2/entities/health"
+                response.json(), ContractTestConfig.HEALTH_CHECK_SCHEMA, "/api/v2/entities/health"
             )
 
     def test_entities_schemas_endpoint_contract(self, api_client):
@@ -168,10 +182,19 @@ class TestEntitiesContractCompliance:
             schemas = response.json()
 
             # Validate that required schemas are present
-            required_schemas = ["Entity", "ControlCommand", "BulkControlRequest", "OperationResult", "BulkOperationResult", "EntityCollection"]
+            required_schemas = [
+                "Entity",
+                "ControlCommand",
+                "BulkControlRequest",
+                "OperationResult",
+                "BulkOperationResult",
+                "EntityCollection",
+            ]
             for schema_name in required_schemas:
                 assert schema_name in schemas, f"Missing required schema: {schema_name}"
-                assert isinstance(schemas[schema_name], dict), f"Schema {schema_name} should be a dictionary"
+                assert isinstance(schemas[schema_name], dict), (
+                    f"Schema {schema_name} should be a dictionary"
+                )
 
     def test_entities_list_endpoint_contract(self, api_client):
         """Test /api/v2/entities matches OpenAPI specification"""
@@ -182,9 +205,7 @@ class TestEntitiesContractCompliance:
 
         if response.status_code == 200:
             validate_response_schema(
-                response.json(),
-                ContractTestConfig.ENTITY_COLLECTION_SCHEMA,
-                "/api/v2/entities"
+                response.json(), ContractTestConfig.ENTITY_COLLECTION_SCHEMA, "/api/v2/entities"
             )
 
     def test_entities_list_with_pagination_contract(self, api_client):
@@ -196,7 +217,11 @@ class TestEntitiesContractCompliance:
 
         if response.status_code == 200:
             data = response.json()
-            validate_response_schema(data, ContractTestConfig.ENTITY_COLLECTION_SCHEMA, "/api/v2/entities with pagination")
+            validate_response_schema(
+                data,
+                ContractTestConfig.ENTITY_COLLECTION_SCHEMA,
+                "/api/v2/entities with pagination",
+            )
 
             # Validate pagination-specific requirements
             assert data["page"] == 1, "Page number should match request"
@@ -211,7 +236,9 @@ class TestEntitiesContractCompliance:
 
         if response.status_code == 200:
             data = response.json()
-            validate_response_schema(data, ContractTestConfig.ENTITY_COLLECTION_SCHEMA, "/api/v2/entities with filters")
+            validate_response_schema(
+                data, ContractTestConfig.ENTITY_COLLECTION_SCHEMA, "/api/v2/entities with filters"
+            )
 
             # Validate filter application
             filters = data["filters_applied"]
@@ -222,12 +249,9 @@ class TestEntitiesContractCompliance:
         """Test /api/v2/entities/bulk-control request/response contract"""
         bulk_request = {
             "entity_ids": ["test_entity_1", "test_entity_2"],
-            "command": {
-                "command": "set",
-                "state": True
-            },
+            "command": {"command": "set", "state": True},
             "ignore_errors": True,
-            "timeout_seconds": 5.0
+            "timeout_seconds": 5.0,
         }
 
         response = api_client.post("/api/v2/entities/bulk-control", json=bulk_request)
@@ -239,7 +263,7 @@ class TestEntitiesContractCompliance:
             validate_response_schema(
                 response.json(),
                 ContractTestConfig.BULK_OPERATION_RESULT_SCHEMA,
-                "/api/v2/entities/bulk-control"
+                "/api/v2/entities/bulk-control",
             )
 
 
@@ -251,10 +275,14 @@ class TestDiagnosticsContractCompliance:
         response = api_client.get("/api/v2/diagnostics/health")
 
         # Diagnostics API should be disabled by default, expect 404
-        assert response.status_code == 404, f"Diagnostics should be disabled, got: {response.status_code}"
+        assert response.status_code == 404, (
+            f"Diagnostics should be disabled, got: {response.status_code}"
+        )
 
         error_response = response.json()
-        assert "Domain API v2" in error_response.get("detail", ""), "Should indicate domain API is disabled"
+        assert "Domain API v2" in error_response.get("detail", ""), (
+            "Should indicate domain API is disabled"
+        )
 
 
 class TestContractValidationFramework:
@@ -273,8 +301,12 @@ class TestContractValidationFramework:
         from backend.core.config import get_settings
 
         settings = get_settings()
-        assert settings.features.domain_api_v2 == True, "Domain API v2 should be enabled via environment override"
-        assert settings.features.entities_api_v2 == True, "Entities API v2 should be enabled via environment override"
+        assert settings.features.domain_api_v2 == True, (
+            "Domain API v2 should be enabled via environment override"
+        )
+        assert settings.features.entities_api_v2 == True, (
+            "Entities API v2 should be enabled via environment override"
+        )
 
     def test_schema_validation_helper(self):
         """Test the schema validation helper function"""
@@ -286,7 +318,7 @@ class TestContractValidationFramework:
             "state": {"on": True},
             "area": "living_room",
             "last_updated": "2025-01-11T00:00:00Z",
-            "available": True
+            "available": True,
         }
 
         # Should not raise any exception
@@ -300,7 +332,9 @@ class TestContractValidationFramework:
         }
 
         with pytest.raises(AssertionError):
-            validate_response_schema(invalid_data, ContractTestConfig.ENTITY_SCHEMA, "test_endpoint")
+            validate_response_schema(
+                invalid_data, ContractTestConfig.ENTITY_SCHEMA, "test_endpoint"
+            )
 
 
 if __name__ == "__main__":

@@ -36,7 +36,6 @@ class DecodedValue:
     raw_value: int | None = None
 
 
-
 def get_bits(data_bytes: bytes, start_bit: int, length: int) -> int:
     """
     Extract a little-endian bitfield from a CAN payload.
@@ -72,9 +71,7 @@ def get_bits(data_bytes: bytes, start_bit: int, length: int) -> int:
             f"Bit range {start_bit}:{start_bit + length} exceeds data size "
             f"({total_bits} bits available)"
         )
-        raise DecodingError(
-            msg
-        )
+        raise DecodingError(msg)
 
     # For very long fields (> 64 bits), we need special handling
     if length > 64:
@@ -128,10 +125,7 @@ def decode_signal(signal: dict[str, Any], data_bytes: bytes) -> DecodedValue | D
                 return DecodedValue(value=enum_str, unit=unit, raw_value=raw_value)
             # Return unknown enum value
             return DecodedValue(
-                value=f"UNKNOWN ({raw_value})",
-                unit=unit,
-                valid=False,
-                raw_value=raw_value
+                value=f"UNKNOWN ({raw_value})", unit=unit, valid=False, raw_value=raw_value
             )
 
         # Determine the appropriate value type

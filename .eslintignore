@@ -1,0 +1,72 @@
+# Root-level .eslintignore for monorepo safety
+# Prevents ESLint from scanning Python directories when run from root
+
+# Backend directories
+backend/
+.venv/
+venv/
+env/
+.env/
+__pycache__/
+*.pyc
+
+# Python build artifacts
+build/
+dist/
+*.egg-info/
+*.egg
+
+# Python caches
+.ruff_cache/
+.mypy_cache/
+.pytest_cache/
+
+# Documentation builds
+docs/_build/
+site/
+
+# Nix results
+result
+result-*
+
+# Coverage reports
+htmlcov/
+coverage.xml
+*.coverage
+
+# Database files
+*.db
+*.sqlite
+*.sqlite3
+
+# Temporary files
+*.tmp
+*.temp
+tmp/
+temp/
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# IDE files
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Project specific
+_deprecated/
+resources/
+deployment/
+data/
+recordings/
+
+# Config and scripts that shouldn't be linted
+*.sh
+*.nix
+*.yml
+*.yaml
+*.toml
+*.ini
+*.lock

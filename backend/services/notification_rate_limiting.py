@@ -196,9 +196,7 @@ class NotificationDebouncer:
         # Start background cleanup task
         asyncio.create_task(self._cleanup_loop())
 
-    async def allow(
-        self, message: str, level: str = "info", custom_key: str | None = None
-    ) -> bool:
+    async def allow(self, message: str, level: str = "info", custom_key: str | None = None) -> bool:
         """
         Check if notification should be allowed (not suppressed).
 
@@ -218,7 +216,9 @@ class NotificationDebouncer:
                 content_hash = custom_key
             else:
                 # Hash message content for consistent key generation
-                content_hash = hashlib.md5(message.encode("utf-8")).hexdigest()
+                content_hash = hashlib.md5(
+                    message.encode("utf-8"), usedforsecurity=False
+                ).hexdigest()
 
             suppression_key = (content_hash, level.lower())
             current_time = datetime.utcnow()
@@ -305,7 +305,7 @@ class NotificationDebouncer:
                 self.logger.info(f"Cleared all {count} debounce suppressions")
                 return count
             # Clear matching pattern
-            pattern_hash = hashlib.md5(pattern.encode("utf-8")).hexdigest()
+            pattern_hash = hashlib.md5(pattern.encode("utf-8"), usedforsecurity=False).hexdigest()
             keys_to_remove = [
                 key for key in self.suppressed_notifications if key[0] == pattern_hash
             ]

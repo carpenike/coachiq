@@ -20,10 +20,10 @@ class VehicleState(Enum):
     """Represents the current safety state of the vehicle."""
 
     UNKNOWN = "unknown"
-    PARKED_SAFE = "parked_safe"      # Brake set, engine off
+    PARKED_SAFE = "parked_safe"  # Brake set, engine off
     PARKED_RUNNING = "parked_running"  # Brake set, engine on
-    DRIVING = "driving"              # Moving
-    UNSAFE = "unsafe"                # Invalid state combination
+    DRIVING = "driving"  # Moving
+    UNSAFE = "unsafe"  # Invalid state combination
 
 
 class SafetyEvent(Enum):
@@ -127,9 +127,12 @@ class SafetyStateEngine:
 
         # Vehicle-wide safety rules
         if self.current_state == VehicleState.DRIVING and operation in [
-            "slideout_extend", "slideout_retract", "leveling_extend", "leveling_retract"
+            "slideout_extend",
+            "slideout_retract",
+            "leveling_extend",
+            "leveling_retract",
         ]:
-                return False, f"Operation '{operation}' not allowed while vehicle is moving"
+            return False, f"Operation '{operation}' not allowed while vehicle is moving"
 
         if self.current_state == VehicleState.UNSAFE:
             return False, "Vehicle in unsafe state - no operations allowed"
@@ -198,16 +201,20 @@ class SafetyStateEngine:
             return VehicleState.UNKNOWN
 
         # Check for unsafe combinations first
-        if (self.state_data.engine_running is True and
-            self.state_data.parking_brake_set is False and
-            self.state_data.vehicle_speed is not None and
-            self.state_data.vehicle_speed > self.MOVING_SPEED_THRESHOLD):
+        if (
+            self.state_data.engine_running is True
+            and self.state_data.parking_brake_set is False
+            and self.state_data.vehicle_speed is not None
+            and self.state_data.vehicle_speed > self.MOVING_SPEED_THRESHOLD
+        ):
             # This is normal driving
             return VehicleState.DRIVING
 
         # Check if vehicle is moving
-        if (self.state_data.vehicle_speed is not None and
-            self.state_data.vehicle_speed > self.MOVING_SPEED_THRESHOLD):
+        if (
+            self.state_data.vehicle_speed is not None
+            and self.state_data.vehicle_speed > self.MOVING_SPEED_THRESHOLD
+        ):
             return VehicleState.DRIVING
 
         # Vehicle is stopped, check parking brake and engine
@@ -217,9 +224,11 @@ class SafetyStateEngine:
             return VehicleState.PARKED_SAFE
 
         # If we have some data but can't determine a clear state
-        if (self.state_data.parking_brake_set is not None or
-            self.state_data.engine_running is not None or
-            self.state_data.vehicle_speed is not None):
+        if (
+            self.state_data.parking_brake_set is not None
+            or self.state_data.engine_running is not None
+            or self.state_data.vehicle_speed is not None
+        ):
             return VehicleState.UNKNOWN
 
         # No data at all

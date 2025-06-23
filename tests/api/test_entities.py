@@ -26,7 +26,7 @@ async def test_list_entities_success(
                 "state": {"state": True},
                 "protocol": "rvc",
                 "available": True,
-                "last_updated": "2023-01-01T12:00:00Z"
+                "last_updated": "2023-01-01T12:00:00Z",
             },
             {
                 "entity_id": "sensor_1",
@@ -35,14 +35,14 @@ async def test_list_entities_success(
                 "state": {"value": 20.5},
                 "protocol": "rvc",
                 "available": True,
-                "last_updated": "2023-01-01T12:00:00Z"
+                "last_updated": "2023-01-01T12:00:00Z",
             },
         ],
         "total_count": 2,
         "page": 1,
         "page_size": 50,
         "has_next": False,
-        "filters_applied": {}
+        "filters_applied": {},
     }
     override_entity_service.list_entities.return_value = mock_entities
     override_feature_manager.is_enabled.return_value = True
@@ -105,14 +105,14 @@ async def test_list_entities_with_device_type_filter(
                 "state": {"state": True},
                 "protocol": "rvc",
                 "available": True,
-                "last_updated": "2023-01-01T12:00:00Z"
+                "last_updated": "2023-01-01T12:00:00Z",
             },
         ],
         "total_count": 1,
         "page": 1,
         "page_size": 50,
         "has_next": False,
-        "filters_applied": {"device_type": "light"}
+        "filters_applied": {"device_type": "light"},
     }
     override_entity_service.list_entities.return_value = mock_entities
     override_feature_manager.is_enabled.return_value = True
@@ -186,7 +186,7 @@ async def test_get_entity_success(
         "state": {"state": True},
         "protocol": "rvc",
         "available": True,
-        "last_updated": "2023-01-01T12:00:00Z"
+        "last_updated": "2023-01-01T12:00:00Z",
     }
     override_entity_service.get_entity.return_value = mock_entity
     override_feature_manager.is_enabled.return_value = True

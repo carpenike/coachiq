@@ -12,7 +12,6 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
 
 from backend.services import log_history
-from backend.services.feature_manager import FeatureManager, get_feature_manager
 
 logger = logging.getLogger(__name__)
 
@@ -48,13 +47,11 @@ def parse_query_datetime(value: str | None) -> datetime.datetime | None:
     summary="Get historical logs",
     description="""
     Query historical logs from journald. Supports filtering by time, level, module, and pagination via cursor.\n
-    **Feature-gated:** This endpoint is only available if the `log_history` feature flag is enabled.\n
     Only available on systems with systemd/journald.
     """,
     response_model_exclude_none=True,
 )
 def get_log_history(
-    feature_manager: Annotated[FeatureManager, Depends(get_feature_manager)],
     since: datetime.datetime | None = None,
     until: datetime.datetime | None = None,
     level: str | None = None,
@@ -63,8 +60,7 @@ def get_log_history(
     limit: int = Query(100, ge=1, le=500, description="Max number of log entries to return"),
 ) -> LogHistoryResponse:
     """
-    Get historical logs from journald with optional filters and pagination.\n
-    This endpoint is feature-gated by the 'log_history' feature flag.
+    Get historical logs from journald with optional filters and pagination.
     """
     filters = []
     if since:
@@ -80,12 +76,6 @@ def get_log_history(
     filter_str = f" with filters: {', '.join(filters)}" if filters else ""
 
     logger.debug(f"GET /logs/history - Retrieving log history (limit={limit}){filter_str}")
-
-    if not feature_manager.is_enabled("log_history"):
-        logger.warning("Log history endpoint accessed but feature is disabled")
-        raise HTTPException(
-            status_code=404, detail="Log history API is not enabled (feature-gated)"
-        )
 
     if not log_history.is_journald_available():
         logger.warning(

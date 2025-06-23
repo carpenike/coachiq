@@ -6,9 +6,10 @@ specification matches our documented API design patterns.
 """
 
 import json
+
 import pytest
-from fastapi.testclient import TestClient
 from fastapi.openapi.utils import get_openapi
+from fastapi.testclient import TestClient
 
 from backend.main import create_app
 
@@ -26,7 +27,9 @@ def test_openapi_spec_generation():
     )
 
     # Basic validation
-    assert openapi_schema["openapi"] in ["3.0.2", "3.1.0"], f"Should use OpenAPI 3.x, got {openapi_schema['openapi']}"
+    assert openapi_schema["openapi"] in ["3.0.2", "3.1.0"], (
+        f"Should use OpenAPI 3.x, got {openapi_schema['openapi']}"
+    )
     assert "info" in openapi_schema, "Should have info section"
     assert "paths" in openapi_schema, "Should have paths section"
 
@@ -42,15 +45,15 @@ def test_domain_api_route_structure():
     # Get all routes
     routes = []
     for route in app.routes:
-        if hasattr(route, 'path'):
+        if hasattr(route, "path"):
             routes.append(route.path)
 
     # Should have legacy routes (these always exist)
-    legacy_routes = [r for r in routes if r.startswith('/api/entities')]
+    legacy_routes = [r for r in routes if r.startswith("/api/entities")]
     assert len(legacy_routes) > 0, "Should have legacy /api/entities routes"
 
     # Check that route patterns match expected structure
-    api_routes = [r for r in routes if r.startswith('/api/')]
+    api_routes = [r for r in routes if r.startswith("/api/")]
     assert len(api_routes) > 0, "Should have API routes"
 
 
@@ -135,7 +138,7 @@ class TestContractBaseline:
 
         api_routes = []
         for route in app.routes:
-            if hasattr(route, 'path') and route.path.startswith('/api/'):
+            if hasattr(route, "path") and route.path.startswith("/api/"):
                 api_routes.append(route.path)
 
         # Should have reasonable number of routes (adjust as needed)
@@ -148,7 +151,7 @@ class TestContractBaseline:
 
         ws_routes = []
         for route in app.routes:
-            if hasattr(route, 'path') and route.path.startswith('/ws'):
+            if hasattr(route, "path") and route.path.startswith("/ws"):
                 ws_routes.append(route.path)
 
         print(f"\\nBaseline: Found {len(ws_routes)} WebSocket routes")
@@ -160,7 +163,7 @@ class TestContractBaseline:
 
         domain_routes = []
         for route in app.routes:
-            if hasattr(route, 'path') and '/api/v2/' in route.path:
+            if hasattr(route, "path") and "/api/v2/" in route.path:
                 domain_routes.append(route.path)
 
         print(f"\\nDomain API v2 routes found: {len(domain_routes)}")

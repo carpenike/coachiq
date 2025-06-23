@@ -9,10 +9,10 @@ import logging
 import time
 from typing import Annotated, Any
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
 
-from backend.core.dependencies_v2 import get_feature_manager, get_analytics_dashboard_service
+from backend.core.dependencies import get_analytics_dashboard_service
 from backend.services.analytics_dashboard_service import AnalyticsDashboardService
 
 logger = logging.getLogger(__name__)
@@ -74,14 +74,7 @@ class MetricsAggregationParams(BaseModel):
     metric_groups: list[str] | None = Field(default=None, description="Metric groups to include")
 
 
-def _check_analytics_enabled(request: Request) -> None:
-    """Check if analytics features are enabled, raise 404 if disabled."""
-    feature_manager = get_feature_manager(request)
-    if not feature_manager.is_enabled("performance_analytics"):
-        raise HTTPException(status_code=404, detail="Analytics features are disabled")
-
-
-# Service dependency is now imported from dependencies_v2
+# Service dependency is now imported from dependencies
 # This eliminates the local app.state access pattern
 
 
@@ -93,7 +86,6 @@ def _check_analytics_enabled(request: Request) -> None:
     response_description="Performance trend data with analysis and insights",
 )
 async def get_performance_trends(
-    request: Request,
     service: Annotated[AnalyticsDashboardService, Depends(get_analytics_dashboard_service)],
     time_window_hours: int = Query(24, ge=1, le=168, description="Time window in hours"),
     metrics: str | None = Query(None, description="Comma-separated list of metrics"),
@@ -119,7 +111,6 @@ async def get_performance_trends(
     logger.debug(
         f"GET /analytics/trends - time_window={time_window_hours}h, resolution={resolution}"
     )
-    _check_analytics_enabled(request)
 
     try:
         # Parse metrics parameter
@@ -151,7 +142,6 @@ async def get_performance_trends(
     response_description="System insights with actionable recommendations",
 )
 async def get_system_insights(
-    request: Request,
     service: Annotated[AnalyticsDashboardService, Depends(get_analytics_dashboard_service)],
     categories: str | None = Query(None, description="Comma-separated list of categories"),
     min_severity: str = Query(
@@ -179,7 +169,6 @@ async def get_system_insights(
         System insights with actionable recommendations
     """
     logger.debug(f"GET /analytics/insights - categories={categories}, min_severity={min_severity}")
-    _check_analytics_enabled(request)
 
     try:
         # Parse categories parameter
@@ -209,7 +198,6 @@ async def get_system_insights(
     response_description="Historical analysis results with patterns and predictions",
 )
 async def get_historical_analysis(
-    request: Request,
     service: Annotated[AnalyticsDashboardService, Depends(get_analytics_dashboard_service)],
     analysis_type: str = Query(
         "pattern_detection",
@@ -238,7 +226,6 @@ async def get_historical_analysis(
     logger.debug(
         f"GET /analytics/historical - analysis_type={analysis_type}, time_window={time_window_hours}h"
     )
-    _check_analytics_enabled(request)
 
     try:
         analysis = await service.get_historical_analysis(
@@ -269,7 +256,6 @@ async def get_historical_analysis(
     response_description="Aggregated metrics with KPIs and benchmarks",
 )
 async def get_metrics_aggregation(
-    request: Request,
     service: Annotated[AnalyticsDashboardService, Depends(get_analytics_dashboard_service)],
     aggregation_windows: str | None = Query(
         None, description="Comma-separated aggregation windows"
@@ -295,7 +281,6 @@ async def get_metrics_aggregation(
     logger.debug(
         f"GET /analytics/aggregation - windows={aggregation_windows}, groups={metric_groups}"
     )
-    _check_analytics_enabled(request)
 
     try:
         # Parse parameters
@@ -331,7 +316,6 @@ async def get_metrics_aggregation(
     response_description="Success status of metric recording",
 )
 async def record_custom_metric(
-    request: Request,
     metric_request: CustomMetricRequest,
     service: Annotated[AnalyticsDashboardService, Depends(get_analytics_dashboard_service)],
 ) -> dict[str, bool]:
@@ -353,7 +337,6 @@ async def record_custom_metric(
     logger.debug(
         f"POST /analytics/metrics - metric={metric_request.metric_name}, value={metric_request.value}"
     )
-    _check_analytics_enabled(request)
 
     try:
         success = await service.record_custom_metric(
@@ -386,7 +369,6 @@ async def record_custom_metric(
     response_description="Analytics dashboard status and configuration",
 )
 async def get_analytics_status(
-    request: Request,
     service: Annotated[AnalyticsDashboardService, Depends(get_analytics_dashboard_service)],
 ) -> dict[str, Any]:
     """
@@ -402,11 +384,10 @@ async def get_analytics_status(
         Analytics dashboard status and configuration
     """
     logger.debug("GET /analytics/status - Retrieving analytics dashboard status")
-    _check_analytics_enabled(request)
 
     try:
         # Get storage statistics from the storage service
-        storage_stats = await service.storage.get_storage_stats()
+        storage_stats = await service.storage.get_storage_stats() if service.storage else {}
 
         # Get basic status information
         status = {
@@ -453,7 +434,6 @@ async def get_analytics_status(
     response_description="Health status of analytics components",
 )
 async def analytics_health_check(
-    request: Request,
     service: Annotated[AnalyticsDashboardService, Depends(get_analytics_dashboard_service)],
 ) -> dict[str, Any]:
     """
@@ -466,11 +446,13 @@ async def analytics_health_check(
 
     try:
         # Get storage statistics
-        storage_stats = await service.storage.get_storage_stats()
+        storage_stats = await service.storage.get_storage_stats() if service.storage else {}
 
         # Get recent insights count
-        recent_insights = await service.storage.get_insights(
-            categories=None, min_severity="low", limit=100
+        recent_insights = (
+            await service.storage.get_insights(categories=None, min_severity="low", limit=100)
+            if service.storage
+            else []
         )
         recent_count = len([i for i in recent_insights if (time.time() - i.created_at) < 3600])
 

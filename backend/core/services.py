@@ -2,8 +2,8 @@
 Core Services Layer for CoachIQ Backend.
 
 This module manages mandatory infrastructure services that must always be available.
-These services are initialized before the feature manager and are not subject to
-feature flags or configuration overrides.
+These services are initialized during application startup and are not subject to
+configuration overrides.
 
 Core services included:
 - PersistenceService: Data storage (no dependencies)
@@ -21,7 +21,6 @@ import logging
 from prometheus_client import Gauge
 
 from backend.services.database_manager import DatabaseManager
-from backend.services.persistence_service import PersistenceService
 
 logger = logging.getLogger(__name__)
 
@@ -37,7 +36,6 @@ class CoreServicesError(Exception):
     """Raised when core service initialization fails."""
 
 
-
 class CoreServices:
     """
     Manages mandatory infrastructure services for the CoachIQ system.
@@ -50,12 +48,14 @@ class CoreServices:
     - DatabaseManager: Database connections and schema management (no dependencies)
 
     Note: Application-level services like EntityService, WebSocketManager, etc.
-    remain in the FeatureManager as they have interdependencies.
+    are managed by ServiceRegistry as they have interdependencies.
     """
 
     def __init__(self) -> None:
         """Initialize the core services container."""
-        self._persistence: PersistenceService | None = None
+        from typing import Any
+
+        self._persistence: Any | None = None  # PersistenceService or LegacyPersistenceService
         self._database_manager: DatabaseManager | None = None
         self._initialized = False
 
@@ -75,13 +75,49 @@ class CoreServices:
         try:
             # 1. Initialize Persistence Service (SQLite-based, no external deps)
             logger.info("Starting PersistenceService...")
-            self._persistence = PersistenceService()
+            # Use legacy service for backward compatibility
+            from backend.services.legacy_persistence_service import LegacyPersistenceService
+
+            self._persistence = LegacyPersistenceService()
             # PersistenceService doesn't have a startup method
-            logger.info("✅ PersistenceService initialized successfully")
+            logger.info("✅ PersistenceService initialized successfully (using legacy)")
 
             # 2. Initialize Database Manager
             logger.info("Starting DatabaseManager...")
-            self._database_manager = DatabaseManager()
+
+            # Try to get Group 2 services from ServiceRegistry if available
+            connection_service = None
+            session_service = None
+            migration_service = None
+
+            try:
+                # Check if we're being called from an app context with ServiceRegistry
+                from backend.main import app
+
+                if hasattr(app, "state") and hasattr(app.state, "service_registry"):
+                    registry = app.state.service_registry
+
+                    if registry.has_service("database_connection_service"):
+                        connection_service = registry.get_service("database_connection_service")
+                        logger.info("Using database_connection_service from ServiceRegistry")
+
+                    if registry.has_service("database_session_service"):
+                        session_service = registry.get_service("database_session_service")
+                        logger.info("Using database_session_service from ServiceRegistry")
+
+                    if registry.has_service("database_migration_service"):
+                        migration_service = registry.get_service("database_migration_service")
+                        logger.info("Using database_migration_service from ServiceRegistry")
+
+            except Exception as e:
+                logger.debug(f"Database services not available from ServiceRegistry: {e}")
+
+            # Create DatabaseManager with available services
+            self._database_manager = DatabaseManager(
+                connection_service=connection_service,
+                session_service=session_service,
+                migration_service=migration_service,
+            )
 
             # Initialize the database manager
             if not await self._database_manager.initialize():
@@ -90,7 +126,6 @@ class CoreServices:
 
             self._persistence.set_database_manager(self._database_manager)
             logger.info("✅ DatabaseManager initialized successfully")
-
 
             # Validate database schema
             await self._validate_database_schema()
@@ -185,6 +220,7 @@ class CoreServices:
 
             # Create Alembic configuration (in backend directory)
             import os
+
             backend_dir = os.path.dirname(os.path.dirname(__file__))  # backend/core -> backend
             alembic_ini_path = os.path.join(backend_dir, "alembic.ini")
             config = Config(alembic_ini_path)
@@ -192,6 +228,7 @@ class CoreServices:
 
             # Get database path from persistence settings
             from backend.core.config import get_persistence_settings
+
             persistence_settings = get_persistence_settings()
             database_path = persistence_settings.get_database_dir() / "coachiq.db"
             database_url = f"sqlite:///{database_path}"
@@ -208,7 +245,8 @@ class CoreServices:
             if current_rev != head_rev:
                 logger.warning(
                     "Database schema is not up to date. Current: %s, Head: %s",
-                    current_rev, head_rev
+                    current_rev,
+                    head_rev,
                 )
                 # In production, we might want to fail here
                 # For development, we'll just warn
@@ -221,7 +259,7 @@ class CoreServices:
             # In production, you might want to raise here
 
     @property
-    def persistence(self) -> PersistenceService:
+    def persistence(self):  # Return type is Any to support both old and new services
         """Get the persistence service instance."""
         if not self._persistence:
             msg = "Core services not initialized"
@@ -235,7 +273,6 @@ class CoreServices:
             msg = "Core services not initialized"
             raise RuntimeError(msg)
         return self._database_manager
-
 
     @property
     def initialized(self) -> bool:
@@ -265,10 +302,11 @@ def get_core_services() -> CoreServices:
     # Try to get from ServiceRegistry first
     try:
         from backend.main import app
-        if hasattr(app.state, 'service_registry') and app.state.service_registry is not None:
+
+        if hasattr(app.state, "service_registry") and app.state.service_registry is not None:
             # Get individual services from registry
-            persistence = app.state.service_registry.get_service('persistence_service')
-            db_manager = app.state.service_registry.get_service('database_manager')
+            persistence = app.state.service_registry.get_service("persistence_service")
+            db_manager = app.state.service_registry.get_service("database_manager")
             if persistence and db_manager:
                 # Return the global instance that wraps these services
                 if _core_services_instance is not None:
@@ -308,7 +346,9 @@ async def initialize_core_services() -> CoreServices:
     _core_services_instance = CoreServices()
     await _core_services_instance.startup()
 
-    logger.info("CoreServices initialized (legacy pattern - services are managed by ServiceRegistry)")
+    logger.info(
+        "CoreServices initialized (legacy pattern - services are managed by ServiceRegistry)"
+    )
 
     return _core_services_instance
 

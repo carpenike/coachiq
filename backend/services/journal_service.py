@@ -1,133 +1,143 @@
+"""Journal Service (Refactored with Repository Pattern)
+
+Service for accessing systemd journal logs with repository pattern.
+"""
+
+import logging
 from datetime import datetime
-from functools import lru_cache
-from typing import TYPE_CHECKING, Any, ClassVar, Protocol, cast
+from typing import Any, Dict, List, Optional, Tuple
+
+from backend.core.performance import PerformanceMonitor
+from backend.repositories.journal_repository import JournalRepository
+
+logger = logging.getLogger(__name__)
 
 
-class ReaderProtocol(Protocol):
-    """Protocol for the systemd.journal.Reader class."""
+class JournalService:
+    """Service for managing systemd journal access with performance monitoring."""
 
-    def this_boot(self) -> None: ...
+    def __init__(
+        self, journal_repository: JournalRepository, performance_monitor: PerformanceMonitor
+    ):
+        """Initialize journal service with repository.
 
-    def seek_realtime(self, dt: datetime) -> None: ...
+        Args:
+            journal_repository: Repository for journal access
+            performance_monitor: Performance monitoring instance
+        """
+        self._repository = journal_repository
+        self._monitor = performance_monitor
 
-    def add_match(self, **kwargs: Any) -> None: ...
+        # Apply performance monitoring
+        self._apply_monitoring()
 
-    def seek_cursor(self, cursor: str) -> None: ...
+    def _apply_monitoring(self) -> None:
+        """Apply performance monitoring to service methods."""
+        # Wrap methods with performance monitoring
+        self.get_journal_logs = self._monitor.monitor_service_method(
+            "JournalService", "get_journal_logs"
+        )(self.get_journal_logs)
 
-    def get_cursor(self) -> str: ...
+        self.get_available_services = self._monitor.monitor_service_method(
+            "JournalService", "get_available_services"
+        )(self.get_available_services)
 
-    def __iter__(self) -> "ReaderProtocol": ...
+        self.get_log_statistics = self._monitor.monitor_service_method(
+            "JournalService", "get_log_statistics"
+        )(self.get_log_statistics)
 
-    def __next__(self) -> dict[str, Any]: ...
+    async def get_journal_logs(
+        self,
+        since: datetime | None = None,
+        until: datetime | None = None,
+        level: int | None = None,
+        service: str | None = None,
+        cursor: str | None = None,
+        page_size: int = 100,
+    ) -> tuple[list[dict[str, Any]], str | None]:
+        """
+        Retrieve logs from journald with optional filtering and pagination.
 
+        Args:
+            since: Only return logs after this time
+            until: Only return logs before this time
+            level: Only return logs at this syslog priority or lower (lower is more severe)
+            service: Only return logs for this systemd unit
+            cursor: Journal cursor for pagination
+            page_size: Number of log entries to return
 
-class JournalModuleProtocol(Protocol):
-    """Protocol for the systemd.journal module."""
+        Returns:
+            A tuple of (list of log entries, next cursor for pagination)
 
-    Reader: ClassVar[type[ReaderProtocol]]
+        Raises:
+            RuntimeError: If systemd journal is not available
+        """
+        if not self._repository.is_available():
+            msg = "systemd.journal module is not available. Install systemd-python."
+            raise RuntimeError(msg)
 
+        return await self._repository.get_logs(
+            since=since,
+            until=until,
+            level=level,
+            service=service,
+            cursor=cursor,
+            page_size=page_size,
+        )
 
-class SystemdJournalProtocol(Protocol):
-    """Protocol for the systemd module with journal attribute."""
+    async def get_available_services(self) -> list[str]:
+        """
+        Get list of available systemd services in journal.
 
-    journal: ClassVar[JournalModuleProtocol]
+        Returns:
+            List of service names
+        """
+        return await self._repository.get_services()
 
+    async def get_log_statistics(
+        self,
+        since: datetime | None = None,
+        until: datetime | None = None,
+        service: str | None = None,
+    ) -> dict[str, Any]:
+        """
+        Get statistics about journal logs.
 
-try:
-    import systemd.journal  # type: ignore
-except ImportError:
-    systemd = None  # type: ignore
-    if TYPE_CHECKING:
-        systemd = cast("SystemdJournalProtocol", Any)  # type: ignore
+        Args:
+            since: Count logs after this time
+            until: Count logs before this time
+            service: Only count logs for this systemd unit
 
+        Returns:
+            Dictionary with log statistics
+        """
+        stats = {}
 
-class JournalLogEntry(dict[str, Any]):
-    """Represents a single log entry from journald."""
+        # Count logs by level
+        for level in range(8):  # Syslog levels 0-7
+            count = await self._repository.count_logs(
+                since=since, until=until, level=level, service=service
+            )
+            stats[f"level_{level}"] = count
 
+        # Total count
+        total = await self._repository.count_logs(since=since, until=until, service=service)
 
-
-def parse_journal_entry(entry: dict[str, Any]) -> JournalLogEntry:
-    """Convert a raw journal entry to a serializable log entry."""
-    return JournalLogEntry(
-        {
-            "timestamp": (
-                datetime.fromtimestamp(entry["__REALTIME_TIMESTAMP"].timestamp()).isoformat()
-                if "__REALTIME_TIMESTAMP" in entry
-                else None
-            ),
-            "level": entry.get("PRIORITY"),
-            "message": entry.get("MESSAGE"),
-            "service_name": entry.get("_SYSTEMD_UNIT"),
-            "logger": entry.get("SYSLOG_IDENTIFIER"),
-            "pid": entry.get("_PID"),
-            "extra": {
-                k: v
-                for k, v in entry.items()
-                if k
-                not in {
-                    "__REALTIME_TIMESTAMP",
-                    "PRIORITY",
-                    "MESSAGE",
-                    "_SYSTEMD_UNIT",
-                    "SYSLOG_IDENTIFIER",
-                    "_PID",
-                }
+        return {
+            "total": total,
+            "by_level": stats,
+            "time_range": {
+                "since": since.isoformat() if since else None,
+                "until": until.isoformat() if until else None,
             },
+            "service": service,
         }
-    )
 
+    def is_available(self) -> bool:
+        """
+        Check if journal access is available.
 
-def get_journal_logs(
-    since: datetime | None = None,
-    until: datetime | None = None,
-    level: int | None = None,
-    service: str | None = None,
-    cursor: str | None = None,
-    page_size: int = 100,
-) -> tuple[list[JournalLogEntry], str | None]:
-    """
-    Retrieve logs from journald with optional filtering and pagination.
-
-    Args:
-        since: Only return logs after this time.
-        until: Only return logs before this time.
-        level: Only return logs at this syslog priority or lower (lower is more severe).
-        service: Only return logs for this systemd unit.
-        cursor: Journal cursor for pagination.
-        page_size: Number of log entries to return.
-
-    Returns:
-        A tuple of (list of log entries, next cursor for pagination).
-    """
-    if systemd is None:
-        msg = "systemd.journal module is not available. Install systemd-python."
-        raise RuntimeError(msg)
-
-    reader = systemd.journal.Reader()
-    reader.this_boot()
-    if since:
-        reader.seek_realtime(since)
-    if until:
-        reader.add_match(__REALTIME_TIMESTAMP=f"..{until.isoformat()}")
-    if level is not None:
-        reader.add_match(PRIORITY=str(level))
-    if service:
-        reader.add_match(_SYSTEMD_UNIT=service)
-    if cursor:
-        reader.seek_cursor(cursor)
-        next(reader)  # skip the entry at the cursor
-
-    logs: list[JournalLogEntry] = []
-    next_cursor = None
-    for i, entry in enumerate(reader):
-        logs.append(parse_journal_entry(entry))
-        if i + 1 >= page_size:
-            next_cursor = reader.get_cursor()
-            break
-    return logs, next_cursor
-
-
-@lru_cache(maxsize=16)
-def get_cached_journal_logs(*args, **kwargs):
-    """Cached version of get_journal_logs for performance."""
-    return get_journal_logs(*args, **kwargs)
+        Returns:
+            True if systemd journal is available
+        """
+        return self._repository.is_available()

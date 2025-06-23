@@ -407,14 +407,13 @@ class AdaptiveSecurityManager:
 
         if "unexpected pgn" in reason_lower:
             return AnomalyType.UNEXPECTED_PGN
-        elif "timing anomaly" in reason_lower:
+        if "timing anomaly" in reason_lower:
             return AnomalyType.TIMING_ANOMALY
-        elif "burst anomaly" in reason_lower:
+        if "burst anomaly" in reason_lower:
             return AnomalyType.BURST_ANOMALY
-        elif "data pattern" in reason_lower:
+        if "data pattern" in reason_lower:
             return AnomalyType.DATA_ANOMALY
-        else:
-            return AnomalyType.PROTOCOL_VIOLATION
+        return AnomalyType.PROTOCOL_VIOLATION
 
     def _assess_threat_level(self, reason: str, confidence: float, frame) -> ThreatLevel:
         """Assess threat level based on anomaly characteristics."""
@@ -422,14 +421,12 @@ class AdaptiveSecurityManager:
             # High confidence anomalies
             if "unexpected pgn" in reason.lower() and frame.pgn < 0x1FE00:
                 return ThreatLevel.HIGH  # Unexpected low PGN could be attack
-            elif "burst anomaly" in reason.lower():
+            if "burst anomaly" in reason.lower():
                 return ThreatLevel.MEDIUM  # Could be DoS attempt
-            else:
-                return ThreatLevel.MEDIUM
-        elif confidence >= 0.7:
+            return ThreatLevel.MEDIUM
+        if confidence >= 0.7:
             return ThreatLevel.LOW
-        else:
-            return ThreatLevel.INFO
+        return ThreatLevel.INFO
 
     def _handle_security_event(self, event: SecurityEvent) -> None:
         """Handle detected security event."""
@@ -495,9 +492,7 @@ class AdaptiveSecurityManager:
             if source_address is not None:
                 if source_address in self.device_profiles:
                     self.device_profiles[source_address].learning_phase = False
-                    logger.info(
-                        "Forced learning completion for device 0x%02X", source_address
-                    )
+                    logger.info("Forced learning completion for device 0x%02X", source_address)
             else:
                 for profile in self.device_profiles.values():
                     profile.learning_phase = False

@@ -291,7 +291,7 @@ class TestSafetyValidation:
             f"Processing rate too low: {actual_rate:.1f} < {target_msg_rate * 0.8}"
         )
 
-        print(f"Performance test results:")
+        print("Performance test results:")
         print(f"  Processed: {frames_processed} frames")
         print(f"  Rate: {actual_rate:.1f} frames/sec")
         print(f"  Max latency: {max_processing_time:.2f}ms")

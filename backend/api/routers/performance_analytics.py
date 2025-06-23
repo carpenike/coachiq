@@ -11,7 +11,7 @@ from typing import Annotated, Any
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
 
-from backend.services.feature_manager import get_feature_manager
+from backend.core.dependencies import create_optional_service_dependency
 
 logger = logging.getLogger(__name__)
 
@@ -61,21 +61,10 @@ class PerformanceReportRequest(BaseModel):
     )
 
 
-# Dependency Functions
-
-
-async def get_performance_analytics_feature():
-    """Get the performance analytics feature instance."""
-    feature_manager = get_feature_manager()
-    feature = feature_manager.get_feature("performance_analytics")
-
-    if not feature:
-        raise HTTPException(status_code=503, detail="Performance analytics feature not available")
-
-    if not feature.is_healthy():
-        raise HTTPException(status_code=503, detail="Performance analytics feature not healthy")
-
-    return feature
+# Create optional service dependency for performance analytics
+get_performance_analytics_service = create_optional_service_dependency(
+    "performance_analytics_service"
+)
 
 
 # Backend-First Enhanced Response Models
@@ -135,7 +124,7 @@ class BackendComputedAPIPerformance(BaseModel):
     summary="Get backend-computed health status with UI categorization",
 )
 async def get_computed_health_status(
-    feature: Annotated[Any, Depends(get_performance_analytics_feature)],
+    analytics_service: Annotated[Any | None, Depends(get_performance_analytics_service)],
 ) -> BackendComputedHealthStatus:
     """
     Get comprehensive health status with backend-computed thresholds and UI classification.
@@ -143,19 +132,22 @@ async def get_computed_health_status(
     This endpoint performs all business logic computation on the backend, removing the need
     for frontend threshold calculations. Returns status classification ready for UI display.
     """
+    if not analytics_service:
+        raise HTTPException(status_code=503, detail="Performance analytics service not available")
+
     try:
-        # Use the feature to compute comprehensive health status
-        health_status = await feature.get_system_health_status()
+        # Use the service to compute comprehensive health status
+        health_status = await analytics_service.get_system_health_status()
 
         # Backend business logic: Apply configurable thresholds
         score = health_status.get("overall_score", 0.8)  # Default to good
 
         # Business logic: Determine status based on configurable thresholds
-        if score >= feature.analytics_settings.threshold_healthy:
+        if score >= analytics_service.analytics_settings.threshold_healthy:
             status = "healthy"
             color_class = "text-green-600"
             variant = "default"
-        elif score >= feature.analytics_settings.threshold_warning:
+        elif score >= analytics_service.analytics_settings.threshold_warning:
             status = "warning"
             color_class = "text-yellow-600"
             variant = "secondary"
@@ -190,7 +182,7 @@ async def get_computed_health_status(
     summary="Get backend-computed resource utilization with status classification",
 )
 async def get_computed_resource_status(
-    feature: Annotated[Any, Depends(get_performance_analytics_feature)],
+    analytics_service: Annotated[Any | None, Depends(get_performance_analytics_service)],
 ) -> BackendComputedResourceStatus:
     """
     Get resource utilization with backend-computed threshold-based status classification.
@@ -198,9 +190,12 @@ async def get_computed_resource_status(
     Eliminates frontend business logic for resource status determination by applying
     configurable thresholds on the backend and returning ready-to-display status.
     """
+    if not analytics_service:
+        raise HTTPException(status_code=503, detail="Performance analytics service not available")
+
     try:
         # Get resource data from telemetry collector
-        resource_data = await feature.get_resource_utilization()
+        resource_data = await analytics_service.get_resource_utilization()
 
         # Backend business logic: Apply configurable thresholds for each resource type
         def classify_resource_status(
@@ -218,16 +213,16 @@ async def get_computed_resource_status(
         disk_usage = resource_data.get("disk_usage", 0.0) * 100
         network_usage = resource_data.get("network_usage", 0.0)
 
-        # Use feature-specific thresholds from configuration
+        # Use service-specific thresholds from configuration
         cpu_status = classify_resource_status(
             cpu_usage,
-            feature.analytics_settings.cpu_warning_threshold_percent,
-            feature.analytics_settings.cpu_critical_threshold_percent,
+            analytics_service.analytics_settings.cpu_warning_threshold_percent,
+            analytics_service.analytics_settings.cpu_critical_threshold_percent,
         )
         memory_status = classify_resource_status(
             memory_usage,
-            feature.analytics_settings.memory_warning_threshold_percent,
-            feature.analytics_settings.memory_critical_threshold_percent,
+            analytics_service.analytics_settings.memory_warning_threshold_percent,
+            analytics_service.analytics_settings.memory_critical_threshold_percent,
         )
         disk_status = classify_resource_status(
             disk_usage,
@@ -283,7 +278,7 @@ async def get_computed_resource_status(
     summary="Get backend-computed API performance with status classification",
 )
 async def get_computed_api_performance(
-    feature: Annotated[Any, Depends(get_performance_analytics_feature)],
+    analytics_service: Annotated[Any | None, Depends(get_performance_analytics_service)],
 ) -> BackendComputedAPIPerformance:
     """
     Get API performance metrics with backend-computed status classification.
@@ -291,9 +286,12 @@ async def get_computed_api_performance(
     Applies business logic thresholds on the backend to determine performance status,
     eliminating the need for frontend threshold calculations.
     """
+    if not analytics_service:
+        raise HTTPException(status_code=503, detail="Performance analytics service not available")
+
     try:
-        # Get API performance data from feature analytics
-        api_metrics = await feature.get_api_performance_metrics()
+        # Get API performance data from service analytics
+        api_metrics = await analytics_service.get_api_performance_metrics()
 
         avg_response_time = api_metrics.get("average_response_time_ms", 50.0)
         requests_per_second = api_metrics.get("requests_per_second", 10.0)
@@ -351,7 +349,7 @@ async def get_computed_api_performance(
 
 @router.get("/status", response_model=dict[str, Any])
 async def get_performance_analytics_status(
-    feature: Annotated[Any, Depends(get_performance_analytics_feature)],
+    analytics_service: Annotated[Any | None, Depends(get_performance_analytics_service)],
 ) -> dict[str, Any]:
     """
     Get comprehensive performance analytics status.
@@ -359,8 +357,11 @@ async def get_performance_analytics_status(
     Returns:
         Detailed status including configuration, statistics, and component health
     """
+    if not analytics_service:
+        raise HTTPException(status_code=503, detail="Performance analytics service not available")
+
     try:
-        return feature.get_status()
+        return analytics_service.get_status()
     except Exception as e:
         logger.error(f"Error getting performance analytics status: {e}")
         raise HTTPException(status_code=500, detail=str(e)) from e
@@ -369,7 +370,7 @@ async def get_performance_analytics_status(
 @router.post("/telemetry/protocol", response_model=dict[str, bool])
 async def record_protocol_telemetry(
     telemetry_request: TelemetryRequest,
-    feature: Annotated[Any, Depends(get_performance_analytics_feature)],
+    analytics_service: Annotated[Any | None, Depends(get_performance_analytics_service)],
 ) -> dict[str, bool]:
     """
     Record protocol message processing performance data.
@@ -380,8 +381,11 @@ async def record_protocol_telemetry(
     Returns:
         Success status
     """
+    if not analytics_service:
+        raise HTTPException(status_code=503, detail="Performance analytics service not available")
+
     try:
-        feature.record_protocol_message(
+        analytics_service.record_protocol_message(
             protocol=telemetry_request.protocol,
             processing_time_ms=telemetry_request.processing_time_ms,
             message_size=telemetry_request.message_size,
@@ -398,7 +402,7 @@ async def record_protocol_telemetry(
 @router.post("/telemetry/api", response_model=dict[str, bool])
 async def record_api_performance(
     api_request: APIPerformanceRequest,
-    feature: Annotated[Any, Depends(get_performance_analytics_feature)],
+    analytics_service: Annotated[Any | None, Depends(get_performance_analytics_service)],
 ) -> dict[str, bool]:
     """
     Record API request performance data.
@@ -409,8 +413,11 @@ async def record_api_performance(
     Returns:
         Success status
     """
+    if not analytics_service:
+        raise HTTPException(status_code=503, detail="Performance analytics service not available")
+
     try:
-        feature.record_api_request(
+        analytics_service.record_api_request(
             endpoint=api_request.endpoint,
             response_time_ms=api_request.response_time_ms,
             status_code=api_request.status_code,
@@ -426,7 +433,7 @@ async def record_api_performance(
 @router.post("/telemetry/websocket", response_model=dict[str, bool])
 async def record_websocket_latency(
     websocket_request: WebSocketLatencyRequest,
-    feature: Annotated[Any, Depends(get_performance_analytics_feature)],
+    analytics_service: Annotated[Any | None, Depends(get_performance_analytics_service)],
 ) -> dict[str, bool]:
     """
     Record WebSocket latency data.
@@ -437,8 +444,11 @@ async def record_websocket_latency(
     Returns:
         Success status
     """
+    if not analytics_service:
+        raise HTTPException(status_code=503, detail="Performance analytics service not available")
+
     try:
-        feature.record_websocket_latency(
+        analytics_service.record_websocket_latency(
             latency_ms=websocket_request.latency_ms, connection_id=websocket_request.connection_id
         )
 
@@ -452,7 +462,7 @@ async def record_websocket_latency(
 @router.post("/telemetry/can-interface", response_model=dict[str, bool])
 async def record_can_interface_load(
     can_request: CANInterfaceLoadRequest,
-    feature: Annotated[Any, Depends(get_performance_analytics_feature)],
+    analytics_service: Annotated[Any | None, Depends(get_performance_analytics_service)],
 ) -> dict[str, bool]:
     """
     Record CAN interface load and performance data.
@@ -463,8 +473,11 @@ async def record_can_interface_load(
     Returns:
         Success status
     """
+    if not analytics_service:
+        raise HTTPException(status_code=503, detail="Performance analytics service not available")
+
     try:
-        feature.record_can_interface_load(
+        analytics_service.record_can_interface_load(
             interface=can_request.interface,
             load_percent=can_request.load_percent,
             message_rate=can_request.message_rate,
@@ -479,7 +492,7 @@ async def record_can_interface_load(
 
 @router.get("/metrics", response_model=list[dict[str, Any]])
 async def get_performance_metrics(
-    feature: Annotated[Any, Depends(get_performance_analytics_feature)],
+    analytics_service: Annotated[Any | None, Depends(get_performance_analytics_service)],
     metric_type: str | None = Query(None, description="Specific metric type to retrieve"),
     time_window_seconds: float = Query(
         default=60.0, description="Time window for metrics", ge=1.0, le=86400.0
@@ -495,8 +508,11 @@ async def get_performance_metrics(
     Returns:
         List of performance metrics
     """
+    if not analytics_service:
+        raise HTTPException(status_code=503, detail="Performance analytics service not available")
+
     try:
-        return feature.get_current_metrics(metric_type, time_window_seconds)
+        return analytics_service.get_current_metrics(metric_type, time_window_seconds)
 
     except Exception as e:
         logger.error(f"Error getting performance metrics: {e}")
@@ -505,7 +521,7 @@ async def get_performance_metrics(
 
 @router.get("/resource-utilization", response_model=dict[str, Any])
 async def get_resource_utilization(
-    feature: Annotated[Any, Depends(get_performance_analytics_feature)],
+    analytics_service: Annotated[Any | None, Depends(get_performance_analytics_service)],
 ) -> dict[str, Any]:
     """
     Get current system resource utilization.
@@ -513,8 +529,11 @@ async def get_resource_utilization(
     Returns:
         Resource utilization data for CPU, memory, network, and CAN interfaces
     """
+    if not analytics_service:
+        raise HTTPException(status_code=503, detail="Performance analytics service not available")
+
     try:
-        return feature.get_resource_utilization()
+        return analytics_service.get_resource_utilization()
 
     except Exception as e:
         logger.error(f"Error getting resource utilization: {e}")
@@ -523,7 +542,7 @@ async def get_resource_utilization(
 
 @router.get("/trends", response_model=dict[str, Any])
 async def get_performance_trends(
-    feature: Annotated[Any, Depends(get_performance_analytics_feature)],
+    analytics_service: Annotated[Any | None, Depends(get_performance_analytics_service)],
     metric_type: str | None = Query(None, description="Specific metric type for trends"),
 ) -> dict[str, Any]:
     """
@@ -535,8 +554,11 @@ async def get_performance_trends(
     Returns:
         Performance trend analysis data
     """
+    if not analytics_service:
+        raise HTTPException(status_code=503, detail="Performance analytics service not available")
+
     try:
-        return feature.get_performance_trends(metric_type)
+        return analytics_service.get_performance_trends(metric_type)
 
     except Exception as e:
         logger.error(f"Error getting performance trends: {e}")
@@ -545,7 +567,7 @@ async def get_performance_trends(
 
 @router.get("/baseline-deviations", response_model=list[dict[str, Any]])
 async def get_baseline_deviations(
-    feature: Annotated[Any, Depends(get_performance_analytics_feature)],
+    analytics_service: Annotated[Any | None, Depends(get_performance_analytics_service)],
     time_window_seconds: float = Query(
         default=3600.0, description="Time window for deviations", ge=60.0, le=86400.0
     ),
@@ -559,8 +581,11 @@ async def get_baseline_deviations(
     Returns:
         List of baseline deviation alerts
     """
+    if not analytics_service:
+        raise HTTPException(status_code=503, detail="Performance analytics service not available")
+
     try:
-        return feature.get_baseline_deviations(time_window_seconds)
+        return analytics_service.get_baseline_deviations(time_window_seconds)
 
     except Exception as e:
         logger.error(f"Error getting baseline deviations: {e}")
@@ -569,7 +594,7 @@ async def get_baseline_deviations(
 
 @router.get("/optimization-recommendations", response_model=list[dict[str, Any]])
 async def get_optimization_recommendations(
-    feature: Annotated[Any, Depends(get_performance_analytics_feature)],
+    analytics_service: Annotated[Any | None, Depends(get_performance_analytics_service)],
 ) -> list[dict[str, Any]]:
     """
     Get automated optimization recommendations.
@@ -577,8 +602,11 @@ async def get_optimization_recommendations(
     Returns:
         List of optimization recommendations with implementation details
     """
+    if not analytics_service:
+        raise HTTPException(status_code=503, detail="Performance analytics service not available")
+
     try:
-        return feature.get_optimization_recommendations()
+        return analytics_service.get_optimization_recommendations()
 
     except Exception as e:
         logger.error(f"Error getting optimization recommendations: {e}")
@@ -588,7 +616,7 @@ async def get_optimization_recommendations(
 @router.post("/report", response_model=dict[str, Any])
 async def generate_performance_report(
     report_request: PerformanceReportRequest,
-    feature: Annotated[Any, Depends(get_performance_analytics_feature)],
+    analytics_service: Annotated[Any | None, Depends(get_performance_analytics_service)],
 ) -> dict[str, Any]:
     """
     Generate comprehensive performance analysis report.
@@ -599,8 +627,11 @@ async def generate_performance_report(
     Returns:
         Comprehensive performance report including metrics, trends, and recommendations
     """
+    if not analytics_service:
+        raise HTTPException(status_code=503, detail="Performance analytics service not available")
+
     try:
-        return feature.generate_performance_report(report_request.time_window_seconds)
+        return analytics_service.generate_performance_report(report_request.time_window_seconds)
 
     except Exception as e:
         logger.error(f"Error generating performance report: {e}")
@@ -609,7 +640,7 @@ async def generate_performance_report(
 
 @router.get("/protocol-throughput", response_model=dict[str, float])
 async def get_protocol_throughput(
-    feature: Annotated[Any, Depends(get_performance_analytics_feature)],
+    analytics_service: Annotated[Any | None, Depends(get_performance_analytics_service)],
 ) -> dict[str, float]:
     """
     Get current protocol throughput metrics.
@@ -617,9 +648,15 @@ async def get_protocol_throughput(
     Returns:
         Dictionary of protocol names to messages per second
     """
+    if not analytics_service:
+        raise HTTPException(status_code=503, detail="Performance analytics service not available")
+
     try:
-        if hasattr(feature, "telemetry_collector") and feature.telemetry_collector:
-            return feature.telemetry_collector.get_protocol_throughput()
+        if (
+            hasattr(analytics_service, "telemetry_collector")
+            and analytics_service.telemetry_collector
+        ):
+            return analytics_service.telemetry_collector.get_protocol_throughput()
         return {}
 
     except Exception as e:
@@ -629,7 +666,7 @@ async def get_protocol_throughput(
 
 @router.get("/statistics", response_model=dict[str, Any])
 async def get_analytics_statistics(
-    feature: Annotated[Any, Depends(get_performance_analytics_feature)],
+    analytics_service: Annotated[Any | None, Depends(get_performance_analytics_service)],
 ) -> dict[str, Any]:
     """
     Get comprehensive performance analytics statistics.
@@ -637,25 +674,28 @@ async def get_analytics_statistics(
     Returns:
         Statistics from all analytics components including telemetry, benchmarking, trends, and optimization
     """
+    if not analytics_service:
+        raise HTTPException(status_code=503, detail="Performance analytics service not available")
+
     try:
         stats = {}
 
-        # Get feature-level statistics
-        feature_status = feature.get_status()
-        stats["feature"] = feature_status.get("statistics", {})
+        # Get service-level statistics
+        service_status = analytics_service.get_status()
+        stats["service"] = service_status.get("statistics", {})
 
         # Get component-specific statistics
-        if "telemetry_statistics" in feature_status:
-            stats["telemetry"] = feature_status["telemetry_statistics"]
+        if "telemetry_statistics" in service_status:
+            stats["telemetry"] = service_status["telemetry_statistics"]
 
-        if "benchmark_statistics" in feature_status:
-            stats["benchmarking"] = feature_status["benchmark_statistics"]
+        if "benchmark_statistics" in service_status:
+            stats["benchmarking"] = service_status["benchmark_statistics"]
 
-        if "trend_statistics" in feature_status:
-            stats["trends"] = feature_status["trend_statistics"]
+        if "trend_statistics" in service_status:
+            stats["trends"] = service_status["trend_statistics"]
 
-        if "optimization_statistics" in feature_status:
-            stats["optimization"] = feature_status["optimization_statistics"]
+        if "optimization_statistics" in service_status:
+            stats["optimization"] = service_status["optimization_statistics"]
 
         return stats
 
@@ -666,7 +706,7 @@ async def get_analytics_statistics(
 
 @router.delete("/reset-baselines", response_model=dict[str, bool])
 async def reset_performance_baselines(
-    feature: Annotated[Any, Depends(get_performance_analytics_feature)],
+    analytics_service: Annotated[Any | None, Depends(get_performance_analytics_service)],
 ) -> dict[str, bool]:
     """
     Reset all performance baselines (admin operation).
@@ -674,6 +714,9 @@ async def reset_performance_baselines(
     Returns:
         Success status
     """
+    if not analytics_service:
+        raise HTTPException(status_code=503, detail="Performance analytics service not available")
+
     try:
         # This would reset baselines in the benchmarking engine
         # Implementation depends on specific requirements

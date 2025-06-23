@@ -11,7 +11,7 @@ import json
 import logging
 from datetime import UTC, datetime, timedelta, timezone
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 from uuid import uuid4
 
 from jinja2 import Environment, FileSystemLoader
@@ -25,7 +25,9 @@ from backend.models.notification_analytics import (
     NotificationReport as NotificationReportModel,
 )
 from backend.services.database_manager import DatabaseManager
-from backend.services.notification_analytics_service import NotificationAnalyticsService
+
+if TYPE_CHECKING:
+    from backend.services.notification_analytics_service import NotificationAnalyticsService
 
 
 class ReportTemplate:
@@ -37,7 +39,7 @@ class ReportTemplate:
 
     async def generate(
         self,
-        analytics_service: NotificationAnalyticsService,
+        analytics_service: "NotificationAnalyticsService",
         start_date: datetime,
         end_date: datetime,
         parameters: dict[str, Any] | None = None,
@@ -50,14 +52,11 @@ class DailyDigestTemplate(ReportTemplate):
     """Daily digest report template."""
 
     def __init__(self):
-        super().__init__(
-            "daily_digest",
-            "Daily summary of notification activity and performance"
-        )
+        super().__init__("daily_digest", "Daily summary of notification activity and performance")
 
     async def generate(
         self,
-        analytics_service: NotificationAnalyticsService,
+        analytics_service: "NotificationAnalyticsService",
         start_date: datetime,
         end_date: datetime,
         parameters: dict[str, Any] | None = None,
@@ -65,23 +64,17 @@ class DailyDigestTemplate(ReportTemplate):
         """Generate daily digest report."""
         # Get channel metrics
         channel_metrics = await analytics_service.get_channel_metrics(
-            start_date=start_date,
-            end_date=end_date
+            start_date=start_date, end_date=end_date
         )
 
         # Get hourly metrics
         hourly_metrics = await analytics_service.get_aggregated_metrics(
-            MetricType.DELIVERY_COUNT,
-            AggregationPeriod.HOURLY,
-            start_date,
-            end_date
+            MetricType.DELIVERY_COUNT, AggregationPeriod.HOURLY, start_date, end_date
         )
 
         # Get error analysis
         errors = await analytics_service.analyze_errors(
-            start_date=start_date,
-            end_date=end_date,
-            min_occurrences=1
+            start_date=start_date, end_date=end_date, min_occurrences=1
         )
 
         # Get queue health
@@ -97,8 +90,8 @@ class DailyDigestTemplate(ReportTemplate):
                 "total_sent": sum(cm.total_sent for cm in channel_metrics),
                 "total_delivered": sum(cm.total_delivered for cm in channel_metrics),
                 "total_failed": sum(cm.total_failed for cm in channel_metrics),
-                "overall_success_rate": sum(cm.total_delivered for cm in channel_metrics) /
-                                       max(sum(cm.total_sent for cm in channel_metrics), 1),
+                "overall_success_rate": sum(cm.total_delivered for cm in channel_metrics)
+                / max(sum(cm.total_sent for cm in channel_metrics), 1),
             },
             "channel_performance": [
                 {
@@ -141,13 +134,12 @@ class WeeklyAnalyticsTemplate(ReportTemplate):
 
     def __init__(self):
         super().__init__(
-            "weekly_analytics",
-            "Comprehensive weekly analytics with trends and insights"
+            "weekly_analytics", "Comprehensive weekly analytics with trends and insights"
         )
 
     async def generate(
         self,
-        analytics_service: NotificationAnalyticsService,
+        analytics_service: "NotificationAnalyticsService",
         start_date: datetime,
         end_date: datetime,
         parameters: dict[str, Any] | None = None,
@@ -155,24 +147,19 @@ class WeeklyAnalyticsTemplate(ReportTemplate):
         """Generate weekly analytics report."""
         # Get daily metrics for the week
         daily_metrics = await analytics_service.get_aggregated_metrics(
-            MetricType.DELIVERY_COUNT,
-            AggregationPeriod.DAILY,
-            start_date,
-            end_date
+            MetricType.DELIVERY_COUNT, AggregationPeriod.DAILY, start_date, end_date
         )
 
         # Get channel metrics
         channel_metrics = await analytics_service.get_channel_metrics(
-            start_date=start_date,
-            end_date=end_date
+            start_date=start_date, end_date=end_date
         )
 
         # Get previous week for comparison
         prev_start = start_date - timedelta(days=7)
         prev_end = start_date
         prev_channel_metrics = await analytics_service.get_channel_metrics(
-            start_date=prev_start,
-            end_date=prev_end
+            start_date=prev_start, end_date=prev_end
         )
 
         # Calculate trends
@@ -224,10 +211,7 @@ class WeeklyAnalyticsTemplate(ReportTemplate):
                 ],
             },
             "insights": self._generate_insights(
-                channel_metrics,
-                prev_channel_metrics,
-                volume_trend,
-                success_trend
+                channel_metrics, prev_channel_metrics, volume_trend, success_trend
             ),
         }
 
@@ -242,14 +226,20 @@ class WeeklyAnalyticsTemplate(ReportTemplate):
         insights = []
 
         if volume_trend > 20:
-            insights.append(f"Notification volume increased by {volume_trend:.1f}% compared to last week")
+            insights.append(
+                f"Notification volume increased by {volume_trend:.1f}% compared to last week"
+            )
         elif volume_trend < -20:
-            insights.append(f"Notification volume decreased by {abs(volume_trend):.1f}% compared to last week")
+            insights.append(
+                f"Notification volume decreased by {abs(volume_trend):.1f}% compared to last week"
+            )
 
         if success_trend > 5:
             insights.append(f"Delivery success rate improved by {success_trend:.1f}%")
         elif success_trend < -5:
-            insights.append(f"Delivery success rate declined by {abs(success_trend):.1f}% - investigation recommended")
+            insights.append(
+                f"Delivery success rate declined by {abs(success_trend):.1f}% - investigation recommended"
+            )
 
         # Find worst performing channel
         worst_channel = min(current, key=lambda x: x.success_rate)
@@ -272,7 +262,7 @@ class NotificationReportingService:
     def __init__(
         self,
         database_manager: DatabaseManager,
-        analytics_service: NotificationAnalyticsService,
+        analytics_service: "NotificationAnalyticsService",
     ):
         """
         Initialize the reporting service.
@@ -303,8 +293,7 @@ class NotificationReportingService:
         # Template environment for HTML generation
         try:
             self.jinja_env = Environment(
-                loader=FileSystemLoader("templates/reports"),
-                autoescape=True
+                loader=FileSystemLoader("templates/reports"), autoescape=True
             )
         except Exception:
             self.jinja_env = None
@@ -362,10 +351,7 @@ class NotificationReportingService:
 
         # Generate report data
         report_data = await template.generate(
-            self.analytics_service,
-            start_date,
-            end_date,
-            parameters
+            self.analytics_service, start_date, end_date, parameters
         )
 
         # Create report model
@@ -385,10 +371,7 @@ class NotificationReportingService:
 
         # Generate report file
         file_path, file_size = await self._generate_report_file(
-            report_id,
-            report_data,
-            format,
-            template_name
+            report_id, report_data, format, template_name
         )
 
         report_model.file_path = str(file_path)
@@ -611,7 +594,7 @@ class NotificationReportingService:
 <!DOCTYPE html>
 <html>
 <head>
-    <title>{data.get('report_type', 'Report')}</title>
+    <title>{data.get("report_type", "Report")}</title>
     <style>
         body {{ font-family: Arial, sans-serif; margin: 20px; }}
         table {{ border-collapse: collapse; width: 100%; margin: 20px 0; }}
@@ -622,7 +605,7 @@ class NotificationReportingService:
     </style>
 </head>
 <body>
-    <h1>{data.get('report_type', 'Report').replace('_', ' ').title()}</h1>
+    <h1>{data.get("report_type", "Report").replace("_", " ").title()}</h1>
 """
 
         # Add period
@@ -644,10 +627,10 @@ class NotificationReportingService:
                 success_rate = channel.get("success_rate", 0)
                 html += f"""
                 <tr>
-                    <td>{channel.get('channel', '')}</td>
-                    <td>{channel.get('sent', 0)}</td>
-                    <td>{channel.get('delivered', 0)}</td>
-                    <td>{channel.get('failed', 0)}</td>
+                    <td>{channel.get("channel", "")}</td>
+                    <td>{channel.get("sent", 0)}</td>
+                    <td>{channel.get("delivered", 0)}</td>
+                    <td>{channel.get("failed", 0)}</td>
                     <td>{success_rate:.1%}</td>
                 </tr>
                 """
@@ -692,10 +675,14 @@ class NotificationReportingService:
             now = datetime.now(UTC)
 
             if template_name == "daily_digest":
-                start_date = now.replace(hour=0, minute=0, second=0, microsecond=0) - timedelta(days=1)
+                start_date = now.replace(hour=0, minute=0, second=0, microsecond=0) - timedelta(
+                    days=1
+                )
                 end_date = start_date + timedelta(days=1)
             elif template_name == "weekly_analytics":
-                start_date = now.replace(hour=0, minute=0, second=0, microsecond=0) - timedelta(days=7)
+                start_date = now.replace(hour=0, minute=0, second=0, microsecond=0) - timedelta(
+                    days=7
+                )
                 end_date = now.replace(hour=0, minute=0, second=0, microsecond=0)
             else:
                 # Default to last 24 hours
@@ -733,12 +720,16 @@ class NotificationReportingService:
             # Simple interval-based scheduling
             interval = schedule["interval"]
             if interval == "daily":
-                return now.replace(hour=schedule.get("hour", 0), minute=0, second=0) + timedelta(days=1)
+                return now.replace(hour=schedule.get("hour", 0), minute=0, second=0) + timedelta(
+                    days=1
+                )
             if interval == "weekly":
                 days_ahead = schedule.get("day_of_week", 0) - now.weekday()
                 if days_ahead <= 0:
                     days_ahead += 7
-                return now.replace(hour=schedule.get("hour", 0), minute=0, second=0) + timedelta(days=days_ahead)
+                return now.replace(hour=schedule.get("hour", 0), minute=0, second=0) + timedelta(
+                    days=days_ahead
+                )
             if interval == "hourly":
                 return now.replace(minute=0, second=0) + timedelta(hours=1)
 
@@ -753,6 +744,4 @@ class NotificationReportingService:
         """Send report to email recipients."""
         # This would integrate with the notification system to send emails
         # For now, just log
-        self.logger.info(
-            f"Would send report {report.report_id} to {len(recipients)} recipients"
-        )
+        self.logger.info(f"Would send report {report.report_id} to {len(recipients)} recipients")

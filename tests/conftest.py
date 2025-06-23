@@ -20,7 +20,6 @@ from backend.core.dependencies import (
     get_can_service,
     get_config_service,
     get_entity_service,
-    get_feature_manager_from_request,
 )
 from backend.core.persistence_feature import (
     get_database_manager,
@@ -43,10 +42,9 @@ def _setup_test_app_state() -> None:
     This ensures that the app.state has the necessary attributes
     that the dependency functions expect.
     """
-    if not hasattr(app.state, "feature_manager"):
+    if not hasattr(app.state, "service_registry"):
         # Create basic mocks for app state
-        app.state.feature_manager = Mock()
-        app.state.feature_manager.is_enabled = Mock(return_value=True)
+        app.state.service_registry = Mock()
         app.state.entity_service = Mock()
         app.state.can_service = Mock()
         app.state.config_service = Mock()
@@ -167,9 +165,10 @@ async def test_core_services(
     core_services = CoreServices()
 
     # Patch the service initialization to use our test database manager
-    with patch('backend.core.services.PersistenceService') as mock_persistence_class, \
-         patch('backend.core.services.DatabaseManager') as mock_db_manager_class:
-
+    with (
+        patch("backend.core.services.PersistenceService") as mock_persistence_class,
+        patch("backend.core.services.DatabaseManager") as mock_db_manager_class,
+    ):
         # Create persistence service mock that works with our test database
         mock_persistence = Mock()
         mock_persistence.set_database_manager = Mock()
@@ -179,7 +178,7 @@ async def test_core_services(
         mock_db_manager_class.return_value = test_database_manager
 
         # Patch database schema validation to avoid Alembic issues in tests
-        with patch.object(core_services, '_validate_database_schema'):
+        with patch.object(core_services, "_validate_database_schema"):
             await core_services.startup()
 
         try:
@@ -276,6 +275,7 @@ async def async_client() -> AsyncGenerator[AsyncClient, None]:
     Note: If you encounter issues with this fixture, ensure httpx is up to date (>=0.23).
     """
     from httpx import ASGITransport
+
     _setup_test_app_state()
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
         yield ac
@@ -293,6 +293,7 @@ async def async_client_with_persistence(
     SQLite database file for comprehensive integration testing.
     """
     from httpx import ASGITransport
+
     _setup_test_app_state()
 
     # Override persistence dependencies with test instances
@@ -348,6 +349,7 @@ async def async_client_with_core_services(
     This provides the most realistic testing environment for CoreServices integration.
     """
     from httpx import ASGITransport
+
     _setup_test_app_state()
 
     # Add CoreServices to app state
@@ -431,16 +433,16 @@ def mock_config_service() -> Mock:
 
 
 @pytest.fixture
-def mock_feature_manager() -> Mock:
+def mock_service_registry() -> Mock:
     """
-    Mock for the FeatureManager with common methods.
-    Use this to mock feature flag operations.
+    Mock for the ServiceRegistry with common methods.
+    Use this to mock service management operations.
     """
     mock = Mock()
-    mock.is_enabled = Mock(return_value=True)
-    mock.get_feature = Mock(return_value=None)
-    mock.enable_feature = Mock()
-    mock.disable_feature = Mock()
+    mock.has_service = Mock(return_value=True)
+    mock.get_service = Mock(return_value=Mock())
+    mock.get_service_status = Mock(return_value="healthy")
+    mock.check_system_health = AsyncMock(return_value={"status": "healthy", "services": {}})
     return mock
 
 
@@ -498,14 +500,13 @@ def override_config_service(mock_config_service: Mock) -> Generator[Mock, None, 
 
 
 @pytest.fixture
-def override_feature_manager(mock_feature_manager: Mock) -> Generator[Mock, None, None]:
+def override_service_registry(mock_service_registry: Mock) -> Generator[Mock, None, None]:
     """
-    Override the feature_manager dependency with a mock.
-    Use this when testing endpoints that depend on feature flags.
+    Override the service_registry dependency with a mock.
+    Use this when testing endpoints that depend on service management.
     """
-    app.dependency_overrides[get_feature_manager_from_request] = lambda: mock_feature_manager  # type: ignore[attr-defined]
-    app.state.feature_manager = mock_feature_manager
-    yield mock_feature_manager
+    app.state.service_registry = mock_service_registry
+    yield mock_service_registry
     app.dependency_overrides.clear()  # type: ignore[attr-defined]
 
 
@@ -515,7 +516,7 @@ def override_all_services(
     mock_entity_service: AsyncMock,
     mock_can_service: AsyncMock,
     mock_config_service: Mock,
-    mock_feature_manager: Mock,
+    mock_service_registry: Mock,
 ) -> Generator[dict[str, Mock | AsyncMock], None, None]:
     """
     Override all major service dependencies with mocks.
@@ -527,15 +528,15 @@ def override_all_services(
             get_entity_service: lambda: mock_entity_service,
             get_can_service: lambda: mock_can_service,
             get_config_service: lambda: mock_config_service,
-            get_feature_manager_from_request: lambda: mock_feature_manager,
         }
     )  # type: ignore[attr-defined]
+    app.state.service_registry = mock_service_registry
     yield {
         "app_state": mock_app_state,
         "entity_service": mock_entity_service,
         "can_service": mock_can_service,
         "config_service": mock_config_service,
-        "feature_manager": mock_feature_manager,
+        "service_registry": mock_service_registry,
     }
     app.dependency_overrides.clear()  # type: ignore[attr-defined]
 

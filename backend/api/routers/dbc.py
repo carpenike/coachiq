@@ -6,10 +6,12 @@ enabling import/export of CAN message definitions.
 """
 
 import logging
+import tempfile
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any
 
-from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
+import cantools.database
+from fastapi import APIRouter, File, HTTPException, UploadFile
 from fastapi.responses import FileResponse, Response
 from pydantic import BaseModel
 
@@ -18,14 +20,12 @@ from backend.integrations.can.dbc_rvc_converter import RVCtoDBCConverter
 
 logger = logging.getLogger(__name__)
 
-router = APIRouter(
-    prefix="/api/dbc",
-    tags=["dbc"]
-)
+router = APIRouter(prefix="/api/dbc", tags=["dbc"])
 
 
 class DBCUploadResponse(BaseModel):
     """Response for DBC file upload."""
+
     success: bool
     message: str
     messages_count: int
@@ -36,12 +36,14 @@ class DBCUploadResponse(BaseModel):
 
 class DBCListResponse(BaseModel):
     """Response for listing loaded DBCs."""
+
     loaded_dbcs: list[str]
     active_dbc: str | None
 
 
 class DBCMessageInfo(BaseModel):
     """Information about a CAN message in DBC."""
+
     id: int
     id_hex: str
     name: str
@@ -52,15 +54,13 @@ class DBCMessageInfo(BaseModel):
 
 class DBCExportRequest(BaseModel):
     """Request for exporting to DBC format."""
+
     dbc_name: str | None = None
     include_rvc_comments: bool = True
 
 
 @router.post("/upload", response_model=DBCUploadResponse)
-async def upload_dbc(
-    file: UploadFile = File(...),
-    name: str | None = None
-) -> DBCUploadResponse:
+async def upload_dbc(file: UploadFile = File(...), name: str | None = None) -> DBCUploadResponse:
     """
     Upload and load a DBC file.
 
@@ -79,9 +79,9 @@ async def upload_dbc(
         content = await file.read()
 
         # Save to temporary file
-        temp_path = Path(f"/tmp/{file.filename}")
-        with open(temp_path, "wb") as f:
-            f.write(content)
+        with tempfile.NamedTemporaryFile(suffix=f"_{file.filename}", delete=False) as temp_file:
+            temp_file.write(content)
+            temp_path = Path(temp_file.name)
 
         # Load into DBC manager
         manager = get_dbc_manager()
@@ -104,7 +104,7 @@ async def upload_dbc(
             messages_count=len(messages),
             nodes_count=0,  # Would need to access db.db.nodes
             signals_count=signals_count,
-            dbc_name=dbc_name
+            dbc_name=dbc_name,
         )
 
     except Exception as e:
@@ -121,10 +121,7 @@ async def list_dbcs() -> DBCListResponse:
         List of loaded DBCs and active DBC
     """
     manager = get_dbc_manager()
-    return DBCListResponse(
-        loaded_dbcs=list(manager.databases.keys()),
-        active_dbc=manager.active_dbc
-    )
+    return DBCListResponse(loaded_dbcs=list(manager.databases.keys()), active_dbc=manager.active_db)
 
 
 @router.post("/active/{name}")
@@ -172,7 +169,7 @@ async def get_dbc_messages(name: str) -> list[DBCMessageInfo]:
                 name=msg["name"],
                 length=msg["length"],
                 signals=msg["signals"],
-                comment=msg.get("comment")
+                comment=msg.get("comment"),
             )
             for msg in messages
         ]
@@ -203,13 +200,12 @@ async def export_dbc(name: str) -> FileResponse:
 
     try:
         # Export to temporary file
-        temp_path = Path(f"/tmp/{name}.dbc")
-        db.db.save(str(temp_path))
+        with tempfile.NamedTemporaryFile(suffix=f"_{name}.dbc", delete=False) as temp_file:
+            temp_path = Path(temp_file.name)
+        cantools.database.dump_file(db.db, str(temp_path))
 
         return FileResponse(
-            path=temp_path,
-            filename=f"{name}.dbc",
-            media_type="application/octet-stream"
+            path=temp_path, filename=f"{name}.dbc", media_type="application/octet-stream"
         )
     except Exception as e:
         logger.error(f"Failed to export DBC: {e}")
@@ -239,8 +235,9 @@ async def convert_rvc_to_dbc() -> Response:
         db = converter.rvc_to_dbc(rvc_config)
 
         # Save to temporary file
-        temp_path = Path("/tmp/rvc_export.dbc")
-        db.save(str(temp_path))
+        with tempfile.NamedTemporaryFile(suffix="_rvc_export.dbc", delete=False) as temp_file:
+            temp_path = Path(temp_file.name)
+        cantools.database.dump_file(db, str(temp_path))
 
         # Read and return file
         with open(temp_path, "rb") as f:
@@ -251,9 +248,7 @@ async def convert_rvc_to_dbc() -> Response:
         return Response(
             content=content,
             media_type="application/octet-stream",
-            headers={
-                "Content-Disposition": "attachment; filename=rvc_export.dbc"
-            }
+            headers={"Content-Disposition": "attachment; filename=rvc_export.dbc"},
         )
 
     except Exception as e:
@@ -262,9 +257,7 @@ async def convert_rvc_to_dbc() -> Response:
 
 
 @router.post("/convert/dbc-to-rvc")
-async def convert_dbc_to_rvc(
-    file: UploadFile = File(...)
-) -> dict[str, Any]:
+async def convert_dbc_to_rvc(file: UploadFile = File(...)) -> dict[str, Any]:
     """
     Convert uploaded DBC file to RV-C JSON format.
 
@@ -279,12 +272,11 @@ async def convert_dbc_to_rvc(
         content = await file.read()
 
         # Save to temporary file
-        temp_path = Path(f"/tmp/{file.filename}")
-        with open(temp_path, "wb") as f:
-            f.write(content)
+        with tempfile.NamedTemporaryFile(suffix=f"_{file.filename}", delete=False) as temp_file:
+            temp_file.write(content)
+            temp_path = Path(temp_file.name)
 
         # Load DBC
-        import cantools
         db = cantools.database.load_file(str(temp_path))
 
         # Convert to RV-C
@@ -319,10 +311,7 @@ async def search_signal(signal_name: str) -> list[dict[str, Any]]:
         try:
             signal_info = await db.find_signal(signal_name)
             if signal_info:
-                results.append({
-                    "dbc_name": dbc_name,
-                    **signal_info
-                })
+                results.append({"dbc_name": dbc_name, **signal_info})
         except Exception as e:
             logger.warning(f"Error searching in DBC '{dbc_name}': {e}")
 

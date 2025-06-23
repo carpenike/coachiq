@@ -343,9 +343,43 @@ cd frontend && npm run build
 ## Error Resolution Patterns
 
 ### Common Python Issues
+
+#### Service Access Anti-Patterns (DELETE ON SIGHT)
 ```python
-# Type annotation missing
-def process_data(data):  # ❌ Missing type hints
+# ❌ DELETE: Direct app.state access
+def bad_endpoint(request: Request):
+    service = request.app.state.entity_service  # DELETE THIS FUNCTION
+
+# ✅ TARGET: Dependency injection only
+def good_endpoint(
+    service: Annotated[EntityService, Depends(get_entity_service)]
+):
+    # Service is properly injected
+
+# ❌ DELETE: Any service with app_state
+class BadService:
+    def __init__(self, app_state: AppState):  # DELETE THIS CLASS
+        self.app_state = app_state
+
+# ✅ TARGET: Repository injection only
+class GoodService:
+    def __init__(
+        self,
+        repository: MyRepository,
+        # NO app_state parameter!
+    ):
+        self.repository = repository
+
+# ❌ DELETE: Migration adapters
+class ServiceMigrationAdapter:  # DELETE ENTIRE FILE
+    def __init__(self, use_v2: bool, ...):
+        if use_v2: ...
+```
+
+#### Type Annotation Issues
+```python
+# ❌ Missing type hints
+def process_data(data):
     return data
 
 def process_data(data: dict[str, Any]) -> dict[str, Any]:  # ✅ Proper types

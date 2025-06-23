@@ -13,7 +13,6 @@ from datetime import datetime
 from backend.core.config import NotificationSettings
 from backend.services.notification_lightweight import LightweightNotificationManager
 
-
 # Configure logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -28,13 +27,8 @@ async def basic_example():
         enabled=True,
         webhook={
             "enabled": True,
-            "targets": {
-                "default": {
-                    "url": "http://localhost:8080/webhook",
-                    "enabled": True
-                }
-            }
-        }
+            "targets": {"default": {"url": "http://localhost:8080/webhook", "enabled": True}},
+        },
     )
 
     # Create manager
@@ -69,13 +63,8 @@ async def batching_example():
         enabled=True,
         webhook={
             "enabled": True,
-            "targets": {
-                "default": {
-                    "url": "http://localhost:8080/webhook",
-                    "enabled": True
-                }
-            }
-        }
+            "targets": {"default": {"url": "http://localhost:8080/webhook", "enabled": True}},
+        },
     )
 
     manager = LightweightNotificationManager(config)
@@ -102,7 +91,7 @@ async def batching_example():
 
         # Check batching stats
         health = await manager.get_health()
-        batcher_stats = health['batcher']
+        batcher_stats = health["batcher"]
         print(f"Batching efficiency: {batcher_stats['efficiency']:.1%}")
         print(f"Total batched: {batcher_stats['total_batched']}")
         print(f"Total sent: {batcher_stats['total_sent']}")
@@ -129,7 +118,7 @@ async def multi_channel_example():
             "password": "your-app-password",
             "from_email": "your-email@gmail.com",
             "use_tls": True,
-        }
+        },
     )
 
     manager = LightweightNotificationManager(config)
@@ -151,7 +140,7 @@ async def multi_channel_example():
         # Check circuit breaker status
         health = await manager.get_health()
         print("\nCircuit breaker status:")
-        for channel, status in health['circuit_breakers'].items():
+        for channel, status in health["circuit_breakers"].items():
             print(f"  {channel}: {status['state']} (failures: {status['failures']})")
 
     finally:
@@ -166,13 +155,8 @@ async def performance_monitoring_example():
         enabled=True,
         webhook={
             "enabled": True,
-            "targets": {
-                "default": {
-                    "url": "http://localhost:8080/webhook",
-                    "enabled": True
-                }
-            }
-        }
+            "targets": {"default": {"url": "http://localhost:8080/webhook", "enabled": True}},
+        },
     )
 
     manager = LightweightNotificationManager(config)
@@ -200,9 +184,9 @@ async def performance_monitoring_example():
 
             # Get current metrics
             health = await manager.get_health()
-            metrics = health['metrics']
+            metrics = health["metrics"]
 
-            print(f"\nNotification {i+1}:")
+            print(f"\nNotification {i + 1}:")
             print(f"  Success: {success}")
             print(f"  Total sent: {metrics['total_sent']}")
             print(f"  Success rate: {metrics['success_rate']:.1%}")
@@ -216,8 +200,8 @@ async def performance_monitoring_example():
 
         print(f"Uptime: {health['metrics']['uptime_seconds']:.1f} seconds")
         print(f"Cache hit rate: {health['cache']['hit_rate']:.1%}")
-        print(f"Connection pools:")
-        for pool_name, pool_stats in health['pools'].items():
+        print("Connection pools:")
+        for pool_name, pool_stats in health["pools"].items():
             if pool_stats:
                 print(f"  {pool_name}: {pool_stats['reuse_rate']:.1%} reuse rate")
 
@@ -243,7 +227,7 @@ async def rv_scenario_example():
             "password": "app-password",
             "from_email": "rv-monitor@example.com",
             "use_tls": True,
-        }
+        },
     )
 
     manager = LightweightNotificationManager(config)
@@ -293,7 +277,7 @@ async def rv_scenario_example():
         print(f"Batching efficiency: {health['batcher']['efficiency']:.1%}")
 
         # Check if suitable for Pi
-        memory = health['metrics']['memory'].get('current_mb', 0)
+        memory = health["metrics"]["memory"].get("current_mb", 0)
         if memory and memory < 100:
             print("\n✓ Memory usage is EXCELLENT for Raspberry Pi deployment")
         elif memory and memory < 200:

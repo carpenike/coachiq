@@ -91,7 +91,10 @@ async def feature_config(temp_db_path):
 @pytest.fixture
 async def notification_feature(notification_settings, feature_config):
     """Create NotificationFeature for testing."""
-    with patch('backend.integrations.notifications.feature.get_notification_settings', return_value=notification_settings):
+    with patch(
+        "backend.integrations.notifications.feature.get_notification_settings",
+        return_value=notification_settings,
+    ):
         feature = NotificationFeature(
             name="test_notifications",
             enabled=True,
@@ -122,7 +125,10 @@ class TestFeatureInitialization:
             "queue_db_path": temp_db_path,
         }
 
-        with patch('backend.integrations.notifications.feature.get_notification_settings', return_value=notification_settings):
+        with patch(
+            "backend.integrations.notifications.feature.get_notification_settings",
+            return_value=notification_settings,
+        ):
             feature = NotificationFeature(
                 name="test_legacy",
                 enabled=True,
@@ -139,11 +145,16 @@ class TestFeatureInitialization:
 
             await feature.shutdown()
 
-    async def test_feature_initialization_disabled_notifications(self, notification_settings, feature_config):
+    async def test_feature_initialization_disabled_notifications(
+        self, notification_settings, feature_config
+    ):
         """Test feature initialization when notifications are disabled."""
         notification_settings.enabled = False
 
-        with patch('backend.integrations.notifications.feature.get_notification_settings', return_value=notification_settings):
+        with patch(
+            "backend.integrations.notifications.feature.get_notification_settings",
+            return_value=notification_settings,
+        ):
             feature = NotificationFeature(
                 name="test_disabled",
                 enabled=True,
@@ -251,7 +262,9 @@ class TestFeatureShutdown:
         await notification_feature.startup()
 
         # Mock dispatcher to fail on shutdown
-        notification_feature.notification_dispatcher.stop = AsyncMock(side_effect=Exception("Shutdown error"))
+        notification_feature.notification_dispatcher.stop = AsyncMock(
+            side_effect=Exception("Shutdown error")
+        )
 
         # Should not raise exception
         await notification_feature.shutdown()
@@ -288,7 +301,10 @@ class TestHealthMonitoring:
         """Test health status when notifications are disabled."""
         notification_settings.enabled = False
 
-        with patch('backend.integrations.notifications.feature.get_notification_settings', return_value=notification_settings):
+        with patch(
+            "backend.integrations.notifications.feature.get_notification_settings",
+            return_value=notification_settings,
+        ):
             feature = NotificationFeature(
                 name="test_disabled_health",
                 enabled=True,
@@ -388,7 +404,10 @@ class TestAPIMethodDelegation:
         """Test send_notification with legacy manager fallback."""
         config = {"use_queue_based": False, "queue_db_path": temp_db_path}
 
-        with patch('backend.integrations.notifications.feature.get_notification_settings', return_value=notification_settings):
+        with patch(
+            "backend.integrations.notifications.feature.get_notification_settings",
+            return_value=notification_settings,
+        ):
             feature = NotificationFeature(
                 name="test_legacy_api",
                 enabled=True,
@@ -449,7 +468,9 @@ class TestAPIMethodDelegation:
         )
 
         assert result
-        assert notification_feature._stats["system_notifications"] >= 2  # Including startup notification
+        assert (
+            notification_feature._stats["system_notifications"] >= 2
+        )  # Including startup notification
 
     async def test_send_pushover_notification_delegation(self, notification_feature):
         """Test send_pushover_notification method delegation."""
@@ -479,7 +500,9 @@ class TestAPIMethodDelegation:
         await notification_feature.startup()
 
         # Mock safe manager to fail
-        notification_feature.safe_notification_manager.notify = AsyncMock(side_effect=Exception("Test error"))
+        notification_feature.safe_notification_manager.notify = AsyncMock(
+            side_effect=Exception("Test error")
+        )
 
         result = await notification_feature.send_notification(
             message="Error test",
@@ -491,7 +514,10 @@ class TestAPIMethodDelegation:
 
     async def test_api_method_without_manager(self, notification_settings, feature_config):
         """Test API methods when no manager is available."""
-        with patch('backend.integrations.notifications.feature.get_notification_settings', return_value=notification_settings):
+        with patch(
+            "backend.integrations.notifications.feature.get_notification_settings",
+            return_value=notification_settings,
+        ):
             feature = NotificationFeature(
                 name="test_no_manager",
                 enabled=True,
@@ -551,7 +577,10 @@ class TestQueueSpecificMethods:
         """Test queue-specific methods without queue-based manager."""
         config = {"use_queue_based": False, "queue_db_path": temp_db_path}
 
-        with patch('backend.integrations.notifications.feature.get_notification_settings', return_value=notification_settings):
+        with patch(
+            "backend.integrations.notifications.feature.get_notification_settings",
+            return_value=notification_settings,
+        ):
             feature = NotificationFeature(
                 name="test_no_queue",
                 enabled=True,
@@ -579,8 +608,14 @@ class TestErrorHandlingAndRecovery:
     async def test_startup_error_handling(self, notification_settings, feature_config):
         """Test startup error handling."""
         # Mock to cause initialization error
-        with patch('backend.services.safe_notification_manager.SafeNotificationManager.initialize', side_effect=Exception("Init error")):
-            with patch('backend.integrations.notifications.feature.get_notification_settings', return_value=notification_settings):
+        with patch(
+            "backend.services.safe_notification_manager.SafeNotificationManager.initialize",
+            side_effect=Exception("Init error"),
+        ):
+            with patch(
+                "backend.integrations.notifications.feature.get_notification_settings",
+                return_value=notification_settings,
+            ):
                 feature = NotificationFeature(
                     name="test_startup_error",
                     enabled=True,
@@ -598,7 +633,10 @@ class TestErrorHandlingAndRecovery:
     async def test_dispatcher_startup_failure(self, notification_feature):
         """Test handling of dispatcher startup failure."""
         # Mock dispatcher start to fail
-        with patch('backend.services.async_notification_dispatcher.AsyncNotificationDispatcher.start', side_effect=Exception("Dispatcher error")):
+        with patch(
+            "backend.services.async_notification_dispatcher.AsyncNotificationDispatcher.start",
+            side_effect=Exception("Dispatcher error"),
+        ):
             # Should not raise exception
             await notification_feature.startup()
 
@@ -627,7 +665,9 @@ class TestErrorHandlingAndRecovery:
         await notification_feature.startup()
 
         # Mock safe manager to fail health checks
-        notification_feature.safe_notification_manager.get_queue_statistics = AsyncMock(side_effect=Exception("Health error"))
+        notification_feature.safe_notification_manager.get_queue_statistics = AsyncMock(
+            side_effect=Exception("Health error")
+        )
 
         # Wait for health monitoring cycle
         await asyncio.sleep(2.0)
@@ -654,7 +694,9 @@ class TestErrorHandlingAndRecovery:
         await notification_feature.startup()
 
         # Mock channel test to fail
-        notification_feature.safe_notification_manager.test_channels = AsyncMock(return_value={"smtp": False, "slack": True})
+        notification_feature.safe_notification_manager.test_channels = AsyncMock(
+            return_value={"smtp": False, "slack": True}
+        )
 
         # Wait for health monitoring
         await asyncio.sleep(2.0)
@@ -818,7 +860,10 @@ class TestFeaturePerformance:
 
     async def test_feature_startup_performance(self, notification_settings, feature_config):
         """Test feature startup performance."""
-        with patch('backend.integrations.notifications.feature.get_notification_settings', return_value=notification_settings):
+        with patch(
+            "backend.integrations.notifications.feature.get_notification_settings",
+            return_value=notification_settings,
+        ):
             feature = NotificationFeature(
                 name="test_performance",
                 enabled=True,

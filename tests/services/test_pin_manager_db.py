@@ -116,7 +116,9 @@ class TestPINCreationAndStorage:
         assert pin.pin_hash != "1234"  # Should be hashed
         assert pin.salt is not None
 
-    async def test_create_duplicate_pin_type_updates_existing(self, pin_manager_with_db, db_session, test_user):
+    async def test_create_duplicate_pin_type_updates_existing(
+        self, pin_manager_with_db, db_session, test_user
+    ):
         """Test that creating duplicate PIN type updates existing PIN."""
         # Create first PIN
         await pin_manager_with_db.create_pin(
@@ -391,7 +393,9 @@ class TestConcurrentOperations:
         assert len(sessions) == 5
         assert all(s.is_active for s in sessions)
 
-    async def test_concurrent_authorization_with_max_operations(self, pin_manager_with_db, db_session, test_user):
+    async def test_concurrent_authorization_with_max_operations(
+        self, pin_manager_with_db, db_session, test_user
+    ):
         """Test concurrent authorization with operation limits."""
         # Create PIN
         await pin_manager_with_db.create_pin(

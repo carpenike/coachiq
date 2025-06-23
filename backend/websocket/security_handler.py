@@ -45,9 +45,9 @@ class SecurityWebSocketHandler:
         Args:
             event_manager: SecurityEventManager instance for dependency injection
         """
-        self.clients: Set[WebSocket] = set()
-        self.client_contexts: Dict[WebSocket, Dict[str, Any]] = {}
-        self._stats_cache: Dict[str, Any] = {}
+        self.clients: set[WebSocket] = set()
+        self.client_contexts: dict[WebSocket, dict[str, Any]] = {}
+        self._stats_cache: dict[str, Any] = {}
         self._last_stats_update = 0.0
         self._stats_cache_ttl = 2.0  # 2 second cache for stats
 
@@ -63,9 +63,8 @@ class SecurityWebSocketHandler:
             if not self._event_manager:
                 raise RuntimeError("SecurityEventManager not provided to SecurityWebSocketHandler")
 
-            self._event_manager.register_listener(
-                self._handle_security_event,
-                name="security_websocket"
+            await self._event_manager.subscribe(
+                self._handle_security_event, name="security_websocket"
             )
             self._is_registered = True
             logger.info("SecurityWebSocketHandler registered with SecurityEventManager")
@@ -75,7 +74,7 @@ class SecurityWebSocketHandler:
     async def shutdown(self) -> None:
         """Cleanup handler and disconnect all clients."""
         if self._is_registered and self._event_manager:
-            self._event_manager.unregister_listener(self._handle_security_event)
+            await self._event_manager.unsubscribe(self._handle_security_event)
 
         # Disconnect all clients
         for client in list(self.clients):
@@ -97,7 +96,7 @@ class SecurityWebSocketHandler:
             self.client_contexts[websocket] = {
                 "connected_at": time.time(),
                 "view_context": "overview",  # Default view
-                "last_ping": time.time()
+                "last_ping": time.time(),
             }
             client_count = len(self.clients)
 
@@ -151,7 +150,7 @@ class SecurityWebSocketHandler:
         except Exception as e:
             logger.error(f"Error handling client message: {e}")
 
-    async def _handle_set_view_context(self, websocket: WebSocket, data: Dict[str, Any]) -> None:
+    async def _handle_set_view_context(self, websocket: WebSocket, data: dict[str, Any]) -> None:
         """Handle view context change from client."""
         view = data.get("payload", {}).get("view", "overview")
 
@@ -159,58 +158,59 @@ class SecurityWebSocketHandler:
             self.client_contexts[websocket]["view_context"] = view
 
         # Send acknowledgment
-        await self._send_to_client(websocket, {
-            "type": "ack",
-            "request_id": data.get("request_id"),
-            "status": "success"
-        })
+        await self._send_to_client(
+            websocket, {"type": "ack", "request_id": data.get("request_id"), "status": "success"}
+        )
 
         logger.debug(f"Client view context changed to: {view}")
 
-    async def _handle_ping(self, websocket: WebSocket, data: Dict[str, Any]) -> None:
+    async def _handle_ping(self, websocket: WebSocket, data: dict[str, Any]) -> None:
         """Handle ping message from client."""
         if websocket in self.client_contexts:
             self.client_contexts[websocket]["last_ping"] = time.time()
 
         # Send pong response
-        await self._send_to_client(websocket, {
-            "type": "pong",
-            "request_id": data.get("request_id"),
-            "timestamp": time.time()
-        })
+        await self._send_to_client(
+            websocket,
+            {"type": "pong", "request_id": data.get("request_id"), "timestamp": time.time()},
+        )
 
     async def _handle_get_stats(self, websocket: WebSocket) -> None:
         """Handle stats request from client."""
         stats = await self._get_current_stats()
-        await self._send_to_client(websocket, {
-            "type": "stats_response",
-            "data": stats,
-            "timestamp": time.time()
-        })
+        await self._send_to_client(
+            websocket, {"type": "stats_response", "data": stats, "timestamp": time.time()}
+        )
 
     async def _send_initial_data(self, websocket: WebSocket) -> None:
         """Send initial dashboard data to new client."""
         try:
             # Send current statistics
             stats = await self._get_current_stats()
-            await self._send_to_client(websocket, {
-                "type": "initial_data",
-                "data": {
-                    "stats": stats,
-                    "server_time": time.time(),
-                    "connection_id": id(websocket)
-                }
-            })
+            await self._send_to_client(
+                websocket,
+                {
+                    "type": "initial_data",
+                    "data": {
+                        "stats": stats,
+                        "server_time": time.time(),
+                        "connection_id": id(websocket),
+                    },
+                },
+            )
 
             # Send recent events if available
             if self._event_manager:
                 recent_events = self._event_manager.get_recent_events(limit=20)
                 if recent_events:
-                    await self._send_to_client(websocket, {
-                        "type": "recent_events",
-                        "data": [event.dict() for event in recent_events],
-                        "count": len(recent_events)
-                    })
+                    await self._send_to_client(
+                        websocket,
+                        {
+                            "type": "recent_events",
+                            "data": [event.dict() for event in recent_events],
+                            "count": len(recent_events),
+                        },
+                    )
 
         except Exception as e:
             logger.error(f"Error sending initial data: {e}")
@@ -226,11 +226,7 @@ class SecurityWebSocketHandler:
             return  # No clients to notify
 
         # Create broadcast message
-        message = {
-            "type": "security_event",
-            "data": event.dict(),
-            "timestamp": time.time()
-        }
+        message = {"type": "security_event", "data": event.dict(), "timestamp": time.time()}
 
         # Send to all connected clients
         await self._broadcast_to_all(message)
@@ -238,14 +234,10 @@ class SecurityWebSocketHandler:
         # Also trigger stats update for critical events
         if event.severity in ["high", "critical"]:
             stats = await self._get_current_stats()
-            stats_message = {
-                "type": "stats_update",
-                "data": stats,
-                "timestamp": time.time()
-            }
+            stats_message = {"type": "stats_update", "data": stats, "timestamp": time.time()}
             await self._broadcast_to_all(stats_message)
 
-    async def _get_current_stats(self) -> Dict[str, Any]:
+    async def _get_current_stats(self) -> dict[str, Any]:
         """Get current security statistics with caching."""
         current_time = time.time()
 
@@ -264,10 +256,13 @@ class SecurityWebSocketHandler:
                     "events": event_stats.dict(),
                     "system_health": {
                         "security_monitoring": "healthy",
-                        "event_processing": manager_stats.get("performance", {}).get("delivery_success_rate", 0) > 0.95,
-                        "connected_clients": len(self.clients)
+                        "event_processing": manager_stats.get("performance", {}).get(
+                            "delivery_success_rate", 0
+                        )
+                        > 0.95,
+                        "connected_clients": len(self.clients),
                     },
-                    "updated_at": current_time
+                    "updated_at": current_time,
                 }
             else:
                 # Fallback stats if manager not available
@@ -277,9 +272,9 @@ class SecurityWebSocketHandler:
                     "system_health": {
                         "security_monitoring": "unknown",
                         "event_processing": False,
-                        "connected_clients": len(self.clients)
+                        "connected_clients": len(self.clients),
                     },
-                    "updated_at": current_time
+                    "updated_at": current_time,
                 }
 
             # Cache the stats
@@ -290,12 +285,9 @@ class SecurityWebSocketHandler:
 
         except Exception as e:
             logger.error(f"Error getting security stats: {e}")
-            return {
-                "error": "Failed to get statistics",
-                "updated_at": current_time
-            }
+            return {"error": "Failed to get statistics", "updated_at": current_time}
 
-    async def _send_to_client(self, websocket: WebSocket, message: Dict[str, Any]) -> None:
+    async def _send_to_client(self, websocket: WebSocket, message: dict[str, Any]) -> None:
         """
         Send message to specific client.
 
@@ -311,7 +303,7 @@ class SecurityWebSocketHandler:
             logger.error(f"Error sending message to client: {e}")
             await self.disconnect_client(websocket)
 
-    async def _broadcast_to_all(self, message: Dict[str, Any]) -> None:
+    async def _broadcast_to_all(self, message: dict[str, Any]) -> None:
         """
         Broadcast message to all connected clients.
 
@@ -339,13 +331,13 @@ class SecurityWebSocketHandler:
         results = await asyncio.gather(*tasks, return_exceptions=True)
 
         # Post-broadcast cleanup and error handling
-        for client, result in zip(connections_to_send, results):
+        for client, result in zip(connections_to_send, results, strict=False):
             if isinstance(result, Exception):
                 logger.warning(f"Failed to send message to client: {result}")
                 # This connection is likely dead. Remove it safely.
                 await self.disconnect_client(client)
 
-    async def send_system_notification(self, notification_type: str, data: Dict[str, Any]) -> None:
+    async def send_system_notification(self, notification_type: str, data: dict[str, Any]) -> None:
         """
         Send system notification to all clients.
 
@@ -357,7 +349,7 @@ class SecurityWebSocketHandler:
             "type": "system_notification",
             "notification_type": notification_type,
             "data": data,
-            "timestamp": time.time()
+            "timestamp": time.time(),
         }
 
         await self._broadcast_to_all(message)
@@ -367,7 +359,7 @@ class SecurityWebSocketHandler:
         """Get number of connected clients."""
         return len(self.clients)
 
-    def get_handler_stats(self) -> Dict[str, Any]:
+    def get_handler_stats(self) -> dict[str, Any]:
         """Get handler statistics."""
         current_time = time.time()
 
@@ -376,10 +368,11 @@ class SecurityWebSocketHandler:
             "is_registered": self._is_registered,
             "stats_cache_age": current_time - self._last_stats_update,
             "clients_by_view": {
-                view: sum(1 for ctx in self.client_contexts.values()
-                         if ctx.get("view_context") == view)
+                view: sum(
+                    1 for ctx in self.client_contexts.values() if ctx.get("view_context") == view
+                )
                 for view in ["overview", "incident", "forensics"]
-            }
+            },
         }
 
 
@@ -399,6 +392,7 @@ def get_security_websocket_handler() -> SecurityWebSocketHandler:
         # This will be removed once all callers use dependency injection
         try:
             from backend.services.security_event_manager import get_security_event_manager
+
             event_manager = get_security_event_manager()
             _security_websocket_handler = SecurityWebSocketHandler(event_manager)
         except RuntimeError:
@@ -407,7 +401,9 @@ def get_security_websocket_handler() -> SecurityWebSocketHandler:
     return _security_websocket_handler
 
 
-async def initialize_security_websocket_handler(event_manager: SecurityEventManager | None = None) -> SecurityWebSocketHandler:
+async def initialize_security_websocket_handler(
+    event_manager: SecurityEventManager | None = None,
+) -> SecurityWebSocketHandler:
     """Initialize the global security WebSocket handler.
 
     Args:

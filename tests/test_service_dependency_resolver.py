@@ -5,6 +5,7 @@ Part of Phase 2F: Service Dependency Resolution Enhancement
 """
 
 import pytest
+
 from backend.core.service_dependency_resolver import (
     DependencyError,
     DependencyType,
@@ -62,10 +63,13 @@ class TestServiceDependencyResolver:
         resolver.add_service("C", [ServiceDependency("D")])
 
         # A depends on B and C
-        resolver.add_service("A", [
-            ServiceDependency("B"),
-            ServiceDependency("C"),
-        ])
+        resolver.add_service(
+            "A",
+            [
+                ServiceDependency("B"),
+                ServiceDependency("C"),
+            ],
+        )
 
         stages = resolver.resolve_dependencies()
 
@@ -108,9 +112,7 @@ class TestServiceDependencyResolver:
         resolver = ServiceDependencyResolver()
 
         # A has optional dependency on B
-        resolver.add_service("A", [
-            ServiceDependency("B", type=DependencyType.OPTIONAL)
-        ])
+        resolver.add_service("A", [ServiceDependency("B", type=DependencyType.OPTIONAL)])
 
         stages = resolver.resolve_dependencies()
 
@@ -122,9 +124,7 @@ class TestServiceDependencyResolver:
         resolver = ServiceDependencyResolver()
 
         # A depends on B with fallback to C
-        resolver.add_service("A", [
-            ServiceDependency("B", fallback="C")
-        ])
+        resolver.add_service("A", [ServiceDependency("B", fallback="C")])
 
         # Only C is available
         resolver.add_service("C", [])
@@ -141,14 +141,10 @@ class TestServiceDependencyResolver:
         resolver = ServiceDependencyResolver()
 
         # A has runtime dependency on B
-        resolver.add_service("A", [
-            ServiceDependency("B", type=DependencyType.RUNTIME)
-        ])
+        resolver.add_service("A", [ServiceDependency("B", type=DependencyType.RUNTIME)])
 
         # B has runtime dependency on C
-        resolver.add_service("B", [
-            ServiceDependency("C", type=DependencyType.RUNTIME)
-        ])
+        resolver.add_service("B", [ServiceDependency("C", type=DependencyType.RUNTIME)])
 
         stages = resolver.resolve_dependencies()
 
@@ -171,10 +167,13 @@ class TestServiceDependencyResolver:
         resolver.add_service("database", [])
         resolver.add_service("cache", [])
         resolver.add_service("auth", [ServiceDependency("database")])
-        resolver.add_service("api", [
-            ServiceDependency("auth"),
-            ServiceDependency("cache"),
-        ])
+        resolver.add_service(
+            "api",
+            [
+                ServiceDependency("auth"),
+                ServiceDependency("cache"),
+            ],
+        )
 
         resolver.resolve_dependencies()
         report = resolver.get_dependency_report()
@@ -196,10 +195,13 @@ class TestServiceDependencyResolver:
         resolver.add_service("service1", [ServiceDependency("core")])
         resolver.add_service("service2", [ServiceDependency("core")])
         resolver.add_service("app1", [ServiceDependency("service1")])
-        resolver.add_service("app2", [
-            ServiceDependency("service1"),
-            ServiceDependency("service2"),
-        ])
+        resolver.add_service(
+            "app2",
+            [
+                ServiceDependency("service1"),
+                ServiceDependency("service2"),
+            ],
+        )
 
         resolver.resolve_dependencies()
 
@@ -222,10 +224,13 @@ class TestServiceDependencyResolver:
         resolver.add_service("A", [])
         resolver.add_service("B", [ServiceDependency("A")])
         resolver.add_service("C", [ServiceDependency("A")])
-        resolver.add_service("D", [
-            ServiceDependency("B"),
-            ServiceDependency("C"),
-        ])
+        resolver.add_service(
+            "D",
+            [
+                ServiceDependency("B"),
+                ServiceDependency("C"),
+            ],
+        )
 
         resolver.resolve_dependencies()
         diagram = resolver.export_mermaid_diagram()
@@ -247,14 +252,20 @@ class TestServiceDependencyResolver:
         resolver.add_service("logger", [])
         resolver.add_service("database", [ServiceDependency("config")])
         resolver.add_service("cache", [ServiceDependency("config")])
-        resolver.add_service("auth", [
-            ServiceDependency("database"),
-            ServiceDependency("logger"),
-        ])
-        resolver.add_service("api", [
-            ServiceDependency("auth"),
-            ServiceDependency("cache"),
-        ])
+        resolver.add_service(
+            "auth",
+            [
+                ServiceDependency("database"),
+                ServiceDependency("logger"),
+            ],
+        )
+        resolver.add_service(
+            "api",
+            [
+                ServiceDependency("auth"),
+                ServiceDependency("cache"),
+            ],
+        )
 
         stages = resolver.resolve_dependencies()
 

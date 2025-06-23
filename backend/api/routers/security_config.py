@@ -12,52 +12,30 @@ Designed for RV deployments with admin-only access.
 """
 
 import logging
-from typing import Any, Dict
+from typing import Annotated, Any, Dict
 
-from fastapi import APIRouter, Depends, HTTPException, Request
-from starlette import status
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
+from starlette import status
 
-from backend.core.dependencies_v2 import get_authenticated_admin, get_security_audit_service
+from backend.core.dependencies import (
+    get_authenticated_admin,
+    get_security_audit_service,
+    get_security_config_service,
+)
 from backend.services.security_config_service import (
-    SecurityConfiguration,
-    SecurityConfigService,
+    AuditPolicy,
+    AuthenticationPolicy,
+    NetworkSecurityPolicy,
     PINSecurityPolicy,
     RateLimitingPolicy,
-    AuthenticationPolicy,
-    AuditPolicy,
-    NetworkSecurityPolicy,
+    SecurityConfigService,
+    SecurityConfiguration,
 )
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/security/config", tags=["security-configuration"])
-
-# Global security config service instance
-_security_config_service: SecurityConfigService | None = None
-
-
-def get_security_config_service(request: Request | None = None) -> SecurityConfigService:
-    """Get the security configuration service instance."""
-    global _security_config_service
-    if _security_config_service is None:
-        if request and hasattr(request.app.state, "security_config_service"):
-            _security_config_service = request.app.state.security_config_service
-        else:
-            # Create default instance
-            _security_config_service = SecurityConfigService()
-
-    # Ensure we return a valid instance
-    if _security_config_service is None:
-        _security_config_service = SecurityConfigService()
-
-    return _security_config_service
-
-
-def set_security_config_service(service: SecurityConfigService) -> None:
-    """Set the security configuration service instance (called from main.py)."""
-    global _security_config_service
-    _security_config_service = service
 
 
 # Request/Response Models
@@ -84,7 +62,7 @@ class PolicyUpdateRequest(BaseModel):
     """Policy update request."""
 
     policy_type: str = Field(..., description="Type of policy to update")
-    policy_data: Dict[str, Any] = Field(..., description="Policy configuration data")
+    policy_data: dict[str, Any] = Field(..., description="Policy configuration data")
     reason: str = Field("", description="Reason for policy change")
 
 
@@ -102,10 +80,12 @@ class ValidationResponse(BaseModel):
 # Configuration Endpoints
 
 
-@router.get("/", response_model=Dict[str, Any])
+@router.get("/", response_model=dict[str, Any])
 async def get_security_config(
-    request: Request, admin_user: dict = Depends(get_authenticated_admin)
-) -> Dict[str, Any]:
+    config_service: Annotated[SecurityConfigService, Depends(get_security_config_service)],
+    security_audit: Annotated[Any, Depends(get_security_audit_service)],
+    admin_user: Annotated[dict, Depends(get_authenticated_admin)],
+) -> dict[str, Any]:
     """
     Get complete security configuration (Admin only).
 
@@ -113,11 +93,9 @@ async def get_security_config(
     and current settings.
     """
     try:
-        config_service = get_security_config_service(request)
-        config = config_service.get_config()
+        config = await config_service.get_config()
 
         # Log access to security configuration
-        security_audit = get_security_audit_service(request)
         if security_audit:
             await security_audit.log_security_event(
                 event_type="configuration_accessed",
@@ -142,18 +120,18 @@ async def get_security_config(
         ) from e
 
 
-@router.get("/summary", response_model=Dict[str, Any])
+@router.get("/summary", response_model=dict[str, Any])
 async def get_security_summary(
-    request: Request, admin_user: dict = Depends(get_authenticated_admin)
-) -> Dict[str, Any]:
+    config_service: Annotated[SecurityConfigService, Depends(get_security_config_service)],
+    admin_user: Annotated[dict, Depends(get_authenticated_admin)],
+) -> dict[str, Any]:
     """
     Get security configuration summary (Admin only).
 
     Returns a condensed view of security settings and validation status.
     """
     try:
-        config_service = get_security_config_service(request)
-        summary = config_service.get_security_summary()
+        summary = await config_service.get_security_summary()
 
         logger.info(f"Security summary accessed by admin {admin_user['user_id']}")
 
@@ -167,12 +145,13 @@ async def get_security_summary(
         ) from e
 
 
-@router.put("/", response_model=Dict[str, Any])
+@router.put("/", response_model=dict[str, Any])
 async def update_security_config(
-    request: Request,
+    config_service: Annotated[SecurityConfigService, Depends(get_security_config_service)],
+    security_audit: Annotated[Any, Depends(get_security_audit_service)],
     config: SecurityConfiguration,
-    admin_user: dict = Depends(get_authenticated_admin),
-) -> Dict[str, Any]:
+    admin_user: Annotated[dict, Depends(get_authenticated_admin)],
+) -> dict[str, Any]:
     """
     Update complete security configuration (Admin only).
 
@@ -180,11 +159,10 @@ async def update_security_config(
     Use with caution as this affects all security policies.
     """
     try:
-        config_service = get_security_config_service(request)
         admin_id = admin_user["user_id"]
 
         # Save the new configuration
-        success = config_service.save_config(config, admin_id)
+        success = await config_service.save_config(config, admin_id)
 
         if not success:
             raise HTTPException(
@@ -193,7 +171,6 @@ async def update_security_config(
             )
 
         # Enhanced security audit for configuration changes
-        security_audit = get_security_audit_service(request)
         if security_audit:
             await security_audit.log_security_event(
                 event_type="configuration_changed",
@@ -232,9 +209,10 @@ async def update_security_config(
 
 @router.post("/mode", response_model=SecurityModeUpdateResponse)
 async def update_security_mode(
-    request: Request,
+    config_service: Annotated[SecurityConfigService, Depends(get_security_config_service)],
+    security_audit: Annotated[Any, Depends(get_security_audit_service)],
     mode_request: SecurityModeUpdateRequest,
-    admin_user: dict = Depends(get_authenticated_admin),
+    admin_user: Annotated[dict, Depends(get_authenticated_admin)],
 ) -> SecurityModeUpdateResponse:
     """
     Update security mode (Admin only).
@@ -243,15 +221,14 @@ async def update_security_mode(
     Available modes: minimal, standard, strict, paranoid.
     """
     try:
-        config_service = get_security_config_service(request)
         admin_id = admin_user["user_id"]
 
         # Get current mode
-        current_config = config_service.get_config()
+        current_config = await config_service.get_config()
         previous_mode = current_config.security_mode
 
         # Update security mode
-        success = config_service.update_security_mode(mode_request.mode, admin_id)
+        success = await config_service.update_security_mode(mode_request.mode, admin_id)
 
         if not success:
             raise HTTPException(
@@ -260,7 +237,6 @@ async def update_security_mode(
             )
 
         # Enhanced security audit for mode changes
-        security_audit = get_security_audit_service(request)
         if security_audit:
             await security_audit.log_security_event(
                 event_type="security_mode_changed",
@@ -297,11 +273,12 @@ async def update_security_mode(
 
 @router.post("/policies/{policy_type}")
 async def update_policy(
-    request: Request,
+    config_service: Annotated[SecurityConfigService, Depends(get_security_config_service)],
+    security_audit: Annotated[Any, Depends(get_security_audit_service)],
     policy_type: str,
     policy_request: PolicyUpdateRequest,
-    admin_user: dict = Depends(get_authenticated_admin),
-) -> Dict[str, Any]:
+    admin_user: Annotated[dict, Depends(get_authenticated_admin)],
+) -> dict[str, Any]:
     """
     Update a specific security policy (Admin only).
 
@@ -309,11 +286,10 @@ async def update_policy(
     Supported policy types: pin, rate_limiting, authentication, audit, network.
     """
     try:
-        config_service = get_security_config_service(request)
         admin_id = admin_user["user_id"]
 
         # Get current configuration
-        config = config_service.get_config()
+        config = await config_service.get_config()
 
         # Update specific policy based on type
         if policy_type == "pin":
@@ -333,7 +309,7 @@ async def update_policy(
             )
 
         # Save updated configuration
-        success = config_service.save_config(config, admin_id)
+        success = await config_service.save_config(config, admin_id)
 
         if not success:
             raise HTTPException(
@@ -342,7 +318,6 @@ async def update_policy(
             )
 
         # Enhanced security audit for policy changes
-        security_audit = get_security_audit_service(request)
         if security_audit:
             await security_audit.log_security_event(
                 event_type="policy_updated",
@@ -357,7 +332,7 @@ async def update_policy(
             )
 
         # Validate the updated configuration
-        validation = config_service.validate_configuration()
+        validation = await config_service.validate_configuration()
 
         logger.warning(f"Security policy {policy_type} updated by admin {admin_id}")
 
@@ -381,7 +356,8 @@ async def update_policy(
 
 @router.get("/validate", response_model=ValidationResponse)
 async def validate_config(
-    request: Request, admin_user: dict = Depends(get_authenticated_admin)
+    config_service: Annotated[SecurityConfigService, Depends(get_security_config_service)],
+    admin_user: Annotated[dict, Depends(get_authenticated_admin)],
 ) -> ValidationResponse:
     """
     Validate current security configuration (Admin only).
@@ -389,12 +365,21 @@ async def validate_config(
     Checks the current configuration for issues and provides recommendations.
     """
     try:
-        config_service = get_security_config_service(request)
-        validation = config_service.validate_configuration()
+        validation = await config_service.validate_configuration()
 
         logger.info(f"Security configuration validated by admin {admin_user['user_id']}")
 
-        return ValidationResponse(**validation)
+        # Get current config for additional info
+        config = await config_service.get_config()
+
+        return ValidationResponse(
+            valid=validation.get("valid", False),
+            issues=validation.get("issues", []),
+            recommendations=validation.get("recommendations", []),
+            last_validated=validation.get("last_validated", ""),
+            config_version=config.config_version,
+            security_mode=config.security_mode,
+        )
 
     except Exception as e:
         logger.error(f"Error validating security configuration: {e}")
@@ -406,22 +391,22 @@ async def validate_config(
 
 @router.post("/reload")
 async def reload_config(
-    request: Request, admin_user: dict = Depends(get_authenticated_admin)
-) -> Dict[str, Any]:
+    config_service: Annotated[SecurityConfigService, Depends(get_security_config_service)],
+    security_audit: Annotated[Any, Depends(get_security_audit_service)],
+    admin_user: Annotated[dict, Depends(get_authenticated_admin)],
+) -> dict[str, Any]:
     """
     Reload security configuration from disk (Admin only).
 
     Forces a reload of the configuration file, useful after manual edits.
     """
     try:
-        config_service = get_security_config_service(request)
         admin_id = admin_user["user_id"]
 
         # Force reload from disk
-        config = config_service.get_config(force_reload=True)
+        config = await config_service.get_config(force_reload=True)
 
         # Enhanced security audit for config reload
-        security_audit = get_security_audit_service(request)
         if security_audit:
             await security_audit.log_security_event(
                 event_type="configuration_reloaded",
@@ -457,12 +442,12 @@ async def reload_config(
 
 @router.get("/policies/pin")
 async def get_pin_policy(
-    request: Request, admin_user: dict = Depends(get_authenticated_admin)
-) -> Dict[str, Any]:
+    config_service: Annotated[SecurityConfigService, Depends(get_security_config_service)],
+    admin_user: Annotated[dict, Depends(get_authenticated_admin)],
+) -> dict[str, Any]:
     """Get PIN security policy configuration (Admin only)."""
     try:
-        config_service = get_security_config_service(request)
-        pin_config = config_service.get_pin_config()
+        pin_config = await config_service.get_pin_config()
 
         return {"pin_policy": pin_config}
 
@@ -475,12 +460,12 @@ async def get_pin_policy(
 
 @router.get("/policies/rate-limiting")
 async def get_rate_limiting_policy(
-    request: Request, admin_user: dict = Depends(get_authenticated_admin)
-) -> Dict[str, Any]:
+    config_service: Annotated[SecurityConfigService, Depends(get_security_config_service)],
+    admin_user: Annotated[dict, Depends(get_authenticated_admin)],
+) -> dict[str, Any]:
     """Get rate limiting policy configuration (Admin only)."""
     try:
-        config_service = get_security_config_service(request)
-        rate_config = config_service.get_rate_limit_config()
+        rate_config = await config_service.get_rate_limit_config()
 
         return {"rate_limiting_policy": rate_config}
 
@@ -494,12 +479,12 @@ async def get_rate_limiting_policy(
 
 @router.get("/policies/authentication")
 async def get_authentication_policy(
-    request: Request, admin_user: dict = Depends(get_authenticated_admin)
-) -> Dict[str, Any]:
+    config_service: Annotated[SecurityConfigService, Depends(get_security_config_service)],
+    admin_user: Annotated[dict, Depends(get_authenticated_admin)],
+) -> dict[str, Any]:
     """Get authentication policy configuration (Admin only)."""
     try:
-        config_service = get_security_config_service(request)
-        auth_config = config_service.get_auth_config()
+        auth_config = await config_service.get_auth_config()
 
         return {"authentication_policy": auth_config}
 

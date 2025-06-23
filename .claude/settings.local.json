@@ -81,7 +81,19 @@
       "Bash(COACHIQ_SECURITY__TLS_TERMINATION_IS_EXTERNAL=true poetry run python -m backend.cli --config 2 >& 1)",
       "Bash(COACHIQ_SECURITY__TLS_TERMINATION_IS_EXTERNAL=true poetry run coachiq-daemon --config 2 >& 1)",
       "Bash(time poetry run:*)",
-      "Bash(/Users/ryan/src/rvc2api/.claude/commands/show-service-deps.sh:*)"
+      "Bash(/Users/ryan/src/rvc2api/.claude/commands/show-service-deps.sh:*)",
+      "Bash(perl:*)",
+      "Bash(mv:*)",
+      "mcp__serena__initial_instructions",
+      "mcp__serena__list_dir",
+      "mcp__serena__search_for_pattern",
+      "mcp__serena__find_symbol",
+      "mcp__serena__replace_regex",
+      "mcp__serena__insert_before_symbol",
+      "mcp__serena__read_memory",
+      "mcp__serena__think_about_task_adherence",
+      "mcp__serena__find_file",
+      "mcp__zen__analyze"
     ]
   },
   "enableAllProjectMcpServers": true,

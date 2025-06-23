@@ -12,18 +12,17 @@ import time
 from collections import deque
 from typing import Any
 
+from backend.core.dependencies import get_security_event_manager
 from backend.models.security_events import SecurityEvent
 from backend.models.security_events_db import SecurityEventDB
 from backend.services.database_manager import DatabaseManager
-from backend.services.feature_base import Feature
-from backend.services.security_event_manager import get_security_event_manager
 
 logger = logging.getLogger(__name__)
 
 # Performance monitoring constants
 MIN_EVENTS_FOR_ERROR_RATE_CHECK = 100
 DEGRADED_ERROR_RATE_THRESHOLD = 0.05  # 5%
-FAILED_ERROR_RATE_THRESHOLD = 0.1     # 10%
+FAILED_ERROR_RATE_THRESHOLD = 0.1  # 10%
 
 
 class SecurityEventBatch:
@@ -86,7 +85,7 @@ class SecurityEventBatch:
         return events
 
 
-class SecurityPersistenceService(Feature):
+class SecurityPersistenceService:
     """
     High-performance security event persistence service.
 
@@ -100,29 +99,20 @@ class SecurityPersistenceService(Feature):
 
     def __init__(
         self,
-        name: str = "security_persistence",
-        enabled: bool = True,
-        core: bool = True,
         database_manager: DatabaseManager | None = None,
         batch_size: int = 100,
         batch_timeout: float = 5.0,
         flush_interval: float = 1.0,
-        **kwargs,
     ):
         """
         Initialize security persistence service.
 
         Args:
-            name: Feature name
-            enabled: Whether feature is enabled
-            core: Whether this is a core feature
             database_manager: Database manager instance
             batch_size: Number of events per batch
             batch_timeout: Maximum age of batch before flush (seconds)
             flush_interval: Interval between flush checks (seconds)
-            **kwargs: Additional feature configuration
         """
-        super().__init__(name=name, enabled=enabled, core=core, **kwargs)
 
         self.database_manager = database_manager
         self.batch_size = batch_size
@@ -152,10 +142,10 @@ class SecurityPersistenceService(Feature):
         self._flush_times: deque[float] = deque(maxlen=100)
         self._batch_sizes: deque[int] = deque(maxlen=100)
 
-
         logger.info(
             "SecurityPersistenceService initialized: batch_size=%d, batch_timeout=%.1fs",
-            batch_size, batch_timeout
+            batch_size,
+            batch_timeout,
         )
 
     async def startup(self) -> None:
@@ -220,8 +210,11 @@ class SecurityPersistenceService(Feature):
             "SecurityPersistenceService final stats: "
             "uptime=%.1fs, events_received=%d, events_persisted=%d, "
             "batches_processed=%d, database_errors=%d",
-            uptime, self._stats["events_received"], self._stats["events_persisted"],
-            self._stats["batches_processed"], self._stats["database_errors"]
+            uptime,
+            self._stats["events_received"],
+            self._stats["events_persisted"],
+            self._stats["batches_processed"],
+            self._stats["database_errors"],
         )
 
         logger.info("Security persistence service stopped")
@@ -364,7 +357,9 @@ class SecurityPersistenceService(Feature):
 
                 logger.debug(
                     "Persisted batch: %d events in %.1fms (%.1f events/sec)",
-                    batch_size, flush_time, batch_size / (flush_time / 1000)
+                    batch_size,
+                    flush_time,
+                    batch_size / (flush_time / 1000),
                 )
 
         except Exception as e:
@@ -425,12 +420,8 @@ class SecurityPersistenceService(Feature):
             },
         }
 
-    @property
-    def health(self) -> str:
-        """Return the health status of the feature."""
-        if not self.enabled:
-            return "healthy"  # Disabled is considered healthy
-
+    def get_health_status(self) -> str:
+        """Return the health status of the service."""
         if not self.database_manager:
             return "failed"
 
@@ -444,16 +435,12 @@ class SecurityPersistenceService(Feature):
 
         return "healthy"
 
-    @property
-    def health_details(self) -> dict[str, Any]:
+    def get_health_details(self) -> dict[str, Any]:
         """Return detailed health information for diagnostics."""
-        if not self.enabled:
-            return {"status": "disabled", "reason": "Feature not enabled"}
-
         stats = self.get_statistics()
 
         return {
-            "status": self.health,
+            "status": self.get_health_status(),
             "uptime_seconds": stats["uptime_seconds"],
             "events_persisted": stats["events_persisted"],
             "success_rate": stats["success_rate"],
@@ -486,7 +473,7 @@ def get_security_persistence_service() -> SecurityPersistenceService:
     if _security_persistence_service is None:
         msg = (
             "SecurityPersistenceService has not been initialized. "
-            "Ensure it's registered with the FeatureManager."
+            "Ensure it's registered with the ServiceRegistry."
         )
         raise RuntimeError(msg)
     return _security_persistence_service

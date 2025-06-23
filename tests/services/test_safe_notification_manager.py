@@ -132,11 +132,11 @@ class TestSafeNotificationManagerInitialization:
         # Template sandbox should be configured during __init__
         if manager.template_sandbox is not None:
             # If Jinja2 is available, sandbox should be configured
-            assert hasattr(manager.template_sandbox, 'filters')
+            assert hasattr(manager.template_sandbox, "filters")
             # Should have restricted filter set
-            assert 'escape' in manager.template_sandbox.filters
+            assert "escape" in manager.template_sandbox.filters
             # Should not have dangerous filters
-            assert 'eval' not in manager.template_sandbox.filters
+            assert "eval" not in manager.template_sandbox.filters
 
     async def test_pushover_priority_mapping(self, notification_settings, temp_db_path):
         """Test Pushover priority mapping configuration."""
@@ -328,7 +328,7 @@ class TestContextSanitization:
         context = {
             "valid_key": "valid value",
             "invalid-key": "should be rejected",  # Hyphens not allowed
-            "123invalid": "should be rejected",    # Can't start with number
+            "123invalid": "should be rejected",  # Can't start with number
         }
 
         result = await safe_manager.notify(
@@ -388,7 +388,7 @@ class TestContextSanitization:
         # Should handle large context gracefully (may truncate)
         assert result
 
-    @patch('backend.services.safe_notification_manager.JINJA2_AVAILABLE', False)
+    @patch("backend.services.safe_notification_manager.JINJA2_AVAILABLE", False)
     async def test_fallback_sanitization_without_jinja2(self, safe_manager):
         """Test fallback sanitization when Jinja2 is not available."""
         context = {
@@ -574,7 +574,9 @@ class TestChannelTesting:
         # Should have results for enabled channels
         assert len(results) > 0
 
-    async def test_channel_testing_disabled_notifications(self, notification_settings, temp_db_path):
+    async def test_channel_testing_disabled_notifications(
+        self, notification_settings, temp_db_path
+    ):
         """Test channel testing when notifications are disabled."""
         notification_settings.enabled = False
         notification_settings.queue_db_path = temp_db_path
@@ -595,8 +597,8 @@ class TestErrorHandling:
     async def test_initialization_without_required_settings(self, notification_settings):
         """Test initialization with missing required settings."""
         # Remove queue path
-        if hasattr(notification_settings, 'queue_db_path'):
-            delattr(notification_settings, 'queue_db_path')
+        if hasattr(notification_settings, "queue_db_path"):
+            delattr(notification_settings, "queue_db_path")
 
         manager = SafeNotificationManager(notification_settings)
         # Should still initialize with defaults
