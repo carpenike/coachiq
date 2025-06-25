@@ -494,3 +494,29 @@ async def get_authentication_policy(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Error retrieving authentication policy",
         ) from e
+
+
+@router.get("/caddy/rate-limits")
+async def get_caddy_rate_limits(
+    config_service: Annotated[SecurityConfigService, Depends(get_security_config_service)],
+    admin_user: Annotated[dict, Depends(get_authenticated_admin)],
+) -> dict[str, Any]:
+    """
+    Get Caddy-compatible rate limit configuration (Admin only).
+
+    Returns the IP-based rate limits that should be configured in Caddy.
+    This is separate from the user-aware rate limits handled in FastAPI.
+    """
+    try:
+        caddy_limits = await config_service.get_caddy_rate_limits()
+        return {
+            "caddy_rate_limits": caddy_limits,
+            "usage": "Configure these limits in your Caddyfile for edge-layer IP-based protection",
+        }
+
+    except Exception as e:
+        logger.error(f"Error getting Caddy rate limits: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Error retrieving Caddy rate limit configuration",
+        ) from e

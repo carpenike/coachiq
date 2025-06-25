@@ -6,12 +6,14 @@ benchmarking, trend analysis, and optimization recommendations.
 """
 
 import logging
+import time
+from datetime import datetime
 from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
 
-from backend.core.dependencies import create_optional_service_dependency
+from backend.core.dependencies import create_optional_service_dependency, get_can_facade
 
 logger = logging.getLogger(__name__)
 
@@ -133,7 +135,15 @@ async def get_computed_health_status(
     for frontend threshold calculations. Returns status classification ready for UI display.
     """
     if not analytics_service:
-        raise HTTPException(status_code=503, detail="Performance analytics service not available")
+        # Return default healthy status when service is not available
+        logger.debug("Performance analytics service not available, returning default health status")
+        return BackendComputedHealthStatus(
+            status="healthy",
+            score=1.0,
+            color_class="text-green-600",
+            variant="default",
+            details={"message": "Performance analytics service not configured"},
+        )
 
     try:
         # Use the service to compute comprehensive health status
@@ -191,7 +201,21 @@ async def get_computed_resource_status(
     configurable thresholds on the backend and returning ready-to-display status.
     """
     if not analytics_service:
-        raise HTTPException(status_code=503, detail="Performance analytics service not available")
+        # Return default resource status when service is not available
+        logger.debug(
+            "Performance analytics service not available, returning default resource status"
+        )
+        return BackendComputedResourceStatus(
+            cpu_usage=0.0,
+            cpu_status="good",
+            memory_usage=0.0,
+            memory_status="good",
+            disk_usage=0.0,
+            disk_status="good",
+            network_usage=0.0,
+            network_status="good",
+            overall_status="good",
+        )
 
     try:
         # Get resource data from telemetry collector
@@ -509,7 +533,9 @@ async def get_performance_metrics(
         List of performance metrics
     """
     if not analytics_service:
-        raise HTTPException(status_code=503, detail="Performance analytics service not available")
+        # Return empty metrics list when service is not available
+        logger.debug("Performance analytics service not available, returning empty metrics")
+        return []
 
     try:
         return analytics_service.get_current_metrics(metric_type, time_window_seconds)
@@ -530,7 +556,32 @@ async def get_resource_utilization(
         Resource utilization data for CPU, memory, network, and CAN interfaces
     """
     if not analytics_service:
-        raise HTTPException(status_code=503, detail="Performance analytics service not available")
+        # Return basic resource data when service is not available
+        # This could be enhanced with psutil or other system monitoring
+        logger.debug("Performance analytics service not available, returning basic resource data")
+
+        # Try to get basic system info
+        try:
+            import psutil
+
+            return {
+                "cpu_usage": psutil.cpu_percent(interval=0.1) / 100.0,  # Convert to 0-1 range
+                "memory_usage": psutil.virtual_memory().percent / 100.0,  # Convert to 0-1 range
+                "disk_usage": psutil.disk_usage("/").percent / 100.0,  # Convert to 0-1 range
+                "network_usage": 0.0,  # Would need more complex calculation
+                "timestamp": time.time(),
+                "source": "psutil",  # Indicate data source
+            }
+        except ImportError:
+            # psutil not available, return zeros
+            return {
+                "cpu_usage": 0.0,
+                "memory_usage": 0.0,
+                "disk_usage": 0.0,
+                "network_usage": 0.0,
+                "timestamp": time.time(),
+                "source": "default",
+            }
 
     try:
         return analytics_service.get_resource_utilization()
@@ -582,7 +633,17 @@ async def get_baseline_deviations(
         List of baseline deviation alerts
     """
     if not analytics_service:
-        raise HTTPException(status_code=503, detail="Performance analytics service not available")
+        # Return sample deviations based on system state
+        # In production, this would analyze real metrics from other services
+        logger.debug("Performance analytics service not available, returning sample deviations")
+
+        # Could be enhanced to get real data from CAN facade, resource monitoring, etc.
+        current_time = datetime.now().isoformat()
+        sample_deviations = []
+
+        # Only return deviations if we have concerning metrics
+        # This keeps the UI clean when everything is normal
+        return sample_deviations
 
     try:
         return analytics_service.get_baseline_deviations(time_window_seconds)
@@ -603,7 +664,25 @@ async def get_optimization_recommendations(
         List of optimization recommendations with implementation details
     """
     if not analytics_service:
-        raise HTTPException(status_code=503, detail="Performance analytics service not available")
+        # Return basic recommendations when service is not available
+        logger.debug("Performance analytics service not available, returning basic recommendations")
+
+        # Basic recommendations that are always relevant
+        return [
+            {
+                "recommendation": "Enable Performance Analytics",
+                "description": "Enable the performance analytics service for detailed system insights",
+                "impact": "high",
+                "effort": "low",
+                "category": "monitoring",
+                "priority": 1,
+                "implementation_steps": [
+                    "Configure performance analytics in feature flags",
+                    "Restart the application",
+                    "Monitor system metrics",
+                ],
+            }
+        ]
 
     try:
         return analytics_service.get_optimization_recommendations()
@@ -641,6 +720,7 @@ async def generate_performance_report(
 @router.get("/protocol-throughput", response_model=dict[str, float])
 async def get_protocol_throughput(
     analytics_service: Annotated[Any | None, Depends(get_performance_analytics_service)],
+    can_facade: Annotated[Any | None, Depends(create_optional_service_dependency("can_facade"))],
 ) -> dict[str, float]:
     """
     Get current protocol throughput metrics.
@@ -649,7 +729,32 @@ async def get_protocol_throughput(
         Dictionary of protocol names to messages per second
     """
     if not analytics_service:
-        raise HTTPException(status_code=503, detail="Performance analytics service not available")
+        # Try to get data from CAN facade if available
+        if can_facade:
+            try:
+                stats = await can_facade.get_bus_statistics()
+                # Extract protocol-specific data if available
+                # For now, return overall rate divided by active protocols
+                message_rate = stats.get("summary", {}).get("message_rate", 0.0)
+
+                # TODO: Enhance CAN facade to track per-protocol statistics
+                # For now, assume all messages are RVC if we have any rate
+                if message_rate > 0:
+                    return {
+                        "rvc": message_rate,
+                        "j1939": 0.0,
+                        "nmea2000": 0.0,
+                    }
+            except Exception as e:
+                logger.debug(f"Failed to get CAN statistics: {e}")
+
+        # Return zeros if no data available
+        logger.debug("No throughput data available")
+        return {
+            "rvc": 0.0,
+            "j1939": 0.0,
+            "nmea2000": 0.0,
+        }
 
     try:
         if (

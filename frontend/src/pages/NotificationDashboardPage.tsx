@@ -7,7 +7,6 @@
  */
 
 import React, { useState, useEffect } from 'react';
-import { Helmet } from 'react-helmet-async';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -136,10 +135,8 @@ const NotificationDashboardPage: React.FC = () => {
 
   return (
     <>
-      <Helmet>
-        <title>Notification Dashboard - CoachIQ</title>
-        <meta name="description" content="Real-time monitoring and management of the notification system" />
-      </Helmet>
+      <title>Notification Dashboard - CoachIQ</title>
+      <meta name="description" content="Real-time monitoring and management of the notification system" />
 
       <div className="min-h-screen bg-gray-50">
         {/* Header */}

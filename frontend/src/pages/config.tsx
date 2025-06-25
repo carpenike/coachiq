@@ -10,6 +10,7 @@ import {
     enableFeature,
     fetchCANInterfaceMappings,
     fetchCoachConfiguration,
+    fetchDatabaseConfiguration,
     fetchFeatureManagement,
     fetchSystemSettings
 } from '@/api/endpoints';
@@ -56,6 +57,12 @@ export default function ConfigurationPage() {
     queryKey: ['systemSettings'],
     queryFn: fetchSystemSettings,
     refetchInterval: 30000, // Refresh every 30 seconds
+  });
+
+  const { data: databaseConfig, isLoading: dbLoading } = useQuery({
+    queryKey: ['databaseConfiguration'],
+    queryFn: fetchDatabaseConfiguration,
+    refetchInterval: 30000,
   });
 
   const { data: featureManagement, isLoading: featuresLoading } = useQuery({
@@ -225,43 +232,212 @@ export default function ConfigurationPage() {
                     <span>Loading system settings...</span>
                   </div>
                 ) : systemSettings ? (
-                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                    <div className="space-y-2">
-                      <h4 className="font-semibold text-sm">Environment</h4>
-                      <div className="text-sm space-y-1">
-                        <div className="flex justify-between">
-                          <span className="text-muted-foreground">Variables:</span>
-                          <span>{Object.keys(systemSettings.environment_variables || {}).length}</span>
+                  <div className="space-y-6">
+                    {/* Basic Overview */}
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                      <div className="space-y-2">
+                        <h4 className="font-semibold text-sm">Environment</h4>
+                        <div className="text-sm space-y-1">
+                          <div className="flex justify-between">
+                            <span className="text-muted-foreground">Variables:</span>
+                            <span>{Object.keys(systemSettings.environment_variables || {}).length}</span>
+                          </div>
+                          <div className="flex justify-between">
+                            <span className="text-muted-foreground">Environment:</span>
+                            <span>{systemSettings.metadata?.environment || 'N/A'}</span>
+                          </div>
+                          <div className="flex justify-between">
+                            <span className="text-muted-foreground">Debug:</span>
+                            <span>{systemSettings.metadata?.debug ? 'Yes' : 'No'}</span>
+                          </div>
+                          <div className="flex justify-between">
+                            <span className="text-muted-foreground">App Name:</span>
+                            <span>{systemSettings.metadata?.app_name || 'N/A'}</span>
+                          </div>
                         </div>
-                        <div className="flex justify-between">
-                          <span className="text-muted-foreground">Sources:</span>
-                          <span>{Object.keys(systemSettings.config_sources || {}).length}</span>
+                      </div>
+                      <div className="space-y-2">
+                        <h4 className="font-semibold text-sm">Server</h4>
+                        <div className="text-sm space-y-1">
+                          <div className="flex justify-between">
+                            <span className="text-muted-foreground">Host:</span>
+                            <span>{systemSettings.sections?.server?.host || 'N/A'}</span>
+                          </div>
+                          <div className="flex justify-between">
+                            <span className="text-muted-foreground">Port:</span>
+                            <span>{systemSettings.sections?.server?.port || 'N/A'}</span>
+                          </div>
+                          <div className="flex justify-between">
+                            <span className="text-muted-foreground">Workers:</span>
+                            <span>{systemSettings.sections?.server?.workers || 'N/A'}</span>
+                          </div>
+                          <div className="flex justify-between">
+                            <span className="text-muted-foreground">Reload:</span>
+                            <span>{systemSettings.sections?.server?.reload ? 'Yes' : 'No'}</span>
+                          </div>
+                        </div>
+                      </div>
+                      <div className="space-y-2">
+                        <h4 className="font-semibold text-sm">Persistence</h4>
+                        <div className="text-sm space-y-1">
+                          <div className="flex justify-between">
+                            <span className="text-muted-foreground">Enabled:</span>
+                            <span>{systemSettings.sections?.persistence?.enabled ? 'Yes' : 'No'}</span>
+                          </div>
+                          <div className="flex justify-between">
+                            <span className="text-muted-foreground">Backend:</span>
+                            <span>{systemSettings.sections?.persistence?.backend_type || 'N/A'}</span>
+                          </div>
+                          <div className="flex justify-between">
+                            <span className="text-muted-foreground">Compression:</span>
+                            <span>{systemSettings.sections?.persistence?.enable_compression ? 'Yes' : 'No'}</span>
+                          </div>
+                          <div className="flex justify-between">
+                            <span className="text-muted-foreground">Retention:</span>
+                            <span>{systemSettings.sections?.persistence?.retention_days || 'N/A'} days</span>
+                          </div>
                         </div>
                       </div>
                     </div>
-                    <div className="space-y-2">
-                      <h4 className="font-semibold text-sm">Server</h4>
-                      <div className="text-sm space-y-1">
-                        <div className="flex justify-between">
-                          <span className="text-muted-foreground">Host:</span>
-                          <span>{systemSettings.server?.host || 'N/A'}</span>
+
+                    {/* Detailed Configuration Sections */}
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      <div className="space-y-2">
+                        <h4 className="font-semibold text-sm">Security</h4>
+                        <div className="text-sm space-y-1">
+                          <div className="flex justify-between">
+                            <span className="text-muted-foreground">CSRF Protection:</span>
+                            <span>{systemSettings.sections?.security?.enable_csrf ? 'Yes' : 'No'}</span>
+                          </div>
+                          <div className="flex justify-between">
+                            <span className="text-muted-foreground">XSS Protection:</span>
+                            <span>{systemSettings.sections?.security?.enable_xss_protection ? 'Yes' : 'No'}</span>
+                          </div>
+                          <div className="flex justify-between">
+                            <span className="text-muted-foreground">Rate Limiting:</span>
+                            <span>{systemSettings.sections?.security?.rate_limit_enabled ? 'Yes' : 'No'}</span>
+                          </div>
+                          {systemSettings.sections?.security?.rate_limit_enabled && (
+                            <div className="flex justify-between">
+                              <span className="text-muted-foreground">Rate Limit:</span>
+                              <span>{systemSettings.sections?.security?.rate_limit_requests}/{systemSettings.sections?.security?.rate_limit_window}s</span>
+                            </div>
+                          )}
                         </div>
-                        <div className="flex justify-between">
-                          <span className="text-muted-foreground">Port:</span>
-                          <span>{systemSettings.server?.port || 'N/A'}</span>
+                      </div>
+                      <div className="space-y-2">
+                        <h4 className="font-semibold text-sm">Logging</h4>
+                        <div className="text-sm space-y-1">
+                          <div className="flex justify-between">
+                            <span className="text-muted-foreground">Level:</span>
+                            <span>{systemSettings.sections?.logging?.level || 'N/A'}</span>
+                          </div>
+                          <div className="flex justify-between">
+                            <span className="text-muted-foreground">Console:</span>
+                            <span>{systemSettings.sections?.logging?.console_enabled ? 'Yes' : 'No'}</span>
+                          </div>
+                          <div className="flex justify-between">
+                            <span className="text-muted-foreground">File:</span>
+                            <span>{systemSettings.sections?.logging?.file_enabled ? 'Yes' : 'No'}</span>
+                          </div>
+                          {systemSettings.sections?.logging?.file_enabled && (
+                            <div className="flex justify-between">
+                              <span className="text-muted-foreground">Backup Count:</span>
+                              <span>{systemSettings.sections?.logging?.backup_count || 'N/A'}</span>
+                            </div>
+                          )}
                         </div>
                       </div>
                     </div>
-                    <div className="space-y-2">
-                      <h4 className="font-semibold text-sm">Persistence</h4>
-                      <div className="text-sm space-y-1">
-                        <div className="flex justify-between">
-                          <span className="text-muted-foreground">Enabled:</span>
-                          <span>{systemSettings.persistence?.enabled ? 'Yes' : 'No'}</span>
+
+                    {/* RV-C and CAN Configuration */}
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      <div className="space-y-2">
+                        <h4 className="font-semibold text-sm">RV-C Protocol</h4>
+                        <div className="text-sm space-y-1">
+                          <div className="flex justify-between">
+                            <span className="text-muted-foreground">Encoder:</span>
+                            <span>{systemSettings.sections?.rvc?.enable_encoder ? 'Yes' : 'No'}</span>
+                          </div>
+                          <div className="flex justify-between">
+                            <span className="text-muted-foreground">Decoder:</span>
+                            <span>{systemSettings.sections?.rvc?.enable_decoder ? 'Yes' : 'No'}</span>
+                          </div>
+                          <div className="flex justify-between">
+                            <span className="text-muted-foreground">Validation:</span>
+                            <span>{systemSettings.sections?.rvc?.enable_validation ? 'Yes' : 'No'}</span>
+                          </div>
+                          <div className="flex justify-between">
+                            <span className="text-muted-foreground">Caching:</span>
+                            <span>{systemSettings.sections?.rvc?.enable_caching ? 'Yes' : 'No'}</span>
+                          </div>
                         </div>
-                        <div className="flex justify-between">
-                          <span className="text-muted-foreground">Backend:</span>
-                          <span>{systemSettings.persistence?.backend_type || 'N/A'}</span>
+                      </div>
+                      <div className="space-y-2">
+                        <h4 className="font-semibold text-sm">CAN Bus</h4>
+                        <div className="text-sm space-y-1">
+                          <div className="flex justify-between">
+                            <span className="text-muted-foreground">Interfaces:</span>
+                            <span>{systemSettings.sections?.can?.interfaces?.length || 0}</span>
+                          </div>
+                          <div className="flex justify-between">
+                            <span className="text-muted-foreground">Bitrate:</span>
+                            <span>{systemSettings.sections?.can?.bitrate || 'N/A'}</span>
+                          </div>
+                          <div className="flex justify-between">
+                            <span className="text-muted-foreground">FD Support:</span>
+                            <span>{systemSettings.sections?.can?.enable_fd ? 'Yes' : 'No'}</span>
+                          </div>
+                          <div className="flex justify-between">
+                            <span className="text-muted-foreground">Statistics:</span>
+                            <span>{systemSettings.sections?.can?.enable_statistics ? 'Yes' : 'No'}</span>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Authentication and Notifications */}
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      <div className="space-y-2">
+                        <h4 className="font-semibold text-sm">Authentication</h4>
+                        <div className="text-sm space-y-1">
+                          <div className="flex justify-between">
+                            <span className="text-muted-foreground">Enabled:</span>
+                            <span>{systemSettings.sections?.auth?.enabled ? 'Yes' : 'No'}</span>
+                          </div>
+                          <div className="flex justify-between">
+                            <span className="text-muted-foreground">Provider:</span>
+                            <span>{systemSettings.sections?.auth?.provider || 'N/A'}</span>
+                          </div>
+                          <div className="flex justify-between">
+                            <span className="text-muted-foreground">Session Timeout:</span>
+                            <span>{systemSettings.sections?.auth?.session_timeout || 'N/A'}s</span>
+                          </div>
+                          <div className="flex justify-between">
+                            <span className="text-muted-foreground">Email Verification:</span>
+                            <span>{systemSettings.sections?.auth?.require_email_verification ? 'Yes' : 'No'}</span>
+                          </div>
+                        </div>
+                      </div>
+                      <div className="space-y-2">
+                        <h4 className="font-semibold text-sm">Notifications</h4>
+                        <div className="text-sm space-y-1">
+                          <div className="flex justify-between">
+                            <span className="text-muted-foreground">Enabled:</span>
+                            <span>{systemSettings.sections?.notifications?.enabled ? 'Yes' : 'No'}</span>
+                          </div>
+                          <div className="flex justify-between">
+                            <span className="text-muted-foreground">Max History:</span>
+                            <span>{systemSettings.sections?.notifications?.max_history || 'N/A'}</span>
+                          </div>
+                          <div className="flex justify-between">
+                            <span className="text-muted-foreground">Default Severity:</span>
+                            <span>{systemSettings.sections?.notifications?.default_severity || 'N/A'}</span>
+                          </div>
+                          <div className="flex justify-between">
+                            <span className="text-muted-foreground">Rate Limit:</span>
+                            <span>{systemSettings.sections?.notifications?.rate_limit_per_minute || 'N/A'}/min</span>
+                          </div>
                         </div>
                       </div>
                     </div>
@@ -269,6 +445,134 @@ export default function ConfigurationPage() {
                 ) : (
                   <div className="text-center py-8 text-muted-foreground">
                     No system settings available
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+
+            {/* Database Configuration Card */}
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center">
+                  <Database className="h-5 w-5 mr-2" />
+                  Database Configuration
+                </CardTitle>
+                <CardDescription>
+                  Current database backend and connection settings
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                {dbLoading ? (
+                  <div className="flex items-center justify-center py-8">
+                    <RefreshCw className="h-6 w-6 animate-spin text-blue-600 mr-2" />
+                    <span>Loading database configuration...</span>
+                  </div>
+                ) : databaseConfig ? (
+                  <div className="space-y-4">
+                    <div className="flex items-center justify-between">
+                      <span className="text-lg font-medium">Backend: {databaseConfig.backend.toUpperCase()}</span>
+                      <Badge variant={databaseConfig.health_status === 'healthy' ? 'default' : 'destructive'}>
+                        {databaseConfig.health_status}
+                      </Badge>
+                    </div>
+
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      {/* SQLite Configuration */}
+                      {databaseConfig.backend === 'sqlite' && (
+                        <div className="space-y-2">
+                          <h4 className="font-semibold text-sm">SQLite Settings</h4>
+                          <div className="text-sm space-y-1">
+                            <div className="flex justify-between">
+                              <span className="text-muted-foreground">Path:</span>
+                              <span className="text-xs font-mono">{databaseConfig.sqlite.path}</span>
+                            </div>
+                            <div className="flex justify-between">
+                              <span className="text-muted-foreground">Timeout:</span>
+                              <span>{databaseConfig.sqlite.timeout}s</span>
+                            </div>
+                            <div className="flex justify-between">
+                              <span className="text-muted-foreground">Optimizations:</span>
+                              <span>{databaseConfig.sqlite.optimizations_enabled ? 'Yes' : 'No'}</span>
+                            </div>
+                            <div className="flex justify-between">
+                              <span className="text-muted-foreground">Cache Size:</span>
+                              <span>{databaseConfig.sqlite.cache_size} pages</span>
+                            </div>
+                            <div className="flex justify-between">
+                              <span className="text-muted-foreground">Memory Map:</span>
+                              <span>{(databaseConfig.sqlite.mmap_size / 1024 / 1024).toFixed(0)} MB</span>
+                            </div>
+                          </div>
+                        </div>
+                      )}
+
+                      {/* PostgreSQL Configuration */}
+                      {databaseConfig.backend === 'postgresql' && (
+                        <div className="space-y-2">
+                          <h4 className="font-semibold text-sm">PostgreSQL Settings</h4>
+                          <div className="text-sm space-y-1">
+                            <div className="flex justify-between">
+                              <span className="text-muted-foreground">Host:</span>
+                              <span>{databaseConfig.postgresql.host}:{databaseConfig.postgresql.port}</span>
+                            </div>
+                            <div className="flex justify-between">
+                              <span className="text-muted-foreground">Database:</span>
+                              <span>{databaseConfig.postgresql.database}</span>
+                            </div>
+                            <div className="flex justify-between">
+                              <span className="text-muted-foreground">User:</span>
+                              <span>{databaseConfig.postgresql.user}</span>
+                            </div>
+                            <div className="flex justify-between">
+                              <span className="text-muted-foreground">Schema:</span>
+                              <span>{databaseConfig.postgresql.schema}</span>
+                            </div>
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Connection Pool Settings */}
+                      <div className="space-y-2">
+                        <h4 className="font-semibold text-sm">Connection Pool</h4>
+                        <div className="text-sm space-y-1">
+                          <div className="flex justify-between">
+                            <span className="text-muted-foreground">Pool Size:</span>
+                            <span>{databaseConfig.pool.size}</span>
+                          </div>
+                          <div className="flex justify-between">
+                            <span className="text-muted-foreground">Max Overflow:</span>
+                            <span>{databaseConfig.pool.max_overflow}</span>
+                          </div>
+                          <div className="flex justify-between">
+                            <span className="text-muted-foreground">Timeout:</span>
+                            <span>{databaseConfig.pool.timeout}s</span>
+                          </div>
+                          <div className="flex justify-between">
+                            <span className="text-muted-foreground">Recycle:</span>
+                            <span>{databaseConfig.pool.recycle}s</span>
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Performance Settings */}
+                      <div className="space-y-2">
+                        <h4 className="font-semibold text-sm">Performance</h4>
+                        <div className="text-sm space-y-1">
+                          <div className="flex justify-between">
+                            <span className="text-muted-foreground">Echo SQL:</span>
+                            <span>{databaseConfig.performance.echo_sql ? 'Yes' : 'No'}</span>
+                          </div>
+                          <div className="flex justify-between">
+                            <span className="text-muted-foreground">Echo Pool:</span>
+                            <span>{databaseConfig.performance.echo_pool ? 'Yes' : 'No'}</span>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="text-center py-8 text-muted-foreground">
+                    No database configuration available
                   </div>
                 )}
               </CardContent>

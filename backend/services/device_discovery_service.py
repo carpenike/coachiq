@@ -20,7 +20,8 @@ import can
 
 from backend.core.config import get_settings
 from backend.integrations.can.manager import can_tx_queue
-from backend.services.can_service import CANService
+
+# CANService import removed - now using dependency injection
 
 logger = logging.getLogger(__name__)
 
@@ -75,16 +76,18 @@ class DeviceDiscoveryService:
     and network topology mapping for CAN bus systems.
     """
 
-    def __init__(self, can_service: CANService | None = None, config: Any | None = None):
+    def __init__(self, can_facade: Any | None = None, config: Any | None = None):
         """
         Initialize the device discovery service.
 
         Args:
-            can_service: CAN service instance for dependency injection
+            can_facade: CAN facade instance for dependency injection
             config: Configuration instance
         """
-        self.can_service = can_service or CANService()
+        self.can_service = can_facade  # Keep same attribute name for compatibility
+        self.can_facade = can_facade  # Also store as can_facade for new code
         self.config = config or get_settings()
+        self.start_time = time.time()  # Track service start time
 
         # Discovery state
         self.topology = NetworkTopology()
@@ -96,6 +99,36 @@ class DeviceDiscoveryService:
         self.enable_device_polling = getattr(self.config, "device_discovery", {}).get(
             "enable_device_polling", True
         )
+
+        # Determine enabled protocols from configuration
+        self.enabled_protocols: list[str] = []
+        # RVC is enabled by default
+        if getattr(self.config, "rvc_enabled", True):
+            self.enabled_protocols.append("rvc")
+
+        # Check J1939 - prefer nested setting if available
+        j1939_settings = getattr(self.config, "j1939", None)
+        if (j1939_settings and getattr(j1939_settings, "enabled", False)) or getattr(
+            self.config, "j1939_enabled", False
+        ):
+            self.enabled_protocols.append("j1939")
+
+        # Protocol-specific PGN ranges for detection
+        self.protocol_pgn_ranges = {
+            "rvc": {
+                # RV-C specific PGNs
+                "characteristic_pgns": {0x1FEF2, 0x1FEDA, 0x1FEEB, 0x1FEE1, 0x1FF7D},
+                "pgn_ranges": [(0x1FE00, 0x1FFFF), (0x1F000, 0x1F0FF)],  # Proprietary ranges
+            },
+            "j1939": {
+                # J1939 specific PGNs
+                "characteristic_pgns": {0xFECA, 0xF004, 0xFEE5, 0xFEF1, 0xFEF6},
+                "pgn_ranges": [(0xF000, 0xFFFF), (0x00000, 0xEFFF)],  # Standard J1939
+            },
+        }
+
+        # Track detected protocols per interface
+        self.detected_protocols: dict[str, set[str]] = defaultdict(set)
 
         self.polling_interval = getattr(self.config, "device_discovery", {}).get(
             "polling_interval_seconds", 30.0
@@ -1370,17 +1403,56 @@ class DeviceDiscoveryService:
                 )
                 break
 
+    def _detect_protocol_from_pgn(self, pgn: int) -> str | None:
+        """Detect protocol based on PGN.
+
+        Args:
+            pgn: Parameter Group Number
+
+        Returns:
+            Protocol name ('rvc', 'j1939') or None if unknown
+        """
+        for protocol, info in self.protocol_pgn_ranges.items():
+            # Check characteristic PGNs first (faster)
+            if pgn in info["characteristic_pgns"]:
+                return protocol
+
+            # Check PGN ranges
+            for start, end in info["pgn_ranges"]:
+                if start <= pgn <= end:
+                    # Additional check to avoid false positives on shared PGNs
+                    if pgn == 0xEA00:  # Address claimed - used by both
+                        continue
+                    return protocol
+
+        return None
+
     def _update_device_info(self, message: can.Message, source_address: int, pgn: int) -> None:
         """Update device information based on received message."""
         now = time.time()
 
+        # Detect protocol from PGN
+        detected_protocol = self._detect_protocol_from_pgn(pgn)
+
+        # Track detected protocols per interface (assuming can0 for now)
+        # TODO: Get actual interface name from message metadata
+        if detected_protocol:
+            self.detected_protocols["can0"].add(detected_protocol)
+
         # Get or create device info
         if source_address not in self.topology.devices:
+            # Use detected protocol or default to 'unknown'
+            protocol = detected_protocol or "unknown"
             self.topology.devices[source_address] = DeviceInfo(
                 source_address=source_address,
-                protocol="rvc",  # Default, could be determined from PGN analysis
+                protocol=protocol,
                 first_seen=now,
             )
+        else:
+            # Update protocol if we have better detection
+            device = self.topology.devices[source_address]
+            if device.protocol == "unknown" and detected_protocol:
+                device.protocol = detected_protocol
 
         device = self.topology.devices[source_address]
         device.last_seen = now
@@ -1404,3 +1476,66 @@ class DeviceDiscoveryService:
                 device.capabilities.add("product_identification")
             except Exception as e:
                 logger.debug(f"Error processing product identification: {e}")
+
+    async def health_check(self) -> dict[str, Any]:
+        """
+        Check the health status of the device discovery service.
+
+        Returns:
+            Dictionary containing health status information
+        """
+        try:
+            # Check CAN facade availability
+            can_available = self.can_facade is not None
+
+            # Count discovered devices
+            device_count = len(self.topology.devices)
+
+            # Calculate uptime
+            uptime = time.time() - self.start_time if hasattr(self, "start_time") else 0
+
+            # Group devices by protocol
+            devices_by_protocol = defaultdict(list)
+            for device in self.topology.devices.values():
+                devices_by_protocol[device.protocol].append(device)
+
+            # Build protocol details
+            protocol_details = {}
+            for protocol in self.enabled_protocols:
+                device_list = devices_by_protocol.get(protocol, [])
+                # Check if protocol has been detected on any interface
+                detected_on_interfaces = [
+                    iface for iface, protos in self.detected_protocols.items() if protocol in protos
+                ]
+
+                protocol_details[protocol] = {
+                    "status": "active" if device_list else "configured",
+                    "device_count": len(device_list),
+                    "detected_on_interfaces": detected_on_interfaces,
+                }
+
+            # Include any unexpected protocols found
+            for protocol in devices_by_protocol:
+                if protocol not in self.enabled_protocols and protocol != "unknown":
+                    protocol_details[protocol] = {
+                        "status": "detected_unexpected",
+                        "device_count": len(devices_by_protocol[protocol]),
+                        "detected_on_interfaces": [
+                            iface
+                            for iface, protos in self.detected_protocols.items()
+                            if protocol in protos
+                        ],
+                    }
+
+            return {
+                "status": "healthy",
+                "can_interface_available": can_available,
+                "discovered_devices": device_count,
+                "enabled_protocols": self.enabled_protocols,
+                "protocol_details": protocol_details,
+                "uptime_seconds": int(uptime),
+                "timestamp": time.time(),
+            }
+        except Exception as e:
+            logger.error(f"Health check failed: {e}")
+            return {"status": "unhealthy", "error": str(e), "timestamp": time.time()}

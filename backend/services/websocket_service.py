@@ -34,6 +34,7 @@ class WebSocketService:
         self,
         can_tracking_repository: CANTrackingRepository | None = None,
         system_state_repository: SystemStateRepository | None = None,
+        service_registry: Any | None = None,
     ):
         """
         Initialize the WebSocket service with repository dependencies.
@@ -41,10 +42,12 @@ class WebSocketService:
         Args:
             can_tracking_repository: Repository for CAN tracking operations
             system_state_repository: Repository for system state operations
+            service_registry: Service registry for accessing other services
         """
         # Store repository references
         self._can_tracking_repository = can_tracking_repository
         self._system_state_repository = system_state_repository
+        self._service_registry = service_registry
 
         # WebSocket client sets
         self.data_clients: set[WebSocket] = set()  # Main data stream
@@ -52,6 +55,9 @@ class WebSocketService:
         self.can_sniffer_clients: set[WebSocket] = set()  # CAN sniffer stream
         self.network_map_clients: set[WebSocket] = set()  # Network map updates
         self.features_clients: set[WebSocket] = set()  # Features status updates
+        self.can_recorder_clients: set[WebSocket] = set()  # CAN recorder status
+        self.can_analyzer_clients: set[WebSocket] = set()  # CAN analyzer updates
+        self.can_filter_clients: set[WebSocket] = set()  # CAN filter updates
 
         # For background task management
         self.background_tasks: set[asyncio.Task] = set()
@@ -100,6 +106,9 @@ class WebSocketService:
             self.can_sniffer_clients,
             self.network_map_clients,
             self.features_clients,
+            self.can_recorder_clients,
+            self.can_analyzer_clients,
+            self.can_filter_clients,
         ]:
             for client in list(client_set):
                 with contextlib.suppress(Exception):
@@ -126,6 +135,9 @@ class WebSocketService:
                 "can_sniffer": len(self.can_sniffer_clients),
                 "network_map": len(self.network_map_clients),
                 "features": len(self.features_clients),
+                "can_recorder": len(self.can_recorder_clients),
+                "can_analyzer": len(self.can_analyzer_clients),
+                "can_filter": len(self.can_filter_clients),
             },
         }
 
@@ -138,6 +150,9 @@ class WebSocketService:
             + len(self.can_sniffer_clients)
             + len(self.network_map_clients)
             + len(self.features_clients)
+            + len(self.can_recorder_clients)
+            + len(self.can_analyzer_clients)
+            + len(self.can_filter_clients)
         )
 
     # ── Broadcasting Functions ──────────────────────────────────────────────────
@@ -220,6 +235,39 @@ class WebSocketService:
         """
         await self.broadcast_json_to_clients(self.features_clients, features_status)
 
+    async def broadcast_can_recorder_update(self, update_type: str, data: dict[str, Any]) -> None:
+        """
+        Broadcast CAN recorder updates to all connected clients.
+
+        Args:
+            update_type: Type of update (e.g., 'status', 'recording_started')
+            data: The update data to broadcast
+        """
+        message = {"type": update_type, "payload": data, "timestamp": time.time()}
+        await self.broadcast_json_to_clients(self.can_recorder_clients, message)
+
+    async def broadcast_can_analyzer_update(self, update_type: str, data: dict[str, Any]) -> None:
+        """
+        Broadcast CAN analyzer updates to all connected clients.
+
+        Args:
+            update_type: Type of update (e.g., 'statistics', 'messages', 'protocol_detected')
+            data: The update data to broadcast
+        """
+        message = {"type": update_type, "payload": data, "timestamp": time.time()}
+        await self.broadcast_json_to_clients(self.can_analyzer_clients, message)
+
+    async def broadcast_can_filter_update(self, update_type: str, data: dict[str, Any]) -> None:
+        """
+        Broadcast CAN filter updates to all connected clients.
+
+        Args:
+            update_type: Type of update (e.g., 'status', 'captured_messages', 'rule_triggered')
+            data: The update data to broadcast
+        """
+        message = {"type": update_type, "payload": data, "timestamp": time.time()}
+        await self.broadcast_json_to_clients(self.can_filter_clients, message)
+
     async def _check_token_expiry_task(self) -> None:
         """Periodically check for expired tokens and close connections."""
         auth_handler = get_websocket_auth_handler()
@@ -238,6 +286,9 @@ class WebSocketService:
                         | self.can_sniffer_clients
                         | self.network_map_clients
                         | self.features_clients
+                        | self.can_recorder_clients
+                        | self.can_analyzer_clients
+                        | self.can_filter_clients
                     ):
                         if f"{ws.client.host}:{ws.client.port}" == connection_id:
                             await auth_handler.check_token_expiry(ws, user_info)
@@ -618,6 +669,171 @@ class WebSocketService:
             )
         finally:
             self.features_clients.discard(websocket)
+
+    async def handle_can_recorder_connection(self, websocket: WebSocket) -> None:
+        """
+        Handle a new CAN recorder WebSocket connection.
+
+        Args:
+            websocket: The WebSocket connection
+        """
+        # Authenticate the connection
+        auth_handler = get_websocket_auth_handler()
+        user_info = await auth_handler.authenticate_connection(websocket, require_auth=True)
+
+        if not user_info:
+            return  # Connection already closed by auth handler
+
+        # Check permission to view CAN data
+        if not await auth_handler.require_permission(websocket, user_info, "view_status"):
+            await websocket.close(code=1008)
+            return
+
+        self.can_recorder_clients.add(websocket)
+        logger.info(
+            "CAN recorder WebSocket client connected: %s:%s (user: %s)",
+            websocket.client.host,
+            websocket.client.port,
+            user_info.get("username", "unknown"),
+        )
+        try:
+            # Send initial recorder status if available
+            if hasattr(self, "_service_registry"):
+                recorder_service = self._service_registry.get_service("can_recorder")
+                if recorder_service:
+                    initial_status = recorder_service.get_status()
+                    await websocket.send_json(
+                        {"type": "status", "payload": initial_status, "timestamp": time.time()}
+                    )
+
+            while True:
+                await websocket.receive_text()
+        except WebSocketDisconnect:
+            logger.info(
+                "CAN recorder WebSocket client disconnected: %s:%s",
+                websocket.client.host,
+                websocket.client.port,
+            )
+        except Exception as e:
+            logger.error(
+                "CAN recorder WebSocket error for client %s:%s: %s",
+                websocket.client.host,
+                websocket.client.port,
+                e,
+            )
+        finally:
+            self.can_recorder_clients.discard(websocket)
+            auth_handler.remove_connection(websocket)
+
+    async def handle_can_analyzer_connection(self, websocket: WebSocket) -> None:
+        """
+        Handle a new CAN analyzer WebSocket connection.
+
+        Args:
+            websocket: The WebSocket connection
+        """
+        # Authenticate the connection
+        auth_handler = get_websocket_auth_handler()
+        user_info = await auth_handler.authenticate_connection(websocket, require_auth=True)
+
+        if not user_info:
+            return  # Connection already closed by auth handler
+
+        # Check permission to view CAN data
+        if not await auth_handler.require_permission(websocket, user_info, "view_status"):
+            await websocket.close(code=1008)
+            return
+
+        self.can_analyzer_clients.add(websocket)
+        logger.info(
+            "CAN analyzer WebSocket client connected: %s:%s (user: %s)",
+            websocket.client.host,
+            websocket.client.port,
+            user_info.get("username", "unknown"),
+        )
+        try:
+            # Send initial analyzer stats if available
+            if hasattr(self, "_service_registry"):
+                analyzer_service = self._service_registry.get_service("can_analyzer")
+                if analyzer_service:
+                    initial_stats = analyzer_service.get_statistics()
+                    await websocket.send_json(
+                        {"type": "statistics", "payload": initial_stats, "timestamp": time.time()}
+                    )
+
+            while True:
+                await websocket.receive_text()
+        except WebSocketDisconnect:
+            logger.info(
+                "CAN analyzer WebSocket client disconnected: %s:%s",
+                websocket.client.host,
+                websocket.client.port,
+            )
+        except Exception as e:
+            logger.error(
+                "CAN analyzer WebSocket error for client %s:%s: %s",
+                websocket.client.host,
+                websocket.client.port,
+                e,
+            )
+        finally:
+            self.can_analyzer_clients.discard(websocket)
+            auth_handler.remove_connection(websocket)
+
+    async def handle_can_filter_connection(self, websocket: WebSocket) -> None:
+        """
+        Handle a new CAN filter WebSocket connection.
+
+        Args:
+            websocket: The WebSocket connection
+        """
+        # Authenticate the connection
+        auth_handler = get_websocket_auth_handler()
+        user_info = await auth_handler.authenticate_connection(websocket, require_auth=True)
+
+        if not user_info:
+            return  # Connection already closed by auth handler
+
+        # Check permission to view CAN data
+        if not await auth_handler.require_permission(websocket, user_info, "view_status"):
+            await websocket.close(code=1008)
+            return
+
+        self.can_filter_clients.add(websocket)
+        logger.info(
+            "CAN filter WebSocket client connected: %s:%s (user: %s)",
+            websocket.client.host,
+            websocket.client.port,
+            user_info.get("username", "unknown"),
+        )
+        try:
+            # Send initial filter status if available
+            if hasattr(self, "_service_registry"):
+                filter_service = self._service_registry.get_service("can_filter")
+                if filter_service:
+                    initial_status = filter_service.get_status()
+                    await websocket.send_json(
+                        {"type": "status", "payload": initial_status, "timestamp": time.time()}
+                    )
+
+            while True:
+                await websocket.receive_text()
+        except WebSocketDisconnect:
+            logger.info(
+                "CAN filter WebSocket client disconnected: %s:%s",
+                websocket.client.host,
+                websocket.client.port,
+            )
+        except Exception as e:
+            logger.error(
+                "CAN filter WebSocket error for client %s:%s: %s",
+                websocket.client.host,
+                websocket.client.port,
+                e,
+            )
+        finally:
+            self.can_filter_clients.discard(websocket)
+            auth_handler.remove_connection(websocket)
 
 
 class WebSocketLogHandler(logging.Handler):

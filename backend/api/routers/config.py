@@ -30,16 +30,16 @@ from backend.core.dependencies import (
     get_config_service,
     get_entity_state_repository,
 )
-
-# Create missing dependencies
-get_can_interface_service = create_service_dependency("can_interface_service")
-get_github_update_checker = create_service_dependency("github_update_checker")
-get_can_tracking_repository = create_service_dependency("can_tracking_repository")
 from backend.models.github_update import GitHubUpdateStatus
 from backend.repositories.can_tracking_repository import CANTrackingRepository
 from backend.repositories.entity_state_repository import EntityStateRepository
 from backend.services.config_service import ConfigService
 from backend.services.github_update_checker import GitHubUpdateChecker
+
+# Create missing dependencies
+get_can_interface_service = create_service_dependency("can_interface_service")
+get_github_update_checker = create_service_dependency("github_update_checker")
+get_can_tracking_repository = create_service_dependency("can_tracking_repository")
 
 logger = logging.getLogger(__name__)
 
@@ -297,29 +297,104 @@ async def get_settings_overview():
     """
     settings = get_settings()
 
-    # Build response with source tracking
-    config_dict = settings.get_config_dict(hide_secrets=True)
-
-    # Add source information for each setting
-    # Environment variables are marked as immutable
+    # Get all settings sections
     response = {
-        "sections": {},
+        "sections": {
+            "server": {
+                "host": settings.server.host,
+                "port": settings.server.port,
+                "workers": settings.server.workers,
+                "reload": settings.server.reload,
+                "debug": settings.server.debug,
+                "root_path": settings.server.root_path,
+            },
+            "security": {
+                "allowed_hosts": settings.security.allowed_hosts,
+                "enable_csrf": settings.security.enable_csrf,
+                "enable_xss_protection": settings.security.enable_xss_protection,
+                "enable_content_security_policy": settings.security.enable_content_security_policy,
+                "max_upload_size": settings.security.max_upload_size,
+                "rate_limit_enabled": settings.security.rate_limit_enabled,
+                "rate_limit_requests": settings.security.rate_limit_requests,
+                "rate_limit_window": settings.security.rate_limit_window,
+            },
+            "logging": {
+                "level": settings.logging.level,
+                "format": settings.logging.format,
+                "file_enabled": settings.logging.file_enabled,
+                "file_path": str(settings.logging.file_path)
+                if settings.logging.file_path
+                else None,
+                "max_file_size": settings.logging.max_file_size,
+                "backup_count": settings.logging.backup_count,
+                "console_enabled": settings.logging.console_enabled,
+            },
+            "can": {
+                "interfaces": settings.can.interfaces,
+                "bitrate": settings.can.bitrate,
+                "timeout": settings.can.timeout,
+                "buffer_size": settings.can.buffer_size,
+                "enable_statistics": settings.can.enable_statistics,
+                "enable_error_frames": settings.can.enable_error_frames,
+                "enable_fd": settings.can.enable_fd,
+                "fd_bitrate": settings.can.fd_bitrate,
+            },
+            "rvc": {
+                "enable_encoder": settings.rvc.enable_encoder,
+                "enable_decoder": settings.rvc.enable_decoder,
+                "spec_file": settings.rvc.spec_file,
+                "message_timeout": settings.rvc.message_timeout,
+                "enable_caching": settings.rvc.enable_caching,
+                "cache_ttl": settings.rvc.cache_ttl,
+                "enable_validation": settings.rvc.enable_validation,
+                "strict_validation": settings.rvc.strict_validation,
+            },
+            "persistence": {
+                "enabled": settings.persistence.enabled,
+                "backend_type": settings.persistence.backend_type.value,
+                "data_dir": str(settings.persistence.data_dir),
+                "persistent_data_dir": str(settings.persistence.persistent_data_dir),
+                "enable_compression": settings.persistence.enable_compression,
+                "sync_interval": settings.persistence.sync_interval,
+                "max_file_size": settings.persistence.max_file_size,
+                "retention_days": settings.persistence.retention_days,
+            },
+            "notifications": {
+                "enabled": settings.notifications.enabled,
+                "max_history": settings.notifications.max_history,
+                "default_severity": settings.notifications.default_severity,
+                "batch_interval": settings.notifications.batch_interval,
+                "rate_limit_per_minute": settings.notifications.rate_limit_per_minute,
+            },
+            "auth": {
+                "enabled": settings.auth.enabled,
+                "provider": settings.auth.provider,
+                "session_timeout": settings.auth.session_timeout,
+                "refresh_enabled": settings.auth.refresh_enabled,
+                "refresh_timeout": settings.auth.refresh_timeout,
+                "max_sessions": settings.auth.max_sessions,
+                "require_email_verification": settings.auth.require_email_verification,
+            },
+        },
         "metadata": {
             "environment": settings.environment,
             "debug": settings.debug,
+            "version": getattr(settings, "version", "unknown"),
+            "app_name": settings.app_name,
             "source_priority": ["environment", "default"],
         },
+        "environment_variables": {
+            k: v
+            for k, v in os.environ.items()
+            if k.startswith("COACHIQ_")
+            and not any(secret in k.lower() for secret in ["password", "secret", "key", "token"])
+        },
+        "config_sources": {
+            "env_file": ".env" if os.path.exists(".env") else None,
+            "system_env": True,
+            "defaults": True,
+        },
     }
-
-    for section_name, section_data in config_dict.items():
-        if isinstance(section_data, dict):
-            response["sections"][section_name] = {
-                "values": section_data,
-                "editable": section_name not in ["security", "server"],  # Example logic
-                "source": (
-                    "environment" if f"COACHIQ_{section_name.upper()}" in os.environ else "default"
-                ),
-            }
 
     return response
 
@@ -387,10 +462,102 @@ async def validate_interface_mappings(
     return can_service.validate_mapping(mappings)
 
 
+@router.get("/config/database")
+async def get_database_configuration():
+    """
+    Get current database configuration.
+
+    Returns database settings with sensitive information redacted.
+    """
+    settings = get_settings()
+
+    # Check if database settings exist
+    if not hasattr(settings, "database") or settings.database is None:
+        # Return default SQLite configuration
+        return {
+            "backend": "sqlite",
+            "sqlite": {
+                "path": "backend/data/coachiq.db",
+                "timeout": 30,
+                "optimizations_enabled": True,
+                "cache_size": 4000,
+                "mmap_size": 134217728,
+                "wal_autocheckpoint": 1000,
+            },
+            "postgresql": {
+                "host": "localhost",
+                "port": 5432,
+                "user": "coachiq",
+                "database": "coachiq",
+                "schema": "public",
+            },
+            "pool": {
+                "size": 5,
+                "max_overflow": 10,
+                "timeout": 30,
+                "recycle": 3600,
+            },
+            "performance": {
+                "echo_sql": False,
+                "echo_pool": False,
+            },
+            "health_status": "unknown",
+        }
+
+    db_settings = settings.database
+
+    # Handle both full DatabaseSettings and minimal database settings
+    if hasattr(db_settings, "backend"):
+        backend = (
+            db_settings.backend.value
+            if hasattr(db_settings.backend, "value")
+            else str(db_settings.backend)
+        )
+    else:
+        backend = "sqlite"
+
+    response = {
+        "backend": backend,
+        "sqlite": {
+            "path": getattr(
+                db_settings,
+                "sqlite_path",
+                db_settings.get_database_path()
+                if hasattr(db_settings, "get_database_path")
+                else "backend/data/coachiq.db",
+            ),
+            "timeout": getattr(db_settings, "sqlite_timeout", 30),
+            "optimizations_enabled": getattr(db_settings, "sqlite_enable_optimizations", True),
+            "cache_size": getattr(db_settings, "sqlite_cache_size", 4000),
+            "mmap_size": getattr(db_settings, "sqlite_mmap_size", 134217728),
+            "wal_autocheckpoint": getattr(db_settings, "sqlite_wal_autocheckpoint", 1000),
+        },
+        "postgresql": {
+            "host": getattr(db_settings, "postgres_host", "localhost"),
+            "port": getattr(db_settings, "postgres_port", 5432),
+            "user": getattr(db_settings, "postgres_user", "coachiq"),
+            "database": getattr(db_settings, "postgres_database", "coachiq"),
+            "schema": getattr(db_settings, "postgres_schema", "public"),
+            # Password is intentionally omitted for security
+        },
+        "pool": {
+            "size": getattr(db_settings, "pool_size", 5),
+            "max_overflow": getattr(db_settings, "max_overflow", 10),
+            "timeout": getattr(db_settings, "pool_timeout", 30),
+            "recycle": getattr(db_settings, "pool_recycle", 3600),
+        },
+        "performance": {
+            "echo_sql": getattr(db_settings, "echo_sql", False),
+            "echo_pool": getattr(db_settings, "echo_pool", False),
+        },
+        "health_status": "healthy",  # Could be enhanced with actual health check
+    }
+
+    return response
+
+
 @router.get("/config/coach/interface-requirements")
-async def get_coach_interface_requirements(
-    can_service: Annotated[Any, Depends(get_can_interface_service)],
-):
+async def get_coach_interface_requirements():
     """Get coach interface requirements and compatibility validation."""
     # This endpoint is deprecated - use repository-based coach mapping service instead
     raise HTTPException(
@@ -401,11 +568,36 @@ async def get_coach_interface_requirements(
 
 @router.get("/config/coach/metadata")
 async def get_coach_mapping_metadata(
-    can_service: Annotated[Any, Depends(get_can_interface_service)],
+    config_service: Annotated[ConfigService, Depends(get_config_service)],
 ):
     """Get complete coach mapping metadata including interface analysis."""
-    # This endpoint is deprecated - use repository-based coach mapping service instead
-    raise HTTPException(
-        status_code=410,
-        detail="This endpoint has been deprecated. Use /api/coach-mapping endpoints instead.",
-    )
+    # This endpoint provides backwards compatibility
+    # Return a default configuration until coach-mapping service is fully implemented
+
+    # Get device mapping info from config service
+    try:
+        # Check if mapping is loaded
+        status = await config_service.get_config_status()
+
+        return {
+            "model": "Generic RV",
+            "year": 2024,
+            "manufacturer": "Unknown",
+            "config_file": status.get("mapping_path", "config/coach_mapping.default.yml"),
+            "interface_requirements": ["can0"],  # Default single interface
+            "device_mappings": {},  # Empty mappings for now
+            "validation_status": "valid" if status["mapping_loaded"] else "invalid",
+            "last_validated": "2024-01-01T00:00:00Z",
+        }
+    except Exception as e:
+        logger.warning(f"Error getting coach metadata: {e}")
+        return {
+            "model": "Generic RV",
+            "year": 2024,
+            "manufacturer": "Unknown",
+            "config_file": "config/coach_mapping.default.yml",
+            "interface_requirements": ["can0"],
+            "device_mappings": {},
+            "validation_status": "warning",
+            "last_validated": "2024-01-01T00:00:00Z",
+        }

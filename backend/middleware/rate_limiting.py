@@ -1,9 +1,14 @@
 """
-Rate Limiting Middleware for Authentication Endpoints
+Rate Limiting Middleware for User-Aware Endpoints
 
-This module provides rate limiting functionality specifically for authentication
-endpoints to prevent brute force attacks and abuse. It uses slowapi for Redis-backed
-rate limiting with configurable limits per endpoint.
+This module provides rate limiting functionality for user-aware and authentication-specific
+endpoints. IP-based rate limiting has been moved to Caddy edge layer for better performance.
+
+ARCHITECTURAL SPLIT:
+- Caddy (Edge): IP-based rate limiting (100 req/min per IP, auth 5/min, etc.)
+- FastAPI (App): User-aware rate limiting (per-user, per-username, safety-critical)
+
+This uses slowapi for Redis-backed rate limiting with configurable limits per endpoint.
 """
 
 import logging

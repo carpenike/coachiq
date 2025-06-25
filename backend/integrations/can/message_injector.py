@@ -144,7 +144,7 @@ class CANMessageInjector(SafetyAware):
         """
         # Initialize as safety-aware service
         super().__init__(
-            safety_classification=SafetyClassification.OPERATIONAL,
+            safety_classification=SafetyClassification.CRITICAL,
             safe_state_action=SafeStateAction.DISABLE,
         )
 

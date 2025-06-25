@@ -791,24 +791,152 @@ export type ExtendedWebSocketMessageType =
 
 // System Settings Overview
 export interface SystemSettings {
-  server: ServerSettings;
-  can: CANSettings;
-  cors: CORSSettings;
-  security: SecuritySettings;
-  logging: LoggingSettings;
-  rvc: RVCSettings;
-  j1939: J1939Settings;
-  firefly: FireflySettings;
-  spartan_k2: SpartanK2Settings;
-  multi_network: MultiNetworkSettings;
-  persistence: PersistenceSettings;
-  advanced_diagnostics: AdvancedDiagnosticsSettings;
-  performance_analytics: PerformanceAnalyticsSettings;
+  sections: {
+    server?: ServerSettingsSection;
+    security?: SecuritySettingsSection;
+    logging?: LoggingSettingsSection;
+    can?: CANSettingsSection;
+    rvc?: RVCSettingsSection;
+    persistence?: PersistenceSettingsSection;
+    notifications?: NotificationSettingsSection;
+    auth?: AuthSettingsSection;
+  };
+  metadata: {
+    environment: string;
+    debug: boolean;
+    version: string;
+    app_name: string;
+    source_priority: string[];
+  };
   environment_variables: Record<string, string>;
-  config_sources: Record<string, string>;
+  config_sources: {
+    env_file?: string | null;
+    system_env: boolean;
+    defaults: boolean;
+  };
 }
 
-// Server Configuration
+// Server Configuration Section
+export interface ServerSettingsSection {
+  host: string;
+  port: number;
+  workers: number;
+  reload: boolean;
+  debug: boolean;
+  root_path: string;
+}
+
+// Security Configuration Section
+export interface SecuritySettingsSection {
+  allowed_hosts: string[];
+  enable_csrf: boolean;
+  enable_xss_protection: boolean;
+  enable_content_security_policy: boolean;
+  max_upload_size: number;
+  rate_limit_enabled: boolean;
+  rate_limit_requests: number;
+  rate_limit_window: number;
+}
+
+// Logging Configuration Section
+export interface LoggingSettingsSection {
+  level: string;
+  format: string;
+  file_enabled: boolean;
+  file_path: string | null;
+  max_file_size: number;
+  backup_count: number;
+  console_enabled: boolean;
+}
+
+// CAN Configuration Section
+export interface CANSettingsSection {
+  interfaces: string[];
+  bitrate: number;
+  timeout: number;
+  buffer_size: number;
+  enable_statistics: boolean;
+  enable_error_frames: boolean;
+  enable_fd: boolean;
+  fd_bitrate: number;
+}
+
+// RVC Configuration Section
+export interface RVCSettingsSection {
+  enable_encoder: boolean;
+  enable_decoder: boolean;
+  spec_file: string;
+  message_timeout: number;
+  enable_caching: boolean;
+  cache_ttl: number;
+  enable_validation: boolean;
+  strict_validation: boolean;
+}
+
+// Persistence Configuration Section
+export interface PersistenceSettingsSection {
+  enabled: boolean;
+  backend_type: string;
+  data_dir: string;
+  persistent_data_dir: string;
+  enable_compression: boolean;
+  sync_interval: number;
+  max_file_size: number;
+  retention_days: number;
+}
+
+// Notifications Configuration Section
+export interface NotificationSettingsSection {
+  enabled: boolean;
+  max_history: number;
+  default_severity: string;
+  batch_interval: number;
+  rate_limit_per_minute: number;
+}
+
+// Auth Configuration Section
+export interface AuthSettingsSection {
+  enabled: boolean;
+  provider: string;
+  session_timeout: number;
+  refresh_enabled: boolean;
+  refresh_timeout: number;
+  max_sessions: number;
+  require_email_verification: boolean;
+}
+
+// Database Configuration
+export interface DatabaseConfiguration {
+  backend: string;
+  sqlite: {
+    path: string;
+    timeout: number;
+    optimizations_enabled: boolean;
+    cache_size: number;
+    mmap_size: number;
+    wal_autocheckpoint: number;
+  };
+  postgresql: {
+    host: string;
+    port: number;
+    user: string;
+    database: string;
+    schema: string;
+  };
+  pool: {
+    size: number;
+    max_overflow: number;
+    timeout: number;
+    recycle: number;
+  };
+  performance: {
+    echo_sql: boolean;
+    echo_pool: boolean;
+  };
+  health_status: string;
+}
+
+// Legacy Server Configuration (for backward compatibility)
 export interface ServerSettings {
   host: string;
   port: number;

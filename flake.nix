@@ -782,32 +782,8 @@ EOF
               };
             };
 
-            # CORS settings
-            cors = {
-              allowedOrigins = lib.mkOption {
-                type = lib.types.listOf lib.types.str;
-                default = [ "*" ];
-                description = "Allowed origins for CORS";
-              };
-
-              allowedCredentials = lib.mkOption {
-                type = lib.types.bool;
-                default = true;
-                description = "Allow credentials in CORS";
-              };
-
-              allowedMethods = lib.mkOption {
-                type = lib.types.listOf lib.types.str;
-                default = [ "*" ];
-                description = "Allowed methods for CORS";
-              };
-
-              allowedHeaders = lib.mkOption {
-                type = lib.types.listOf lib.types.str;
-                default = [ "*" ];
-                description = "Allowed headers for CORS";
-              };
-            };
+            # CORS settings removed - now handled by Caddy edge layer
+            # See config/Caddyfile.example for CORS configuration
 
             # Security settings
             security = {
@@ -834,6 +810,7 @@ EOF
                 default = false;
                 description = "When true, the application assumes it's behind a TLS-terminating reverse proxy. The proxy is responsible for HTTP->HTTPS redirection and HSTS headers. The application MUST be run with --proxy-headers for this to be secure.";
               };
+
             };
 
             # Logging settings
@@ -2562,10 +2539,7 @@ EOF
               # Never set reload in production - let application handle this based on environment
               # COACHIQ_SERVER__RELOAD is intentionally not set here
 
-              # CORS - only if not using defaults
-              COACHIQ_CORS__ALLOW_ORIGINS = lib.mkIf
-                (config.coachiq.settings.cors.allowedOrigins != ["*"])
-                (lib.concatStringsSep "," config.coachiq.settings.cors.allowedOrigins);
+              # CORS removed - now handled by Caddy edge layer (see config/Caddyfile.example)
 
               # Security - only if provided
               COACHIQ_SECURITY__SECRET_KEY = lib.mkIf (config.coachiq.settings.security.secretKey != null) config.coachiq.settings.security.secretKey;

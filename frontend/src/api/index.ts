@@ -48,7 +48,16 @@ export {
 } from './domains';
 
 // Export WebSocket functionality
-export { RVCWebSocketClient, createCANScanWebSocket, createEntityWebSocket, createLogWebSocket, createSystemStatusWebSocket, getWebSocketStateString, isWebSocketSupported } from './websocket';
+export {
+    RVCWebSocketClient,
+    createEntityWebSocket,
+    createCANScanWebSocket,
+    createSystemStatusWebSocket,
+    createLogWebSocket,
+    isWebSocketSupported,
+    getWebSocketStateString,
+    DEBUG_WS
+} from './websocket';
 
 export type {
     WebSocketConfig, WebSocketHandlers, WebSocketState

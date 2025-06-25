@@ -127,7 +127,7 @@ export default defineConfig({
           // Separate vendor libraries for better caching
           vendor: ['react', 'react-dom'],
           router: ['react-router-dom'],
-          ui: ['@radix-ui/react-avatar', '@radix-ui/react-checkbox', '@radix-ui/react-dialog'],
+          ui: ['@radix-ui/react-checkbox', '@radix-ui/react-dialog'],
           charts: ['recharts', '@tanstack/react-table'],
           // Remove @tabler/icons-react from manual chunks to allow tree-shaking
           icons: ['lucide-react'],

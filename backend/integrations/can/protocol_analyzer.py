@@ -147,6 +147,13 @@ class ProtocolAnalyzer(SafetyAware):
         # Service state
         self._is_running = False
 
+        # Broadcasting state
+        self._last_stats_broadcast = time.time()
+        self._stats_broadcast_interval = 5.0  # Broadcast stats every 5 seconds
+        self._message_broadcast_buffer: list[AnalyzedMessage] = []
+        self._message_broadcast_interval = 2.0  # Broadcast messages every 2 seconds
+        self._last_message_broadcast = time.time()
+
         # Protocol detection state
         self.protocol_hints: dict[int, dict[CANProtocol, int]] = defaultdict(
             lambda: defaultdict(int)
@@ -168,6 +175,9 @@ class ProtocolAnalyzer(SafetyAware):
         self.start_time = time.time()
         self.total_messages = 0
         self.total_bytes = 0
+
+        # WebSocket manager for broadcasting updates (injected by main.py)
+        self._websocket_manager = None
 
         logger.info(
             "ProtocolAnalyzer initialized: buffer_size=%d, pattern_window_ms=%.1f",
@@ -369,6 +379,21 @@ class ProtocolAnalyzer(SafetyAware):
                 self.message_callback(message)
             except Exception as e:
                 logger.error(f"Error in message callback: {e}")
+
+        # Add to broadcast buffer for WebSocket
+        if self._websocket_manager:
+            self._message_broadcast_buffer.append(message)
+
+            # Check if it's time to broadcast messages
+            current_time = time.time()
+            if current_time - self._last_message_broadcast >= self._message_broadcast_interval:
+                await self._broadcast_messages()
+                self._last_message_broadcast = current_time
+
+            # Check if it's time to broadcast statistics
+            if current_time - self._last_stats_broadcast >= self._stats_broadcast_interval:
+                await self._broadcast_statistics()
+                self._last_stats_broadcast = current_time
 
         return message
 
@@ -607,6 +632,54 @@ class ProtocolAnalyzer(SafetyAware):
                                     self.pattern_callback(pattern)
                                 except Exception as e:
                                     logger.error(f"Error in pattern callback: {e}")
+
+    async def _broadcast_statistics(self) -> None:
+        """Broadcast current statistics via WebSocket if available."""
+        if self._websocket_manager:
+            try:
+                stats = self.get_statistics()
+                await self._websocket_manager.broadcast_can_analyzer_update("statistics", stats)
+            except Exception as e:
+                logger.debug(f"Failed to broadcast analyzer statistics: {e}")
+
+    async def _broadcast_messages(self) -> None:
+        """Broadcast buffered messages via WebSocket if available."""
+        if self._websocket_manager and self._message_broadcast_buffer:
+            try:
+                # Convert messages to dict format for JSON serialization
+                messages = []
+                for msg in self._message_broadcast_buffer[-100:]:  # Send last 100 messages max
+                    messages.append(
+                        {
+                            "timestamp": msg.timestamp,
+                            "can_id": msg.can_id,
+                            "data": msg.data.hex(),
+                            "interface": msg.interface,
+                            "protocol": msg.protocol.value,
+                            "message_type": msg.message_type.value,
+                            "source_address": msg.source_address,
+                            "destination_address": msg.destination_address,
+                            "pgn": msg.pgn,
+                            "decoded_fields": [
+                                {
+                                    "name": field.name,
+                                    "value": field.value,
+                                    "unit": field.unit,
+                                    "valid": field.valid,
+                                }
+                                for field in (msg.decoded_fields or [])
+                            ]
+                            if msg.decoded_fields
+                            else None,
+                        }
+                    )
+
+                await self._websocket_manager.broadcast_can_analyzer_update("messages", messages)
+
+                # Clear the buffer after broadcasting
+                self._message_broadcast_buffer.clear()
+            except Exception as e:
+                logger.debug(f"Failed to broadcast analyzer messages: {e}")
 
     def get_statistics(self) -> dict[str, Any]:
         """Get analyzer statistics."""

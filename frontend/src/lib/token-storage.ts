@@ -5,7 +5,7 @@
  * refresh functionality and secure cleanup.
  */
 
-import { refreshToken as refreshTokenAPI, revokeRefreshToken } from '@/api/endpoints'
+import { refreshToken as refreshTokenAPI, revokeRefreshToken, getAuthStatus } from '@/api/endpoints'
 import type { RefreshTokenResponse } from '@/api/types'
 
 // Storage keys
@@ -41,6 +41,7 @@ class TokenStorageManager {
   private refreshTimeout: NodeJS.Timeout | null = null
   private refreshCallbacks: TokenRefreshCallbacks = {}
   private isRefreshing = false
+  private authEnabled: boolean | null = null
 
   /**
    * Store authentication tokens securely
@@ -150,6 +151,11 @@ class TokenStorageManager {
    * Schedule automatic token refresh
    */
   private scheduleTokenRefresh(tokenData: TokenData): void {
+    // Skip scheduling if auth is disabled
+    if (this.authEnabled === false) {
+      return
+    }
+
     // Clear existing timeout
     if (this.refreshTimeout) {
       clearTimeout(this.refreshTimeout)
@@ -172,6 +178,11 @@ class TokenStorageManager {
       return false // Already refreshing
     }
 
+    // Skip refresh if auth is disabled
+    if (this.authEnabled === false) {
+      return false
+    }
+
     const tokenData = this.getTokenData()
     if (!tokenData || !this.isRefreshTokenValid()) {
       this.refreshCallbacks.onTokenExpired?.()
@@ -189,6 +200,12 @@ class TokenStorageManager {
       this.refreshCallbacks.onRefreshSuccess?.(newTokenData)
       return true
     } catch (error) {
+      // Check if error is due to auth being disabled
+      if (error instanceof Error && error.message.includes('Authentication is disabled')) {
+        console.info('Token refresh skipped: Authentication is disabled by server configuration')
+        this.authEnabled = false
+        return false
+      }
       console.error('Token refresh failed:', error)
 
       // Schedule retry if refresh token is still valid
@@ -249,7 +266,23 @@ class TokenStorageManager {
   /**
    * Initialize token manager (call on app startup)
    */
-  initialize(): void {
+  async initialize(): Promise<void> {
+    // Check auth status first
+    try {
+      const authStatus = await getAuthStatus()
+      this.authEnabled = authStatus.enabled
+
+      // If auth is disabled, skip token initialization
+      if (!authStatus.enabled || authStatus.mode === 'none') {
+        console.info('Token initialization skipped: Authentication is disabled')
+        return
+      }
+    } catch (error) {
+      // If we can't get auth status, assume auth is enabled
+      console.warn('Failed to get auth status, assuming authentication is enabled:', error)
+      this.authEnabled = true
+    }
+
     const tokenData = this.getTokenData()
     if (tokenData) {
       // Check if tokens are still valid

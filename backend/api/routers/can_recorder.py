@@ -9,14 +9,14 @@ from typing import Annotated, Any, Optional
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 
-from backend.core.dependencies import VerifiedCANService, get_can_bus_recorder
+from backend.core.dependencies import VerifiedCANFacade, get_can_bus_recorder
 from backend.integrations.can.can_bus_recorder import (
     CANBusRecorder,
     RecordingFormat,
     ReplayOptions,
 )
 
-router = APIRouter()
+router = APIRouter(prefix="/api/can-recorder", tags=["CAN Recorder"])
 
 
 # Request/Response Models
@@ -243,7 +243,7 @@ async def delete_recording(
 async def start_replay(
     request: StartReplayRequest,
     recorder: Annotated[CANBusRecorder, Depends(get_can_bus_recorder)],
-    can_service: VerifiedCANService,
+    can_service: VerifiedCANFacade,
 ):
     """Start replaying a recorded session."""
     try:

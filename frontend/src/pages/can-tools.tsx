@@ -5,7 +5,7 @@
  * Currently includes message injection tool with more tools planned.
  */
 
-import { useState } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { AppLayout } from '@/components/app-layout';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
@@ -37,6 +37,8 @@ import {
   IconCheck,
   IconFile,
   IconClock,
+  IconWifi,
+  IconWifiOff,
 } from '@tabler/icons-react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { apiPost, apiGet, apiDelete, apiPut } from '@/api/client';
@@ -44,6 +46,7 @@ import { cn } from '@/lib/utils';
 import * as canRecorder from '@/api/can-recorder';
 import * as canAnalyzer from '@/api/can-analyzer';
 import * as canFilter from '@/api/can-filter';
+import { useCANRecorderWebSocket, useCANAnalyzerWebSocket, useCANFilterWebSocket } from '@/hooks/useWebSocket';
 
 // Types
 interface InjectionRequest {
@@ -106,7 +109,7 @@ export default function CANToolsPage() {
 
   // Analyzer state
   const [analyzerFilter, setAnalyzerFilter] = useState<string>('');
-  const [selectedProtocol, setSelectedProtocol] = useState<string>('');
+  const [selectedProtocol, setSelectedProtocol] = useState<string>('all');
   const [manualCanId, setManualCanId] = useState('');
   const [manualData, setManualData] = useState('');
 
@@ -136,80 +139,96 @@ export default function CANToolsPage() {
   const [j1939SourceAddr, setJ1939SourceAddr] = useState('254');
   const [j1939DestAddr, setJ1939DestAddr] = useState('255');
 
-  // Fetch injector status
+  // Initialize WebSocket connections based on active tab
+  const recorderWS = useCANRecorderWebSocket(selectedTab === 'recorder');
+  const analyzerWS = useCANAnalyzerWebSocket(selectedTab === 'analyzer');
+  const filterWS = useCANFilterWebSocket(selectedTab === 'filter');
+
+  // Fetch injector status (still using polling for now as it's not WebSocket-enabled)
   const statusQuery = useQuery({
     queryKey: ['can-tools', 'status'],
     queryFn: () => apiGet<InjectorStatus>('/api/can-tools/status'),
     refetchInterval: 5000,
   });
 
-  // Fetch message templates
+  // Fetch message templates (one-time fetch)
   const templatesQuery = useQuery({
     queryKey: ['can-tools', 'templates'],
     queryFn: () => apiGet<MessageTemplate[]>('/api/can-tools/templates'),
   });
 
-  // Fetch recorder status
-  const recorderStatusQuery = useQuery({
-    queryKey: ['can-recorder', 'status'],
-    queryFn: canRecorder.getRecorderStatus,
-    refetchInterval: 1000,
-  });
+  // Use WebSocket data for recorder status and recordings
+  const recorderStatusQuery = {
+    data: recorderWS.status,
+    isLoading: recorderWS.state === 'connecting',
+    error: recorderWS.state === 'error' ? new Error('WebSocket connection failed') : null,
+  };
 
-  // Fetch recordings list
-  const recordingsQuery = useQuery({
-    queryKey: ['can-recorder', 'list'],
-    queryFn: canRecorder.listRecordings,
-    refetchInterval: 5000,
-  });
+  const recordingsQuery = {
+    data: recorderWS.recordings,
+    isLoading: recorderWS.state === 'connecting',
+    error: recorderWS.state === 'error' ? new Error('WebSocket connection failed') : null,
+    refetch: () => {}, // No-op as WebSocket handles updates
+  };
 
-  // Analyzer queries
-  const analyzerStatsQuery = useQuery({
-    queryKey: ['can-analyzer', 'statistics'],
-    queryFn: canAnalyzer.getStatistics,
-    refetchInterval: 1000,
-  });
+  // Use WebSocket data for analyzer
+  const analyzerStatsQuery = {
+    data: analyzerWS.statistics,
+    isLoading: analyzerWS.state === 'connecting',
+    error: analyzerWS.state === 'error' ? new Error('WebSocket connection failed') : null,
+  };
 
-  const analyzerMessagesQuery = useQuery({
-    queryKey: ['can-analyzer', 'messages', analyzerFilter, selectedProtocol],
-    queryFn: () => canAnalyzer.getRecentMessages({
-      limit: 100,
-      ...(selectedProtocol && { protocol: selectedProtocol }),
-      ...(analyzerFilter && { can_id: analyzerFilter }),
-    }),
-    refetchInterval: 1000,
-  });
+  const analyzerMessagesQuery = {
+    data: analyzerWS.messages.slice(0, 100), // Limit to 100 most recent
+    isLoading: analyzerWS.state === 'connecting',
+    error: analyzerWS.state === 'error' ? new Error('WebSocket connection failed') : null,
+  };
 
-  const analyzerPatternsQuery = useQuery({
-    queryKey: ['can-analyzer', 'patterns'],
-    queryFn: () => canAnalyzer.getCommunicationPatterns(),
-    refetchInterval: 5000,
-  });
+  const analyzerPatternsQuery = {
+    data: analyzerWS.patterns,
+    isLoading: analyzerWS.state === 'connecting',
+    error: analyzerWS.state === 'error' ? new Error('WebSocket connection failed') : null,
+  };
 
-  const analyzerProtocolsQuery = useQuery({
-    queryKey: ['can-analyzer', 'protocols'],
-    queryFn: canAnalyzer.getDetectedProtocols,
-    refetchInterval: 5000,
-  });
+  const analyzerProtocolsQuery = {
+    data: analyzerWS.protocols,
+    isLoading: analyzerWS.state === 'connecting',
+    error: analyzerWS.state === 'error' ? new Error('WebSocket connection failed') : null,
+  };
 
-  // Filter queries
-  const filterStatusQuery = useQuery({
-    queryKey: ['can-filter', 'status'],
-    queryFn: canFilter.getFilterStatus,
-    refetchInterval: 2000,
-  });
+  // Use WebSocket data for filter
+  const filterStatusQuery = {
+    data: filterWS.status,
+    isLoading: filterWS.state === 'connecting',
+    error: filterWS.state === 'error' ? new Error('WebSocket connection failed') : null,
+  };
 
-  const filterRulesQuery = useQuery({
-    queryKey: ['can-filter', 'rules'],
-    queryFn: () => canFilter.listFilterRules(),
-    refetchInterval: 5000,
-  });
+  const filterRulesQuery = {
+    data: filterWS.rules,
+    isLoading: filterWS.state === 'connecting',
+    error: filterWS.state === 'error' ? new Error('WebSocket connection failed') : null,
+  };
 
-  const capturedMessagesQuery = useQuery({
-    queryKey: ['can-filter', 'captured'],
-    queryFn: () => canFilter.getCapturedMessages(100),
-    refetchInterval: 1000,
-  });
+  const capturedMessagesQuery = {
+    data: filterWS.capturedMessages.slice(0, 100), // Limit to 100 most recent
+    isLoading: filterWS.state === 'connecting',
+    error: filterWS.state === 'error' ? new Error('WebSocket connection failed') : null,
+  };
+
+  // Apply filters to analyzer messages (now handled client-side)
+  const filteredAnalyzerMessages = useMemo(() => {
+    if (!analyzerWS.messages) return [];
+
+    return analyzerWS.messages.filter(msg => {
+      if (analyzerFilter && !msg.can_id.toLowerCase().includes(analyzerFilter.toLowerCase())) {
+        return false;
+      }
+      if (selectedProtocol && selectedProtocol !== 'all' && msg.protocol !== selectedProtocol) {
+        return false;
+      }
+      return true;
+    });
+  }, [analyzerWS.messages, analyzerFilter, selectedProtocol]);
 
   // Injection mutation
   const injectMutation = useMutation({
@@ -258,11 +277,10 @@ export default function CANToolsPage() {
     },
   });
 
-  // Recorder mutations
+  // Recorder mutations - WebSocket will handle updates automatically
   const startRecordingMutation = useMutation({
     mutationFn: canRecorder.startRecording,
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['can-recorder'] });
       setRecordingName('');
       setRecordingDescription('');
     },
@@ -270,63 +288,41 @@ export default function CANToolsPage() {
 
   const stopRecordingMutation = useMutation({
     mutationFn: canRecorder.stopRecording,
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['can-recorder'] });
-    },
   });
 
   const pauseRecordingMutation = useMutation({
     mutationFn: canRecorder.pauseRecording,
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['can-recorder', 'status'] });
-    },
   });
 
   const resumeRecordingMutation = useMutation({
     mutationFn: canRecorder.resumeRecording,
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['can-recorder', 'status'] });
-    },
   });
 
   const deleteRecordingMutation = useMutation({
     mutationFn: canRecorder.deleteRecording,
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['can-recorder', 'list'] });
-    },
   });
 
   const startReplayMutation = useMutation({
     mutationFn: canRecorder.startReplay,
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['can-recorder', 'status'] });
-    },
   });
 
   const stopReplayMutation = useMutation({
     mutationFn: canRecorder.stopReplay,
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['can-recorder', 'status'] });
-    },
   });
 
-  // Analyzer mutations
+  // Analyzer mutations - WebSocket will handle updates automatically
   const analyzeMessageMutation = useMutation({
     mutationFn: canAnalyzer.analyzeMessage,
   });
 
   const clearAnalyzerMutation = useMutation({
     mutationFn: canAnalyzer.clearAnalyzer,
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['can-analyzer'] });
-    },
   });
 
-  // Filter mutations
+  // Filter mutations - WebSocket will handle updates automatically
   const createFilterRuleMutation = useMutation({
     mutationFn: canFilter.createFilterRule,
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['can-filter'] });
       setFilterRuleName('');
       setFilterConditions([{
         field: canFilter.FilterField.CAN_ID,
@@ -338,16 +334,10 @@ export default function CANToolsPage() {
 
   const deleteFilterRuleMutation = useMutation({
     mutationFn: canFilter.deleteFilterRule,
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['can-filter'] });
-    },
   });
 
   const clearCaptureBufferMutation = useMutation({
     mutationFn: canFilter.clearCaptureBuffer,
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['can-filter', 'captured'] });
-    },
   });
 
   const handleInject = () => {
@@ -434,6 +424,52 @@ export default function CANToolsPage() {
             </p>
           </div>
           <div className="flex items-center gap-4">
+            {/* WebSocket Connection Status */}
+            {selectedTab === 'recorder' && (
+              <Badge variant={recorderWS.state === 'connected' ? 'default' : 'secondary'}>
+                {recorderWS.state === 'connected' ? (
+                  <>
+                    <IconWifi className="mr-1 h-3 w-3" />
+                    Recorder Live
+                  </>
+                ) : (
+                  <>
+                    <IconWifiOff className="mr-1 h-3 w-3" />
+                    Recorder {recorderWS.state}
+                  </>
+                )}
+              </Badge>
+            )}
+            {selectedTab === 'analyzer' && (
+              <Badge variant={analyzerWS.state === 'connected' ? 'default' : 'secondary'}>
+                {analyzerWS.state === 'connected' ? (
+                  <>
+                    <IconWifi className="mr-1 h-3 w-3" />
+                    Analyzer Live
+                  </>
+                ) : (
+                  <>
+                    <IconWifiOff className="mr-1 h-3 w-3" />
+                    Analyzer {analyzerWS.state}
+                  </>
+                )}
+              </Badge>
+            )}
+            {selectedTab === 'filter' && (
+              <Badge variant={filterWS.state === 'connected' ? 'default' : 'secondary'}>
+                {filterWS.state === 'connected' ? (
+                  <>
+                    <IconWifi className="mr-1 h-3 w-3" />
+                    Filter Live
+                  </>
+                ) : (
+                  <>
+                    <IconWifiOff className="mr-1 h-3 w-3" />
+                    Filter {filterWS.state}
+                  </>
+                )}
+              </Badge>
+            )}
             {statusQuery.data && (
               <Badge variant={statusQuery.data.enabled ? 'default' : 'secondary'}>
                 {statusQuery.data.enabled ? 'Enabled' : 'Disabled'}
@@ -878,13 +914,12 @@ export default function CANToolsPage() {
               <CardHeader>
                 <div className="flex items-center justify-between">
                   <CardTitle>Recordings</CardTitle>
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    onClick={() => recordingsQuery.refetch()}
-                  >
-                    Refresh
-                  </Button>
+                  {recorderWS.state === 'connected' && (
+                    <Badge variant="outline" className="text-xs">
+                      <IconWifi className="mr-1 h-3 w-3" />
+                      Live Updates
+                    </Badge>
+                  )}
                 </div>
               </CardHeader>
               <CardContent>
@@ -1036,7 +1071,7 @@ export default function CANToolsPage() {
                   {/* Protocol breakdown */}
                   <div className="mt-4 space-y-2">
                     <p className="text-sm font-medium">Detected Protocols:</p>
-                    {Object.entries(analyzerStatsQuery.data.protocols).map(([protocol, stats]) => (
+                    {Object.entries(analyzerStatsQuery.data.protocols).map(([protocol, stats]: [string, any]) => (
                       <div key={protocol} className="flex items-center justify-between text-sm">
                         <span className="capitalize">{protocol}</span>
                         <div className="flex items-center gap-4">
@@ -1119,13 +1154,19 @@ export default function CANToolsPage() {
               <CardHeader>
                 <div className="flex items-center justify-between">
                   <CardTitle>Recent Messages</CardTitle>
-                  <div className="flex gap-2">
+                  <div className="flex gap-2 items-center">
+                    {analyzerWS.state === 'connected' && (
+                      <Badge variant="outline" className="text-xs">
+                        <IconWifi className="mr-1 h-3 w-3" />
+                        Live
+                      </Badge>
+                    )}
                     <Select value={selectedProtocol} onValueChange={setSelectedProtocol}>
                       <SelectTrigger className="w-32">
                         <SelectValue placeholder="Protocol" />
                       </SelectTrigger>
                       <SelectContent>
-                        <SelectItem value="">All</SelectItem>
+                        <SelectItem value="all">All</SelectItem>
                         <SelectItem value="rvc">RV-C</SelectItem>
                         <SelectItem value="j1939">J1939</SelectItem>
                         <SelectItem value="canopen">CANopen</SelectItem>
@@ -1145,7 +1186,7 @@ export default function CANToolsPage() {
                 <div className="space-y-2 max-h-96 overflow-y-auto">
                   {analyzerMessagesQuery.data?.map((msg, i) => (
                     <div
-                      key={i}
+                      key={`${msg.timestamp}-${i}`}
                       className="p-2 rounded border text-xs font-mono hover:bg-accent"
                     >
                       <div className="flex items-center justify-between">
@@ -1436,20 +1477,28 @@ export default function CANToolsPage() {
               <CardHeader>
                 <div className="flex items-center justify-between">
                   <CardTitle>Captured Messages</CardTitle>
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    onClick={() => clearCaptureBufferMutation.mutate()}
-                  >
-                    Clear
-                  </Button>
+                  <div className="flex gap-2 items-center">
+                    {filterWS.state === 'connected' && (
+                      <Badge variant="outline" className="text-xs">
+                        <IconWifi className="mr-1 h-3 w-3" />
+                        Live
+                      </Badge>
+                    )}
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() => clearCaptureBufferMutation.mutate()}
+                    >
+                      Clear
+                    </Button>
+                  </div>
                 </div>
               </CardHeader>
               <CardContent>
                 <div className="space-y-2 max-h-96 overflow-y-auto">
                   {capturedMessagesQuery.data?.map((msg, i) => (
                     <div
-                      key={i}
+                      key={`${msg.timestamp}-${i}`}
                       className="p-2 rounded border text-xs font-mono"
                     >
                       <div className="flex items-center justify-between">

@@ -32,7 +32,9 @@ class PerformanceMiddleware:
             await self.app(scope, receive, send)
             return
 
-        # Generate or extract request ID
+        # Extract request ID from Caddy or generate fallback for development
+        # Production: Caddy generates X-Request-ID using {http.request.uuid}
+        # Development: Generate locally if header not present
         headers = Headers(scope=scope)
         request_id = headers.get("X-Request-ID") or generate_request_id()
 

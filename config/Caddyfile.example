@@ -1,0 +1,210 @@
+# CoachIQ Production Caddyfile Example
+#
+# This configuration implements edge-layer responsibilities for the RV-C vehicle control system.
+# The mholt/caddy-ratelimit module must be installed (use xcaddy).
+#
+# MIDDLEWARE SEPARATION STRATEGY:
+# - CORS handling: Moved from FastAPI CORSMiddleware to Caddy (better performance)
+# - Request ID generation: Moved from FastAPI to Caddy (edge-layer tracing)
+# - DDoS protection: Handled at edge layer (architectural clarity)
+# - Rate limiting: SPLIT ARCHITECTURE
+#   * Caddy (IP-based): First line of defense, protects against basic DoS
+#   * FastAPI (User-aware): Context-aware limits per user/session for safety-critical ops
+# - Authentication/validation: Remains in FastAPI (context-aware, safety-critical)
+#
+# Installation:
+# xcaddy build --with github.com/mholt/caddy-ratelimit
+#
+# Rate Limiting Strategy:
+# - Different zones for different endpoint criticality levels
+# - Sliding window algorithm for accurate rate limiting
+# - Structured JSON logging for monitoring and alerting
+
+# Global configuration to set directive order
+{
+    # Enable structured JSON logging for better observability
+    log {
+        output file /var/log/caddy/global.log {
+            roll_size 100mb
+            roll_keep 10
+        }
+        format json
+    }
+
+    # Set directive order (rate_limit runs before reverse_proxy)
+    order rate_limit before reverse_proxy
+}
+
+# Replace with your actual domain
+coachiq.your-domain.com {
+    # Handle CORS preflight requests (moved from FastAPI for better performance)
+    @options method OPTIONS
+    header @options {
+        Access-Control-Allow-Origin "*"
+        Access-Control-Allow-Methods "GET, POST, PUT, DELETE, OPTIONS"
+        Access-Control-Allow-Headers "Accept, Accept-Language, Content-Language, Content-Type, Authorization, X-Requested-With, Cache-Control"
+        Access-Control-Allow-Credentials "true"
+    }
+    respond @options 204
+
+    # Add CORS headers to all responses
+    header {
+        Access-Control-Allow-Origin "*"
+        Access-Control-Allow-Credentials "true"
+    }
+
+    # IP-based rate limiting zones (first line of defense)
+    # FastAPI handles additional user-aware rate limiting for safety-critical operations
+    # Key: {http.request.remote.host} ensures limits are per-IP address
+    rate_limit {
+        # Zone 1: Authentication endpoints (strictest - prevent brute force)
+        # FastAPI adds additional per-username rate limiting on top of this
+        zone auth {
+            key {http.request.remote.host}
+            window 1m
+            events 5  # 5 auth attempts per minute per IP
+        }
+
+        # Zone 2: Safety-critical RV-C control endpoints
+        # FastAPI adds per-user safety operation limits on top of this
+        zone control_critical {
+            key {http.request.remote.host}
+            window 1m
+            events 60  # 60 control commands per minute (1/sec average)
+        }
+
+        # Zone 3: CAN message injection endpoints (very restrictive)
+        # Additional validation occurs in FastAPI for authorized users only
+        zone can_inject {
+            key {http.request.remote.host}
+            window 1m
+            events 10  # 10 injection requests per minute
+        }
+
+        # Zone 4: WebSocket connection attempts (handshake only)
+        # WebSocket authentication and per-user limits handled in FastAPI
+        zone websockets {
+            key {http.request.remote.host}
+            window 1m
+            events 20  # 20 new WebSocket connections per minute per IP
+        }
+
+        # Zone 5: General API traffic (most lenient)
+        # FastAPI applies authenticated user rate limits for finer control
+        zone api_general {
+            key {http.request.remote.host}
+            window 1m
+            events 300  # 300 requests per minute (5/sec average)
+        }
+    }
+
+    # Apply rate limits in order of strictness (most restrictive first)
+
+    # Authentication endpoints - strictest limits
+    handle_path /api/auth/* {
+        rate_limit zone auth
+        reverse_proxy localhost:8000 {
+            header_up X-Request-ID {http.request.uuid}
+        }
+    }
+
+    # Safety-critical control endpoints
+    handle_path /api/entities/control/* {
+        rate_limit zone control_critical
+        reverse_proxy localhost:8000 {
+            header_up X-Request-ID {http.request.uuid}
+        }
+    }
+
+    handle_path /api/v2/entities/control/* {
+        rate_limit zone control_critical
+        reverse_proxy localhost:8000 {
+            header_up X-Request-ID {http.request.uuid}
+        }
+    }
+
+    # CAN message injection endpoints
+    handle_path /api/can-tools/inject* {
+        rate_limit zone can_inject
+        reverse_proxy localhost:8000 {
+            header_up X-Request-ID {http.request.uuid}
+        }
+    }
+
+    # WebSocket connection attempts
+    handle_path /ws* {
+        rate_limit zone websockets
+        reverse_proxy localhost:8000 {
+            header_up X-Request-ID {http.request.uuid}
+        }
+    }
+
+    # Health check endpoint - no rate limiting for monitoring
+    handle_path /health {
+        reverse_proxy localhost:8000 {
+            header_up X-Request-ID {http.request.uuid}
+        }
+    }
+
+    # General API traffic (catch-all for remaining endpoints)
+    handle_path /api/* {
+        rate_limit zone api_general
+        reverse_proxy localhost:8000 {
+            header_up X-Request-ID {http.request.uuid}
+        }
+    }
+
+    # All other requests (frontend, etc.)
+    reverse_proxy localhost:8000 {
+        # Health check for load balancing
+        health_uri /health
+        health_interval 10s
+
+        # Headers to pass real client IP to backend
+        header_up X-Real-IP {http.request.remote.host}
+        header_up X-Forwarded-For {http.request.remote.host}
+        header_up X-Forwarded-Proto {http.request.scheme}
+
+        # Add request ID for distributed tracing (moved from FastAPI)
+        header_up X-Request-ID {http.request.uuid}
+    }
+
+    # Security headers (defense in depth)
+    header {
+        # HSTS for RV-C security
+        Strict-Transport-Security "max-age=31536000; includeSubDomains; preload"
+        # Prevent clickjacking
+        X-Frame-Options "DENY"
+        # Prevent MIME type sniffing
+        X-Content-Type-Options "nosniff"
+        # XSS protection (legacy browsers)
+        X-XSS-Protection "1; mode=block"
+        # Referrer policy
+        Referrer-Policy "strict-origin-when-cross-origin"
+        # RV-C specific security headers
+        X-RVC-Proxy "caddy"
+        X-Safety-System "enabled"
+    }
+
+    # Enable compression for better performance (moved from potential FastAPI compression)
+    encode {
+        gzip
+        # Add brotli support for modern browsers
+        # brotli  # Uncomment if caddy built with brotli support
+    }
+
+    # Structured logging for monitoring rate limit events
+    log {
+        output file /var/log/caddy/coachiq-access.log {
+            roll_size 100mb
+            roll_keep 10
+        }
+        format json
+        # Log all requests including rate-limited ones (HTTP 429)
+    }
+}
+
+# Redirect HTTP to HTTPS (security requirement)
+http://coachiq.your-domain.com {
+    redir https://coachiq.your-domain.com{uri} permanent
+}

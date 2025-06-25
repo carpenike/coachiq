@@ -147,19 +147,6 @@ def show_configuration(settings):
     print(f"  Rate Limiting: {settings.security.rate_limit_enabled}")
     print()
 
-    print("CORS Configuration:")
-    print(
-        f"  Allowed Origins: {', '.join(settings.cors.allow_origins) if isinstance(settings.cors.allow_origins, list) else settings.cors.allow_origins}"
-    )
-    print(f"  Allow Credentials: {settings.cors.allow_credentials}")
-    print(
-        f"  Allowed Methods: {', '.join(settings.cors.allow_methods) if isinstance(settings.cors.allow_methods, list) else settings.cors.allow_methods}"
-    )
-    print(
-        f"  Allowed Headers: {', '.join(settings.cors.allow_headers) if isinstance(settings.cors.allow_headers, list) else settings.cors.allow_headers}"
-    )
-    print()
-
     print("CAN Bus Configuration:")
     print(f"  Bus Type: {settings.can.bustype}")
     print(

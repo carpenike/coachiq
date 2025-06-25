@@ -1352,9 +1352,16 @@ async def get_mfa_status(
         HTTPException: If MFA is not available
     """
     if not auth_manager.is_mfa_available():
-        raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="MFA is not available",
+        # Return unavailable status instead of error
+        return MFAStatus(
+            user_id=current_user.user_id,
+            mfa_enabled=False,
+            setup_initiated=False,
+            created_at=None,
+            last_used=None,
+            backup_codes_remaining=0,
+            backup_codes_total=0,
+            available=False,
         )
 
     mfa_status = await auth_manager.get_mfa_status(current_user.user_id)
@@ -1497,10 +1504,8 @@ async def get_all_mfa_status(
         HTTPException: If MFA is not available
     """
     if not auth_manager.is_mfa_available():
-        raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="MFA is not available",
-        )
+        # Return empty list when MFA is not available
+        return []
 
     all_status = await auth_manager.get_all_mfa_status()
     return [MFAStatus(**status_data) for status_data in all_status]

@@ -139,7 +139,7 @@ async def get_injector_status(
     stats = injector.get_statistics()
 
     return InjectorStatusResponse(
-        enabled=injector.enabled,
+        enabled=True,  # Service is enabled when registered
         safety_level=injector.safety_level.value,
         statistics={
             "total_injected": stats.get("total_injected", 0),

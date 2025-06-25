@@ -22,12 +22,13 @@ from fastapi import (
     APIRouter,
     Depends,
     HTTPException,
+    Query,
     WebSocket,
     WebSocketDisconnect,
 )
 from pydantic import BaseModel, Field
 
-from backend.core.dependencies import VerifiedCANService
+from backend.core.dependencies import VerifiedCANFacade
 
 # Import buses from the old structure for compatibility
 from backend.integrations.can.manager import buses
@@ -60,12 +61,23 @@ async def verify_can_interface_enabled():
     """
     Dependency to verify that CAN interfaces are available.
 
-    This is a placeholder that was referenced but not defined.
-    In production, this would check if CAN interfaces are properly configured.
+    This checks if CAN interfaces are properly configured.
+    Virtual CAN interfaces work on all platforms.
     """
+    # Check if we're using virtual CAN bus type
+    from backend.core.config import get_settings
+
+    settings = get_settings()
+
+    # Virtual CAN works on all platforms
+    if settings.can.bustype == "virtual":
+        return
+
+    # For non-virtual interfaces, check platform support
     if not CAN_SUPPORTED:
         raise HTTPException(
-            status_code=503, detail="CAN interfaces are not supported on this platform"
+            status_code=503,
+            detail="Physical CAN interfaces are not supported on this platform (Linux required)",
         )
 
 
@@ -77,7 +89,7 @@ async def verify_can_interface_enabled():
     response_description="Queue status including length and capacity information",
 )
 async def get_queue_status(
-    can_service: VerifiedCANService,
+    can_facade: VerifiedCANFacade,
     _: Annotated[None, Depends(verify_can_interface_enabled)],
 ) -> dict[str, Any]:
     """
@@ -89,7 +101,7 @@ async def get_queue_status(
     logger.debug("GET /can/queue/status - Retrieving CAN queue status")
 
     try:
-        status = await can_service.get_queue_status()
+        status = await can_facade.get_queue_status()
         queue_length = status.get("queue_length", 0)
         logger.info(f"Retrieved CAN queue status: {queue_length} messages pending")
         return status
@@ -149,7 +161,7 @@ class BackendComputedCANMetrics(BaseModel):
     description="Enhanced CAN statistics with business logic computed on backend, including PGN analysis",
 )
 async def get_enhanced_can_statistics(
-    can_service: VerifiedCANService,
+    can_facade: VerifiedCANFacade,
     _: Annotated[None, Depends(verify_can_interface_enabled)],
 ) -> BackendComputedCANStatistics:
     """
@@ -162,14 +174,14 @@ async def get_enhanced_can_statistics(
 
     try:
         # Get basic statistics from CAN service
-        basic_stats = await can_service.get_bus_statistics()
+        basic_stats = await can_facade.get_bus_statistics()
 
         # Backend business logic: Aggregate PGN-level statistics
         pgn_aggregation = {}
         instance_aggregation = {}
 
         # Get recent messages for analysis (backend aggregation)
-        recent_messages = await can_service.get_recent_messages(limit=1000)
+        recent_messages = await can_facade.get_recent_messages(limit=1000)
 
         for message in recent_messages:
             pgn = message.get("pgn", "unknown")
@@ -267,7 +279,7 @@ async def get_enhanced_can_statistics(
     description="Backend-computed CAN metrics with exact field mapping for frontend consumption",
 )
 async def get_computed_can_metrics(
-    can_service: VerifiedCANService,
+    can_facade: VerifiedCANFacade,
     _: Annotated[None, Depends(verify_can_interface_enabled)],
 ) -> BackendComputedCANMetrics:
     """
@@ -280,7 +292,7 @@ async def get_computed_can_metrics(
 
     try:
         # Get basic statistics from CAN service
-        basic_stats = await can_service.get_bus_statistics()
+        basic_stats = await can_facade.get_bus_statistics()
 
         # Backend business logic: Extract metrics from CAN service response
         summary = basic_stats.get("summary", {}) if basic_stats else {}
@@ -316,7 +328,7 @@ async def get_computed_can_metrics(
     response_description="List of interface names",
 )
 async def get_interfaces(
-    can_service: VerifiedCANService,
+    can_facade: VerifiedCANFacade,
     _: Annotated[None, Depends(verify_can_interface_enabled)],
 ) -> list[str]:
     """
@@ -328,7 +340,7 @@ async def get_interfaces(
     logger.debug("GET /can/interfaces - Retrieving CAN interfaces")
 
     try:
-        interfaces = await can_service.get_interfaces()
+        interfaces = await can_facade.get_interfaces()
         logger.info(f"Retrieved {len(interfaces)} CAN interfaces: {', '.join(interfaces)}")
         return interfaces
     except Exception as e:
@@ -344,7 +356,7 @@ async def get_interfaces(
     response_description="Dictionary mapping interface names to their details",
 )
 async def get_interface_details(
-    can_service: VerifiedCANService,
+    can_facade: VerifiedCANFacade,
     _: Annotated[None, Depends(verify_can_interface_enabled)],
 ) -> dict[str, dict[str, Any]]:
     """
@@ -356,7 +368,7 @@ async def get_interface_details(
     logger.debug("GET /can/interfaces/details - Retrieving detailed interface information")
 
     try:
-        details = await can_service.get_interface_details()
+        details = await can_facade.get_interface_details()
         interface_count = len(details)
         logger.info(f"Retrieved detailed information for {interface_count} CAN interfaces")
         return details
@@ -376,7 +388,7 @@ async def send_raw_message(
     arbitration_id: int,
     data: str,
     interface: str,
-    can_service: VerifiedCANService,
+    can_facade: VerifiedCANFacade,
     _: Annotated[None, Depends(verify_can_interface_enabled)],
 ) -> dict[str, Any]:
     """
@@ -406,7 +418,7 @@ async def send_raw_message(
         raise HTTPException(status_code=400, detail=f"Invalid hex data: {e}") from e
 
     try:
-        result = await can_service.send_raw_message(arbitration_id, data_bytes, interface)
+        result = await can_facade.send_raw_message(arbitration_id, data_bytes, interface)
         if result.get("success", False):
             logger.info(
                 f"Successfully sent CAN message: ID=0x{arbitration_id:X} on interface '{interface}'"
@@ -432,7 +444,7 @@ async def send_raw_message(
     response_description="List of recent CAN messages with metadata",
 )
 async def get_recent_can_messages(
-    can_service: VerifiedCANService,
+    can_facade: VerifiedCANFacade,
     _: Annotated[None, Depends(verify_can_interface_enabled)],
     limit: int = 100,
 ) -> list[dict[str, Any]]:
@@ -451,7 +463,7 @@ async def get_recent_can_messages(
     logger.debug(f"GET /can/recent - Retrieving recent CAN messages (limit={limit})")
 
     try:
-        messages = await can_service.get_recent_messages(limit)
+        messages = await can_facade.get_recent_messages(limit)
         logger.info(f"Retrieved {len(messages)} recent CAN messages")
         return messages
     except ConnectionError as e:
@@ -472,7 +484,7 @@ async def get_recent_can_messages(
     response_description="Dictionary containing bus statistics and metrics",
 )
 async def get_bus_statistics(
-    can_service: VerifiedCANService,
+    can_facade: VerifiedCANFacade,
     _: Annotated[None, Depends(verify_can_interface_enabled)],
 ) -> dict[str, Any]:
     """
@@ -484,7 +496,7 @@ async def get_bus_statistics(
     logger.debug("GET /can/statistics - Retrieving CAN bus statistics")
 
     try:
-        statistics = await can_service.get_bus_statistics()
+        statistics = await can_facade.get_bus_statistics()
 
         # Log summary of statistics
         interface_count = len(statistics.get("interfaces", {}))
@@ -611,7 +623,7 @@ def get_stats_from_pyroute2_link(link: Any) -> CANInterfaceStats:
 
 @router.get("/status", response_model=AllCANStats)
 async def get_can_status(
-    can_service: VerifiedCANService,
+    can_facade: VerifiedCANFacade,
     _: Annotated[None, Depends(verify_can_interface_enabled)],
 ) -> AllCANStats:
     """
@@ -623,22 +635,50 @@ async def get_can_status(
 
     interfaces_data: dict[str, CANInterfaceStats] = {}
 
+    # Check if we're using virtual CAN
+    from backend.core.config import get_settings
+
+    settings = get_settings()
+    is_virtual = settings.can.bustype == "virtual"
+
     # Handle non-Linux platforms or missing pyroute2
     if not CAN_SUPPORTED or IPRoute is None:
         platform_name = platform.system()
-        msg = f"CAN bus not supported on {platform_name} platform - pyroute2 requires Linux"
+
+        # For virtual CAN, we can still provide meaningful status
+        if is_virtual:
+            # Get actual status from CAN service
+            try:
+                service_stats = await can_facade.get_bus_statistics()
+                for iface_name, stats in service_stats.items():
+                    interfaces_data[iface_name] = CANInterfaceStats(
+                        name=iface_name,
+                        state="Active (virtual)",
+                        rx_packets=stats.get("total_messages", 0),
+                        tx_packets=stats.get("messages_sent", 0),
+                        rx_errors=stats.get("total_errors", 0),
+                        tx_errors=0,
+                        notes=f"Virtual CAN interface on {platform_name}",
+                    )
+                logger.info(
+                    f"Retrieved virtual CAN status for {platform_name}: {len(interfaces_data)} interfaces"
+                )
+                return AllCANStats(interfaces=interfaces_data)
+            except Exception as e:
+                logger.warning(f"Failed to get virtual CAN statistics: {e}")
+
+        # For physical CAN on non-Linux, show unsupported
+        msg = f"Physical CAN interfaces require Linux (running on {platform_name})"
         logger.debug(msg)
         # Return a placeholder entry so the UI has something to display
         for iface in buses:
-            interfaces_data[iface] = CANInterfaceStats(
-                name=iface, state="Listening (no pyroute2)", notes=msg
-            )
+            interfaces_data[iface] = CANInterfaceStats(name=iface, state="Unsupported", notes=msg)
         if not interfaces_data:
-            interfaces_data["dummy_interface"] = CANInterfaceStats(
-                name="dummy_interface", state=f"Unsupported/{platform_name}", notes=msg
+            interfaces_data["no_interfaces"] = CANInterfaceStats(
+                name="no_interfaces", state=f"Unsupported/{platform_name}", notes=msg
             )
         logger.info(
-            f"Retrieved CAN status for {platform_name} platform: {len(interfaces_data)} interfaces (no pyroute2)"
+            f"CAN status unavailable for {platform_name} platform: {len(interfaces_data)} interfaces"
         )
         return AllCANStats(interfaces=interfaces_data)
 
@@ -698,3 +738,58 @@ async def get_can_status(
     except Exception as e:
         logger.error(f"Failed to get CAN status using pyroute2: {e}", exc_info=True)
         return AllCANStats(interfaces={})
+
+
+@router.get("/health")
+async def get_can_health(
+    can_facade: VerifiedCANFacade,
+) -> dict[str, Any]:
+    """
+    Get basic health status of the CAN subsystem.
+
+    Returns a simple health check suitable for monitoring systems.
+    Includes overall health status, safety status, and emergency stop state.
+    """
+    return can_facade.get_health_status()
+
+
+@router.get("/health/comprehensive")
+async def get_can_comprehensive_health(
+    can_facade: VerifiedCANFacade,
+) -> dict[str, Any]:
+    """
+    Get comprehensive health status including all subsystems.
+
+    Returns detailed health information including:
+    - Facade safety status and emergency stop state
+    - Individual service health statuses
+    - Performance metrics
+    - Queue depths and resource utilization
+
+    This endpoint is useful for detailed diagnostics and debugging.
+    """
+    return await can_facade.get_comprehensive_health()
+
+
+@router.post("/emergency-stop")
+async def trigger_emergency_stop(
+    can_facade: VerifiedCANFacade,
+    reason: str = Query(..., description="Reason for emergency stop"),
+) -> dict[str, Any]:
+    """
+    Trigger an emergency stop across all CAN services.
+
+    This is a safety-critical operation that will:
+    - Stop all CAN message transmission
+    - Halt all recording operations
+    - Disable message injection
+    - Put the system in a safe state
+
+    The system must be manually reset after an emergency stop.
+    """
+    await can_facade.emergency_stop(reason)
+    return {
+        "success": True,
+        "message": f"Emergency stop triggered: {reason}",
+        "safety_status": can_facade.get_health_status(),
+    }

@@ -188,7 +188,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
   // Initialize token storage and set up refresh callbacks on mount
   useEffect(() => {
     // Initialize token storage
-    initializeTokenStorage();
+    void initializeTokenStorage();
 
     // Set up refresh callbacks
     setRefreshCallbacks({

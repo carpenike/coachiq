@@ -15,7 +15,7 @@ from backend.integrations.can.protocol_analyzer import (
     ProtocolAnalyzer,
 )
 
-router = APIRouter()
+router = APIRouter(prefix="/api/can-analyzer", tags=["CAN Analyzer"])
 
 
 # Response Models

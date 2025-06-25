@@ -93,19 +93,6 @@ class ComponentHealthResponse(BaseModel):
     timestamp: float = Field(..., description="Response timestamp")
 
 
-class SystemStatus(BaseModel):
-    """System status response"""
-
-    overall_status: str = Field(..., description="Overall system status: healthy/degraded/failed")
-    services: list[ServiceStatus] = Field(..., description="List of service statuses")
-    total_services: int = Field(..., description="Total number of services")
-    healthy_services: int = Field(..., description="Number of healthy services")
-    timestamp: float = Field(..., description="Status check timestamp")
-    response_time_ms: float = Field(..., description="Response time in milliseconds")
-    service: ServiceMetadata = Field(..., description="Service metadata")
-    description: str = Field(..., description="Human-readable status description")
-
-
 class EventLogEntry(BaseModel):
     """System event log entry"""
 
@@ -356,7 +343,7 @@ def create_system_router() -> APIRouter:
                 "auth_manager": "core",
                 "analytics_service": "core",
                 # Network services
-                "can_service": "network",
+                "can_facade": "network",
                 "websocket_manager": "network",
                 "multi_network_service": "network",
                 # Storage services

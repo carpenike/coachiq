@@ -24,7 +24,11 @@ export {
 // WebSocket hooks
 export {
   useCANScanWebSocket, useEntityWebSocket, useSystemStatusWebSocket,
-  useWebSocketManager
+  useWebSocketManager, useLogWebSocket,
+  // Generic WebSocket hook and CAN tool variants
+  useWebSocket, useCANRecorderWebSocket, useCANAnalyzerWebSocket, useCANFilterWebSocket,
+  // Types
+  type IUseWebSocketOptions, type IUseWebSocketReturn, type MessageHandler, type IMessageSubscription
 } from './useWebSocket';
 
 // Table and virtualization hooks

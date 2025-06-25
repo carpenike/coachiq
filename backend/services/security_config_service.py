@@ -82,11 +82,16 @@ class PINSecurityPolicy(BaseModel):
 
 
 class RateLimitingPolicy(BaseModel):
-    """Rate limiting policy configuration."""
+    """
+    Rate limiting policy configuration.
 
-    # General API Limits
+    Note: IP-based rate limiting is handled by Caddy edge layer.
+    This configuration controls user-aware limits in the application layer.
+    """
+
+    # General API Limits (applied in FastAPI for user-aware limiting)
     general_requests_per_minute: int = Field(
-        60, ge=10, le=300, description="General requests per minute per IP"
+        60, ge=10, le=300, description="General requests per minute per authenticated user"
     )
     burst_limit: int = Field(10, ge=5, le=50, description="Burst request limit")
 
@@ -622,4 +627,50 @@ class SecurityConfigService:
                 },
                 "pin_validation": {"requests": rate_policy.pin_attempts_per_minute, "window": 60},
             },
+        }
+
+    async def get_caddy_rate_limits(self) -> dict[str, Any]:
+        """
+        Get rate limit configuration for Caddy edge layer.
+
+        These are IP-based limits that should be configured in Caddyfile.
+        The FastAPI application handles user-aware limits separately.
+
+        Returns:
+            Caddy-compatible rate limit configuration
+        """
+        config = await self.get_config()
+        rate_policy = config.rate_limiting
+
+        return {
+            "zones": {
+                "auth": {
+                    "description": "Authentication endpoints (strictest - prevent brute force)",
+                    "events": 5,  # 5 auth attempts per minute per IP
+                    "window": "1m",
+                },
+                "control_critical": {
+                    "description": "Safety-critical RV-C control endpoints",
+                    "events": 60,  # 60 control commands per minute (1/sec average)
+                    "window": "1m",
+                },
+                "can_inject": {
+                    "description": "CAN message injection endpoints (very restrictive)",
+                    "events": 10,  # 10 injection requests per minute
+                    "window": "1m",
+                },
+                "websockets": {
+                    "description": "WebSocket connection attempts (handshake only)",
+                    "events": 20,  # 20 new WebSocket connections per minute per IP
+                    "window": "1m",
+                },
+                "api_general": {
+                    "description": "General API traffic (most lenient)",
+                    "events": min(
+                        300, rate_policy.general_requests_per_minute * 5
+                    ),  # 5x app limit for IP-based
+                    "window": "1m",
+                },
+            },
+            "note": "These are IP-based limits for Caddy. User-aware limits are handled separately in FastAPI.",
         }

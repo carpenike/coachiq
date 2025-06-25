@@ -81,6 +81,36 @@ async def features_ws_endpoint(websocket: WebSocket, ws_service: WebSocketManage
     await ws_service.handle_features_status_connection(websocket)
 
 
+@router.websocket("/ws/can-recorder")
+async def can_recorder_ws_endpoint(websocket: WebSocket, ws_service: WebSocketManager) -> None:
+    """
+    WebSocket endpoint for CAN recorder status updates.
+
+    Connect to ws://<host>/ws/can-recorder to receive real-time recorder status.
+    """
+    await ws_service.handle_can_recorder_connection(websocket)
+
+
+@router.websocket("/ws/can-analyzer")
+async def can_analyzer_ws_endpoint(websocket: WebSocket, ws_service: WebSocketManager) -> None:
+    """
+    WebSocket endpoint for CAN analyzer updates.
+
+    Connect to ws://<host>/ws/can-analyzer to receive statistics and messages.
+    """
+    await ws_service.handle_can_analyzer_connection(websocket)
+
+
+@router.websocket("/ws/can-filter")
+async def can_filter_ws_endpoint(websocket: WebSocket, ws_service: WebSocketManager) -> None:
+    """
+    WebSocket endpoint for CAN filter updates.
+
+    Connect to ws://<host>/ws/can-filter to receive filter status and captured messages.
+    """
+    await ws_service.handle_can_filter_connection(websocket)
+
+
 @router.websocket("/ws/security")
 async def security_ws_endpoint(websocket: WebSocket) -> None:
     """

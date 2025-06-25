@@ -24,11 +24,11 @@ from backend.api.routers import (
     database_management,
     dbc,
     device_discovery,
+    diagnostics,
     docs,
     health,
     logs,
     multi_network,
-    network_security,
     notification_analytics,
     notification_dashboard,
     pattern_analysis,
@@ -72,6 +72,7 @@ def configure_routers(app: FastAPI) -> None:
     app.include_router(dashboard.router)
     app.include_router(database_management.router)
     app.include_router(dbc.router)
+    app.include_router(diagnostics.router)
     app.include_router(docs.router)
     app.include_router(health.router)
     app.include_router(logs.router)
@@ -87,7 +88,6 @@ def configure_routers(app: FastAPI) -> None:
     app.include_router(pin_auth.router)
     app.include_router(security_config.router)
     app.include_router(security_dashboard.router)
-    app.include_router(network_security.router)
 
     # Include notification routers
     app.include_router(notification_dashboard.router)

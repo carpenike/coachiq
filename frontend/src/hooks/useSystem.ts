@@ -41,6 +41,13 @@ export function useCANStatistics() {
     queryFn: fetchCANStatistics,
     staleTime: STALE_TIMES.CAN_STATISTICS,
     refetchInterval: 5000, // Auto-refetch every 5 seconds for real-time stats
+    retry: (failureCount, error) => {
+      // Don't retry 503 errors as they indicate CAN is not supported on this platform
+      if (error instanceof Error && error.message.includes('503')) {
+        return false;
+      }
+      return failureCount < 3;
+    },
   });
 }
 
@@ -72,6 +79,13 @@ export function useCANMetrics() {
     queryFn: fetchCANMetrics,
     staleTime: STALE_TIMES.CAN_STATISTICS,
     refetchInterval: 5000, // Auto-refetch every 5 seconds for real-time metrics
+    retry: (failureCount, error) => {
+      // Don't retry 503 errors as they indicate CAN is not supported on this platform
+      if (error instanceof Error && error.message.includes('503')) {
+        return false;
+      }
+      return failureCount < 3;
+    },
   });
 }
 

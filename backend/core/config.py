@@ -92,98 +92,6 @@ class ServerSettings(BaseSettings):
         return v
 
 
-class CORSSettings(BaseSettings):
-    """
-    CORS configuration settings.
-
-    Environment Variables:
-        All settings can be configured with the prefix COACHIQ_CORS__
-        For example: COACHIQ_CORS__ALLOW_ORIGINS=http://localhost:3000,http://127.0.0.1:3000
-
-    Notes:
-        - Comma-separated strings will be parsed into lists automatically
-        - Use empty string or omit the variable to use defaults
-    """
-
-    model_config = SettingsConfigDict(
-        env_prefix="COACHIQ_CORS__",
-        case_sensitive=False,
-        env_parse_none_str="",
-    )
-
-    enabled: bool = Field(default=True, description="Enable CORS middleware")
-    allow_origins: str | list[str] = Field(
-        default_factory=lambda: (
-            [
-                "http://localhost:3000",
-                "http://127.0.0.1:3000",
-                "http://localhost:5173",
-                "http://127.0.0.1:5173",
-            ]
-            if __import__("os").getenv("COACHIQ_ENVIRONMENT", "development") == "development"
-            else []
-        ),
-        description="Allowed origins for CORS (comma-separated string or list)",
-    )
-    allow_credentials: bool = Field(default=True, description="Allow credentials in CORS")
-    allow_methods: str | list[str] = Field(
-        default=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
-        description="Allowed HTTP methods (comma-separated string or list)",
-    )
-    allow_headers: str | list[str] = Field(
-        default=[
-            "Accept",
-            "Accept-Language",
-            "Content-Language",
-            "Content-Type",
-            "Authorization",
-            "X-Requested-With",
-            "Cache-Control",
-        ],
-        description="Allowed headers (comma-separated string or list)",
-    )
-
-    @field_validator("allow_origins", mode="before")
-    @classmethod
-    def parse_origins(cls, v):
-        """Parse comma-separated origins from environment variable."""
-        if isinstance(v, str):
-            # Handle comma-separated format
-            v = v.strip()
-            if not v:
-                return []
-            return [origin.strip() for origin in v.split(",") if origin.strip()]
-        if isinstance(v, list):
-            return v
-        return v
-
-    @field_validator("allow_methods", mode="before")
-    @classmethod
-    def parse_methods(cls, v):
-        """Parse comma-separated methods from environment variable."""
-        if isinstance(v, str):
-            v = v.strip()
-            if not v:
-                return []
-            return [method.strip().upper() for method in v.split(",") if method.strip()]
-        if isinstance(v, list):
-            return [method.strip().upper() for method in v if method.strip()]
-        return v
-
-    @field_validator("allow_headers", mode="before")
-    @classmethod
-    def parse_headers(cls, v):
-        """Parse comma-separated headers from environment variable."""
-        if isinstance(v, str):
-            v = v.strip()
-            if not v:
-                return []
-            return [header.strip() for header in v.split(",") if header.strip()]
-        if isinstance(v, list):
-            return v
-        return v
-
-
 class SecuritySettings(BaseSettings):
     """Security configuration settings."""
 
@@ -1665,7 +1573,6 @@ class Settings(BaseSettings):
 
     # Nested settings
     server: ServerSettings = Field(default_factory=ServerSettings)
-    cors: CORSSettings = Field(default_factory=CORSSettings)
     security: SecuritySettings = Field(default_factory=SecuritySettings)
     logging: LoggingSettings = Field(default_factory=LoggingSettings)
     can: CANSettings = Field(default_factory=CANSettings)
@@ -1915,11 +1822,6 @@ def get_hierarchical_settings() -> Settings:
 def get_server_settings() -> ServerSettings:
     """Get server settings."""
     return get_settings().server
-
-
-def get_cors_settings() -> CORSSettings:
-    """Get CORS settings."""
-    return get_settings().cors
 
 
 def get_security_settings() -> SecuritySettings:

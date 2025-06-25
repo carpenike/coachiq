@@ -43,8 +43,8 @@ from backend.integrations.can.message_injector import CANMessageInjector, Safety
 
 # from backend.integrations.registration import register_custom_features  # No longer needed - all services in ServiceRegistry
 from backend.middleware.auth import AuthenticationMiddleware
-from backend.middleware.http import configure_cors
-from backend.middleware.network_security import NetworkSecurityConfig, NetworkSecurityMiddleware
+
+# CORS handling moved to Caddy edge layer - see config/Caddyfile.example
 from backend.middleware.rate_limiting import limiter, rate_limit_exceeded_handler
 from backend.middleware.validation import RuntimeValidationMiddleware
 from backend.monitoring import get_health_monitoring_summary, record_health_probe
@@ -86,8 +86,8 @@ from backend.services.auth_services import (
     TokenService,
 )
 from backend.services.can_bus_service import CANBusService
+from backend.services.can_interface_service import CANInterfaceService
 
-# from backend.services.can_interface_service import CANInterfaceService  # Not used
 # CANService import removed - not used in this file
 from backend.services.config_service import ConfigService
 from backend.services.database_services import (
@@ -95,6 +95,8 @@ from backend.services.database_services import (
     DatabaseMigrationService,
     DatabaseSessionService,
 )
+from backend.services.edge_proxy_monitor_service import EdgeProxyMonitorService
+from backend.services.entity_initialization_service import EntityInitializationService
 
 # from backend.services.docs_service import DocsService  # Not used
 from backend.services.entity_manager_service import EntityManagerService
@@ -104,7 +106,6 @@ from backend.services.entity_services import (
     EntityManagementService,
     EntityQueryService,
 )
-from backend.services.network_security_service import NetworkSecurityService
 from backend.services.pin_manager import PINConfig, PINManager
 from backend.services.protocol_manager import ProtocolManager
 
@@ -173,6 +174,18 @@ async def _configure_service_startup_stages(service_registry):
         health_check=lambda pm: {"healthy": pm is not None},
     )
 
+    # Edge proxy monitor (Caddy health monitoring)
+    service_registry.register_service(
+        name="edge_proxy_monitor",
+        init_func=lambda: EdgeProxyMonitorService(),
+        dependencies=[],  # No dependencies - monitors external infrastructure
+        description="Edge proxy (Caddy) health monitoring for ServiceRegistry integration",
+        tags={"monitoring", "infrastructure", "edge"},
+        health_check=lambda epm: {"healthy": epm.is_healthy(), "last_error": epm.get_last_error()}
+        if epm
+        else {"healthy": False, "error": "service_not_initialized"},
+    )
+
     # Register individual core services (Phase 2)
     service_registry.register_service(
         name="persistence_service",
@@ -232,7 +245,7 @@ async def _configure_service_startup_stages(service_registry):
         init_func=_init_device_discovery_service,
         dependencies=[
             ServiceDependency("rvc_config", DependencyType.REQUIRED),
-            ServiceDependency("can_service", DependencyType.OPTIONAL),  # Can start without CAN
+            ServiceDependency("can_facade", DependencyType.OPTIONAL),  # Can start without CAN
         ],
         description="RV-C device discovery and network scanning",
         tags={"discovery", "rvc", "network"},
@@ -298,17 +311,6 @@ async def _configure_service_startup_stages(service_registry):
         description="Security audit logging and rate limiting",
         tags={"security", "audit", "monitoring"},
         health_check=lambda sas: {"healthy": sas is not None, "audit_active": True},
-    )
-
-    service_registry.register_service(
-        name="network_security_service",
-        init_func=lambda: NetworkSecurityService(
-            service_registry.get_service("security_config_service")
-        ),
-        dependencies=[ServiceDependency("security_config_service", DependencyType.REQUIRED)],
-        description="Network security monitoring and protection",
-        tags={"security", "network", "protection"},
-        health_check=lambda nss: {"healthy": nss is not None, "monitoring_active": True},
     )
 
     # Register repositories (Phase 2R.2)
@@ -431,14 +433,15 @@ def _init_security_event_manager(
     return manager
 
 
-async def _init_device_discovery_service():
-    """Initialize device discovery service."""
+async def _init_device_discovery_service(rvc_config, can_facade=None):
+    """Initialize device discovery service with RVC config and optional CANFacade dependencies."""
     from backend.services.device_discovery_service import DeviceDiscoveryService
 
-    # Note: DeviceDiscoveryService requires CANService which is initialized later
-    # For now, create without CAN service dependency (will be injected later)
-    service = DeviceDiscoveryService(can_service=None)
-    logger.info("DeviceDiscoveryService initialized via ServiceRegistry")
+    service = DeviceDiscoveryService(can_facade=can_facade, config=rvc_config)
+    logger.info(
+        "DeviceDiscoveryService initialized via ServiceRegistry with RVC config and CANFacade (available: %s)",
+        can_facade is not None,
+    )
     return service
 
 
@@ -664,6 +667,34 @@ def _register_group2_repositories(service_registry: SafetyServiceRegistry) -> No
         ],
         description="Repository for security audit logging and tracking",
         tags={"repository", "security", "audit", "monitoring"},
+    )
+
+    # Entity Initialization Service
+    service_registry.register_service(
+        name="entity_initialization_service",
+        init_func=lambda entity_state_repository,
+        rvc_config_repository,
+        entity_manager_service: EntityInitializationService(
+            entity_state_repository=entity_state_repository,
+            rvc_config_repository=rvc_config_repository,
+            entity_manager=entity_manager_service.get_entity_manager()
+            if entity_manager_service
+            else None,
+        ),
+        dependencies=[
+            ServiceDependency("entity_state_repository", DependencyType.REQUIRED),
+            ServiceDependency("rvc_config_repository", DependencyType.REQUIRED),
+            ServiceDependency("entity_manager_service", DependencyType.REQUIRED),
+        ],
+        description="Service for loading and preseeding entities from coach mapping",
+        tags={"service", "entity", "initialization", "coach-mapping"},
+        health_check=lambda s: {
+            "healthy": s is not None,
+            "initialized": s._initialized if hasattr(s, "_initialized") else False,
+            "entity_count": len(s._entity_manager.get_entity_ids())
+            if hasattr(s, "_entity_manager")
+            else 0,
+        },
     )
 
 
@@ -1251,6 +1282,8 @@ def _register_phase4_services(service_registry: SafetyServiceRegistry) -> None:
         else {"healthy": s is not None},
     )
 
+    # CANService registration removed - use can_facade instead
+
     # CAN Tools Services Registration
     def _init_can_message_injector():
         """Initialize CAN message injector service with audit callback."""
@@ -1288,7 +1321,7 @@ def _register_phase4_services(service_registry: SafetyServiceRegistry) -> None:
     service_registry.register_safety_service(
         name="can_message_injector",
         init_func=_init_can_message_injector,
-        safety_classification=SafetyClassification.OPERATIONAL,  # Message injection is important for operation
+        safety_classification=SafetyClassification.CRITICAL,  # CAN message injection is safety-critical
         dependencies=[
             ServiceDependency("security_audit_service", DependencyType.OPTIONAL),
         ],
@@ -1313,10 +1346,8 @@ def _register_phase4_services(service_registry: SafetyServiceRegistry) -> None:
                     websocket_manager = service_registry.get_service("websocket_manager")
 
                 if websocket_manager:
-                    # Send filter alert via WebSocket
-                    await websocket_manager.broadcast(
-                        {"type": "can_filter_alert", "data": alert_data}
-                    )
+                    # Send filter alert via WebSocket to can_filter clients
+                    await websocket_manager.broadcast_can_filter_update("filter_alert", alert_data)
                 else:
                     logger.warning("Filter alert - no WebSocket manager available: %s", alert_data)
             except Exception as e:
@@ -1335,7 +1366,7 @@ def _register_phase4_services(service_registry: SafetyServiceRegistry) -> None:
     service_registry.register_safety_service(
         name="can_message_filter",
         init_func=_init_can_message_filter,
-        safety_classification=SafetyClassification.OPERATIONAL,
+        safety_classification=SafetyClassification.CRITICAL,
         dependencies=[
             ServiceDependency("websocket_manager", DependencyType.OPTIONAL),
         ],
@@ -1347,7 +1378,7 @@ def _register_phase4_services(service_registry: SafetyServiceRegistry) -> None:
     )
 
     # Register CAN Bus Recorder Service
-    def _init_can_bus_recorder():
+    def _init_can_bus_recorder(websocket_manager=None):
         """Initialize CAN bus recorder service."""
         from pathlib import Path
 
@@ -1359,18 +1390,26 @@ def _register_phase4_services(service_registry: SafetyServiceRegistry) -> None:
         auto_save_interval = 60.0
         max_file_size_mb = 100.0
 
-        return CANBusRecorder(
+        recorder = CANBusRecorder(
             buffer_size=buffer_size,
             storage_path=storage_path,
             auto_save_interval=auto_save_interval,
             max_file_size_mb=max_file_size_mb,
         )
 
+        # Store WebSocket manager for broadcasting
+        if websocket_manager:
+            recorder._websocket_manager = websocket_manager
+
+        return recorder
+
     service_registry.register_safety_service(
         name="can_bus_recorder",
         init_func=_init_can_bus_recorder,
         safety_classification=SafetyClassification.OPERATIONAL,
-        dependencies=[],
+        dependencies=[
+            ServiceDependency("websocket_manager", DependencyType.OPTIONAL),
+        ],
         description="CAN bus traffic recorder with replay capabilities",
         tags={"service", "can", "recording", "replay", "diagnostics"},
         health_check=lambda s: {"healthy": s is not None and not s._emergency_stop_active}
@@ -1379,7 +1418,7 @@ def _register_phase4_services(service_registry: SafetyServiceRegistry) -> None:
     )
 
     # Register CAN Protocol Analyzer Service
-    def _init_can_protocol_analyzer():
+    def _init_can_protocol_analyzer(websocket_manager=None):
         """Initialize CAN protocol analyzer service."""
         from backend.integrations.can.protocol_analyzer import ProtocolAnalyzer
 
@@ -1387,17 +1426,81 @@ def _register_phase4_services(service_registry: SafetyServiceRegistry) -> None:
         buffer_size = 10000
         pattern_window_ms = 5000.0
 
-        return ProtocolAnalyzer(buffer_size=buffer_size, pattern_window_ms=pattern_window_ms)
+        analyzer = ProtocolAnalyzer(buffer_size=buffer_size, pattern_window_ms=pattern_window_ms)
+
+        # Store WebSocket manager for broadcasting
+        if websocket_manager:
+            analyzer._websocket_manager = websocket_manager
+
+        return analyzer
 
     service_registry.register_safety_service(
         name="can_protocol_analyzer",
         init_func=_init_can_protocol_analyzer,
         safety_classification=SafetyClassification.OPERATIONAL,
-        dependencies=[],
+        dependencies=[
+            ServiceDependency("websocket_manager", DependencyType.OPTIONAL),
+        ],
         description="CAN protocol analyzer for deep packet inspection and protocol detection",
         tags={"service", "can", "analysis", "protocol", "diagnostics"},
         health_check=lambda s: {"healthy": s is not None and not s._emergency_stop_active}
         if hasattr(s, "_emergency_stop_active")
+        else {"healthy": s is not None},
+    )
+
+    # Register CAN Interface Service
+    service_registry.register_service(
+        name="can_interface_service",
+        init_func=lambda: CANInterfaceService(),
+        dependencies=[],
+        description="CAN interface mapping and resolution service",
+        tags={"service", "can", "interface", "mapping"},
+        health_check=lambda s: {"healthy": s is not None},
+    )
+
+    # CANFacade - Unified facade for all CAN operations
+    async def _init_can_facade(
+        can_bus_service,
+        can_message_injector,
+        can_message_filter,
+        can_bus_recorder,
+        can_protocol_analyzer,
+        can_anomaly_detector,
+        can_interface_service,
+        performance_monitor,
+    ):
+        """Initialize CANFacade with all CAN-related services."""
+        from backend.services.can_facade import CANFacade
+
+        return CANFacade(
+            bus_service=can_bus_service,
+            injector=can_message_injector,
+            message_filter=can_message_filter,
+            recorder=can_bus_recorder,
+            analyzer=can_protocol_analyzer,
+            anomaly_detector=can_anomaly_detector,
+            interface_service=can_interface_service,
+            performance_monitor=performance_monitor,
+        )
+
+    service_registry.register_safety_service(
+        name="can_facade",
+        init_func=_init_can_facade,
+        safety_classification=SafetyClassification.CRITICAL,
+        dependencies=[
+            ServiceDependency("can_bus_service", DependencyType.REQUIRED),
+            ServiceDependency("can_message_injector", DependencyType.REQUIRED),
+            ServiceDependency("can_message_filter", DependencyType.REQUIRED),
+            ServiceDependency("can_bus_recorder", DependencyType.REQUIRED),
+            ServiceDependency("can_protocol_analyzer", DependencyType.REQUIRED),
+            ServiceDependency("can_anomaly_detector", DependencyType.REQUIRED),
+            ServiceDependency("can_interface_service", DependencyType.REQUIRED),
+            ServiceDependency("performance_monitor", DependencyType.REQUIRED),
+        ],
+        description="Unified facade for all CAN operations with safety coordination",
+        tags={"facade", "can", "safety-critical", "coordination"},
+        health_check=lambda s: s.get_health_status()
+        if hasattr(s, "get_health_status")
         else {"healthy": s is not None},
     )
 
@@ -1587,7 +1690,6 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         security_config_service = service_registry.get_service("security_config_service")
         pin_manager = service_registry.get_service("pin_manager")
         security_audit_service = service_registry.get_service("security_audit_service")
-        network_security_service = service_registry.get_service("network_security_service")
 
         logger.info("Security services retrieved from ServiceRegistry")
 
@@ -1619,7 +1721,6 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         # app.state.pin_manager = pin_manager  # Available via ServiceRegistry
         # app.state.security_audit_service = security_audit_service  # Available via ServiceRegistry
         # app.state.security_config_service = security_config_service  # Available via ServiceRegistry
-        # app.state.network_security_service = network_security_service  # Available via ServiceRegistry
 
         # Initialize Security WebSocket Handler with dependency injection
         # ARCHITECTURE NOTE: The SecurityWebSocketHandler is created as a singleton
@@ -1696,8 +1797,8 @@ def create_app() -> FastAPI:
         lifespan=lifespan,
     )
 
-    # Configure CORS middleware using settings
-    configure_cors(app)
+    # CORS handling moved to Caddy edge layer for better performance
+    # See config/Caddyfile.example for CORS configuration
 
     # Add network security middleware for RV-C protection (FIRST for security)
     # Configuration will be loaded from security config service during runtime
@@ -1715,17 +1816,6 @@ def create_app() -> FastAPI:
     # In development mode, allow HTTP for convenience
     require_https_validation = not is_dev_mode
 
-    network_security_config = NetworkSecurityConfig(
-        # Default settings - will be overridden by security config service
-        require_https=require_https_validation,
-        https_redirect=(not disable_https_redirect),
-        enable_ddos_protection=True,
-        enable_security_headers=True,
-        safety_whitelist_only=False,  # Can be overridden per deployment
-        # More lenient DDoS settings for development
-        max_connections_per_ip=100 if is_dev_mode else 10,
-        connection_window_seconds=60,
-    )
     # Log security configuration for audit trail
     if is_behind_trusted_proxy:
         logger.warning(
@@ -1750,8 +1840,6 @@ def create_app() -> FastAPI:
                 "mode": mode,
             },
         )
-
-    app.add_middleware(NetworkSecurityMiddleware, config=network_security_config)
 
     # Configure authentication middleware
     # The middleware will obtain the auth manager from app state at runtime

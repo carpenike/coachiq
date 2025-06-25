@@ -1,27 +1,405 @@
 /**
- * WebSocket Query Hooks
+ * Generic WebSocket Hook
  *
- * Custom React hooks for WebSocket connections with React Query integration.
- * Provides real-time data updates with automatic cache invalidation.
+ * A reusable React hook for WebSocket connections with automatic reconnection,
+ * authentication support, and TypeScript types for different message formats.
+ * Designed to work with any WebSocket endpoint including CAN tools endpoints.
  */
 
+import { useEffect, useRef, useState, useContext, useCallback, useMemo } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
-import { useCallback, useEffect, useRef, useState } from 'react';
-import type {
-    RVCWebSocketClient} from '../api';
-import {
-    createCANScanWebSocket,
-    createEntityWebSocket,
-    createLogWebSocket,
-    createSystemStatusWebSocket,
-    isWebSocketSupported
-} from '../api';
-import type {
-    CANMessage,
-    EntityUpdateMessage,
-    WebSocketHandlers,
-} from '../api/types';
+import { RVCWebSocketClient, type WebSocketConfig, type WebSocketHandlers, type WebSocketState } from '@/api/websocket';
+import { connectionManager } from '@/api/websocket-connection-manager';
+import { WebSocketContext } from '@/contexts/websocket-context';
+import { env } from '@/api/client';
 import { queryKeys } from '@/lib/query-client';
+
+/**
+ * Generic WebSocket message handler type
+ */
+export type MessageHandler<T = unknown> = (message: T) => void;
+
+/**
+ * WebSocket message subscription
+ */
+export interface IMessageSubscription<T = unknown> {
+  type?: string;
+  handler: MessageHandler<T>;
+}
+
+/**
+ * Options for the generic useWebSocket hook
+ */
+export interface IUseWebSocketOptions<T = unknown> {
+  /** WebSocket endpoint path (e.g., '/ws/can-recorder') */
+  endpoint: string;
+
+  /** Whether to auto-connect on mount */
+  autoConnect?: boolean;
+
+  /** WebSocket configuration options */
+  config?: WebSocketConfig;
+
+  /** Use existing WebSocket context if available */
+  useContext?: boolean;
+
+  /** Message subscriptions by type */
+  subscriptions?: IMessageSubscription<T>[];
+
+  /** Generic message handler (called for all messages) */
+  onMessage?: MessageHandler<T>;
+
+  /** Connection event handlers */
+  onOpen?: () => void;
+  onClose?: (event: CloseEvent) => void;
+  onError?: (error: Event) => void;
+}
+
+/**
+ * Return type for the useWebSocket hook
+ */
+export interface IUseWebSocketReturn<T = unknown> {
+  /** WebSocket client instance */
+  client: RVCWebSocketClient | null;
+
+  /** Current connection state */
+  state: WebSocketState;
+
+  /** Whether the socket is connected */
+  isConnected: boolean;
+
+  /** Current error if any */
+  error: string | null;
+
+  /** Connect to the WebSocket */
+  connect: () => void;
+
+  /** Disconnect from the WebSocket */
+  disconnect: () => void;
+
+  /** Send a message through the WebSocket */
+  send: (message: T) => void;
+
+  /** Subscribe to messages */
+  subscribe: (subscription: IMessageSubscription<T>) => () => void;
+
+  /** Connection metrics */
+  metrics: {
+    messageCount: number;
+    reconnectAttempts: number;
+    connectedAt?: Date;
+    lastMessage?: Date;
+    messagesPerSecond: number;
+  };
+}
+
+/**
+ * Enhanced WebSocket status for better UI feedback
+ */
+export type WebSocketStatus = 'connecting' | 'connected' | 'disconnected' | 'error' | 'reconnecting' | 'failed';
+
+/**
+ * Calculate exponential backoff delay with jitter
+ */
+function getExponentialBackoffDelay(attempt: number, baseDelay = 1000, maxDelay = 30000): number {
+  const exponentialDelay = Math.min(baseDelay * Math.pow(2, attempt - 1), maxDelay);
+  const jitter = Math.random() * 1000; // 0-1000ms jitter
+  return exponentialDelay + jitter;
+}
+
+/**
+ * Generic WebSocket hook for any endpoint
+ *
+ * @example
+ * ```typescript
+ * // Basic usage
+ * const { isConnected, send } = useWebSocket({
+ *   endpoint: '/ws/can-recorder',
+ *   autoConnect: true
+ * });
+ *
+ * // With message subscriptions
+ * const { subscribe } = useWebSocket<CANMessage>({
+ *   endpoint: '/ws/can-analyzer',
+ *   subscriptions: [{
+ *     type: 'can_message',
+ *     handler: (msg) => console.log('CAN:', msg)
+ *   }]
+ * });
+ * ```
+ */
+export function useWebSocket<T = unknown>(options: IUseWebSocketOptions<T>): IUseWebSocketReturn<T> {
+  const {
+    endpoint,
+    autoConnect = false,
+    config: userConfig,
+    useContext: useWebSocketContext = true,
+    subscriptions = [],
+    onMessage,
+    onOpen,
+    onClose,
+    onError,
+  } = options;
+
+  // Always call useContext (React hooks must be called unconditionally)
+  const contextValue = useContext(WebSocketContext);
+  const wsContext = useWebSocketContext ? contextValue : null;
+
+  // State
+  const [state, setState] = useState<WebSocketState>('disconnected');
+  const [status, setStatus] = useState<WebSocketStatus>('disconnected');
+  const [error, setError] = useState<string | null>(null);
+  const [metrics, setMetrics] = useState<{
+    messageCount: number;
+    reconnectAttempts: number;
+    messagesPerSecond: number;
+    connectedAt?: Date;
+    lastMessage?: Date;
+  }>({
+    messageCount: 0,
+    reconnectAttempts: 0,
+    messagesPerSecond: 0,
+  });
+
+  // Refs for stable references
+  const clientRef = useRef<RVCWebSocketClient | null>(null);
+  const subscriptionsRef = useRef<Map<symbol, IMessageSubscription<T>>>(new Map());
+  const metricsIntervalRef = useRef<NodeJS.Timeout | null>(null);
+  const lastMessageCountRef = useRef(0);
+  const reconnectAttemptsRef = useRef(0);
+  const maxReconnectAttemptsRef = useRef(10);
+
+  // Memoize event handlers to stabilize dependencies
+  const memoizedOnOpen = useCallback(() => {
+    setState('connected');
+    setStatus('connected');
+    setError(null);
+    reconnectAttemptsRef.current = 0;
+    setMetrics(prev => ({
+      ...prev,
+      connectedAt: new Date(),
+      reconnectAttempts: 0,
+    }));
+
+    if (env.isDevelopment) {
+      console.log(`[useWebSocket] Connected to ${endpoint}`);
+    }
+
+    onOpen?.();
+  }, [endpoint, onOpen]);
+
+  const memoizedOnClose = useCallback((event: CloseEvent) => {
+    const wasConnected = clientRef.current?.isConnected;
+    setState('disconnected');
+
+    // Handle reconnection logic
+    if (wasConnected && event.code !== 1000 && userConfig?.autoReconnect !== false) {
+      const attempts = reconnectAttemptsRef.current;
+      if (attempts < maxReconnectAttemptsRef.current) {
+        setStatus('reconnecting');
+        const delay = getExponentialBackoffDelay(attempts + 1);
+
+        if (env.isDevelopment) {
+          console.log(`[useWebSocket] Reconnecting to ${endpoint} (attempt ${attempts + 1}/${maxReconnectAttemptsRef.current}) in ${Math.round(delay)}ms`);
+        }
+
+        setTimeout(() => {
+          if (clientRef.current && !clientRef.current.isConnected) {
+            reconnectAttemptsRef.current++;
+            setMetrics(prev => ({ ...prev, reconnectAttempts: attempts + 1 }));
+            clientRef.current.connect();
+          }
+        }, delay);
+      } else {
+        setStatus('failed');
+        if (env.isDevelopment) {
+          console.error(`[useWebSocket] Max reconnection attempts reached for ${endpoint}`);
+        }
+      }
+    } else {
+      setStatus('disconnected');
+    }
+
+    setMetrics(prev => {
+      // eslint-disable-next-line @typescript-eslint/no-unused-vars
+      const { connectedAt, ...rest } = prev;
+      return rest;
+    });
+
+    if (env.isDevelopment && event.code !== 1000) {
+      console.log(`[useWebSocket] Disconnected from ${endpoint}`, {
+        code: event.code,
+        reason: event.reason,
+      });
+    }
+
+    onClose?.(event);
+  }, [endpoint, userConfig?.autoReconnect, onClose]);
+
+  const memoizedOnError = useCallback((event: Event) => {
+    setState('error');
+    setStatus('error');
+    setError(event.type || 'WebSocket error');
+
+    if (env.isDevelopment) {
+      console.error(`[useWebSocket] Error on ${endpoint}:`, event);
+    }
+
+    onError?.(event);
+  }, [endpoint, onError]);
+
+  const memoizedOnMessage = useCallback((message: unknown) => {
+    setMetrics(prev => ({
+      ...prev,
+      messageCount: prev.messageCount + 1,
+      lastMessage: new Date(),
+    }));
+
+    // Call generic handler
+    onMessage?.(message as T);
+
+    // Call subscribed handlers
+    subscriptionsRef.current.forEach(sub => {
+      if (sub.type && typeof message === 'object' && message && 'type' in message) {
+        if ((message as unknown as Record<string, unknown>).type === sub.type) {
+          sub.handler(message as T);
+        }
+      } else if (!sub.type) {
+        sub.handler(message as T);
+      }
+    });
+
+    // Also handle subscriptions from props
+    subscriptions.forEach(sub => {
+      if (sub.type && typeof message === 'object' && message && 'type' in message) {
+        if ((message as unknown as Record<string, unknown>).type === sub.type) {
+          sub.handler(message as T);
+        }
+      } else if (!sub.type) {
+        sub.handler(message as T);
+      }
+    });
+  }, [onMessage, subscriptions]);
+
+  // Memoize config with exponential backoff settings
+  const config = useMemo(() => ({
+    ...userConfig,
+    autoReconnect: false, // We handle reconnection ourselves with exponential backoff
+    maxReconnectAttempts: 0, // Disable built-in reconnection
+  }), [userConfig]);
+
+  // Update metrics
+  useEffect(() => {
+    metricsIntervalRef.current = setInterval(() => {
+      const currentCount = metrics.messageCount;
+      const messagesPerSecond = currentCount - lastMessageCountRef.current;
+      lastMessageCountRef.current = currentCount;
+
+      setMetrics(prev => ({
+        ...prev,
+        messagesPerSecond,
+      }));
+    }, 1000);
+
+    return () => {
+      if (metricsIntervalRef.current) {
+        clearInterval(metricsIntervalRef.current);
+      }
+    };
+  }, [metrics.messageCount]);
+
+  // Create WebSocket client
+  useEffect(() => {
+    if (!endpoint) return;
+
+    const handlers: WebSocketHandlers = {
+      onOpen: memoizedOnOpen,
+      onClose: memoizedOnClose,
+      onError: memoizedOnError,
+      onMessage: memoizedOnMessage,
+    };
+
+    // Get or create client through connection manager
+    const wsClient = connectionManager.getConnection(endpoint, handlers, config);
+    clientRef.current = wsClient;
+
+    return () => {
+      // Release connection reference (connection manager handles cleanup)
+      connectionManager.releaseConnection(endpoint);
+      clientRef.current = null;
+    };
+  }, [endpoint, config, memoizedOnOpen, memoizedOnClose, memoizedOnError, memoizedOnMessage]);
+
+  // Handle autoConnect changes separately
+  useEffect(() => {
+    if (!clientRef.current) return;
+
+    if (autoConnect && !clientRef.current.isConnected && clientRef.current.state !== 'connecting') {
+      setStatus('connecting');
+      clientRef.current.connect();
+    } else if (!autoConnect && clientRef.current.isConnected) {
+      clientRef.current.disconnect();
+    }
+  }, [autoConnect]);
+
+  // Connect function
+  const connect = useCallback(() => {
+    if (wsContext && useWebSocketContext) {
+      wsContext.connectAll();
+    } else {
+      reconnectAttemptsRef.current = 0; // Reset attempts on manual connect
+      setStatus('connecting');
+      clientRef.current?.connect();
+    }
+  }, [wsContext, useWebSocketContext]);
+
+  // Disconnect function
+  const disconnect = useCallback(() => {
+    if (wsContext && useWebSocketContext) {
+      wsContext.disconnectAll();
+    } else {
+      clientRef.current?.disconnect();
+    }
+  }, [wsContext, useWebSocketContext]);
+
+  // Send function
+  const send = useCallback((message: T) => {
+    if (!clientRef.current?.isConnected) {
+      throw new Error('WebSocket is not connected');
+    }
+    clientRef.current.send(message);
+  }, []);
+
+  // Subscribe function
+  const subscribe = useCallback((subscription: IMessageSubscription<T>) => {
+    const id = Symbol('subscription');
+    subscriptionsRef.current.set(id, subscription);
+
+    // Return unsubscribe function
+    return () => {
+      subscriptionsRef.current.delete(id);
+    };
+  }, []);
+
+  // If using context, merge with context state
+  const isConnected = useWebSocketContext && wsContext
+    ? wsContext.isConnected
+    : state === 'connected';
+
+  return {
+    client: clientRef.current,
+    state,
+    isConnected,
+    error,
+    connect,
+    disconnect,
+    send,
+    subscribe,
+    metrics: useWebSocketContext && wsContext
+      ? { ...metrics, ...wsContext.metrics }
+      : metrics,
+  };
+}
 
 /**
  * Hook for entity updates via WebSocket
@@ -29,98 +407,24 @@ import { queryKeys } from '@/lib/query-client';
 export function useEntityWebSocket(options?: { autoConnect?: boolean }) {
   const queryClient = useQueryClient();
   const queryClientRef = useRef(queryClient);
-  const [client, setClient] = useState<RVCWebSocketClient | null>(null);
-  const clientRef = useRef<RVCWebSocketClient | null>(null);
-  const [isConnected, setIsConnected] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const reconnectTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
-  const { autoConnect = true } = options || {};
-
-  // Update queryClient ref when it changes
-  queryClientRef.current = queryClient;
-
-  useEffect(() => {
-    if (!autoConnect || !isWebSocketSupported()) {
-      return;
-    }
-
-    const handlers: WebSocketHandlers = {
-      onEntityUpdate: (data: EntityUpdateMessage['data']) => {
-        // Update the specific entity in the cache using ref
+  return useWebSocket({
+    endpoint: '/ws',
+    autoConnect: options?.autoConnect ?? true,
+    subscriptions: [{
+      type: 'entity_update',
+      handler: (message: unknown) => {
+        const data = (message as Record<string, any>).data as Record<string, any>;
+        // Update the specific entity in the cache
         queryClientRef.current.setQueryData(
           queryKeys.entities.detail(data.entity_id),
           data.entity_data
         );
-
         // Invalidate entity lists to trigger re-render
         void queryClientRef.current.invalidateQueries({ queryKey: queryKeys.entities.lists() });
-
-        // Update type-specific lists
-        if (data.entity_data.entity_type === 'light') {
-          void queryClientRef.current.invalidateQueries({ queryKey: queryKeys.lights.list() });
-        } else if (data.entity_data.entity_type === 'lock') {
-          void queryClientRef.current.invalidateQueries({ queryKey: queryKeys.locks.list() });
-        } else if (data.entity_data.entity_type === 'tank_sensor') {
-          void queryClientRef.current.invalidateQueries({ queryKey: queryKeys.tankSensors.list() });
-        } else if (data.entity_data.entity_type === 'temperature_sensor') {
-          void queryClientRef.current.invalidateQueries({ queryKey: queryKeys.temperatureSensors.list() });
-        }
-      },
-
-      onOpen: () => {
-        setIsConnected(true);
-        setError(null);
-        console.log('[WebSocket] Connected to entity updates');
-      },
-
-      onClose: () => {
-        setIsConnected(false);
-        console.log('[WebSocket] Disconnected from entity updates');
-
-        // Attempt to reconnect after a delay
-        reconnectTimeoutRef.current = setTimeout(() => {
-          if (wsClient && !wsClient.isConnected) {
-            console.log('[WebSocket] Attempting to reconnect...');
-            wsClient.connect();
-          }
-        }, 5000);
-      },
-
-      onError: (error: Event) => {
-        setError(error.type || 'WebSocket error');
-        console.error('[WebSocket] Entity updates error:', error);
-      },
-    };
-
-    const wsClient = createEntityWebSocket(handlers);
-    clientRef.current = wsClient;
-    setClient(wsClient);
-    wsClient.connect();
-
-    return () => {
-      if (reconnectTimeoutRef.current) {
-        clearTimeout(reconnectTimeoutRef.current);
       }
-      wsClient.disconnect();
-    };
-  }, [autoConnect]);
-
-  const connect = useCallback(() => {
-    clientRef.current?.connect();
-  }, []);
-  const disconnect = useCallback(() => {
-    clientRef.current?.disconnect();
-  }, []);
-
-  return {
-    client,
-    isConnected,
-    error,
-    connect,
-    disconnect,
-    isSupported: isWebSocketSupported(),
-  };
+    }]
+  });
 }
 
 /**
@@ -128,95 +432,33 @@ export function useEntityWebSocket(options?: { autoConnect?: boolean }) {
  */
 export function useCANScanWebSocket(options?: {
   autoConnect?: boolean;
-  onMessage?: (message: CANMessage) => void;
+  onMessage?: (message: unknown) => void;
 }) {
   const queryClient = useQueryClient();
   const queryClientRef = useRef(queryClient);
-  const [client, setClient] = useState<RVCWebSocketClient | null>(null);
-  const clientRef = useRef<RVCWebSocketClient | null>(null);
-  const [isConnected, setIsConnected] = useState(false);
-  const [error, setError] = useState<string | null>(null);
   const [messageCount, setMessageCount] = useState(0);
-  const reconnectTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
-  const { autoConnect = false } = options || {};
-  const onMessageRef = useRef(options?.onMessage);
+  const { subscribe, ...rest } = useWebSocket({
+    endpoint: '/ws/can-sniffer',
+    autoConnect: options?.autoConnect ?? false,
+    onMessage: (message) => {
+      setMessageCount(prev => prev + 1);
+      options?.onMessage?.(message);
 
-  // Update refs when they change
-  queryClientRef.current = queryClient;
-  onMessageRef.current = options?.onMessage;
-
-  useEffect(() => {
-    if (!autoConnect || !isWebSocketSupported()) {
-      return;
-    }
-
-    const handlers: WebSocketHandlers = {
-      onCANMessage: (message: CANMessage) => {
-        setMessageCount(prev => prev + 1);
-        onMessageRef.current?.(message);
-
-        // Periodically invalidate CAN statistics
-        if (messageCount % 100 === 0) {
-          void queryClientRef.current.invalidateQueries({ queryKey: queryKeys.can.statistics() });
-        }
-      },
-
-      onOpen: () => {
-        setIsConnected(true);
-        setError(null);
-        console.log('[WebSocket] Connected to CAN scan');
-      },
-
-      onClose: () => {
-        setIsConnected(false);
-        console.log('[WebSocket] Disconnected from CAN scan');
-
-        // Attempt to reconnect after a delay
-        reconnectTimeoutRef.current = setTimeout(() => {
-          if (wsClient && !wsClient.isConnected) {
-            console.log('[WebSocket] Attempting to reconnect...');
-            wsClient.connect();
-          }
-        }, 5000);
-      },
-
-      onError: (error: Event) => {
-        setError(error.type || 'WebSocket error');
-        console.error('[WebSocket] CAN scan error:', error);
-      },
-    };
-
-    const wsClient = createCANScanWebSocket(handlers);
-    clientRef.current = wsClient;
-    setClient(wsClient);
-    wsClient.connect();
-
-    return () => {
-      if (reconnectTimeoutRef.current) {
-        clearTimeout(reconnectTimeoutRef.current);
+      // Periodically invalidate CAN statistics
+      if (messageCount % 100 === 0) {
+        void queryClientRef.current.invalidateQueries({ queryKey: queryKeys.can.statistics() });
       }
-      wsClient.disconnect();
-    };
-  }, [autoConnect, messageCount]);
+    }
+  });
 
-  const connect = useCallback(() => {
-    clientRef.current?.connect();
-  }, []);
-  const disconnect = useCallback(() => {
-    clientRef.current?.disconnect();
-  }, []);
   const clearMessageCount = () => setMessageCount(0);
 
   return {
-    client,
-    isConnected,
-    error,
+    ...rest,
     messageCount,
-    connect,
-    disconnect,
     clearMessageCount,
-    isSupported: isWebSocketSupported(),
+    subscribe
   };
 }
 
@@ -226,84 +468,17 @@ export function useCANScanWebSocket(options?: {
 export function useSystemStatusWebSocket(options?: { autoConnect?: boolean }) {
   const queryClient = useQueryClient();
   const queryClientRef = useRef(queryClient);
-  const [client, setClient] = useState<RVCWebSocketClient | null>(null);
-  const clientRef = useRef<RVCWebSocketClient | null>(null);
-  const [isConnected, setIsConnected] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const reconnectTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
-  const { autoConnect = true } = options || {};
-
-  // Update queryClient ref when it changes
-  queryClientRef.current = queryClient;
-
-  useEffect(() => {
-    if (!autoConnect || !isWebSocketSupported()) {
-      return;
+  return useWebSocket({
+    endpoint: '/ws/features',
+    autoConnect: options?.autoConnect ?? true,
+    onMessage: () => {
+      // Update system queries
+      void queryClientRef.current.invalidateQueries({ queryKey: queryKeys.system.health() });
+      void queryClientRef.current.invalidateQueries({ queryKey: queryKeys.system.queueStatus() });
+      void queryClientRef.current.invalidateQueries({ queryKey: queryKeys.can.statistics() });
     }
-
-    const handlers: WebSocketHandlers = {
-      onSystemStatus: () => {
-        // Update system queries - we just invalidate all relevant queries
-        // since we only get the data portion, not the message type
-        void queryClientRef.current.invalidateQueries({ queryKey: queryKeys.system.health() });
-        void queryClientRef.current.invalidateQueries({ queryKey: queryKeys.system.queueStatus() });
-        void queryClientRef.current.invalidateQueries({ queryKey: queryKeys.can.statistics() });
-      },
-
-      onOpen: () => {
-        setIsConnected(true);
-        setError(null);
-        console.log('[WebSocket] Connected to system status');
-      },
-
-      onClose: () => {
-        setIsConnected(false);
-        console.log('[WebSocket] Disconnected from system status');
-
-        // Attempt to reconnect after a delay
-        reconnectTimeoutRef.current = setTimeout(() => {
-          if (wsClient && !wsClient.isConnected) {
-            console.log('[WebSocket] Attempting to reconnect...');
-            wsClient.connect();
-          }
-        }, 5000);
-      },
-
-      onError: (error: Event) => {
-        setError(error.type || 'WebSocket error');
-        console.error('[WebSocket] System status error:', error);
-      },
-    };
-
-    const wsClient = createSystemStatusWebSocket(handlers);
-    clientRef.current = wsClient;
-    setClient(wsClient);
-    wsClient.connect();
-
-    return () => {
-      if (reconnectTimeoutRef.current) {
-        clearTimeout(reconnectTimeoutRef.current);
-      }
-      wsClient.disconnect();
-    };
-  }, [autoConnect]);
-
-  const connect = useCallback(() => {
-    clientRef.current?.connect();
-  }, []);
-  const disconnect = useCallback(() => {
-    clientRef.current?.disconnect();
-  }, []);
-
-  return {
-    client,
-    isConnected,
-    error,
-    connect,
-    disconnect,
-    isSupported: isWebSocketSupported(),
-  };
+  });
 }
 
 /**
@@ -313,104 +488,37 @@ export function useLogWebSocket(options?: {
   autoConnect?: boolean;
   onLog?: (log: unknown) => void;
 }) {
-  const [client, setClient] = useState<RVCWebSocketClient | null>(null);
-  const clientRef = useRef<RVCWebSocketClient | null>(null);
-  const [isConnected, setIsConnected] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const reconnectTimeoutRef = useRef<NodeJS.Timeout | null>(null);
-  const onLogRef = useRef(options?.onLog);
-
-  const { autoConnect = false } = options || {};
-
-  // Update onLog ref when it changes
-  onLogRef.current = options?.onLog;
-
-  useEffect(() => {
-    if (!autoConnect || !isWebSocketSupported()) {
-      return;
-    }
-
-    const handlers: WebSocketHandlers = {
-      onMessage: (message) => {
-        // Accept log messages with or without a type field, as long as they have standard log fields
-        if (
-          message && typeof message === 'object' &&
-          'timestamp' in message && 'level' in message && 'message' in message
-        ) {
-          onLogRef.current?.(message);
-        } else if (typeof message === 'string') {
-          // Try to parse as JSON, fallback to raw string
-          try {
-            const parsed = JSON.parse(message);
-            if (
-              parsed && typeof parsed === 'object' &&
-              'timestamp' in parsed && 'level' in parsed && 'message' in parsed
-            ) {
-              onLogRef.current?.(parsed);
-              return;
-            }
-          } catch {
-            // Not JSON, pass as raw string
+  return useWebSocket({
+    endpoint: '/ws/logs',
+    autoConnect: options?.autoConnect ?? false,
+    onMessage: (message) => {
+      // Accept log messages with or without a type field
+      if (
+        message && typeof message === 'object' &&
+        'timestamp' in message && 'level' in message && 'message' in message
+      ) {
+        options?.onLog?.(message);
+      } else if (typeof message === 'string') {
+        // Try to parse as JSON, fallback to raw string
+        try {
+          const parsed = JSON.parse(message);
+          if (
+            parsed && typeof parsed === 'object' &&
+            'timestamp' in parsed && 'level' in parsed && 'message' in parsed
+          ) {
+            options?.onLog?.(parsed);
+            return;
           }
-          onLogRef.current?.(message);
-        } else {
-          // Fallback: pass any message
-          onLogRef.current?.(message);
+        } catch {
+          // Not JSON, pass as raw string
         }
-      },
-
-      onOpen: () => {
-        setIsConnected(true);
-        setError(null);
-        console.log('[WebSocket] Connected to logs');
-      },
-
-      onClose: () => {
-        setIsConnected(false);
-        console.log('[WebSocket] Disconnected from logs');
-        // Attempt to reconnect after a delay
-        reconnectTimeoutRef.current = setTimeout(() => {
-          if (wsClient && !wsClient.isConnected) {
-            console.log('[WebSocket] Attempting to reconnect...');
-            wsClient.connect();
-          }
-        }, 5000);
-      },
-
-      onError: (error: Event) => {
-        setError(error.type || 'WebSocket error');
-        console.error('[WebSocket] Log error:', error);
-      },
-    };
-
-    const wsClient = createLogWebSocket(handlers);
-    clientRef.current = wsClient;
-    setClient(wsClient);
-    wsClient.connect();
-
-    return () => {
-      if (reconnectTimeoutRef.current) {
-        clearTimeout(reconnectTimeoutRef.current);
+        options?.onLog?.(message);
+      } else {
+        // Fallback: pass any message
+        options?.onLog?.(message);
       }
-      wsClient.disconnect();
-    };
-  }, [autoConnect]);
-
-  const connect = useCallback(() => {
-    clientRef.current?.connect();
-  }, []);
-  const disconnect = useCallback(() => {
-    clientRef.current?.disconnect();
-  }, []);
-
-  return {
-    client,
-    isConnected,
-    error,
-    connect,
-    disconnect,
-    isSupported: isWebSocketSupported(),
-  };
+    }
+  });
 }
 
 /**
@@ -454,6 +562,11 @@ export function useWebSocketManager(options?: {
     disconnectAll,
     isAnyConnected,
     hasAnyError,
-    isSupported: isWebSocketSupported(),
+    isSupported: true,
   };
 }
+
+// Export specialized hooks from their separate files
+export { useCANRecorderWebSocket } from './websocket/useCANRecorderWebSocket';
+export { useCANAnalyzerWebSocket } from './websocket/useCANAnalyzerWebSocket';
+export { useCANFilterWebSocket } from './websocket/useCANFilterWebSocket';

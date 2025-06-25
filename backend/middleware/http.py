@@ -9,9 +9,8 @@ import time
 from collections.abc import Awaitable, Callable
 
 from fastapi import Request, Response
-from fastapi.middleware.cors import CORSMiddleware
 
-from backend.core.config import get_cors_settings
+# CORS handling moved to Caddy edge layer - see config/Caddyfile.example
 from backend.core.metrics import get_http_latency, get_http_requests
 
 
@@ -45,22 +44,10 @@ async def prometheus_http_middleware(
     return response
 
 
-def configure_cors(app):
-    """
-    Add CORS middleware to the FastAPI app using configuration settings.
-
-    Supports development, production, and testing environments with
-    appropriate origin restrictions and security settings.
-    """
-    cors_settings = get_cors_settings()
-
-    if not cors_settings.enabled:
-        return
-
-    app.add_middleware(
-        CORSMiddleware,
-        allow_origins=cors_settings.allow_origins,
-        allow_credentials=cors_settings.allow_credentials,
-        allow_methods=cors_settings.allow_methods,
-        allow_headers=cors_settings.allow_headers,
-    )
+# CORS configuration removed - now handled by Caddy edge layer
+# See config/Caddyfile.example for CORS configuration
+#
+# IMPORTANT: For production deployments:
+# 1. Configure CORS in Caddyfile to match your frontend origin requirements
+# 2. This provides better performance than application-layer CORS handling
+# 3. For development without Caddy, CORS is handled by development servers

@@ -41,6 +41,7 @@ import type {
     CreateEntityMappingRequest,
     CreateEntityMappingResponse,
     DashboardSummary,
+    DatabaseConfiguration,
     // Device Discovery Types
     DeviceAvailability,
     DeviceDiscoveryStatus,
@@ -1335,6 +1336,21 @@ export async function fetchSystemSettings(): Promise<SystemSettings> {
 
   logApiRequest('GET', url);
   const result = await apiGet<SystemSettings>(url);
+  logApiResponse(url, result);
+
+  return result;
+}
+
+/**
+ * Fetch database configuration
+ *
+ * @returns Promise resolving to database configuration
+ */
+export async function fetchDatabaseConfiguration(): Promise<DatabaseConfiguration> {
+  const url = '/api/config/database';
+
+  logApiRequest('GET', url);
+  const result = await apiGet<DatabaseConfiguration>(url);
   logApiResponse(url, result);
 
   return result;

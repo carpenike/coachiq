@@ -23,7 +23,7 @@ from backend.services.pin_manager import PINManager
 
 logger = logging.getLogger(__name__)
 
-router = APIRouter(prefix="/api/pin", tags=["pin-authentication"])
+router = APIRouter(prefix="/api/pin-auth", tags=["pin-authentication"])
 
 # PIN manager and security audit service are now accessed via standardized dependencies
 # This eliminates global service variables and app.state access patterns
@@ -151,7 +151,7 @@ async def validate_pin(
                 )
 
             # Check if user is locked out for better error message
-            user_status = pin_manager.get_user_status(user_id)
+            user_status = await pin_manager.get_user_status(user_id)
             if user_status["is_locked_out"]:
                 lockout_minutes = int((user_status["lockout_until"] - time.time()) / 60)
 
@@ -194,7 +194,7 @@ async def validate_pin(
             )
 
         # Get session info for response
-        session_info = pin_manager.get_session_info(session_id)
+        session_info = await pin_manager.get_session_info(session_id)
         if not session_info:
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
@@ -300,7 +300,7 @@ async def revoke_session(
         is_admin = user.get("role") == "admin"
 
         # Get session info to check ownership
-        session_info = pin_manager.get_session_info(session_id)
+        session_info = await pin_manager.get_session_info(session_id)
         if not session_info:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Session not found")
 
@@ -375,7 +375,7 @@ async def get_pin_status(
     try:
         user_id = user["user_id"]
 
-        status = pin_manager.get_user_status(user_id)
+        status = await pin_manager.get_user_status(user_id)
 
         # Create friendly message
         if status["is_locked_out"]:
@@ -419,7 +419,7 @@ async def get_system_status(
     Provides system-wide statistics and health information.
     """
     try:
-        status = pin_manager.get_system_status()
+        status = await pin_manager.get_system_status()
 
         return SystemStatusResponse(**status)
 
@@ -444,7 +444,7 @@ async def rotate_pins(
     """
     try:
         # Count active sessions before rotation
-        status = pin_manager.get_system_status()
+        status = await pin_manager.get_system_status()
         sessions_before = status["active_sessions"]
 
         # Generate new PINs
@@ -480,7 +480,7 @@ async def get_user_pin_status(
     Provides detailed information about user's PIN authentication status.
     """
     try:
-        status = pin_manager.get_user_status(user_id)
+        status = await pin_manager.get_user_status(user_id)
 
         return status
 
@@ -520,4 +520,107 @@ async def unlock_user(
         logger.error(f"User unlock error: {e}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="User unlock error"
+        ) from e
+
+
+# Additional endpoints for frontend compatibility
+
+
+@router.get("/security-status", response_model=SystemStatusResponse)
+async def get_security_status_compat(
+    request: Request,
+    user: Annotated[dict, Depends(get_authenticated_user)],
+    pin_manager: Annotated[PINManager, Depends(get_pin_manager)],
+) -> SystemStatusResponse:
+    """
+    Get security status (compatibility endpoint for frontend).
+
+    Maps to the system status endpoint for consistency.
+    """
+    try:
+        status = await pin_manager.get_system_status()
+
+        # Handle error case where database is unavailable
+        if "error" in status:
+            return SystemStatusResponse(
+                pin_types_configured=[],
+                active_sessions=0,
+                locked_users=0,
+                total_attempts_today=0,
+                healthy=False,
+            )
+
+        return SystemStatusResponse(**status)
+
+    except Exception as e:
+        logger.error(f"Security status error: {e}")
+        # Return a default response instead of 500 error for compatibility
+        return SystemStatusResponse(
+            pin_types_configured=[],
+            active_sessions=0,
+            locked_users=0,
+            total_attempts_today=0,
+            healthy=False,
+        )
+
+
+class PINInfo(BaseModel):
+    """PIN information model."""
+
+    pin_type: str = Field(..., description="Type of PIN")
+    description: str = Field(..., description="PIN description")
+    is_active: bool = Field(..., description="Whether PIN is active")
+    use_count: int = Field(..., description="Number of times PIN has been used")
+    lockout_after_failures: int = Field(..., description="Number of failures before lockout")
+    lockout_duration_minutes: int = Field(..., description="Lockout duration in minutes")
+
+
+class PINListResponse(BaseModel):
+    """Response model for PIN list."""
+
+    pins: list[PINInfo]
+
+
+@router.get("/pins", response_model=PINListResponse)
+async def get_user_pins(
+    request: Request,
+    user: Annotated[dict, Depends(get_authenticated_user)],
+    pin_manager: Annotated[PINManager, Depends(get_pin_manager)],
+) -> PINListResponse:
+    """
+    Get configured PINs for the current user.
+
+    Returns information about available PIN types without revealing actual PINs.
+    """
+    try:
+        user_id = user["user_id"]
+
+        # Get available PIN types for this user
+        pin_types_configured = []
+
+        # Check which PIN types exist for the user
+        # Note: We don't expose actual PINs, just their configuration
+        if hasattr(pin_manager, "_pins") and user_id in pin_manager._pins:
+            pin_types_configured = list(pin_manager._pins[user_id].keys())
+
+        # Build PIN info for each configured type
+        pins = []
+        for pin_type in pin_types_configured:
+            pin_info = PINInfo(
+                pin_type=pin_type,
+                description=f"{pin_type.capitalize()} PIN",
+                is_active=True,
+                use_count=0,
+                lockout_after_failures=pin_manager._max_attempts,
+                lockout_duration_minutes=pin_manager._lockout_duration,
+            )
+            pins.append(pin_info)
+
+        return PINListResponse(pins=pins)
+
+    except Exception as e:
+        logger.error(f"Get user PINs error: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to retrieve PIN information",
         ) from e

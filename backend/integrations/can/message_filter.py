@@ -263,7 +263,7 @@ class MessageFilter(SafetyAware):
         """Initialize message filter."""
         # Initialize as safety-aware service
         super().__init__(
-            safety_classification=SafetyClassification.OPERATIONAL,
+            safety_classification=SafetyClassification.CRITICAL,
             safe_state_action=SafeStateAction.DISABLE,
         )
 
@@ -282,6 +282,9 @@ class MessageFilter(SafetyAware):
 
         # Service state
         self._is_running = False
+
+        # WebSocket manager for broadcasting updates (injected by main.py)
+        self._websocket_manager = None
 
         # Performance tracking
         self.stats = {
@@ -471,6 +474,38 @@ class MessageFilter(SafetyAware):
     def get_all_rules(self) -> list[FilterRule]:
         """Get all filter rules."""
         return list(self.rules.values())
+
+    def get_status(self) -> dict[str, Any]:
+        """Get current filter status."""
+        return {
+            "is_running": self._is_running,
+            "rule_count": len(self.rules),
+            "enabled_rules": sum(1 for r in self.rules.values() if r.enabled),
+            "capture_buffer_size": len(self.capture_buffer),
+            "capture_buffer_capacity": self.capture_buffer_size,
+            "stats": dict(self.stats),
+        }
+
+    async def _broadcast_status(self) -> None:
+        """Broadcast current status via WebSocket if available."""
+        if self._websocket_manager:
+            try:
+                status = self.get_status()
+                await self._websocket_manager.broadcast_can_filter_update("status", status)
+            except Exception as e:
+                logger.debug(f"Failed to broadcast filter status: {e}")
+
+    async def _broadcast_captured_messages(self) -> None:
+        """Broadcast captured messages via WebSocket if available."""
+        if self._websocket_manager and self.capture_buffer:
+            try:
+                # Send last 100 captured messages
+                messages = self.capture_buffer[-100:]
+                await self._websocket_manager.broadcast_can_filter_update(
+                    "captured_messages", messages
+                )
+            except Exception as e:
+                logger.debug(f"Failed to broadcast captured messages: {e}")
 
     def _sort_rules(self):
         """Sort rules by priority (higher first)."""

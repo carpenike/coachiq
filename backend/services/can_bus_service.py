@@ -12,6 +12,12 @@ import time
 from typing import Any
 
 from backend.core.config import get_settings
+from backend.core.safety_interfaces import (
+    SafeStateAction,
+    SafetyAware,
+    SafetyClassification,
+    SafetyStatus,
+)
 from backend.integrations.rvc import BAMHandler, decode_payload, decode_product_id
 from backend.repositories.can_tracking_repository import CANTrackingRepository
 from backend.repositories.system_state_repository import SystemStateRepository
@@ -19,7 +25,7 @@ from backend.repositories.system_state_repository import SystemStateRepository
 logger = logging.getLogger(__name__)
 
 
-class CANBusService:
+class CANBusService(SafetyAware):
     """
     Service that manages CAN bus integration.
 
@@ -41,6 +47,10 @@ class CANBusService:
             system_state_repository: Repository for system state management
             can_anomaly_detector: Optional CAN anomaly detector for security monitoring
         """
+        super().__init__(
+            safety_classification=SafetyClassification.CRITICAL,
+            safe_state_action=SafeStateAction.DISABLE,
+        )
         self._can_tracking_repository = can_tracking_repository
         self._system_state_repository = system_state_repository
 
@@ -173,6 +183,32 @@ class CANBusService:
         await self._cleanup_can_listeners()
 
         logger.info("CAN bus service stopped")
+
+    async def emergency_stop(self, reason: str) -> None:
+        """Emergency stop implementation."""
+        logger.critical(f"CANBusService emergency stop: {reason}")
+        self._set_emergency_stop_active(True)
+        self._running = False
+
+        # Stop all listeners and tasks
+        await self._cleanup_can_listeners()
+
+        if self._simulation_task:
+            self._simulation_task.cancel()
+
+        if self.pattern_engine:
+            await self.pattern_engine.stop()
+
+        if self.anomaly_detector:
+            await self.anomaly_detector.stop()
+
+    async def get_safety_status(self) -> SafetyStatus:
+        """Get current safety status."""
+        if self._emergency_stop_active:
+            return SafetyStatus.EMERGENCY_STOP
+        if not self._running:
+            return SafetyStatus.UNSAFE
+        return SafetyStatus.SAFE
 
     def get_health_status(self) -> dict[str, Any]:
         """

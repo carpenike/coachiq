@@ -6,7 +6,7 @@ and FastAPI's dependency injection system with no legacy fallbacks.
 """
 
 import logging
-from typing import Annotated, Any, Optional, TypeVar
+from typing import Annotated, Any, TypeVar
 
 from fastapi import Depends, HTTPException
 
@@ -138,39 +138,40 @@ def get_config_service() -> Any:
     return create_service_dependency("config_service")()
 
 
-def get_can_service() -> Any | None:
+def get_can_facade() -> Any | None:
     """
-    Get the CAN service from ServiceRegistry.
+    Get the CAN facade from ServiceRegistry.
+
+    This is the ONLY way to access CAN functionality.
+    All CAN operations go through the facade.
 
     Returns:
-        The CAN service instance or None if not available
+        The CAN facade instance or None if not available
     """
-    return create_optional_service_dependency("can_service")()
+    return create_optional_service_dependency("can_facade")()
 
 
-async def get_verified_can_service(
-    can_service: Annotated[Any | None, Depends(get_can_service)],
+async def get_verified_can_facade(
+    can_facade: Annotated[Any | None, Depends(get_can_facade)],
 ) -> Any:
     """
-    FastAPI dependency that provides the CAN service, raising a 503
+    FastAPI dependency that provides the CAN facade, raising a 503
     if the service is not available.
 
     Returns:
-        The CAN service instance (guaranteed not None)
+        The CAN facade instance (guaranteed not None)
 
     Raises:
-        HTTPException: 503 if CAN service is not available
+        HTTPException: 503 if CAN facade is not available
     """
-    if can_service is None:
-        raise HTTPException(
-            status_code=503,
-            detail="CAN service is not initialized or available. This feature requires CAN functionality.",
-        )
-    return can_service
+    if can_facade is None:
+        raise HTTPException(status_code=503, detail="CAN system is not initialized or available.")
+    return can_facade
 
 
-# Type alias for verified CAN service dependency
-VerifiedCANService = Annotated[Any, Depends(get_verified_can_service)]
+# Type aliases
+CANFacade = Annotated[Any, Depends(get_can_facade)]
+VerifiedCANFacade = Annotated[Any, Depends(get_verified_can_facade)]
 
 
 def get_can_message_injector() -> Any:
@@ -300,6 +301,19 @@ def get_analytics_dashboard_service() -> Any:
     return create_service_dependency("analytics_dashboard_service")()
 
 
+def get_edge_proxy_monitor_service() -> Any:
+    """
+    Get the edge proxy monitor service from ServiceRegistry.
+
+    This service monitors the health and status of the edge proxy (Caddy)
+    and integrates with ServiceRegistry health monitoring system.
+
+    Returns:
+        The EdgeProxyMonitorService instance
+    """
+    return create_service_dependency("edge_proxy_monitor")()
+
+
 # ==================================================================================
 # DATABASE UPDATE SERVICE DEPENDENCIES
 # ==================================================================================
@@ -363,7 +377,7 @@ def get_predictive_maintenance_service() -> Any:
 WebSocketManager = Annotated[Any, Depends(get_websocket_manager)]
 EntityService = Annotated[Any, Depends(get_entity_service)]
 ConfigService = Annotated[Any, Depends(get_config_service)]
-CANService = Annotated[Any, Depends(get_can_service)]
+
 CANMessageInjector = Annotated[Any, Depends(get_can_message_injector)]
 CANMessageFilter = Annotated[Any, Depends(get_can_message_filter)]
 CANBusRecorder = Annotated[Any, Depends(get_can_bus_recorder)]
@@ -377,6 +391,9 @@ SystemStateRepository = Annotated[Any, Depends(get_system_state_repository)]
 
 # Analytics dependencies
 AnalyticsDashboardService = Annotated[Any, Depends(get_analytics_dashboard_service)]
+
+# Edge proxy monitor dependency
+EdgeProxyMonitorService = Annotated[Any, Depends(get_edge_proxy_monitor_service)]
 
 
 def get_analytics_service() -> Any:
@@ -453,13 +470,13 @@ def get_security_event_manager() -> Any:
 async def get_authenticated_user():
     """Get the authenticated user - placeholder implementation."""
     # TODO: Implement proper user authentication
-    return {"id": "user123", "email": "user@example.com", "role": "user"}
+    return {"user_id": "user123", "id": "user123", "email": "user@example.com", "role": "user"}
 
 
 async def get_authenticated_admin():
     """Get the authenticated admin - placeholder implementation."""
     # TODO: Implement proper admin authentication
-    return {"id": "admin123", "email": "admin@example.com", "role": "admin"}
+    return {"user_id": "admin123", "id": "admin123", "email": "admin@example.com", "role": "admin"}
 
 
 # Type aliases for authentication dependencies

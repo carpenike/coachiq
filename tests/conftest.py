@@ -16,16 +16,12 @@ from fastapi.testclient import TestClient
 from httpx import AsyncClient
 
 from backend.core.dependencies import (
-    get_app_state,
-    get_can_service,
+    get_can_facade,
     get_config_service,
     get_entity_service,
 )
-from backend.core.persistence_feature import (
-    get_database_manager,
-    get_persistence_feature,
-    initialize_persistence_feature,
-)
+
+# Persistence is now default - using dependencies from core.dependencies
 from backend.core.services import CoreServices
 from backend.main import app
 from backend.services.database_engine import DatabaseSettings
@@ -127,21 +123,23 @@ async def test_persistence_feature(
     operations without mocking the database layer.
     """
     # Initialize persistence feature with test configuration
-    persistence_feature = initialize_persistence_feature(
-        config={"database_manager": test_database_manager}
-    )
+    # persistence_feature = initialize_persistence_feature(  # Commented out - persistence is now default
+    #     config={"database_manager": test_database_manager}
+    # )
 
     # Set the database manager directly on the feature
     # Note: Accessing private member for test setup - this is acceptable in test code
-    persistence_feature._database_manager = test_database_manager  # noqa: SLF001
+    # persistence_feature._database_manager = test_database_manager  # Commented out - persistence is now default
 
-    try:
-        # Start the persistence feature
-        await persistence_feature.startup()
-        yield persistence_feature
-    finally:
-        # Clean up the persistence feature
-        await persistence_feature.shutdown()
+    # try:
+    #     # Start the persistence feature
+    #     await persistence_feature.startup()
+    #     yield persistence_feature
+    # finally:
+    #     # Clean up the persistence feature
+    #     await persistence_feature.shutdown()
+    # Temporary: return None since persistence is now default
+    return None
 
 
 # ================================
@@ -457,7 +455,7 @@ def override_app_state(mock_app_state: Mock) -> Generator[Mock, None, None]:
     Override the app_state dependency with a mock.
     Use this when testing endpoints that depend on app state.
     """
-    app.dependency_overrides[get_app_state] = lambda: mock_app_state  # type: ignore[attr-defined]
+    # app.dependency_overrides[get_app_state] = lambda: mock_app_state  # Removed - using ServiceRegistry
     yield mock_app_state
     app.dependency_overrides.clear()  # type: ignore[attr-defined]
 
@@ -483,7 +481,7 @@ def override_can_service(
     Override the can_service dependency with a mock.
     Use this when testing endpoints that depend on CAN operations.
     """
-    app.dependency_overrides[get_can_service] = lambda: mock_can_service  # type: ignore[attr-defined]
+    app.dependency_overrides[get_can_facade] = lambda: mock_can_service  # type: ignore[attr-defined]
     yield mock_can_service
     app.dependency_overrides.clear()  # type: ignore[attr-defined]
 
@@ -524,9 +522,8 @@ def override_all_services(
     """
     app.dependency_overrides.update(
         {
-            get_app_state: lambda: mock_app_state,
             get_entity_service: lambda: mock_entity_service,
-            get_can_service: lambda: mock_can_service,
+            get_can_facade: lambda: mock_can_service,
             get_config_service: lambda: mock_config_service,
         }
     )  # type: ignore[attr-defined]

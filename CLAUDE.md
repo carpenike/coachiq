@@ -54,6 +54,7 @@ Each file contains targeted guidance for specific development workflows and cont
 - 🆕 [`service-patterns.md`](.claude/instructions/service-patterns.md): **CRITICAL - Modern service access patterns, ServiceRegistry, and dependency injection**
 - 🆕 [`safety-system-patterns.md`](.claude/instructions/safety-system-patterns.md): **CRITICAL - ISO 26262-compliant safety patterns, SafetyServiceRegistry, and emergency stop coordination**
 - 🆕 [`security-patterns.md`](.claude/instructions/security-patterns.md): **CRITICAL - Security best practices, authentication, rate limiting, and sensitive data protection**
+- 🆕 [`middleware-patterns.md`](.claude/instructions/middleware-patterns.md): **CRITICAL - Edge layer vs application layer middleware separation, Caddy integration patterns**
 
 **Available commands:**
 
@@ -814,6 +815,38 @@ This helps verify that components work correctly during development without manu
 3. @zen refactor - Optimize critical paths
 4. @zen codereview - Verify improvements
 ```
+
+## Production Deployment Architecture
+
+### 🏗️ Edge Layer + Application Layer Architecture
+
+**CRITICAL**: Production deployments use Caddy as the edge layer with FastAPI as the application layer. This split architecture provides optimal performance, security, and maintainability.
+
+**Development vs Production:**
+- **Development**: FastAPI handles all middleware (CORS, request ID generation, rate limiting)
+- **Production**: Caddy handles edge concerns, FastAPI focuses on business logic
+
+**Key Production Components:**
+```bash
+# Production Stack
+┌─────────────┐    ┌─────────────┐    ┌─────────────┐
+│   Internet  │───▶│    Caddy    │───▶│   FastAPI   │
+│             │    │ (Edge Layer)│    │(App Layer)  │
+└─────────────┘    └─────────────┘    └─────────────┘
+                         │                    │
+                   IP-based limits      User-aware limits
+                   CORS handling        Authentication
+                   Request ID gen       Validation
+                   Compression          Audit logging
+```
+
+**Required Production Configuration:**
+1. **Install Caddy with rate limiting**: `xcaddy build --with github.com/mholt/caddy-ratelimit`
+2. **Configure Caddyfile**: Use `config/Caddyfile.example` as template
+3. **Set environment variables**: Configure for production security mode
+4. **Deploy via Nix**: Use provided flake.nix for Raspberry Pi deployment
+
+See [`middleware-patterns.md`](.claude/instructions/middleware-patterns.md) for complete architectural details.
 
 ## important-instruction-reminders
 Do what has been asked; nothing more, nothing less.

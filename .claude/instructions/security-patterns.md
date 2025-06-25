@@ -43,16 +43,42 @@ async def create_session(user_id: str, request: Request):
 
 ## Rate Limiting
 
-### Centralized Configuration
+### 🔄 SPLIT ARCHITECTURE (New Pattern)
+
+**IMPORTANT**: Rate limiting now uses a split architecture for optimal performance and security:
+
+#### Caddy Edge Layer (IP-based)
+- **First line of defense** - processes at network edge before hitting Python
+- **IP-based rate limiting** only - no application context required
+- **Configured in**: `config/Caddyfile.example`
+- **Protects against**: Basic DoS attacks, brute force by IP
+
+```caddyfile
+# Example Caddy rate limiting (IP-based)
+rate_limit {
+    zone auth {
+        key {http.request.remote.host}
+        window 1m
+        events 5  # 5 auth attempts per minute per IP
+    }
+}
+```
+
+#### FastAPI Application Layer (User-aware)
+- **Context-aware rate limiting** - understands users, sessions, safety contexts
+- **Business logic dependent** - safety-critical operation limits
+- **Configured via**: SecurityConfigService
+- **Protects against**: User-specific abuse, safety-critical operation flooding
+
 ```python
-# ✅ CORRECT: Use SecurityConfigService for rate limits
+# ✅ CORRECT: Use SecurityConfigService for user-aware rate limits
 from backend.core.dependencies import get_security_config_service
 
 async def get_rate_limit(
     endpoint: str,
     config_service: Annotated[Any, Depends(get_security_config_service)]
 ):
-    # Rate limits come from centralized configuration
+    # User-aware rate limits from centralized configuration
     limits = await config_service.get_rate_limit_for_endpoint(endpoint)
     return limits  # {"requests": 100, "window": 60}
 
@@ -60,11 +86,17 @@ async def get_rate_limit(
 RATE_LIMIT = 100  # NEVER DO THIS
 ```
 
-### Rate Limit Categories
-- **Authentication**: 5 attempts per 5 minutes (login)
-- **API General**: Based on `general_requests_per_minute` config
-- **Safety Operations**: Based on `safety_operations_per_minute` config
-- **Emergency Operations**: Based on `emergency_operations_per_hour` config
+### Rate Limit Categories (Application Layer)
+- **Authentication**: User/username-specific limits via SlowAPI
+- **Safety Operations**: Per-user safety operation limits
+- **Emergency Operations**: Per-user emergency operation limits
+- **API General**: Authenticated user rate limits
+
+### Architectural Guidelines
+1. **Edge Layer (Caddy)**: Handle transport-level, IP-based limits
+2. **Application Layer (FastAPI)**: Handle business-logic-aware limits
+3. **Never duplicate**: Each layer handles what it does best
+4. **Security-first**: Application layer rate limits are safety-critical
 
 ## Sensitive Data Protection
 

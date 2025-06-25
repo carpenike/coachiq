@@ -35,6 +35,31 @@ When developing backend features, leverage MCP servers effectively:
 
 ## Architecture Patterns
 
+### 🏗️ CRITICAL: Middleware Architecture (NEW)
+
+**IMPORTANT**: This system uses a split middleware architecture between Caddy (edge layer) and FastAPI (application layer). See [`middleware-patterns.md`](middleware-patterns.md) for complete details.
+
+**Key Points for Backend Development:**
+- **CORS**: Handled by Caddy - do not add CORSMiddleware
+- **Request ID**: Consume from Caddy `X-Request-ID` header with fallback generation
+- **Rate Limiting**: Use SlowAPI for user-aware limits only (IP limits handled by Caddy)
+- **Authentication**: Always remains in FastAPI (context-aware, safety-critical)
+- **Validation**: Always remains in FastAPI (RV-C protocol understanding required)
+
+```python
+# ✅ CORRECT: Consume Caddy-generated request ID with fallback
+headers = Headers(scope=scope)
+request_id = headers.get("X-Request-ID") or generate_request_id()
+
+# ✅ CORRECT: User-aware rate limiting only
+@auth_rate_limit  # Per-user/username limits
+async def login_endpoint():
+    pass
+
+# ❌ WRONG: Don't add CORS middleware (handled by Caddy)
+app.add_middleware(CORSMiddleware, ...)  # REMOVED - now in Caddy
+```
+
 ### 🎯 IMPORTANT: Use Domain API v2 for New Development
 
 **Domain API v2** (`/api/v2/{domain}`) is the preferred pattern for all new backend development:

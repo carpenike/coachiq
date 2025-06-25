@@ -188,6 +188,9 @@ class CANBusRecorder(SafetyAware):
         # Ensure storage directory exists
         self.storage_path.mkdir(parents=True, exist_ok=True)
 
+        # WebSocket manager for broadcasting updates (injected by main.py)
+        self._websocket_manager = None
+
         logger.info(
             "CANBusRecorder initialized: buffer_size=%d, storage=%s", buffer_size, storage_path
         )
@@ -434,6 +437,10 @@ class CANBusRecorder(SafetyAware):
         self.recording_task = asyncio.create_task(self._auto_save_task())
 
         logger.info(f"Started recording session {session_id}: {name}")
+
+        # Broadcast status update
+        await self._broadcast_status()
+
         return self.current_session
 
     async def stop_recording(self) -> RecordingSession | None:
@@ -442,6 +449,9 @@ class CANBusRecorder(SafetyAware):
             return None
 
         self.recording_state = RecordingState.IDLE
+
+        # Broadcast status update
+        await self._broadcast_status()
 
         if self.recording_task:
             self.recording_task.cancel()
@@ -472,12 +482,14 @@ class CANBusRecorder(SafetyAware):
         if self.recording_state == RecordingState.RECORDING:
             self.recording_state = RecordingState.PAUSED
             logger.info("Recording paused")
+            await self._broadcast_status()
 
     async def resume_recording(self) -> None:
         """Resume a paused recording."""
         if self.recording_state == RecordingState.PAUSED:
             self.recording_state = RecordingState.RECORDING
             logger.info("Recording resumed")
+            await self._broadcast_status()
 
     async def _auto_save_task(self) -> None:
         """Periodically save recorded data."""
@@ -789,6 +801,15 @@ class CANBusRecorder(SafetyAware):
             logger.error(f"Replay error: {e}")
         finally:
             self.recording_state = RecordingState.IDLE
+
+    async def _broadcast_status(self) -> None:
+        """Broadcast current status via WebSocket if available."""
+        if self._websocket_manager:
+            try:
+                status = self.get_status()
+                await self._websocket_manager.broadcast_can_recorder_update("status", status)
+            except Exception as e:
+                logger.debug(f"Failed to broadcast recorder status: {e}")
 
     def get_status(self) -> dict[str, Any]:
         """Get current recorder status."""
