@@ -1,119 +1,40 @@
-site_name: CoachIQ Documentation
-site_description: Documentation for the CoachIQ project
+site_name: CoachIQ - Personal RV Control
+site_description: Raspberry Pi based RV control system
 site_url: https://carpenike.github.io/coachiq
 repo_url: https://github.com/carpenike/coachiq
-edit_uri: edit/main/docs/
-
-# If using a custom domain, ensure a CNAME file exists in docs/ with your domain name
 
 use_directory_urls: true
-
 docs_dir: docs
 site_dir: site
 
+nav:
+  - Home: README.md
+  - Setup: setup.md
+  - Usage: usage.md
+  - Troubleshooting: troubleshooting.md
+  - Safety: safety.md
+  - API: api/reference.md
+
 theme:
   name: material
+  features:
+    - navigation.instant
+    - content.code.copy
   palette:
     primary: indigo
     accent: amber
-  features:
-    - navigation.tabs
-    - navigation.sections
-    - toc.integrate
-    - search.suggest
-    - content.code.copy
+
+plugins:
+  - search
+  - swagger-ui-tag
 
 markdown_extensions:
   - admonition
   - pymdownx.highlight
-  - pymdownx.superfences:
-      custom_fences:
-        - name: mermaid
-          class: mermaid
-          format: !!python/name:pymdownx.superfences.fence_code_format
-  - attr_list
+  - pymdownx.superfences
   - tables
   - toc:
       permalink: true
 
-plugins:
-  - search
-  - mkdocstrings:
-      default_handler: python
-      handlers:
-        python:
-          selection:
-            inherited_members: true
-          rendering:
-            show_source: true
-            show_category_heading: true
-            show_if_no_docstring: true
-  - swagger-ui-tag
-  - mermaid2
-
 extra_css:
   - stylesheets/extra.css
-
-nav:
-  - Home: index.md
-  - Documentation Guide: documentation-organization.md
-  - User Guide:
-      - Getting Started:
-          - Development Environment: development-environments.md
-          - VS Code Setup: vscode-extensions.md
-      - System Architecture:
-          - Project Overview: architecture/overview.md
-      - API Reference:
-          - API Home: api/index.md
-          - Overview: api/overview.md
-          - OpenAPI Specification: api/openapi.md
-          - Entity Endpoints: api/entities.md
-          - CAN Endpoints: api/can.md
-          - WebSocket API: api/websocket.md
-      - RV-C Integration:
-          - RV-C Documentation Search: rv-c-documentation-search.md
-          - Mixed Chunking Strategies: mixed-chunking-strategies.md
-          - PDF Processing Guide: pdf-processing-guide.md
-      - Deployment:
-          - React Deployment: react-deployment.md
-          - NixOS Module: nixos-module.md
-          - Environment Variables: environment-variable-integration.md
-          - NixOS Integration: nixos-integration.md
-          - Debian Repository: debian-repository.md
-          - GitHub Pages: github-pages-deployment.md
-          - Enabling GitHub Pages: enabling-github-pages.md
-
-  - Developer Guide:
-      - Architecture:
-          - Backend Architecture: architecture/backend.md
-          - Frontend Architecture: architecture/frontend.md
-      - Development:
-          - Frontend Development: frontend-development.md
-          - Frontend Theming: frontend-theming.md
-          - API Integration: api/frontend-integration.md
-          - Enhanced Dev Environment: enhanced-dev-environment.md
-          - MCP Tools Setup: mcp-tools-setup.md
-      - Quality Assurance:
-          - Code Quality Tools: code-quality-tools.md
-          - Pyright Type Checking: pyright-type-checking.md
-          - Pre-Commit Hooks: pre-commit-and-actions.md
-          - ESLint TypeScript Config: eslint-typescript-config.md
-      - Build System:
-          - Poetry2Nix Integration: poetry2nix-integration.md
-          - Dependency Management Scripts: dependency-management-scripts.md
-          - GitHub Actions: github-actions.md
-          - GitHub Actions Summary: github-actions-summary.md
-      - Contributing:
-          - Documentation: contributing/documentation.md
-          - OpenAPI: contributing/openapi.md
-          - Pull Request Guidelines: contributing/pull-requests.md
-
-  - Project Updates:
-      - Documentation Updates: documentation-updates-summary.md
-      - MkDocs Configuration Update: mkdocs-config-update.md
-      - React Migration Summary: react-migration-summary.md
-      - Diagrams Test: test-mermaid.md
-
-  - Specs:
-      - React Frontend Migration: specs/refactor-frontend-to-react.md
-      - Spec-Aware Decoder: specs/spec-aware-decoder.md
