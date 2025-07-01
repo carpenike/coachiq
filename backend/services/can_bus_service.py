@@ -515,19 +515,13 @@ class CANBusService(SafetyAware):
             interface_name: Name of the interface that received the message
         """
         try:
-            # Get ServiceRegistry from app context
-            service_registry = None
+            # Get ServiceRegistry through dependency injection
+            from backend.core.dependencies import get_service_registry
+
             try:
-                import backend.main
-
-                if hasattr(backend.main, "app") and hasattr(
-                    backend.main.app.state, "service_registry"
-                ):
-                    service_registry = backend.main.app.state.service_registry
+                service_registry = get_service_registry()
             except Exception:
-                pass
-
-            if not service_registry:
+                # ServiceRegistry not available yet
                 return True
 
             # Send to CAN recorder if available

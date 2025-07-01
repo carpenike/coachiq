@@ -22,8 +22,6 @@ from backend.repositories import (
     RVCConfigRepository,
 )
 
-# Feature base removed - AppState is now a plain service class
-
 logger = logging.getLogger(__name__)
 
 
@@ -82,50 +80,37 @@ class AppState:
         """
         # Try to get from ServiceRegistry first
         try:
-            import backend.main
+            from backend.core.dependencies import get_service_registry
 
-            if hasattr(backend.main, "app") and hasattr(backend.main.app.state, "service_registry"):
-                service_registry = backend.main.app.state.service_registry
+            service_registry = get_service_registry()
 
-                # Try to get repositories from ServiceRegistry
-                if service_registry.has_service("entity_state_repository"):
-                    self._entity_state_repo = service_registry.get_service(
-                        "entity_state_repository"
-                    )
-                    # Share the entity manager
-                    self.entity_manager = self._entity_state_repo.entity_manager
-                    logger.info("Using EntityStateRepository from ServiceRegistry")
-                else:
-                    # Create new with backward compatibility
-                    self.entity_manager = EntityManager()
-                    self._entity_state_repo = EntityStateRepository(self.entity_manager)
-
-                if service_registry.has_service("rvc_config_repository"):
-                    self._rvc_config_repo = service_registry.get_service("rvc_config_repository")
-                    logger.info("Using RVCConfigRepository from ServiceRegistry")
-                else:
-                    self._rvc_config_repo = RVCConfigRepository()
-
-                if service_registry.has_service("can_tracking_repository"):
-                    self._can_tracking_repo = service_registry.get_service(
-                        "can_tracking_repository"
-                    )
-                    logger.info("Using CANTrackingRepository from ServiceRegistry")
-                else:
-                    self._can_tracking_repo = CANTrackingRepository()
-
-                if service_registry.has_service("diagnostics_repository"):
-                    self._diagnostics_repo = service_registry.get_service("diagnostics_repository")
-                    logger.info("Using DiagnosticsRepository from ServiceRegistry")
-                else:
-                    self._diagnostics_repo = DiagnosticsRepository()
-
+            # Try to get repositories from ServiceRegistry
+            if service_registry.has_service("entity_state_repository"):
+                self._entity_state_repo = service_registry.get_service("entity_state_repository")
+                # Share the entity manager
+                self.entity_manager = self._entity_state_repo.entity_manager
+                logger.info("Using EntityStateRepository from ServiceRegistry")
             else:
-                # No ServiceRegistry available, create new instances
+                # Create new with backward compatibility
                 self.entity_manager = EntityManager()
                 self._entity_state_repo = EntityStateRepository(self.entity_manager)
+
+            if service_registry.has_service("rvc_config_repository"):
+                self._rvc_config_repo = service_registry.get_service("rvc_config_repository")
+                logger.info("Using RVCConfigRepository from ServiceRegistry")
+            else:
                 self._rvc_config_repo = RVCConfigRepository()
+
+            if service_registry.has_service("can_tracking_repository"):
+                self._can_tracking_repo = service_registry.get_service("can_tracking_repository")
+                logger.info("Using CANTrackingRepository from ServiceRegistry")
+            else:
                 self._can_tracking_repo = CANTrackingRepository()
+
+            if service_registry.has_service("diagnostics_repository"):
+                self._diagnostics_repo = service_registry.get_service("diagnostics_repository")
+                logger.info("Using DiagnosticsRepository from ServiceRegistry")
+            else:
                 self._diagnostics_repo = DiagnosticsRepository()
 
         except Exception as e:
@@ -228,8 +213,7 @@ class AppState:
         Args:
             rvc_config_provider: Optional RVCConfigProvider instance (for ServiceRegistry integration)
         """
-        # Global assignment removed - AppState is managed by ServiceRegistry
-        # and accessed via app.state.app_state or dependency injection
+        # AppState is managed by ServiceRegistry and accessed via dependency injection
         logger.info("Starting AppState feature")
 
         # Load entities from coach mapping file, similar to legacy system
@@ -602,15 +586,12 @@ class CANSniffer:
         pass
 
 
-# Global app_state variable removed - use dependency injection instead
-
-
 def initialize_app_state(service_registry, config) -> AppState:
     """
     Initialize the application state and register with service registry.
 
     Note: The AppState instance is managed by ServiceRegistry and stored
-    in app.state. Access it via dependency injection or app.state.app_state.
+    Access it via dependency injection.
     """
     # Check if already registered with service registry
     if service_registry.has_service("app_state"):

@@ -2,7 +2,6 @@
 Security Event Manager
 
 Facade over SecurityEventService for backward compatibility.
-No Feature inheritance, just clean delegation to the modern service.
 """
 
 import logging
@@ -19,7 +18,6 @@ class SecurityEventManager:
     Security event manager facade.
 
     This is a clean facade that delegates to SecurityEventService.
-    No Feature inheritance or legacy patterns.
     """
 
     def __init__(

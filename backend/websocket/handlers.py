@@ -1,8 +1,7 @@
 """
 WebSocket manager for CoachIQ.
 
-This module provides a facade over the modern WebSocketService V2.
-No Feature inheritance, no app.state access, just clean delegation.
+This module provides a facade over the WebSocketService V2.
 """
 
 import asyncio

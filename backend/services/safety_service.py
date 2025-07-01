@@ -289,7 +289,6 @@ class SafetyService:
             security_audit_service: Optional security audit service for enhanced logging
         """
         self.service_registry = service_registry
-        # Note: feature_manager support removed - use SafetyServiceRegistry only
         self.health_check_interval = health_check_interval
         self.watchdog_timeout = watchdog_timeout
         self.pin_manager = pin_manager

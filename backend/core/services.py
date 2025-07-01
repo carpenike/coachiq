@@ -92,22 +92,21 @@ class CoreServices:
 
             try:
                 # Check if we're being called from an app context with ServiceRegistry
-                from backend.main import app
+                from backend.core.dependencies import get_service_registry
 
-                if hasattr(app, "state") and hasattr(app.state, "service_registry"):
-                    registry = app.state.service_registry
+                registry = get_service_registry()
 
-                    if registry.has_service("database_connection_service"):
-                        connection_service = registry.get_service("database_connection_service")
-                        logger.info("Using database_connection_service from ServiceRegistry")
+                if registry.has_service("database_connection_service"):
+                    connection_service = registry.get_service("database_connection_service")
+                    logger.info("Using database_connection_service from ServiceRegistry")
 
-                    if registry.has_service("database_session_service"):
-                        session_service = registry.get_service("database_session_service")
-                        logger.info("Using database_session_service from ServiceRegistry")
+                if registry.has_service("database_session_service"):
+                    session_service = registry.get_service("database_session_service")
+                    logger.info("Using database_session_service from ServiceRegistry")
 
-                    if registry.has_service("database_migration_service"):
-                        migration_service = registry.get_service("database_migration_service")
-                        logger.info("Using database_migration_service from ServiceRegistry")
+                if registry.has_service("database_migration_service"):
+                    migration_service = registry.get_service("database_migration_service")
+                    logger.info("Using database_migration_service from ServiceRegistry")
 
             except Exception as e:
                 logger.debug(f"Database services not available from ServiceRegistry: {e}")
@@ -301,16 +300,16 @@ def get_core_services() -> CoreServices:
     """
     # Try to get from ServiceRegistry first
     try:
-        from backend.main import app
+        from backend.core.dependencies import get_service_registry
 
-        if hasattr(app.state, "service_registry") and app.state.service_registry is not None:
-            # Get individual services from registry
-            persistence = app.state.service_registry.get_service("persistence_service")
-            db_manager = app.state.service_registry.get_service("database_manager")
-            if persistence and db_manager:
-                # Return the global instance that wraps these services
-                if _core_services_instance is not None:
-                    return _core_services_instance
+        registry = get_service_registry()
+        # Get individual services from registry
+        persistence = registry.get_service("persistence_service")
+        db_manager = registry.get_service("database_manager")
+        if persistence and db_manager:
+            # Return the global instance that wraps these services
+            if _core_services_instance is not None:
+                return _core_services_instance
     except (ImportError, AttributeError, RuntimeError):
         pass
 

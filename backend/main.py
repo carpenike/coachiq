@@ -28,8 +28,6 @@ from slowapi.middleware import SlowAPIMiddleware
 from backend.api.router_config import configure_routers
 from backend.core.config import get_settings
 from backend.core.dependencies import ServiceRegistry
-
-# get_app_state removed - access app.state directly
 from backend.core.exceptions import ServiceNotAvailableError
 from backend.core.logging_config import configure_unified_logging, setup_early_logging
 from backend.core.metrics import initialize_backend_metrics
@@ -1703,24 +1701,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
 
         # Authentication middleware will be configured dynamically via the middleware itself
 
-        # Services are now accessed via the module-level ServiceRegistry
-        # All services including WebSocket endpoints use dependency injection
-        # Config service is available via ServiceRegistry
-        # Services are now accessed via ServiceRegistry
-        # app.state.entity_service = entity_service
-        # app.state.can_service = can_service
-        # app.state.rvc_service = rvc_service
-        # app.state.docs_service = docs_service
-        # app.state.vector_service = vector_service
-        # app.state.can_interface_service = can_interface_service
-        # app.state.predictive_maintenance_service = predictive_maintenance_service  # Not migrated yet
-        # Legacy app.state assignments removed - services accessed via ServiceRegistry or dependency injection
-        # app.state.device_discovery_service = service_registry.get_service("device_discovery_service")  # Use DI
-        # app.state.analytics_dashboard_service = analytics_dashboard_service  # Not in ServiceRegistry yet
-        # app.state.safety_service = safety_service  # Not in ServiceRegistry yet
-        # app.state.pin_manager = pin_manager  # Available via ServiceRegistry
-        # app.state.security_audit_service = security_audit_service  # Available via ServiceRegistry
-        # app.state.security_config_service = security_config_service  # Available via ServiceRegistry
+        # Services are now accessed via ServiceRegistry and dependency injection
 
         # Initialize Security WebSocket Handler with dependency injection
         # ARCHITECTURE NOTE: The SecurityWebSocketHandler is created as a singleton
@@ -1851,8 +1832,7 @@ def create_app() -> FastAPI:
     )
 
     # Add rate limiting middleware
-    # Set up slowapi rate limiting properly
-    app.state.limiter = limiter
+    # Rate limiter is now accessed via dependency injection
     app.add_middleware(SlowAPIMiddleware)
     app.add_exception_handler(RateLimitExceeded, rate_limit_exceeded_handler)  # type: ignore[attr-defined]
 

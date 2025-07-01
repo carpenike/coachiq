@@ -619,9 +619,9 @@ def get_multi_network_manager() -> MultiNetworkManager:
     """
     Get the multi-network manager instance.
 
-    This function follows the enhanced singleton pattern that checks modern
-    locations (app.state, ServiceRegistry) before falling back to the global
-    instance for backward compatibility.
+    This function follows the enhanced singleton pattern that checks the
+    ServiceRegistry before falling back to the global instance for backward
+    compatibility.
 
     NOTE: This global singleton pattern is deprecated. New code should register
     MultiNetworkManager with ServiceRegistry for proper lifecycle management.

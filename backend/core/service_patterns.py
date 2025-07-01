@@ -278,19 +278,16 @@ _lifecycle_manager: ServiceLifecycleManager | None = None
 def get_lifecycle_manager() -> ServiceLifecycleManager:
     """Get the lifecycle manager instance.
 
-    This should be stored in app.state.service_lifecycle_manager during
-    application startup. The global instance is maintained for backward
-    compatibility only.
+    This should be registered with ServiceRegistry during application startup.
+    The global instance is maintained for backward compatibility only.
     """
-    # Try to get from app.state first
+    # Try to get from ServiceRegistry first
     try:
-        from backend.main import app
+        from backend.core.dependencies import get_service_registry
 
-        if (
-            hasattr(app.state, "service_lifecycle_manager")
-            and app.state.service_lifecycle_manager is not None
-        ):
-            return app.state.service_lifecycle_manager
+        registry = get_service_registry()
+        if registry.has_service("service_lifecycle_manager"):
+            return registry.get_service("service_lifecycle_manager")
     except (ImportError, AttributeError, RuntimeError):
         pass
 
