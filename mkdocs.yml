@@ -12,8 +12,15 @@ nav:
   - Setup: setup.md
   - Usage: usage.md
   - Troubleshooting: troubleshooting.md
-  - Safety: safety.md
+  - Safety:
+    - Overview: safety.md
+    - Emergency Procedures: safety/can-facade-emergency-procedures.md
+    - FMEA Analysis: safety/can-facade-fmea.md
   - API: api/reference.md
+  - Frontend:
+    - Overview: frontend/README.md
+    - Development Setup: frontend/development-setup.md
+    - Development Guide: frontend/development-guide.md
 
 theme:
   name: material

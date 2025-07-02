@@ -127,7 +127,9 @@
       "mcp__playwright__browser_snapshot",
       "mcp__playwright__browser_press_key",
       "mcp__serena__create_text_file",
-      "Bash(bash:*)"
+      "Bash(bash:*)",
+      "mcp__zen__planner",
+      "Bash(tree:*)"
     ]
   },
   "enableAllProjectMcpServers": true,
