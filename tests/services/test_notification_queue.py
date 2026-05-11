@@ -13,20 +13,17 @@ Tests cover:
 """
 
 import asyncio
-import json
 import tempfile
 from datetime import datetime, timedelta
 from pathlib import Path
-from unittest.mock import AsyncMock, patch
+from unittest.mock import patch
 
 import pytest
 
 from backend.models.notification import (
     NotificationChannel,
     NotificationPayload,
-    NotificationStatus,
     NotificationType,
-    QueueStatistics,
 )
 from backend.services.notification_queue import NotificationQueue
 

@@ -48,22 +48,25 @@ class MessageInjectionRequest(BaseModel):
     reason: str = Field(default="", description="Reason for injection")
 
     @validator("data")
-    def validate_hex_data(cls, v):
+    def validate_hex_data(cls, v):  # noqa: N805 - Pydantic v1 @validator binds first arg as cls
         """Validate and convert hex string to bytes."""
         try:
             # Remove spaces and validate hex
             hex_str = v.replace(" ", "").upper()
             if len(hex_str) % 2 != 0:
-                raise ValueError("Hex string must have even length")
+                msg = "Hex string must have even length"
+                raise ValueError(msg)
 
             # Convert to bytes
             data = bytes.fromhex(hex_str)
             if len(data) > 8:
-                raise ValueError("Data too long (max 8 bytes)")
+                msg = "Data too long (max 8 bytes)"
+                raise ValueError(msg)
 
             return hex_str
         except ValueError as e:
-            raise ValueError(f"Invalid hex data: {e}")
+            msg = f"Invalid hex data: {e}"
+            raise ValueError(msg)
 
     class Config:
         json_schema_extra = {
@@ -102,20 +105,23 @@ class J1939MessageRequest(BaseModel):
     mode: InjectionMode = Field(default=InjectionMode.SINGLE, description="Injection mode")
 
     @validator("data")
-    def validate_hex_data(cls, v):
+    def validate_hex_data(cls, v):  # noqa: N805 - Pydantic v1 @validator binds first arg as cls
         """Validate and convert hex string to bytes."""
         try:
             hex_str = v.replace(" ", "").upper()
             if len(hex_str) % 2 != 0:
-                raise ValueError("Hex string must have even length")
+                msg = "Hex string must have even length"
+                raise ValueError(msg)
 
             data = bytes.fromhex(hex_str)
             if len(data) > 8:
-                raise ValueError("Data too long (max 8 bytes)")
+                msg = "Data too long (max 8 bytes)"
+                raise ValueError(msg)
 
             return hex_str
         except ValueError as e:
-            raise ValueError(f"Invalid hex data: {e}")
+            msg = f"Invalid hex data: {e}"
+            raise ValueError(msg)
 
 
 class InjectorStatusResponse(BaseModel):

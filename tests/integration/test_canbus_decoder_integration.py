@@ -20,7 +20,6 @@ from typing import Any
 from unittest.mock import Mock
 
 import pytest
-import yaml
 
 from backend.core.configuration_service import ConfigurationService
 from backend.core.safety_state_engine import SafetyEvent, SafetyStateEngine
@@ -162,9 +161,7 @@ class IntegratedCANDecoder:
             if frame.pgn == BAMHandler.TP_CM_PGN:
                 self.performance_monitor.record_bam_session_start()
 
-            completion = self.bam_handler.process_frame(
-                frame.pgn, frame.data, frame.source_address
-            )
+            completion = self.bam_handler.process_frame(frame.pgn, frame.data, frame.source_address)
             sessions_after = len(self.bam_handler.sessions)
             session_closed = sessions_after < sessions_before
 
@@ -189,9 +186,7 @@ class IntegratedCANDecoder:
                 safety_events=[],
             )
             self.processed_messages.append(processed)
-            self.performance_monitor.record_processing_time(
-                ComponentType.BAM_HANDLER, duration
-            )
+            self.performance_monitor.record_processing_time(ComponentType.BAM_HANDLER, duration)
             return processed
 
         # Single-frame path: spec lookup, mocked decoder, safety dispatch.
@@ -238,9 +233,7 @@ class IntegratedCANDecoder:
             self.processed_messages.append(processed)
             # Feed the performance monitor so prometheus output and per-
             # component statistics aren't empty in observability tests.
-            self.performance_monitor.record_processing_time(
-                ComponentType.RVC_DECODER, duration
-            )
+            self.performance_monitor.record_processing_time(ComponentType.RVC_DECODER, duration)
             return processed
 
         return None

@@ -332,22 +332,80 @@ known-first-party = [ "common", "backend"]
 ban-relative-imports = "all"
 
 [tool.ruff.lint.per-file-ignores]
-# Test files - allow longer lines and specific testing patterns
+# Test files - allow longer lines and specific testing patterns. Calibrated
+# to keep these rules ON for production code (where they catch real bugs or
+# improve maintainability) but OFF for tests (where they add noise without
+# value). Test code legitimately:
+#   - asserts against literal expected values (PLR2004)
+#   - mixes os.path / open() with pathlib because tests work with the
+#     temp filesystem and the choice doesn't affect correctness (PTH*)
+#   - includes a small amount of cleanup / setup inside `pytest.raises`
+#     blocks rather than splitting them (PT012)
+#   - imports from production modules inside fixtures or helper methods
+#     to avoid eager top-level coupling (PLC0415)
+#   - constructs ad-hoc exceptions with f-strings (EM101 / EM102)
+#   - iterates dicts in whichever shape the test happens to need (PERF102)
 "tests/**/*.py" = [
     "E501",     # line too long (acceptable in tests)
     "S101",     # assert statements (required for testing)
     "S106",     # hardcoded password (test fixtures)
+    "S110",     # try-except-pass (cleanup blocks in tests are fine)
     "ARG001",   # unused function argument (pytest fixtures)
+    "ARG002",   # unused method argument (pytest fixtures injected via mocker)
+    "ARG005",   # unused lambda argument (test stub callbacks)
     "PLR0913",  # too many arguments (test functions)
     "PT001",    # use pytest.fixture() - legacy fixtures acceptable
+    "PT012",    # pytest.raises() with multi-statement body (cleanup is fine)
+    "PLR2004",  # magic value comparison (assertions ARE comparisons against literals)
+    "PLC0415",  # import not at top-of-file (lazy imports in fixtures are common)
+    "SLF001",   # private member access (tests legitimately probe SUT internals)
+    "DTZ003",   # datetime.utcnow (timestamps in tests are rarely timezone-sensitive)
+    "RET504",   # unnecessary assign before return (clarity in tests)
+    "INP001",   # implicit namespace package (test discovery, not correctness)
+    "PERF102",  # incorrect dict-iterator (stylistic in tests)
+    "PERF401",  # manual list comprehension (clarity in tests)
+    "SIM105",   # use contextlib.suppress (try/except/pass is more obvious in tests)
+    "EM101",    # raw string in exception (test-only ad-hoc errors)
+    "EM102",    # f-string in exception (same)
+    # pathlib-vs-os.path: keep on in production, off in tests
+    "PTH108",   # os.unlink -> Path.unlink
+    "PTH110",   # os.path.exists -> Path.exists
+    "PTH118",   # os.path.join -> Path / Path
+    "PTH119",   # os.path.basename -> Path.name
+    "PTH120",   # os.path.dirname -> Path.parent
+    "PTH123",   # builtin open() -> Path.open()
+    "PTH207",   # glob.glob -> Path.glob
 ]
 "**/tests/**/*.py" = [
     "E501",     # line too long (acceptable in tests)
     "S101",     # assert statements (required for testing)
     "S106",     # hardcoded password (test fixtures)
+    "S110",     # try-except-pass (cleanup blocks in tests are fine)
     "ARG001",   # unused function argument (pytest fixtures)
+    "ARG002",   # unused method argument (pytest fixtures injected via mocker)
+    "ARG005",   # unused lambda argument (test stub callbacks)
     "PLR0913",  # too many arguments (test functions)
     "PT001",    # use pytest.fixture() - legacy fixtures acceptable
+    "PT012",    # pytest.raises() with multi-statement body (cleanup is fine)
+    "PLR2004",  # magic value comparison (assertions ARE comparisons against literals)
+    "PLC0415",  # import not at top-of-file (lazy imports in fixtures are common)
+    "SLF001",   # private member access (tests legitimately probe SUT internals)
+    "DTZ003",   # datetime.utcnow (timestamps in tests are rarely timezone-sensitive)
+    "RET504",   # unnecessary assign before return (clarity in tests)
+    "INP001",   # implicit namespace package (test discovery, not correctness)
+    "PERF102",  # incorrect dict-iterator (stylistic in tests)
+    "PERF401",  # manual list comprehension (clarity in tests)
+    "SIM105",   # use contextlib.suppress (try/except/pass is more obvious in tests)
+    "EM101",    # raw string in exception (test-only ad-hoc errors)
+    "EM102",    # f-string in exception (same)
+    # pathlib-vs-os.path: keep on in production, off in tests
+    "PTH108",   # os.unlink -> Path.unlink
+    "PTH110",   # os.path.exists -> Path.exists
+    "PTH118",   # os.path.join -> Path / Path
+    "PTH119",   # os.path.basename -> Path.name
+    "PTH120",   # os.path.dirname -> Path.parent
+    "PTH123",   # builtin open() -> Path.open()
+    "PTH207",   # glob.glob -> Path.glob
 ]
 # Type stubs - special naming conventions allowed
 "typings/fastapi/__init__.py" = [ "N802", "N818", "A003", "A001"]

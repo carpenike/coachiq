@@ -9,7 +9,7 @@ import json
 import logging
 import shutil
 import sqlite3
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -87,7 +87,7 @@ class PersistenceRepository(MonitoredRepository):
                     directory.mkdir(parents=True, exist_ok=True)
                     created.append(directory)
                 except (OSError, PermissionError) as e:
-                    logger.warning(f"Failed to create persistence directory {directory}: {e}")
+                    logger.warning("Failed to create persistence directory %s: %s", directory, e)
 
         return created
 
@@ -231,8 +231,8 @@ class PersistenceRepository(MonitoredRepository):
                     name=backup_file.name,
                     path=str(backup_file),
                     size_mb=stat.st_size / (1024 * 1024),
-                    created=datetime.fromtimestamp(stat.st_ctime),
-                    modified=datetime.fromtimestamp(stat.st_mtime),
+                    created=datetime.fromtimestamp(stat.st_ctime, tz=UTC),
+                    modified=datetime.fromtimestamp(stat.st_mtime, tz=UTC),
                     database_name=backup_file.stem.split("_")[0],
                 )
             )
@@ -266,7 +266,7 @@ class PersistenceRepository(MonitoredRepository):
 
         for backup_file in backup_dir.glob("*.db"):
             try:
-                modified_at = datetime.fromtimestamp(backup_file.stat().st_mtime)
+                modified_at = datetime.fromtimestamp(backup_file.stat().st_mtime, tz=UTC)
                 if modified_at < cutoff_date:
                     backup_file.unlink()
                     deleted_count += 1

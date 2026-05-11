@@ -80,8 +80,7 @@ class _Bucket:
             self.tokens -= 1.0
             return 0.0
         deficit = 1.0 - self.tokens
-        wait_seconds = deficit / self.refill_per_sec if self.refill_per_sec > 0 else float("inf")
-        return wait_seconds
+        return deficit / self.refill_per_sec if self.refill_per_sec > 0 else float("inf")
 
 
 @dataclass
@@ -103,7 +102,7 @@ class CANTxRateLimiter:
     blocks until the longer of the two waits has elapsed.
     """
 
-    def __init__(
+    def __init__(  # noqa: PLR0913 - token-bucket needs global+per-id rate/burst pair, intentional API
         self,
         global_rate_per_sec: float = DEFAULT_GLOBAL_RATE_PER_SEC,
         global_burst: int = DEFAULT_GLOBAL_BURST,

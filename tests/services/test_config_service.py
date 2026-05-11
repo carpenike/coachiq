@@ -7,7 +7,7 @@ a few async wrappers for raw config content. Tests fully mock the
 repository.
 """
 
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import MagicMock
 
 import pytest
 

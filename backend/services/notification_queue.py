@@ -22,10 +22,11 @@ Example:
 """
 
 import asyncio
+import contextlib
 import json
 import logging
 import time
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import aiosqlite
@@ -158,7 +159,7 @@ class NotificationQueue:
                         ORDER BY priority ASC, created_at ASC
                         LIMIT ?
                     """,
-                        (datetime.utcnow().isoformat(), size),
+                        (datetime.now(UTC).isoformat(), size),
                     ) as cursor:
                         rows = await cursor.fetchall()
 
@@ -178,7 +179,7 @@ class NotificationQueue:
                             notifications.append(notification)
                             notification_ids.append(notification.id)
                         except Exception as e:
-                            self.logger.warning(f"Failed to parse notification data: {e}")
+                            self.logger.warning("Failed to parse notification data: %s", e)
                             continue
 
                     # Mark as processing to prevent duplicate processing
@@ -187,10 +188,10 @@ class NotificationQueue:
                         # of placeholders. notification_ids are server-generated
                         # UUIDs, not user input; the format only inserts the
                         # right number of "?" placeholders. We carry both the
-                        # ruff suppression (S608) and the bandit one (B608) —
+                        # ruff suppression (S608) and the bandit one (B608) -
                         # they're the same SQL-injection rule under different
-                        # tool prefixes and pre-commit's bandit hook ignores
-                        # noqa: S608 because that's a ruff annotation.
+                        # tool prefixes and bandit ignores ruff-style noqa
+                        # directives, so both annotations are required.
                         placeholders = ",".join("?" * len(notification_ids))
                         await db.execute(
                             f"""
@@ -198,7 +199,7 @@ class NotificationQueue:
                             SET status = 'processing', last_attempt = ?
                             WHERE id IN ({placeholders})
                             """,  # noqa: S608  # nosec B608
-                            [datetime.utcnow().isoformat(), *notification_ids],
+                            [datetime.now(UTC).isoformat(), *notification_ids],
                         )
 
                     await db.commit()
@@ -578,10 +579,8 @@ class NotificationQueue:
             # Cancel maintenance task
             if self._maintenance_task and not self._maintenance_task.done():
                 self._maintenance_task.cancel()
-                try:
+                with contextlib.suppress(asyncio.CancelledError):
                     await self._maintenance_task
-                except asyncio.CancelledError:
-                    pass
 
             # Flush any pending writes
             async with self._batch_lock:
@@ -779,7 +778,9 @@ class NotificationQueue:
                 # Persist both the DLQ insert and the deletion atomically.
                 await db.commit()
 
-                self.logger.warning(f"Notification {notification_id} moved to DLQ: {error_message}")
+                self.logger.warning(
+                    "Notification %s moved to DLQ: %s", notification_id, error_message
+                )
 
         except Exception as e:
             self.logger.error(f"Failed to move notification to DLQ: {e}")

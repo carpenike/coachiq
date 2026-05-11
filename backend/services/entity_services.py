@@ -213,9 +213,7 @@ class EntityQueryService:
         end_time = time.time()
         start_time = end_time - (hours * 3600)
 
-        history = await self._history_repo.get_entity_history(entity_id, start_time, end_time)
-
-        return history
+        return await self._history_repo.get_entity_history(entity_id, start_time, end_time)
 
     async def get_unmapped_entries(self) -> dict[str, list[Any]]:
         """Get unmapped RV-C entries.

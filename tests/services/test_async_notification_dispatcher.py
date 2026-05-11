@@ -17,7 +17,7 @@ import tempfile
 import time
 from datetime import datetime, timedelta
 from pathlib import Path
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
@@ -25,7 +25,6 @@ from backend.core.config import NotificationSettings
 from backend.models.notification import (
     NotificationChannel,
     NotificationPayload,
-    NotificationStatus,
     NotificationType,
 )
 from backend.services.async_notification_dispatcher import AsyncNotificationDispatcher
