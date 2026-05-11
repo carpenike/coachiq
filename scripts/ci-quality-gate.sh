@@ -38,8 +38,10 @@ echo -e "${BLUE}============================================================${RE
 # ===== STAGE 1: Fast Linting on Changed Files Only =====
 echo -e "${BLUE}🔧 Stage 1: Checking changed files for new linting issues...${RESET}"
 
-# Use pre-commit's built-in diff functionality
-if pre-commit run --from-ref "$TARGET_BRANCH" --to-ref HEAD; then
+# Use pre-commit's built-in diff functionality.
+# Run via `poetry run` so this works under `nix run .#ci`, where poetry is
+# on PATH but pre-commit lives inside the poetry-managed venv.
+if poetry run pre-commit run --from-ref "$TARGET_BRANCH" --to-ref HEAD; then
     echo -e "${GREEN}✅ SUCCESS: No new linting issues in changed files${RESET}"
 else
     echo -e "${RED}❌ FAILURE: New linting issues found in your changes${RESET}"
@@ -52,7 +54,7 @@ echo -e "\n${BLUE}🔒 Stage 2: Security scan on entire project...${RESET}"
 
 # Security is always a full-project concern
 # Our pre-commit config already blocks on medium+ severity
-if pre-commit run bandit --all-files; then
+if poetry run pre-commit run bandit --all-files; then
     echo -e "${GREEN}✅ SUCCESS: No critical security issues found${RESET}"
 else
     echo -e "${RED}❌ FAILURE: Critical security issues detected${RESET}"

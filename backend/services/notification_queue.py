@@ -186,14 +186,18 @@ class NotificationQueue:
                         # Generate safe parameterized query with correct number
                         # of placeholders. notification_ids are server-generated
                         # UUIDs, not user input; the format only inserts the
-                        # right number of "?" placeholders.
+                        # right number of "?" placeholders. We carry both the
+                        # ruff suppression (S608) and the bandit one (B608) —
+                        # they're the same SQL-injection rule under different
+                        # tool prefixes and pre-commit's bandit hook ignores
+                        # noqa: S608 because that's a ruff annotation.
                         placeholders = ",".join("?" * len(notification_ids))
                         await db.execute(
                             f"""
                             UPDATE notifications
                             SET status = 'processing', last_attempt = ?
                             WHERE id IN ({placeholders})
-                            """,  # noqa: S608
+                            """,  # noqa: S608  # nosec B608
                             [datetime.utcnow().isoformat(), *notification_ids],
                         )
 
