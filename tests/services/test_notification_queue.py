@@ -31,24 +31,6 @@ from backend.models.notification import (
 from backend.services.notification_queue import NotificationQueue
 
 
-async def _clear_scheduled_for(queue: NotificationQueue, notification_id: str) -> None:
-    """Test helper: bypass exponential-backoff retry delay.
-
-    `mark_failed(should_retry=True)` schedules a retry with exponential backoff
-    (30 * 2**retry_count seconds), which is longer than any reasonable test
-    timeout. Tests that need to dequeue the retried notification immediately
-    can call this to clear `scheduled_for`.
-    """
-    import aiosqlite
-
-    async with aiosqlite.connect(queue.db_path) as db:
-        await db.execute(
-            "UPDATE notifications SET scheduled_for = NULL WHERE id = ?",
-            (notification_id,),
-        )
-        await db.commit()
-
-
 @pytest.fixture
 async def temp_db_path():
     """Create temporary database path for testing."""
@@ -68,6 +50,10 @@ async def notification_queue(temp_db_path):
     # 500ms — both of which would race with assertions that read back state
     # immediately after enqueue.
     queue._batch_size = 1
+
+    # Override exponential-backoff retry delay (production: 30-300s) so retried
+    # notifications are immediately eligible for redequeue in tests.
+    queue._retry_delay_seconds = 0.0
 
     # Disable maintenance loop for testing
     if hasattr(queue, "_maintenance_task"):
@@ -389,12 +375,8 @@ class TestNotificationCompletion:
         batch = await notification_queue.dequeue_batch(size=1)
         dequeued = batch[0]
 
-        # Fail once (should retry)
+        # Fail once (should retry — fixture sets _retry_delay_seconds=0)
         await notification_queue.mark_failed(dequeued.id, "First failure", should_retry=True)
-
-        # The retry has exponential-backoff scheduled_for in the future. Bypass
-        # the wait by clearing scheduled_for so the next dequeue picks it up.
-        await _clear_scheduled_for(notification_queue, dequeued.id)
 
         # Dequeue again and fail (should move to DLQ)
         batch = await notification_queue.dequeue_batch(size=1)
@@ -831,11 +813,6 @@ class TestIntegrationScenarios:
             )
 
             if attempt < 2:
-                # Should be back in queue for retry — but scheduled_for has
-                # exponential backoff that exceeds any reasonable test timeout.
-                # Clear it so the next iteration's dequeue picks it up.
-                await _clear_scheduled_for(notification_queue, notification_id)
-
                 stats = await notification_queue.get_statistics()
                 assert stats.pending_count == 1
             else:

@@ -66,6 +66,11 @@ class NotificationQueue:
         self._batch_size = 10
         self._batch_timeout = 0.5  # 500ms
 
+        # Retry backoff configuration. Production default uses exponential
+        # backoff capped at 5 minutes; tests can override to a constant short
+        # delay (e.g. 0.0) for determinism.
+        self._retry_delay_seconds: float | None = None  # None = exponential
+
         # Statistics tracking
         self._stats_cache: QueueStatistics | None = None
         self._stats_cache_expires: datetime | None = None
@@ -270,8 +275,13 @@ class NotificationQueue:
 
                 # Check if we should retry or move to DLQ
                 if should_retry and retry_count < max_retries:
-                    # Schedule retry with exponential backoff
-                    retry_delay = min(300, 30 * (2**retry_count))  # Max 5 minutes
+                    # Schedule retry. Default is exponential backoff capped at
+                    # 5 minutes; tests / future tuning can override via
+                    # _retry_delay_seconds for a constant delay.
+                    if self._retry_delay_seconds is not None:
+                        retry_delay = self._retry_delay_seconds
+                    else:
+                        retry_delay = min(300, 30 * (2**retry_count))
                     retry_time = datetime.utcnow() + timedelta(seconds=retry_delay)
 
                     await db.execute(
