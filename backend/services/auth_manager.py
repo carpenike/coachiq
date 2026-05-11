@@ -19,11 +19,12 @@ Example:
     >>> user = await auth_manager.validate_token(token)
 """
 
-import logging
 import secrets
 from datetime import UTC, datetime, timedelta
 from enum import Enum
 from typing import TYPE_CHECKING, Any
+
+from backend.core.structured_logging import get_logger, log_execution_time
 
 try:
     import jwt
@@ -38,7 +39,8 @@ except ImportError as e:
     BCRYPT_AVAILABLE = False
     TOTP_AVAILABLE = False
 
-    logging.error(f"Authentication dependencies missing: {e}. Please install with: poetry install")
+    logger = get_logger(__name__)
+    logger.error(f"Authentication dependencies missing: {e}. Please install with: poetry install")
 
 from backend.core.config import AuthenticationSettings
 
@@ -54,25 +56,17 @@ class AuthMode(str, Enum):
     MULTI_USER = "multi"  # Multiple users with magic links and OAuth
 
 
-class AuthenticationError(Exception):
-    """Base exception for authentication errors."""
+# Import exceptions from the centralized module
+from backend.core.custom_exceptions import (
+    AccountLockedError,
+    AuthenticationError,
+    InvalidTokenError,
+)
 
 
-class InvalidTokenError(AuthenticationError):
-    """Raised when a token is invalid or expired."""
-
-
+# Define exceptions that are specific to auth_manager
 class UserNotFoundError(AuthenticationError):
     """Raised when a user cannot be found."""
-
-
-class AccountLockedError(AuthenticationError):
-    """Raised when an account is locked due to too many failed attempts."""
-
-    def __init__(self, message: str, lockout_until: datetime, attempts: int):
-        super().__init__(message)
-        self.lockout_until = lockout_until
-        self.attempts = attempts
 
 
 class AuthManager:
@@ -109,7 +103,7 @@ class AuthManager:
             lockout_service: Optional pre-configured lockout service
             credential_repository: Optional pre-configured credential repository
         """
-        self.logger = logging.getLogger(__name__)
+        self.logger = get_logger(__name__, "AuthManager")
 
         # Ensure we have the correct settings type
         # Check if this looks like the full Settings object (has multiple subsections)
@@ -801,6 +795,16 @@ class AuthManager:
                 # Get lockout info for error details
                 lockout_info = await self._lockout_service.get_lockout_info(username)
                 msg = f"Account locked until {lockout_until.isoformat() if lockout_until else 'unknown'}"
+
+                self.logger.audit(
+                    "admin_login_blocked",
+                    "Login attempt blocked due to account lockout",
+                    success=False,
+                    username=username,
+                    lockout_until=lockout_until.isoformat() if lockout_until else None,
+                    failed_attempts=lockout_info.get("failed_attempts", 0),
+                )
+
                 raise AccountLockedError(
                     msg,
                     lockout_until,
@@ -816,6 +820,13 @@ class AuthManager:
             # Verify credentials
             if username != admin_creds["username"]:
                 self.logger.warning(f"Invalid admin username: {username}")
+                self.logger.audit(
+                    "admin_login_failed",
+                    "Invalid username for admin authentication",
+                    success=False,
+                    username=username,
+                    reason="invalid_username",
+                )
                 await self._lockout_service.record_failed_attempt(username)
                 return None
 
@@ -825,6 +836,13 @@ class AuthManager:
             )
             if not is_valid:
                 self.logger.warning("Invalid admin password")
+                self.logger.audit(
+                    "admin_login_failed",
+                    "Invalid password for admin authentication",
+                    success=False,
+                    username=username,
+                    reason="invalid_password",
+                )
                 await self._lockout_service.record_failed_attempt(username)
                 return None
 
@@ -839,6 +857,13 @@ class AuthManager:
             # Record successful login
             await self._lockout_service.record_successful_login(username)
             self.logger.info(f"Admin user authenticated: {username}")
+            self.logger.audit(
+                "admin_login_success",
+                "Admin authentication successful",
+                success=True,
+                username=username,
+                mode="single-user",
+            )
             return access_token
         # Legacy mode
         # Validate persistence is available first

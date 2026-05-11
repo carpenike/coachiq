@@ -28,11 +28,12 @@ from slowapi.middleware import SlowAPIMiddleware
 from backend.api.router_config import configure_routers
 from backend.core.config import get_settings
 from backend.core.dependencies import ServiceRegistry
-from backend.core.exceptions import ServiceNotAvailableError
 from backend.core.logging_config import configure_unified_logging, setup_early_logging
 from backend.core.metrics import initialize_backend_metrics
 from backend.core.performance import PerformanceMonitor
 from backend.core.safety_registry import SafetyServiceRegistry
+from backend.core.security_config_validator import validate_security_config
+from backend.core.security_hardening import configure_security_hardening
 from backend.core.service_dependency_resolver import DependencyType, ServiceDependency
 from backend.core.service_registry import ServiceStatus
 
@@ -41,6 +42,8 @@ from backend.integrations.can.message_injector import CANMessageInjector, Safety
 
 # from backend.integrations.registration import register_custom_features  # No longer needed - all services in ServiceRegistry
 from backend.middleware.auth import AuthenticationMiddleware
+from backend.middleware.csrf_protection import CSRFProtectionMiddleware
+from backend.middleware.logging_middleware import LoggingMiddleware
 
 # CORS handling moved to Caddy edge layer - see config/Caddyfile.example
 from backend.middleware.rate_limiting import limiter, rate_limit_exceeded_handler
@@ -73,7 +76,6 @@ from backend.repositories.security_event_repository import (
 from backend.services.analytics_dashboard_service import AnalyticsDashboardService
 
 # Phase 4 service imports
-from backend.services.auth_manager import AccountLockedError
 from backend.services.auth_service import AuthService
 
 # Group 2 service imports
@@ -1624,6 +1626,15 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         settings = service_registry.get_service("app_settings")
         rvc_config_provider = service_registry.get_service("rvc_config")
         security_event_manager = service_registry.get_service("security_event_manager")
+
+        # Validate security configuration
+        if not settings.is_development():
+            logger.info("Validating security configuration for production mode")
+            if not validate_security_config(settings):
+                logger.error("Security configuration validation failed - see errors above")
+                # In production, we should fail fast on security misconfigurations
+                # For now, just log the error and continue
+
         device_discovery_service = service_registry.get_service("device_discovery_service")
         persistence_service = service_registry.get_service("persistence_service")
         database_manager = service_registry.get_service("database_manager")
@@ -1822,9 +1833,29 @@ def create_app() -> FastAPI:
             },
         )
 
+    # Add comprehensive logging middleware
+    # This should be one of the first middleware to capture all requests
+    app.add_middleware(
+        LoggingMiddleware,
+        exclude_paths=["/healthz", "/api/healthz", "/metrics", "/readyz", "/startupz"],
+        log_request_body=False,  # Set to True with caution - can log sensitive data
+        log_response_body=False,  # Set to True with caution - can be large
+        slow_request_threshold_ms=1000,
+    )
+
     # Configure authentication middleware
     # The middleware will obtain the auth manager from app state at runtime
     app.add_middleware(AuthenticationMiddleware)
+
+    # Add CSRF protection for state-changing operations
+    # Only in production mode when HTTPS is enabled
+    if not settings.is_development():
+        csrf_secret = settings.auth.secret_key or "default-csrf-secret"
+        app.add_middleware(
+            CSRFProtectionMiddleware,
+            secret_key=csrf_secret,
+            secure_cookie=not settings.is_development(),
+        )
 
     # Add runtime validation middleware for safety-critical operations
     app.add_middleware(
@@ -1836,37 +1867,14 @@ def create_app() -> FastAPI:
     app.add_middleware(SlowAPIMiddleware)
     app.add_exception_handler(RateLimitExceeded, rate_limit_exceeded_handler)  # type: ignore[attr-defined]
 
-    # Add custom exception handler for account lockout
-    @app.exception_handler(AccountLockedError)
-    async def account_locked_exception_handler(request: Request, exc: AccountLockedError):
-        logger = logging.getLogger(__name__)
-        logger.warning("Account locked: %s", exc)
+    # Configure security hardening (security headers, session security, etc.)
+    configure_security_hardening(app, settings)
 
-        return JSONResponse(
-            status_code=423,  # HTTP_423_LOCKED
-            content={
-                "error": "account_locked",
-                "message": str(exc),
-                "lockout_until": (exc.lockout_until.isoformat() if exc.lockout_until else None),
-                "failed_attempts": exc.attempts,
-            },
-            headers={"WWW-Authenticate": "Bearer"},
-        )
-
-    # Add exception handler for ServiceNotAvailableError
-    @app.exception_handler(ServiceNotAvailableError)
-    async def service_not_available_handler(request: Request, exc: ServiceNotAvailableError):
-        logger = logging.getLogger(__name__)
-        logger.warning("Service not available: %s", exc.service_name)
-
-        return JSONResponse(
-            status_code=503,  # Service Unavailable
-            content={
-                "detail": str(exc),
-                "service": exc.service_name,
-                "message": "This service is not configured in the current deployment",
-            },
-        )
+    # Register comprehensive exception handlers for the custom exception hierarchy
+    # This replaces the previous inline handlers for AccountLockedError and
+    # ServiceNotAvailableError with a unified handler covering all custom exceptions.
+    from backend.core.exception_handlers import register_exception_handlers
+    register_exception_handlers(app)
 
     # Configure and include routers
     configure_routers(app)

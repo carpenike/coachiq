@@ -5,9 +5,9 @@ Service for managing authentication without Feature inheritance.
 Uses repository injection pattern for all dependencies.
 """
 
-import logging
 from typing import Any
 
+from backend.core.structured_logging import get_logger, log_execution_time
 from backend.repositories.auth_repository import (
     AuthEventRepository,
     CredentialRepository,
@@ -22,7 +22,7 @@ from backend.services.auth_services import (
     TokenService,
 )
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__, "AuthService")
 
 
 class AuthService:

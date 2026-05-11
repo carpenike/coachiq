@@ -11,7 +11,9 @@ from typing import Any
 
 from fastapi import WebSocket
 
-logger = logging.getLogger(__name__)
+from backend.core.structured_logging import get_logger, log_execution_time
+
+logger = get_logger(__name__, "WebSocketManager")
 
 
 class WebSocketManager:
@@ -40,11 +42,15 @@ class WebSocketManager:
 
     async def startup(self) -> None:
         """Start the WebSocket service."""
+        logger.info("Starting WebSocket manager")
         await self._service.start()
+        logger.info("WebSocket manager started successfully")
 
     async def shutdown(self) -> None:
         """Stop the WebSocket service."""
+        logger.info("Shutting down WebSocket manager")
         await self._service.stop()
+        logger.info("WebSocket manager stopped")
 
     @property
     def health(self) -> str:
@@ -60,8 +66,10 @@ class WebSocketManager:
 
     # Broadcasting methods - direct delegation
 
+    @log_execution_time(threshold_ms=50)
     async def broadcast_to_data_clients(self, data: dict[str, Any]) -> None:
         """Broadcast to data clients."""
+        logger.debug("Broadcasting to data clients", data_type=data.get("type", "unknown"))
         await self._service.broadcast_to_data_clients(data)
 
     async def broadcast_json_to_clients(
@@ -122,6 +130,8 @@ class WebSocketManager:
 
     async def connect_client(self, websocket: WebSocket, client_type: str) -> None:
         """Connect a client based on type."""
+        logger.info("WebSocket client connecting", client_type=client_type)
+
         if client_type == "data":
             await self._service.connect_data_client(websocket)
         elif client_type == "log":
@@ -133,11 +143,13 @@ class WebSocketManager:
         elif client_type == "features":
             await self._service.connect_features_client(websocket)
         else:
-            logger.warning(f"Unknown client type: {client_type}")
+            logger.warning("Unknown WebSocket client type", client_type=client_type)
             await websocket.close()
 
     async def disconnect_client(self, websocket: WebSocket, client_type: str) -> None:
         """Disconnect a client based on type."""
+        logger.info("WebSocket client disconnecting", client_type=client_type)
+
         if client_type == "data":
             await self._service.disconnect_data_client(websocket)
         elif client_type == "log":
@@ -183,19 +195,7 @@ class WebSocketLogHandler(logging.Handler):
             self.handleError(record)
 
 
-# Global instance for backward compatibility (will be removed)
-websocket_manager: WebSocketManager | None = None
-
-
-def get_websocket_manager() -> WebSocketManager:
-    """
-    Get the global WebSocket manager instance.
-
-    DEPRECATED: Use dependency injection instead.
-    """
-    if websocket_manager is None:
-        raise RuntimeError("WebSocket manager not initialized")
-    return websocket_manager
+# Global instance removed - use ServiceRegistry dependency injection
 
 
 def initialize_websocket_manager(
@@ -207,8 +207,6 @@ def initialize_websocket_manager(
 
     This now creates a facade over the modern WebSocketService from ServiceRegistry.
     """
-    global websocket_manager
-
     # Get the modern service from ServiceRegistry
     from backend.core.dependencies import get_service_registry
 
@@ -219,8 +217,8 @@ def initialize_websocket_manager(
         if not websocket_service:
             raise RuntimeError("WebSocketService not available in ServiceRegistry")
 
-        websocket_manager = WebSocketManager(websocket_service=websocket_service)
+        manager = WebSocketManager(websocket_service=websocket_service)
         logger.info("WebSocket manager initialized with modern WebSocketService")
-        return websocket_manager
+        return manager
     except Exception as e:
         raise RuntimeError(f"Failed to initialize WebSocket manager: {e}") from e
