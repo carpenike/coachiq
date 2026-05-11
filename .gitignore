@@ -264,3 +264,6 @@ alembic/logs/
 /.mcp.json
 
 prompt.txt
+
+# Notification reporting service runtime output
+/reports/

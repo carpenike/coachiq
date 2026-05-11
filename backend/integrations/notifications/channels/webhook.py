@@ -70,6 +70,19 @@ class WebhookAuthConfig(BaseModel):
         return v
 
 
+# HTTP status code class boundaries used by the retry-decision logic
+# below. Named so the conditions read as intent rather than as magic
+# numbers (also satisfies ruff PLR2004).
+_HTTP_CLIENT_ERROR_MIN = 400  # Inclusive lower bound of the 4xx range
+_HTTP_SERVER_ERROR_MIN = 500  # Inclusive lower bound of the 5xx range
+
+# Maximum response-body length kept on the WebhookDeliveryResult before
+# truncation. Webhook responses are usually short, but a misconfigured
+# endpoint can return arbitrarily large payloads (HTML error pages, etc.)
+# that we don't want to keep in memory or write to logs.
+_RESPONSE_BODY_MAX_BYTES = 1000
+
+
 class WebhookTarget(BaseModel):
     """Configuration for a webhook target endpoint."""
 
@@ -367,8 +380,8 @@ class WebhookNotificationChannel:
                 response_body = await response.text()
 
                 # Truncate long responses
-                if len(response_body) > 1000:
-                    response_body = response_body[:1000] + "... (truncated)"
+                if len(response_body) > _RESPONSE_BODY_MAX_BYTES:
+                    response_body = response_body[:_RESPONSE_BODY_MAX_BYTES] + "... (truncated)"
 
                 duration_ms = (time.time() - start_time) * 1000
 
@@ -433,11 +446,8 @@ class WebhookNotificationChannel:
         if status_code is None:
             # Network error / timeout -- transient, retry.
             return True
-        if 400 <= status_code < 500:
-            # 4xx client error -- not transient, don't retry.
-            return False
-        # 5xx server error (or anything else non-2xx) -- retry.
-        return True
+        # 4xx (client error) -- don't retry; anything else (5xx etc.) -- retry.
+        return not _HTTP_CLIENT_ERROR_MIN <= status_code < _HTTP_SERVER_ERROR_MIN
 
     async def send_notification(self, notification: NotificationPayload) -> bool:
         """
@@ -502,9 +512,11 @@ class WebhookNotificationChannel:
                 result = await self._deliver_to_target(notification, target)
 
                 self.logger.info(
-                    f"Webhook delivery to {target_name}: "
-                    f"{'SUCCESS' if result.success else 'FAILED'} "
-                    f"(status: {result.status_code}, duration: {result.duration_ms:.1f}ms)"
+                    "Webhook delivery to %s: %s (status: %s, duration: %.1fms)",
+                    target_name,
+                    "SUCCESS" if result.success else "FAILED",
+                    result.status_code,
+                    result.duration_ms,
                 )
 
                 if result.success:
@@ -517,16 +529,20 @@ class WebhookNotificationChannel:
                 # already rejected -- retrying just wastes attempts.
                 if not self._should_retry_status(result.status_code):
                     self.logger.info(
-                        f"Webhook delivery to {target_name} failed with non-retryable "
-                        f"status {result.status_code}; no further attempts."
+                        "Webhook delivery to %s failed with non-retryable status %s; "
+                        "no further attempts.",
+                        target_name,
+                        result.status_code,
                     )
                     break
 
                 if attempt == max_attempts - 1:
                     # Final attempt failed
                     self.logger.error(
-                        f"Webhook delivery to {target_name} failed after {max_attempts} attempts: "
-                        f"{result.error_message}"
+                        "Webhook delivery to %s failed after %s attempts: %s",
+                        target_name,
+                        max_attempts,
+                        result.error_message,
                     )
 
             # Per-target outcome roll-up.

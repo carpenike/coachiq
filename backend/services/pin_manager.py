@@ -275,13 +275,12 @@ class PINManager:
         # immediately so we don't leave a side-effect from the rotation
         # flow. validate_pin returns a PINValidationResult with .success
         # and .session_id; .session_id is None on failure.
-        validation = await self.validate_pin(
-            user_id=user_id, pin=old_pin, pin_type=pin_type
-        )
-        if not validation.success or validation.session_id is None:
+        validation = await self.validate_pin(user_id=user_id, pin=old_pin, pin_type=pin_type)
+        if validation.session_id is None or not validation.success:
             logger.warning(
-                f"PIN rotation rejected for user {user_id} type {pin_type}: "
-                f"old PIN verification failed"
+                "PIN rotation rejected for user %s type %s: old PIN verification failed",
+                user_id,
+                pin_type,
             )
             return False
 
@@ -322,7 +321,7 @@ class PINManager:
         pin.is_active = False
         pin.updated_at = datetime.now(UTC)
         await self.db_session.commit()
-        logger.info(f"PIN deactivated for user {user_id} type {pin_type}")
+        logger.info("PIN deactivated for user %s type %s", user_id, pin_type)
         return True
 
     def _validate_pin_format(self, pin: str) -> bool:
