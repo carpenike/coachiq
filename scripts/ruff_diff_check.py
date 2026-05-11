@@ -41,41 +41,95 @@ import sys
 from collections import defaultdict
 from pathlib import Path
 
+# A diff hunk header has the shape "@@ -OLD,LEN +NEW,LEN @@". After splitting
+# on whitespace we expect at least the leading "@@", the "-OLD,LEN" range
+# and the "+NEW,LEN" range -- three tokens. Anything shorter is malformed
+# (or a noisy line) and should be skipped silently.
+MIN_HUNK_HEADER_PARTS = 3
 
-def _run(cmd: list[str]) -> str:
-    """Run a command and return stdout, raising on non-zero exit."""
-    result = subprocess.run(cmd, capture_output=True, text=True, check=False)
+
+def _run(cmd: list[str], *, allow_no_merge_base: bool = False) -> str:
+    """Run a command and return stdout, raising on non-zero exit.
+
+    If ``allow_no_merge_base`` is True and the command fails with the
+    git "no merge base" error (typical on CI shallow clones), return
+    an empty string instead of exiting -- callers handle the fallback.
+
+    Rationale for ``# noqa: S603`` here and on the other subprocess sites:
+    this script INTENTIONALLY shells out to git, poetry and ruff -- that's
+    its whole job. The argument list comes from caller-controlled paths
+    and refs, never from network input. Auditing each invocation is noise.
+    """
+    result = subprocess.run(cmd, capture_output=True, text=True, check=False)  # noqa: S603
     if result.returncode != 0:
         # ruff returns 1 when issues are found and we still want the JSON;
         # only treat genuine tooling failures (no stdout, error on stderr)
         # as fatal.
         if result.stdout.strip():
             return result.stdout
+        if allow_no_merge_base and "no merge base" in result.stderr:
+            return ""
         sys.stderr.write(f"command failed: {' '.join(cmd)}\n{result.stderr}")
         sys.exit(2)
     return result.stdout
 
 
+def _diff_range(base_ref: str) -> str:
+    """Return the git diff range to use against ``base_ref``.
+
+    Prefers three-dot (``A...HEAD``) which compares against the merge
+    base -- this is what GitHub PR diffs show. Falls back to two-dot
+    (``A..HEAD``) on shallow clones where the merge base isn't fetched
+    (CI runners default to ``fetch-depth: 1``).
+    """
+    probe = subprocess.run(  # noqa: S603 - controlled git invocation; see _run() docstring
+        ["git", "merge-base", base_ref, "HEAD"],  # noqa: S607 - relies on PATH-resolved git like every other CI helper in this repo
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    if probe.returncode == 0 and probe.stdout.strip():
+        return f"{base_ref}...HEAD"
+    return f"{base_ref}..HEAD"
+
+
 def _changed_python_files(base_ref: str) -> list[str]:
     """Return PR-changed .py files (added/modified, not deleted)."""
-    out = _run(
-        ["git", "diff", "--name-only", "--diff-filter=AM", f"{base_ref}...HEAD"]
-    )
+    out = _run(["git", "diff", "--name-only", "--diff-filter=AM", _diff_range(base_ref)])
     return [line for line in out.splitlines() if line.endswith(".py") and Path(line).exists()]
+
+
+def _parse_hunk_header(line: str) -> tuple[int, int] | None:
+    """Parse a `@@ -OLD,LEN +NEW,LEN @@` line into (new_start, new_length).
+
+    Returns None for malformed headers so callers can skip silently.
+    Extracted from ``_changed_lines`` to keep that function under the
+    C901 complexity threshold.
+    """
+    parts = line.split(" ")
+    if len(parts) < MIN_HUNK_HEADER_PARTS:
+        return None
+    new_part = parts[2].lstrip("+")
+    try:
+        if "," in new_part:
+            start_str, length_str = new_part.split(",")
+            return int(start_str), int(length_str)
+        return int(new_part), 1
+    except ValueError:
+        return None
 
 
 def _changed_lines(base_ref: str, files: list[str]) -> dict[str, set[int]]:
     """Return {repo-relative path: set of changed/added line numbers}.
 
     Uses ``git diff --unified=0`` so we get pure hunk ranges, not surrounding
-    context. Parses the ``@@ -old +new[,len] @@`` headers directly.
+    context. Parses the ``@@ -old +new[,len] @@`` headers directly via
+    ``_parse_hunk_header``.
     """
     if not files:
         return {}
 
-    out = _run(
-        ["git", "diff", "--unified=0", f"{base_ref}...HEAD", "--", *files]
-    )
+    out = _run(["git", "diff", "--unified=0", _diff_range(base_ref), "--", *files])
 
     result: dict[str, set[int]] = defaultdict(set)
     current_file: str | None = None
@@ -87,26 +141,12 @@ def _changed_lines(base_ref: str, files: list[str]) -> dict[str, set[int]]:
         if not line.startswith("@@") or current_file is None:
             continue
 
-        # @@ -OLD,LEN +NEW,LEN @@  (LEN is optional; absent means 1)
-        parts = line.split(" ")
-        if len(parts) < 3:
+        parsed = _parse_hunk_header(line)
+        if parsed is None:
             continue
-        new_part = parts[2].lstrip("+")
-        if "," in new_part:
-            try:
-                start_str, length_str = new_part.split(",")
-                start = int(start_str)
-                length = int(length_str)
-            except ValueError:
-                continue
-        else:
-            try:
-                start = int(new_part)
-            except ValueError:
-                continue
-            length = 1
+        start, length = parsed
 
-        # length 0 means "this is a deletion only" — no lines added, skip
+        # length 0 means "this is a deletion only" -- no lines added, skip
         if length == 0:
             continue
 
@@ -120,9 +160,7 @@ def _ruff_issues(files: list[str]) -> list[dict]:
     """Run ruff check on the given files and return parsed issue list."""
     if not files:
         return []
-    out = _run(
-        ["poetry", "run", "ruff", "check", "--output-format=json", *files]
-    )
+    out = _run(["poetry", "run", "ruff", "check", "--output-format=json", *files])
     if not out.strip():
         return []
     try:

@@ -66,7 +66,7 @@ class MessageInjectionRequest(BaseModel):
             return hex_str
         except ValueError as e:
             msg = f"Invalid hex data: {e}"
-            raise ValueError(msg)
+            raise ValueError(msg) from e
 
     class Config:
         json_schema_extra = {
@@ -121,7 +121,7 @@ class J1939MessageRequest(BaseModel):
             return hex_str
         except ValueError as e:
             msg = f"Invalid hex data: {e}"
-            raise ValueError(msg)
+            raise ValueError(msg) from e
 
 
 class InjectorStatusResponse(BaseModel):
