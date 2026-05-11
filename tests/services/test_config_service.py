@@ -69,9 +69,7 @@ class TestConfigServiceQueries:
         assert result.model == "Aspire"
         mock_repository.get_coach_info.assert_called_once()
 
-    def test_get_coach_info_returns_none_when_unconfigured(
-        self, config_service, mock_repository
-    ):
+    def test_get_coach_info_returns_none_when_unconfigured(self, config_service, mock_repository):
         mock_repository.get_coach_info.return_value = None
 
         assert config_service.get_coach_info() is None
@@ -84,9 +82,7 @@ class TestConfigServiceQueries:
         assert result == "DC_DIMMER_COMMAND_2"
         mock_repository.get_pgn_name.assert_called_once_with("0x1FEDA")
 
-    def test_get_pgn_name_returns_none_for_unknown_pgn(
-        self, config_service, mock_repository
-    ):
+    def test_get_pgn_name_returns_none_for_unknown_pgn(self, config_service, mock_repository):
         mock_repository.get_pgn_name.return_value = None
 
         assert config_service.get_pgn_name("0xFFFFF") is None
@@ -141,9 +137,7 @@ class TestConfigServiceHealth:
         assert health["configuration_loaded"] is False
         assert health["repository_health"]["reason"] == "config file missing"
 
-    def test_health_status_handles_missing_healthy_key(
-        self, config_service, mock_repository
-    ):
+    def test_health_status_handles_missing_healthy_key(self, config_service, mock_repository):
         # If the repository's health dict omits 'healthy', the service should
         # default to False rather than raising KeyError.
         mock_repository.get_health_status.return_value = {"some_other_field": 1}

@@ -68,9 +68,7 @@ class TestRVCEncoder:
             },
             spec_meta=RVCSpecMeta(version="test", source="test", rvc_version="test"),
             mapping_dict={},
-            entity_map={
-                ("1FFB1", "1"): {"device_type": "light", "entity_id": "test_light"}
-            },
+            entity_map={("1FFB1", "1"): {"device_type": "light", "entity_id": "test_light"}},
             entity_ids={"test_light"},
             inst_map={"test_light": {"dgn_hex": "1FFB1", "instance": "1"}},
             unique_instances={},

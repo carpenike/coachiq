@@ -43,9 +43,7 @@ class TestVectorServiceConstruction:
     """The service stores its dependencies and forwards index_path to the repo."""
 
     def test_init_without_index_path(self, mock_repository, mock_monitor):
-        service = VectorService(
-            vector_repository=mock_repository, performance_monitor=mock_monitor
-        )
+        service = VectorService(vector_repository=mock_repository, performance_monitor=mock_monitor)
 
         assert service.index_path is None
         # No background task should be scheduled when index_path is omitted.
@@ -64,9 +62,7 @@ class TestVectorServiceDelegation:
     @pytest.mark.asyncio
     async def test_is_available_delegates_to_repository(self, mock_repository, mock_monitor):
         mock_repository.is_available.return_value = True
-        service = VectorService(
-            vector_repository=mock_repository, performance_monitor=mock_monitor
-        )
+        service = VectorService(vector_repository=mock_repository, performance_monitor=mock_monitor)
 
         result = await service.is_available()
 
@@ -81,9 +77,7 @@ class TestVectorServiceDelegation:
             "index_path": "/var/lib/coachiq/vectors",
         }
         mock_repository.get_status.return_value = expected
-        service = VectorService(
-            vector_repository=mock_repository, performance_monitor=mock_monitor
-        )
+        service = VectorService(vector_repository=mock_repository, performance_monitor=mock_monitor)
 
         result = await service.get_status()
 
@@ -91,13 +85,9 @@ class TestVectorServiceDelegation:
         mock_repository.get_status.assert_awaited_once()
 
     @pytest.mark.asyncio
-    async def test_similarity_search_delegates_with_default_k(
-        self, mock_repository, mock_monitor
-    ):
+    async def test_similarity_search_delegates_with_default_k(self, mock_repository, mock_monitor):
         mock_repository.search.return_value = [{"id": "doc-1", "score": 0.9}]
-        service = VectorService(
-            vector_repository=mock_repository, performance_monitor=mock_monitor
-        )
+        service = VectorService(vector_repository=mock_repository, performance_monitor=mock_monitor)
 
         results = await service.similarity_search("hello world")
 
@@ -106,22 +96,16 @@ class TestVectorServiceDelegation:
 
     @pytest.mark.asyncio
     async def test_similarity_search_passes_through_k(self, mock_repository, mock_monitor):
-        service = VectorService(
-            vector_repository=mock_repository, performance_monitor=mock_monitor
-        )
+        service = VectorService(vector_repository=mock_repository, performance_monitor=mock_monitor)
 
         await service.similarity_search("query", k=10)
 
         mock_repository.search.assert_awaited_once_with("query", 10)
 
     @pytest.mark.asyncio
-    async def test_initialize_index_delegates_to_repository(
-        self, mock_repository, mock_monitor
-    ):
+    async def test_initialize_index_delegates_to_repository(self, mock_repository, mock_monitor):
         mock_repository.initialize_index.return_value = True
-        service = VectorService(
-            vector_repository=mock_repository, performance_monitor=mock_monitor
-        )
+        service = VectorService(vector_repository=mock_repository, performance_monitor=mock_monitor)
 
         result = await service.initialize_index("/some/path")
 
@@ -129,14 +113,10 @@ class TestVectorServiceDelegation:
         mock_repository.initialize_index.assert_awaited_once_with("/some/path")
 
     @pytest.mark.asyncio
-    async def test_get_index_stats_delegates_to_repository(
-        self, mock_repository, mock_monitor
-    ):
+    async def test_get_index_stats_delegates_to_repository(self, mock_repository, mock_monitor):
         expected = {"total_documents": 42, "size_bytes": 1024}
         mock_repository.get_index_stats.return_value = expected
-        service = VectorService(
-            vector_repository=mock_repository, performance_monitor=mock_monitor
-        )
+        service = VectorService(vector_repository=mock_repository, performance_monitor=mock_monitor)
 
         result = await service.get_index_stats()
 

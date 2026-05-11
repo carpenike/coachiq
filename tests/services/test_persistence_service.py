@@ -312,9 +312,7 @@ class TestPersistenceService:
     async def test_initialization_error_handling(self, mock_logger, temp_data_dir):
         """Test error handling during initialization."""
         # Create settings with invalid directory (read-only)
-        settings = PersistenceSettings(
-            data_dir=Path("/invalid/readonly/path"), create_dirs=True
-        )
+        settings = PersistenceSettings(data_dir=Path("/invalid/readonly/path"), create_dirs=True)
         service = _build_persistence_service(settings)
 
         # Should handle permission errors gracefully

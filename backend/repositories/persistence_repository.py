@@ -87,9 +87,7 @@ class PersistenceRepository(MonitoredRepository):
                     directory.mkdir(parents=True, exist_ok=True)
                     created.append(directory)
                 except (OSError, PermissionError) as e:
-                    logger.warning(
-                        f"Failed to create persistence directory {directory}: {e}"
-                    )
+                    logger.warning(f"Failed to create persistence directory {directory}: {e}")
 
         return created
 

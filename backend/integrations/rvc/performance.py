@@ -113,9 +113,7 @@ class PriorityMessageHandler:
         # rate limiter must track each class independently or a high-rate
         # critical message would block subsequent normal/low traffic for
         # one normal-priority interval.
-        self._last_emit_at: dict[MessagePriority, float] = {
-            priority: 0.0 for priority in MessagePriority
-        }
+        self._last_emit_at: dict[MessagePriority, float] = dict.fromkeys(MessagePriority, 0.0)
 
         logger.info("Priority message handler initialized")
 

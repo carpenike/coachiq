@@ -211,9 +211,7 @@ class AsyncNotificationDispatcher:
                 # Without this, the capacity check in a tight loop can see a
                 # full _active_batches set even after the tasks have finished,
                 # because cleanup only happened after the most recent spawn.
-                self._active_batches = {
-                    task for task in self._active_batches if not task.done()
-                }
+                self._active_batches = {task for task in self._active_batches if not task.done()}
 
                 # Check if we have capacity for more batches
                 if len(self._active_batches) >= self.max_concurrent_batches:

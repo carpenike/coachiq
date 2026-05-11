@@ -48,11 +48,10 @@ def _require_role(
         raise _AuthorizationError(msg)
     role = user_context.get("role")
     if role not in allowed_roles:
-        msg = (
-            f"Role {role!r} not permitted for {operation}; "
-            f"requires one of {allowed_roles}"
-        )
+        msg = f"Role {role!r} not permitted for {operation}; requires one of {allowed_roles}"
         raise _AuthorizationError(msg)
+
+
 from typing import Any, Dict, List, Optional
 
 from backend.core.performance import PerformanceMonitor
