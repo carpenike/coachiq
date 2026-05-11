@@ -7,7 +7,6 @@ Uses repository injection pattern for all dependencies.
 
 import asyncio
 import contextlib
-import logging
 import time
 from typing import Any
 
@@ -18,11 +17,12 @@ from backend.core.safety_interfaces import (
     SafetyClassification,
     SafetyStatus,
 )
+from backend.core.structured_logging import get_logger, log_execution_time, log_safety_critical
 from backend.integrations.rvc import BAMHandler, decode_payload, decode_product_id
 from backend.repositories.can_tracking_repository import CANTrackingRepository
 from backend.repositories.system_state_repository import SystemStateRepository
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__, "CANBusService")
 
 
 class CANBusService(SafetyAware):
@@ -89,7 +89,13 @@ class CANBusService(SafetyAware):
         # Anomaly detector for security monitoring (injected)
         self.anomaly_detector = can_anomaly_detector
 
-        logger.info("CANBusService initialized with repositories")
+        logger.info(
+            "CANBusService initialized",
+            interfaces=self.config["interfaces"],
+            bustype=self.config["bustype"],
+            bitrate=self.config["bitrate"],
+            has_anomaly_detector=bool(can_anomaly_detector),
+        )
 
     async def start(self) -> None:
         """Start the CAN bus service and initialize components."""
@@ -118,7 +124,7 @@ class CANBusService(SafetyAware):
                 await self.pattern_engine.start()
                 logger.info("Pattern recognition engine started")
             except Exception as e:
-                logger.warning("Failed to initialize pattern recognition engine: %s", e)
+                logger.warning("Failed to initialize pattern recognition engine", error=str(e))
                 self.pattern_engine = None
 
             # Start anomaly detector if provided
@@ -127,7 +133,7 @@ class CANBusService(SafetyAware):
                     await self.anomaly_detector.start()
                     logger.info("CAN anomaly detector started")
                 except Exception as e:
-                    logger.warning("Failed to start anomaly detector: %s", e)
+                    logger.warning("Failed to start anomaly detector", error=str(e))
                     self.anomaly_detector = None
 
             # Load RVC decoder configuration
@@ -184,9 +190,10 @@ class CANBusService(SafetyAware):
 
         logger.info("CAN bus service stopped")
 
+    @log_safety_critical(safety_level="CRITICAL")
     async def emergency_stop(self, reason: str) -> None:
         """Emergency stop implementation."""
-        logger.critical(f"CANBusService emergency stop: {reason}")
+        logger.critical("CANBusService emergency stop triggered", reason=reason)
         self._set_emergency_stop_active(True)
         self._running = False
 
@@ -268,6 +275,7 @@ class CANBusService(SafetyAware):
             },
         }
 
+    @log_execution_time(threshold_ms=500)
     async def _load_rvc_configuration(self) -> None:
         """Load RVC decoder configuration."""
         try:
@@ -281,8 +289,8 @@ class CANBusService(SafetyAware):
                 else None
             )
 
-            logger.info("Using RVC spec path: %s", spec_path)
-            logger.info("Using device mapping path: %s", map_path)
+            logger.info("Using RVC spec path", spec_path=spec_path)
+            logger.info("Using device mapping path", map_path=map_path)
 
             # Use structured configuration loader
             from backend.integrations.rvc import load_config_data_v2
@@ -315,13 +323,13 @@ class CANBusService(SafetyAware):
             self.raw_device_mapping = rvc_config.mapping_dict  # This is the device_mapping dict
 
             logger.info(
-                "Loaded RVC configuration: %d decoders, %d device mappings",
-                len(self.decoder_map),
-                len(self.device_lookup),
+                "Loaded RVC configuration",
+                decoders=len(self.decoder_map),
+                device_mappings=len(self.device_lookup),
             )
 
         except Exception as e:
-            logger.error("Failed to load RVC decoder configuration: %s", e)
+            logger.error("Failed to load RVC decoder configuration", error=str(e))
             logger.warning("CAN bus service will run without RVC decoding capabilities")
 
     async def _start_can_listeners(self) -> None:
@@ -337,10 +345,10 @@ class CANBusService(SafetyAware):
             bitrate = self.config["bitrate"]
 
             logger.info(
-                "Setting up CAN bus listeners: interfaces=%s, bustype=%s, bitrate=%s",
-                interfaces_config,
-                bustype,
-                bitrate,
+                "Setting up CAN bus listeners",
+                interfaces=interfaces_config,
+                bustype=bustype,
+                bitrate=bitrate,
             )
 
             # Initialize CAN interfaces directly
@@ -357,9 +365,9 @@ class CANBusService(SafetyAware):
 
             initialized_count = len(buses)
             logger.info(
-                "CAN interface initialization complete: initialized=%s, failed=%s",
-                initialized_count,
-                failed_interfaces,
+                "CAN interface initialization complete",
+                initialized=initialized_count,
+                failed=failed_interfaces,
             )
 
             if failed_interfaces:
@@ -382,7 +390,7 @@ class CANBusService(SafetyAware):
             logger.info("Falling back to CAN bus simulation mode")
             self._simulation_task = asyncio.create_task(self._simulate_can_messages())
         except Exception as e:
-            logger.error("Failed to start CAN bus listeners: %s", e, exc_info=True)
+            logger.error("Failed to start CAN bus listeners", exc_info=True)
             raise
 
     async def _setup_can_listeners(self) -> None:
@@ -399,7 +407,9 @@ class CANBusService(SafetyAware):
                 return
 
             logger.info(
-                "Setting up CAN listeners for %d interfaces: %s", len(buses), list(buses.keys())
+                "Setting up CAN listeners",
+                interface_count=len(buses),
+                interfaces=list(buses.keys()),
             )
 
             for interface_name, bus in buses.items():
@@ -428,13 +438,15 @@ class CANBusService(SafetyAware):
                         }
                     )
 
-                    logger.info("Started CAN listener for interface: %s", interface_name)
+                    logger.info("Started CAN listener for interface", interface_name=interface_name)
 
                 except Exception as e:
-                    logger.error("Failed to start CAN listener for %s: %s", interface_name, e)
+                    logger.error(
+                        "Failed to start CAN listener", interface_name=interface_name, error=str(e)
+                    )
 
         except Exception as e:
-            logger.error("Failed to set up CAN listeners: %s", e, exc_info=True)
+            logger.error("Failed to set up CAN listeners", exc_info=True)
 
     async def _cleanup_can_listeners(self) -> None:
         """Cleanup CAN bus listeners."""
@@ -495,16 +507,18 @@ class CANBusService(SafetyAware):
 
                 except Exception as e:
                     if self._running:  # Only log errors if we're still supposed to be running
-                        logger.error("Error receiving CAN message on %s: %s", interface_name, e)
+                        logger.error(
+                            "Error receiving CAN message", interface=interface_name, error=str(e)
+                        )
                     break
 
         except asyncio.CancelledError:
-            logger.info("CAN listener for %s cancelled", interface_name)
+            logger.info("CAN listener cancelled", interface=interface_name)
             raise
         except Exception as e:
-            logger.error("CAN listener for %s failed: %s", interface_name, e, exc_info=True)
+            logger.error("CAN listener failed", interface=interface_name, exc_info=True)
         finally:
-            logger.info("CAN listener for %s stopped", interface_name)
+            logger.info("CAN listener stopped", interface=interface_name)
 
     async def _send_to_can_tools(self, message, interface_name: str) -> bool:
         """
@@ -654,7 +668,7 @@ class CANBusService(SafetyAware):
             await self._process_message(msg_dict)
 
         except Exception as e:
-            logger.error("Error processing received CAN message: %s", e, exc_info=True)
+            logger.error("Error processing received CAN message", exc_info=True)
 
     async def _add_sniffer_entry(self, message, interface_name: str, direction: str) -> None:
         """Add a CAN message to the sniffer entries for monitoring."""
@@ -888,9 +902,7 @@ class CANBusService(SafetyAware):
                 logger.warning("Failed to update entity %s state", entity_id)
 
         except Exception as e:
-            logger.error(
-                "Error updating entity %s from CAN message: %s", entity_id, e, exc_info=True
-            )
+            logger.error("Error updating entity %s from CAN message", entity_id, exc_info=True)
 
     async def _update_light_state(
         self, payload: dict[str, Any], decoded_data: dict[str, Any], raw_data: dict[str, Any]

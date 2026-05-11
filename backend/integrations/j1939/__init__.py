@@ -14,6 +14,5 @@ Key features:
 """
 
 from backend.integrations.j1939.decoder import J1939Decoder
-from backend.integrations.j1939.feature import J1939Feature
 
-__all__ = ["J1939Decoder", "J1939Feature"]
+__all__ = ["J1939Decoder"]

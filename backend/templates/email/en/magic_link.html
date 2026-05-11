@@ -1,0 +1,39 @@
+
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <title>{{app_name}} Login</title>
+    <style>
+        body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; }
+        .container { max-width: 600px; margin: 0 auto; padding: 20px; }
+        .header { background: #2c3e50; color: white; padding: 20px; text-align: center; }
+        .content { background: #f8f9fa; padding: 30px; }
+        .button { background: #007bff; color: white; padding: 12px 24px; text-decoration: none; border-radius: 4px; display: inline-block; margin: 20px 0; }
+        .footer { background: #e9ecef; padding: 20px; font-size: 0.9em; color: #6c757d; }
+        .warning { background: #fff3cd; border: 1px solid #ffeaa7; padding: 15px; margin: 20px 0; border-radius: 4px; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>{{app_name}}</h1>
+        </div>
+        <div class="content">
+            <h2>Hello {{user_name}}!</h2>
+            <p>You requested a login link for your {{app_name}} account. Click the button below to sign in:</p>
+            <a href="{{magic_link}}" class="button">Sign In to {{app_name}}</a>
+            <div class="warning">
+                <strong>Security Notice:</strong> This link will expire in {{expires_minutes}} minutes.
+                If you didn't request this login, please ignore this email.
+            </div>
+            <p><strong>Alternative:</strong> If the button doesn't work, copy and paste this URL into your browser:</p>
+            <p style="word-break: break-all; background: #f1f3f4; padding: 10px; border-radius: 4px;">{{magic_link}}</p>
+        </div>
+        <div class="footer">
+            <p>This email was sent from {{app_name}}. If you need help, contact {{support_email}}.</p>
+            <p>You're receiving this because you requested a login link for your account.</p>
+        </div>
+    </div>
+</body>
+</html>

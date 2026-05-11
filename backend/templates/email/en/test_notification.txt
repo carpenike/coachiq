@@ -1,0 +1,13 @@
+
+{{app_name}} EMAIL TEST
+
+✅ Email System Test Successful!
+
+{{message}}
+
+Test Details:
+- Template Engine: Working ✅
+- Email Delivery: Working ✅
+- Time: {{timestamp|default(now())}}
+
+This is a test message from {{app_name}}. No action required.

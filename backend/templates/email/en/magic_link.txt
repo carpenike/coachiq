@@ -1,0 +1,15 @@
+
+{{app_name}} - Login Link
+
+Hello {{user_name}}!
+
+You requested a login link for your {{app_name}} account.
+
+Sign in here: {{magic_link}}
+
+SECURITY NOTICE: This link will expire in {{expires_minutes}} minutes.
+If you didn't request this login, please ignore this email.
+
+Need help? Contact {{support_email}}.
+
+This email was sent from {{app_name}}.

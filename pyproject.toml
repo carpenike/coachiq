@@ -407,6 +407,8 @@ bandit = {version = "^1.7.7", extras = ["toml"], python = ">=3.9"}
 pip-audit = "^2.7.3"
 
 # Bandit security linting configuration
+jsonschema = "^4.26.0"
+aiosmtplib = "^5.1.0"
 [tool.bandit]
 # Paths to scan
 exclude_dirs = [

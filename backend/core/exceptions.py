@@ -5,30 +5,108 @@ This module contains custom exceptions used throughout the application
 for proper error handling and API responses.
 """
 
+# Re-export custom exceptions for backward compatibility
+from backend.core.custom_exceptions import (
+    AccountLockedError,
+    AuthenticationError,
+    AuthorizationError,
+    CANBusOffError,
+    CANError,
+    CANInterfaceError,
+    CANMessageError,
+    CoachIQException,
+    ConfigurationError,
+    ConfigurationLoadError,
+    DatabaseConnectionError,
+    DatabaseError,
+    DatabaseMigrationError,
+    DataIntegrityError,
+    EmailServiceError,
+    EmergencyStopError,
+    EntityAlreadyExistsError,
+    EntityControlError,
+    EntityError,
+    EntityNotFoundError,
+    ExternalServiceError,
+    InputValidationError,
+    InsufficientPermissionsError,
+    InvalidCommandError,
+    InvalidConfigurationError,
+    InvalidCredentialsError,
+    InvalidDGNError,
+    InvalidSafetyPINError,
+    InvalidTokenError,
+    MFARequiredError,
+    RangeValidationError,
+    RateLimitExceededError,
+    RoleRequiredError,
+    RVCError,
+    SafetyException,
+    SafetyPINRequiredError,
+    SafetyViolationError,
+    ServiceDependencyError,
+    ServiceHealthCheckError,
+    ServiceInitializationError,
+    ServiceNotAvailableError,
+    TokenExpiredError,
+    UnknownPGNError,
+    ValidationError,
+    VectorSearchError,
+    WebSocketAuthenticationError,
+    WebSocketError,
+    WebSocketRateLimitError,
+)
 
-class ServiceNotAvailableError(Exception):
-    """
-    Raised when a requested service is not registered in ServiceRegistry.
+# All exceptions are now imported from custom_exceptions module
+# This module serves as a backward compatibility layer
 
-    This exception is used to indicate that a service required by an endpoint
-    is not available in the current deployment configuration. It results in
-    a 503 Service Unavailable response.
-    """
-
-    def __init__(self, service_name: str):
-        self.service_name = service_name
-        super().__init__(f"Service '{service_name}' is not available in this deployment")
-
-
-class ServiceInitializationError(Exception):
-    """
-    Raised when a service fails to initialize during startup.
-
-    This exception is used to indicate that a service could not be properly
-    initialized, but the application can continue running without it.
-    """
-
-    def __init__(self, service_name: str, reason: str):
-        self.service_name = service_name
-        self.reason = reason
-        super().__init__(f"Service '{service_name}' failed to initialize: {reason}")
+__all__ = [
+    "AccountLockedError",
+    "AuthenticationError",
+    "AuthorizationError",
+    "CANBusOffError",
+    "CANError",
+    "CANInterfaceError",
+    "CANMessageError",
+    "CoachIQException",
+    "ConfigurationError",
+    "ConfigurationLoadError",
+    "DataIntegrityError",
+    "DatabaseConnectionError",
+    "DatabaseError",
+    "DatabaseMigrationError",
+    "EmailServiceError",
+    "EmergencyStopError",
+    "EntityAlreadyExistsError",
+    "EntityControlError",
+    "EntityError",
+    "EntityNotFoundError",
+    "ExternalServiceError",
+    "InputValidationError",
+    "InsufficientPermissionsError",
+    "InvalidCommandError",
+    "InvalidConfigurationError",
+    "InvalidCredentialsError",
+    "InvalidDGNError",
+    "InvalidSafetyPINError",
+    "InvalidTokenError",
+    "MFARequiredError",
+    "RVCError",
+    "RangeValidationError",
+    "RateLimitExceededError",
+    "RoleRequiredError",
+    "SafetyException",
+    "SafetyPINRequiredError",
+    "SafetyViolationError",
+    "ServiceDependencyError",
+    "ServiceHealthCheckError",
+    "ServiceInitializationError",
+    "ServiceNotAvailableError",
+    "TokenExpiredError",
+    "UnknownPGNError",
+    "ValidationError",
+    "VectorSearchError",
+    "WebSocketAuthenticationError",
+    "WebSocketError",
+    "WebSocketRateLimitError",
+]

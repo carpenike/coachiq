@@ -6,12 +6,12 @@ Service for RV-C protocol-specific operations using repository pattern.
 
 import asyncio
 import contextlib
-import logging
 from typing import Any
 
+from backend.core.structured_logging import get_logger, log_execution_time
 from backend.repositories import CANTrackingRepository, RVCConfigRepository
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__, "RVCService")
 
 
 class RVCService:
@@ -45,7 +45,10 @@ class RVCService:
         self._instance_mapping: dict[str, dict[int, str]] = {}
         self._message_handlers: dict[int, Any] = {}
 
-        logger.info("RVCService initialized with repositories")
+        logger.info(
+            "RVCService initialized",
+            has_can_tracking=bool(can_tracking_repository),
+        )
 
     async def start(self) -> None:
         """Start the RVC service and its background tasks."""
@@ -112,6 +115,7 @@ class RVCService:
         except Exception as e:
             logger.exception("Error in RVC message processing task: %s", e)
 
+    @log_execution_time(threshold_ms=10)
     def decode_message(self, dgn: int, data: bytes, source: int) -> dict[str, Any] | None:
         """
         Decode an RV-C message into a structured format.

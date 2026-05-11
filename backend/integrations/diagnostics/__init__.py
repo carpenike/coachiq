@@ -19,7 +19,6 @@ Architecture:
 """
 
 from backend.integrations.diagnostics.config import AdvancedDiagnosticsSettings
-from backend.integrations.diagnostics.feature import AdvancedDiagnosticsFeature
 from backend.integrations.diagnostics.handler import DiagnosticHandler
 from backend.integrations.diagnostics.models import (
     DiagnosticTroubleCode,
@@ -31,7 +30,6 @@ from backend.integrations.diagnostics.models import (
 from backend.integrations.diagnostics.predictive import PredictiveMaintenanceEngine
 
 __all__ = [
-    "AdvancedDiagnosticsFeature",
     "AdvancedDiagnosticsSettings",
     "DiagnosticHandler",
     "DiagnosticTroubleCode",

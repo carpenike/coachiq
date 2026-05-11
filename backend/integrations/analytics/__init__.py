@@ -26,7 +26,6 @@ Industry Best Practices Implemented:
 """
 
 from backend.integrations.analytics.config import PerformanceAnalyticsSettings
-from backend.integrations.analytics.feature import PerformanceAnalyticsFeature
 from backend.integrations.analytics.metrics import (
     get_can_interface_utilization,
     get_protocol_errors,
@@ -44,7 +43,6 @@ from backend.integrations.analytics.models import (
     TrendAnalysis,
 )
 from backend.integrations.analytics.optimizer import OptimizationEngine
-from backend.integrations.analytics.registration import register_performance_analytics_feature
 from backend.integrations.analytics.telemetry import TelemetryCollector
 from backend.integrations.analytics.trend_analyzer import TrendAnalyzer
 
@@ -53,7 +51,6 @@ __all__ = [
     "OptimizationLevel",
     "OptimizationRecommendation",
     "PerformanceAlert",
-    "PerformanceAnalyticsFeature",
     "PerformanceAnalyticsSettings",
     "PerformanceBaseline",
     "ProtocolType",
@@ -66,5 +63,4 @@ __all__ = [
     "get_protocol_message_rate",
     "get_resource_utilization",
     "initialize_performance_metrics",
-    "register_performance_analytics_feature",
 ]

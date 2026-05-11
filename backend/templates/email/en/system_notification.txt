@@ -1,0 +1,14 @@
+
+{{app_name}} SYSTEM ALERT
+
+{{level|upper}}: {{title}}
+
+{{message}}
+
+{% if source_component %}Component: {{source_component}}{% endif %}
+{% if correlation_id %}Event ID: {{correlation_id}}{% endif %}
+
+Timestamp: {{timestamp|default(now())}}
+
+This is an automated message from {{app_name}} monitoring system.
+For support, contact {{support_email}}.
