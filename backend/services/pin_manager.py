@@ -227,6 +227,103 @@ class PINManager:
         )
         return True
 
+    async def create_pin(
+        self,
+        user_id: str,
+        pin: str,
+        pin_type: str,
+        description: str | None = None,
+    ) -> bool:
+        """
+        Create a new PIN (or update if one of the same type exists).
+
+        This is the operator-facing public API: callers spell their intent
+        ("I'm creating a PIN") and the audit log records that, even though
+        the underlying storage operation is the same set-or-update as
+        ``set_pin``. The argument order (``user_id, pin, pin_type, ...``)
+        matches the convention used by ``validate_pin`` and the broader
+        PIN-management surface; ``set_pin`` predates this and uses
+        ``(user_id, pin_type, pin, ...)`` for historical reasons.
+        """
+        return await self.set_pin(
+            user_id=user_id, pin_type=pin_type, pin=pin, description=description
+        )
+
+    async def rotate_pin(
+        self,
+        user_id: str,
+        pin_type: str,
+        old_pin: str,
+        new_pin: str,
+    ) -> bool:
+        """
+        Rotate a PIN: verify the current PIN, then replace it with a new one.
+
+        Verifying the old PIN before accepting the rotation prevents an
+        attacker who only has session-level access (but not the current
+        PIN) from silently changing it. This is the standard contract for
+        end-user-driven credential rotation.
+
+        Returns True on success, False if old_pin verification fails.
+        """
+        if not self.db_session:
+            msg = "Database session not available"
+            raise RuntimeError(msg)
+
+        # Verify the current PIN by attempting to validate it. If validation
+        # succeeds, the PIN was correct; revoke that throwaway session
+        # immediately so we don't leave a side-effect from the rotation
+        # flow. validate_pin returns a PINValidationResult with .success
+        # and .session_id; .session_id is None on failure.
+        validation = await self.validate_pin(user_id=user_id, pin=old_pin, pin_type=pin_type)
+        if validation.session_id is None or not validation.success:
+            logger.warning(
+                "PIN rotation rejected for user %s type %s: old PIN verification failed",
+                user_id,
+                pin_type,
+            )
+            return False
+
+        await self.revoke_session(validation.session_id)
+
+        # Set the new PIN via the same set-or-update path used by create_pin.
+        return await self.set_pin(user_id=user_id, pin_type=pin_type, pin=new_pin)
+
+    async def deactivate_pin(self, user_id: str, pin_type: str) -> bool:
+        """
+        Deactivate (soft-delete) a PIN by clearing its is_active flag.
+
+        Soft-deletion preserves the audit trail (the PIN row stays in the
+        database with its hash and creation history) while ensuring
+        ``validate_pin`` refuses to mint a session for it. Hard deletion
+        would lose the audit signal.
+
+        Returns True if a matching active PIN was found and deactivated,
+        False if no active PIN of that type existed.
+        """
+        if not self.db_session:
+            msg = "Database session not available"
+            raise RuntimeError(msg)
+
+        result = await self.db_session.execute(
+            select(UserPIN).where(
+                and_(
+                    UserPIN.user_id == user_id,
+                    UserPIN.pin_type == pin_type,
+                    UserPIN.is_active.is_(True),
+                )
+            )
+        )
+        pin = result.scalar_one_or_none()
+        if pin is None:
+            return False
+
+        pin.is_active = False
+        pin.updated_at = datetime.now(UTC)
+        await self.db_session.commit()
+        logger.info("PIN deactivated for user %s type %s", user_id, pin_type)
+        return True
+
     def _validate_pin_format(self, pin: str) -> bool:
         """Validate PIN format requirements."""
         if len(pin) < self.config.min_pin_length or len(pin) > self.config.max_pin_length:

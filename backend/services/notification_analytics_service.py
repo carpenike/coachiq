@@ -82,9 +82,17 @@ class NotificationAnalyticsService:
             flush_interval=30.0,
         )
 
-        self._reporting_service = NotificationReportingService(
-            self._repository, performance_monitor, database_manager
-        )
+        # The reporting service needs the analytics-service public API
+        # (get_channel_metrics, get_aggregated_metrics, analyze_errors,
+        # get_queue_health) because every report template invokes those
+        # methods. We hand it `self` so it can call back; this is a
+        # normal orchestrator-with-helpers composition, not a leak. The
+        # previous wiring passed `(self._repository, performance_monitor,
+        # database_manager)` -- a stale signature from an earlier refactor
+        # that no longer matches NotificationReportingService.__init__,
+        # raising `TypeError: takes 3 positional arguments but 4 were
+        # given` on every analytics-service construction.
+        self._reporting_service = NotificationReportingService(database_manager, self)
 
         # Background task management
         self._task_manager = BackgroundTaskManager()

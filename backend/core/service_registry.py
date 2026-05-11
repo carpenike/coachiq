@@ -31,13 +31,26 @@ from backend.core.service_lifecycle import (
 
 
 class ServiceStatus(Enum):
-    """Service lifecycle status."""
+    """Service lifecycle status.
+
+    Lifecycle order during a normal run:
+        PENDING -> STARTING -> HEALTHY (-> DEGRADED) -> STOPPED
+    Failure paths transition to FAILED at any step.
+
+    STOPPED is used both pre-startup (initial state for services that
+    have been registered but not yet brought up) and post-shutdown
+    (after _shutdown_service successfully tears a service down). The
+    enum's previous omission of STOPPED meant services kept their last
+    runtime status forever after shutdown, which broke any caller that
+    needed to distinguish 'still running' from 'cleanly stopped'.
+    """
 
     PENDING = "PENDING"
     STARTING = "STARTING"
     HEALTHY = "HEALTHY"
     DEGRADED = "DEGRADED"
     FAILED = "FAILED"
+    STOPPED = "STOPPED"
 
 
 class ServiceRegistry:
@@ -200,7 +213,17 @@ class ServiceRegistry:
             await self._shutdown_service(service_name)
 
     async def _shutdown_service(self, name: str):
-        """Shutdown individual service."""
+        """Shutdown individual service.
+
+        Sets the registry's tracked status to STOPPED on success so callers
+        can distinguish 'still running' from 'cleanly stopped'. Without
+        this, services kept their last runtime status (HEALTHY, DEGRADED,
+        etc.) forever after shutdown, which broke any caller that needed
+        to make lifecycle decisions post-teardown.
+
+        On failure the status is left as FAILED -- a partial-shutdown
+        state is itself a failure mode worth surfacing.
+        """
         try:
             service = self._services.get(name)
             if service and hasattr(service, "shutdown"):
@@ -208,8 +231,13 @@ class ServiceRegistry:
                     await service.shutdown()
                 else:
                     service.shutdown()
+            # Mark stopped after a successful shutdown call (or trivial
+            # no-op for services without a shutdown method, which is fine).
+            if name in self._service_status:
+                self._service_status[name] = ServiceStatus.STOPPED
         except Exception:
-            pass
+            if name in self._service_status:
+                self._service_status[name] = ServiceStatus.FAILED
 
     async def _emergency_cleanup(self):
         """Emergency cleanup of partially initialized services."""
