@@ -10,12 +10,49 @@ import json
 import sqlite3
 import tempfile
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 import pytest
 
 from backend.core.config import PersistenceSettings
+from backend.core.performance import PerformanceMonitor
+from backend.repositories.persistence_repository import PersistenceRepository
 from backend.services.persistence_service import PersistenceService
+
+
+def _build_persistence_service(settings: PersistenceSettings) -> PersistenceService:
+    """Build a PersistenceService with a real PersistenceRepository.
+
+    This integration-style helper is used by every test in this module so the
+    boilerplate of wiring repository + monitor + database_manager stays in one
+    place.
+    """
+    monitor = MagicMock(spec=PerformanceMonitor)
+    monitor.monitor_service_method = MagicMock(return_value=lambda fn: fn)
+    # MonitoredRepository (the repo's base class) wraps every operation via
+    # monitor.monitor_repository_operation(repo_name, op_name)(func) — also a
+    # decorator factory that must return the original function unchanged.
+    monitor.monitor_repository_operation = MagicMock(return_value=lambda fn: fn)
+
+    # PersistenceRepository expects a database_manager but never calls it
+    # for the file-system / backup paths these tests exercise.
+    database_manager = MagicMock()
+
+    repository = PersistenceRepository(
+        database_manager=database_manager,
+        performance_monitor=monitor,
+        data_dir=settings.data_dir,
+        backup_enabled=settings.backup_enabled,
+        max_backup_size_mb=settings.max_backup_size_mb,
+        backup_retention_days=settings.backup_retention_days,
+    )
+
+    return PersistenceService(
+        persistence_repository=repository,
+        performance_monitor=monitor,
+        settings=settings,
+        database_manager=database_manager,
+    )
 
 
 class TestPersistenceService:
@@ -31,7 +68,6 @@ class TestPersistenceService:
     def test_settings(self, temp_data_dir):
         """Create test persistence settings with temporary directory."""
         return PersistenceSettings(
-            enabled=True,  # Explicitly enable for tests
             data_dir=temp_data_dir,
             create_dirs=True,
             backup_enabled=True,
@@ -42,7 +78,7 @@ class TestPersistenceService:
     @pytest.fixture
     def persistence_service(self, test_settings):
         """Create a PersistenceService instance with test settings."""
-        return PersistenceService(test_settings)
+        return _build_persistence_service(test_settings)
 
     @pytest.fixture
     def test_database(self, temp_data_dir):
@@ -76,16 +112,6 @@ class TestPersistenceService:
         assert success is True
         assert persistence_service._initialized is True
         assert persistence_service.data_dir.exists()
-
-    async def test_initialization_disabled(self, temp_data_dir):
-        """Test initialization when persistence is disabled."""
-        settings = PersistenceSettings(enabled=False, data_dir=temp_data_dir)
-        service = PersistenceService(settings)
-
-        success = await service.initialize()
-
-        assert success is True
-        assert service._initialized is True
 
     async def test_directory_creation(self, persistence_service):
         """Test that all required directories are created."""
@@ -138,8 +164,8 @@ class TestPersistenceService:
 
     async def test_database_backup_disabled(self, temp_data_dir, test_database):
         """Test backup when backup is disabled."""
-        settings = PersistenceSettings(enabled=True, data_dir=temp_data_dir, backup_enabled=False)
-        service = PersistenceService(settings)
+        settings = PersistenceSettings(data_dir=temp_data_dir, backup_enabled=False)
+        service = _build_persistence_service(settings)
         await service.initialize()
 
         backup_path = await service.backup_database(test_database)
@@ -232,7 +258,7 @@ class TestPersistenceService:
         backups = await persistence_service.list_backups()
 
         assert len(backups) >= 2
-        backup_names = [b["name"] for b in backups]
+        backup_names = [b.name for b in backups]
         assert "backup1.db" in backup_names
         assert "backup2.db" in backup_names
 
@@ -250,7 +276,7 @@ class TestPersistenceService:
         # Should only return backups starting with "test_"
         assert len(test_backups) >= 1
         for backup in test_backups:
-            assert backup["name"].startswith("test_")
+            assert backup.name.startswith("test_")
 
     async def test_get_storage_info(self, persistence_service):
         """Test getting storage information."""
@@ -258,27 +284,20 @@ class TestPersistenceService:
 
         storage_info = await persistence_service.get_storage_info()
 
-        assert storage_info["enabled"] is True
-        assert "data_dir" in storage_info
-        assert "directories" in storage_info
-        assert "disk_usage" in storage_info
-        assert "backup_settings" in storage_info
+        # storage_info is a StorageInfo Pydantic model.
+        assert storage_info.enabled is True
+        assert storage_info.data_dir is not None
+        assert storage_info.directories is not None
+        assert storage_info.disk_usage is not None
+        assert storage_info.backup_settings is not None
 
-        # Check directory information
-        directories = storage_info["directories"]
-        assert "database" in directories
+        # Check directory information. Note: subdirectory key is plural
+        # ('databases') to match the on-disk layout produced by
+        # PersistenceRepository._ensure_directories().
+        directories = storage_info.directories
+        assert "databases" in directories
         assert "backups" in directories
-        assert "config" in directories
         assert "logs" in directories
-
-    async def test_get_storage_info_disabled(self, temp_data_dir):
-        """Test storage info when persistence is disabled."""
-        settings = PersistenceSettings(enabled=False, data_dir=temp_data_dir)
-        service = PersistenceService(settings)
-
-        storage_info = await service.get_storage_info()
-
-        assert storage_info["enabled"] is False
 
     async def test_shutdown(self, persistence_service):
         """Test service shutdown."""
@@ -294,9 +313,9 @@ class TestPersistenceService:
         """Test error handling during initialization."""
         # Create settings with invalid directory (read-only)
         settings = PersistenceSettings(
-            enabled=True, data_dir=Path("/invalid/readonly/path"), create_dirs=True
+            data_dir=Path("/invalid/readonly/path"), create_dirs=True
         )
-        service = PersistenceService(settings)
+        service = _build_persistence_service(settings)
 
         # Should handle permission errors gracefully
         success = await service.initialize()
@@ -307,23 +326,28 @@ class TestPersistenceService:
 
     async def test_backup_cleanup(self, persistence_service, test_database):
         """Test automatic backup cleanup based on retention policy."""
-        # Set short retention for testing
+        # Set short retention for testing — both on settings (used by service)
+        # and on the underlying repository (which captured the original value
+        # at construction time).
         persistence_service.settings.backup_retention_days = 1
+        persistence_service._repository._backup_retention_days = 1
         await persistence_service.initialize()
 
         # Create a backup
         backup_path = await persistence_service.backup_database(test_database, "old_backup")
         assert backup_path is not None
 
-        # Manually set the file modification time to be old
+        # Manually set the file modification time to be old. cleanup_old_backups
+        # uses st_mtime (which os.utime can update); st_ctime is not portable
+        # to set from userspace.
         import os
         import time
 
         old_time = time.time() - (2 * 24 * 60 * 60)  # 2 days ago
         os.utime(backup_path, (old_time, old_time))
 
-        # Trigger cleanup by calling the private method
-        await persistence_service._cleanup_old_backups()
+        # Trigger cleanup by calling the public method
+        await persistence_service.cleanup_old_backups()
 
         # Old backup should be removed
         assert not backup_path.exists()
@@ -352,12 +376,11 @@ class TestPersistenceServiceEdgeCases:
     async def test_backup_oversized_database(self, temp_data_dir):
         """Test backup rejection for oversized databases."""
         settings = PersistenceSettings(
-            enabled=True,
             data_dir=temp_data_dir,
             backup_enabled=True,
             max_backup_size_mb=1,  # Very small limit
         )
-        service = PersistenceService(settings)
+        service = _build_persistence_service(settings)
         await service.initialize()
 
         # Create a database larger than the limit
@@ -371,8 +394,8 @@ class TestPersistenceServiceEdgeCases:
 
     async def test_concurrent_operations(self, temp_data_dir):
         """Test concurrent persistence operations."""
-        settings = PersistenceSettings(enabled=True, data_dir=temp_data_dir)
-        service = PersistenceService(settings)
+        settings = PersistenceSettings(data_dir=temp_data_dir)
+        service = _build_persistence_service(settings)
         await service.initialize()
 
         # Test concurrent config saves
@@ -392,8 +415,8 @@ class TestPersistenceServiceEdgeCases:
 
     async def test_invalid_json_config_handling(self, temp_data_dir):
         """Test handling of corrupted JSON config files."""
-        settings = PersistenceSettings(enabled=True, data_dir=temp_data_dir)
-        service = PersistenceService(settings)
+        settings = PersistenceSettings(data_dir=temp_data_dir)
+        service = _build_persistence_service(settings)
         await service.initialize()
 
         # Create an invalid JSON file

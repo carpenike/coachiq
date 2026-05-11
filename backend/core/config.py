@@ -487,7 +487,10 @@ class PersistenceSettings(BaseSettings):
 
     def get_database_dir(self) -> Path:
         """Get the database storage directory."""
-        return self.data_dir / "database"
+        # Note: subdirectory is plural ('databases') to match the layout
+        # produced by PersistenceRepository._ensure_directories(). These two
+        # have to agree or backup/list_backups assertions break.
+        return self.data_dir / "databases"
 
     def get_backup_dir(self) -> Path:
         """Get the backup storage directory."""

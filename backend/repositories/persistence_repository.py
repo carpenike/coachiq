@@ -61,6 +61,11 @@ class PersistenceRepository(MonitoredRepository):
     def _ensure_directories(self) -> list[Path]:
         """Ensure all required directories exist.
 
+        Errors creating individual directories are logged as warnings rather
+        than raised so that one read-only or otherwise broken subdirectory
+        does not prevent the rest of the persistence layer from initializing.
+        Callers that need the strict guarantee can re-check existence.
+
         Returns:
             List of created directories
         """
@@ -69,6 +74,7 @@ class PersistenceRepository(MonitoredRepository):
             self._data_dir,
             self._data_dir / "databases",
             self._data_dir / "backups",
+            self._data_dir / "config",
             self._data_dir / "themes",
             self._data_dir / "dashboards",
             self._data_dir / "logs",
@@ -77,8 +83,13 @@ class PersistenceRepository(MonitoredRepository):
 
         for directory in directories:
             if not directory.exists():
-                directory.mkdir(parents=True, exist_ok=True)
-                created.append(directory)
+                try:
+                    directory.mkdir(parents=True, exist_ok=True)
+                    created.append(directory)
+                except (OSError, PermissionError) as e:
+                    logger.warning(
+                        f"Failed to create persistence directory {directory}: {e}"
+                    )
 
         return created
 
@@ -220,20 +231,27 @@ class PersistenceRepository(MonitoredRepository):
             backups.append(
                 BackupInfo(
                     name=backup_file.name,
-                    path=backup_file,
-                    size_bytes=stat.st_size,
-                    created_at=datetime.fromtimestamp(stat.st_ctime),
+                    path=str(backup_file),
+                    size_mb=stat.st_size / (1024 * 1024),
+                    created=datetime.fromtimestamp(stat.st_ctime),
+                    modified=datetime.fromtimestamp(stat.st_mtime),
                     database_name=backup_file.stem.split("_")[0],
                 )
             )
 
         # Sort by creation time, newest first
-        backups.sort(key=lambda b: b.created_at, reverse=True)
+        backups.sort(key=lambda b: b.created, reverse=True)
         return backups
 
     @MonitoredRepository._monitored_operation("cleanup_old_backups")
     async def cleanup_old_backups(self) -> int:
         """Clean up backups older than retention period.
+
+        Uses st_mtime rather than st_ctime: ctime is the inode-change time
+        on POSIX (and creation time on some platforms), neither of which is
+        a reliable proxy for 'when was the backup last considered fresh'.
+        st_mtime is monotonic with respect to backup writes and can also be
+        adjusted via os.utime for testing.
 
         Returns:
             Number of backups deleted
@@ -250,8 +268,8 @@ class PersistenceRepository(MonitoredRepository):
 
         for backup_file in backup_dir.glob("*.db"):
             try:
-                created_at = datetime.fromtimestamp(backup_file.stat().st_ctime)
-                if created_at < cutoff_date:
+                modified_at = datetime.fromtimestamp(backup_file.stat().st_mtime)
+                if modified_at < cutoff_date:
                     backup_file.unlink()
                     deleted_count += 1
                     logger.debug(f"Deleted old backup: {backup_file}")
@@ -339,21 +357,25 @@ class PersistenceRepository(MonitoredRepository):
                 total_size += dir_size
                 file_count += dir_files
                 directory_info[subdir] = DirectoryInfo(
-                    path=dir_path, size_bytes=dir_size, file_count=dir_files
+                    path=str(dir_path),
+                    size_mb=dir_size / (1024 * 1024),
+                    file_count=dir_files,
+                    exists=True,
                 )
 
         # Get disk usage
         disk_usage = shutil.disk_usage(self._data_dir)
+        bytes_per_gb = 1024 * 1024 * 1024
 
         return StorageInfo(
-            total_size_bytes=total_size,
-            total_file_count=file_count,
+            enabled=True,
+            data_dir=str(self._data_dir),
             directories=directory_info,
             disk_usage=DiskUsageInfo(
-                total=disk_usage.total,
-                used=disk_usage.used,
-                free=disk_usage.free,
-                percent=(disk_usage.used / disk_usage.total) * 100,
+                total_gb=disk_usage.total / bytes_per_gb,
+                used_gb=disk_usage.used / bytes_per_gb,
+                free_gb=disk_usage.free / bytes_per_gb,
+                usage_percent=(disk_usage.used / disk_usage.total) * 100,
             ),
         )
 
