@@ -17,9 +17,10 @@ applyTo: "**"
 
 - `backend/`: FastAPI app, API routes, services, and business logic
   - `backend/main.py`: FastAPI application entry point
-  - `backend/core/`: Core application components (config, state, dependencies)
-  - `backend/services/`: Business logic services (entity, CAN, RV-C)
-  - `backend/api/routers/`: API endpoint routers
+  - `backend/core/`: Core application infrastructure (config, ServiceRegistry, dependency injection, exceptions)
+  - `backend/services/`: Business logic services (entity, CAN, RV-C, auth, persistence)
+  - `backend/repositories/`: Repository pattern for data access (replaces the removed monolithic `AppState`)
+  - `backend/api/routers/`: REST API endpoint routers
   - `backend/websocket/`: WebSocket management
   - `backend/integrations/`: Protocol integrations
   - `backend/models/`: Domain models

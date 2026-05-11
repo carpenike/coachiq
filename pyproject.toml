@@ -119,7 +119,6 @@ exclude = [
     ".DS_Store",
     "Thumbs.db",
     # Project specific
-    "_deprecated",
     "frontend/node_modules",
     "frontend/dist",
     "frontend/coverage",
@@ -185,7 +184,6 @@ exclude = [
     ".DS_Store",
     "Thumbs.db",
     # Project specific
-    "_deprecated",
     "frontend/node_modules",
     "frontend/dist",
     "frontend/coverage",
@@ -411,7 +409,6 @@ pip-audit = "^2.7.3"
 # Paths to scan
 exclude_dirs = [
     "tests",
-    "_deprecated",
     "typings",
     ".venv",
     "venv",

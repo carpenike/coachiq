@@ -8,8 +8,7 @@ This directory contains modular GitHub Copilot instructions for the `CoachIQ` pr
 
 | File                                                                 | Applies To     | Description                                       |
 | -------------------------------------------------------------------- | -------------- | ------------------------------------------------- |
-| [project-overview.instructions.md](project-overview.instructions.md) | All files      | Project architecture and structure                |
-| [python-backend.instructions.md](python-backend.instructions.md)     | Backend code   | Python backend architecture and patterns          |
+| [project-overview.instructions.md](project-overview.instructions.md) | All files      | Project architecture and structure (backend + frontend)                |
 | [react-frontend.instructions.md](react-frontend.instructions.md)     | React UI files | React, TypeScript, and Vite frontend architecture |
 | [documentation.instructions.md](documentation.instructions.md)       | Markdown files | API documentation and MkDocs configuration        |
 

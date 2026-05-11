@@ -4,7 +4,12 @@
       "package-name": "coachiq",
       "release-type": "python",
       "extra-files": [
-        "VERSION"
+        "VERSION",
+        {
+          "type": "toml",
+          "path": "pyproject.toml",
+          "jsonpath": "$.tool.poetry.version"
+        }
       ]
     }
   },

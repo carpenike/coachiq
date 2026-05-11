@@ -12,24 +12,33 @@ This project uses the [VERSION](./VERSION) file as the single source of truth fo
 
 ## Key Components
 
-- **Core Daemon (`src/core_daemon/`):**
-  - `main.py`: Main application entry point using FastAPI.
-  - `can_manager.py`: Manages CAN bus interfaces (e.g., `socketcan`).
-  - `can_processing.py`: Handles incoming and outgoing CAN message processing and routing.
-  - `websocket.py`: Manages WebSocket connections for real-time updates to clients.
-  - `app_state.py`: Holds global application state, including entity states and configurations.
-  - `config.py`: Loads and manages application configuration.
-  - `metrics.py`: For collecting and exposing application metrics.
-  - `api_routers/`: Contains FastAPI routers for different API endpoints (CAN, entities, config).
-- **RV-C Decoder (`src/rvc_decoder/`):**
-  - `decode.py`: Contains the logic for decoding RV-C messages based on PGNs and SPNs, using configuration files from `config/`.
-  - `config/`: Contains `rvc.json` (RV-C specification details) and `coach_mapping.default.yml` (custom device name mappings).
-- \*\*React Frontend (`frontend/`):
-  - Modern React SPA built with Vite and Tailwind CSS
-  - Communicates with the backend via REST API and WebSockets
-  - See [Frontend Development Guide](docs/frontend-development.md) for details
-- **Console Client:**
-  - Command-line tool for interacting with the `CoachIQ` daemon (planned)
+- **Backend (`backend/`):** FastAPI application with a service-oriented architecture.
+  - `backend/main.py`: FastAPI application entry point and service registration.
+  - `backend/core/`: Core application infrastructure (config, dependencies, ServiceRegistry, exceptions).
+  - `backend/services/`: Business logic services (entity, auth, persistence, etc.) accessed via dependency injection.
+  - `backend/repositories/`: Repository pattern for data access; replaces the previous monolithic `AppState`.
+  - `backend/api/routers/`: REST API endpoints organized by domain.
+  - `backend/api/domains/`: Domain API v2 endpoints (`/api/v2/...`) with bulk operations and caching.
+  - `backend/websocket/`: WebSocket handlers for real-time entity, log, and CAN sniffer streams.
+  - `backend/integrations/`: Protocol integrations
+    - `backend/integrations/can/`: CAN bus interface management.
+    - `backend/integrations/rvc/`: RV-C message decoding (PGN/SPN), Firefly extensions.
+    - `backend/integrations/j1939/`: J1939 protocol decoding and Spartan K2 chassis extensions.
+  - `backend/middleware/`: HTTP middleware (auth, CSRF, structured logging).
+  - `backend/alembic/`: Database migrations (SQLAlchemy 2.0 async).
+  - `backend/models/`, `backend/schemas/`: Pydantic models and schemas.
+- **Configuration (`config/`):**
+  - `config/rvc.json`: RV-C specification (PGNs, SPNs, signal definitions).
+  - `config/coach_mapping.default.yml`: Default coach-to-entity mapping.
+  - `config/2021_Entegra_Aspire_44R.yml`: Example coach-specific mapping.
+  - `config/Caddyfile.example`: Production Caddy reverse-proxy template.
+- **Frontend (`frontend/`):**
+  - React 19 SPA built with Vite, TypeScript (strict), Tailwind CSS, and shadcn/ui.
+  - Communicates with the backend via REST (`/api/...` and `/api/v2/...`) and WebSockets.
+  - State managed with React Query and React Context.
+- **Deployment:**
+  - Nix flake provides dev shells, CLI apps (`nix run .#test|lint|format|ci`), and a NixOS module for production.
+  - Production architecture: Caddy (edge: TLS, IP rate-limiting, CORS) → FastAPI (app: auth, business logic).
 
 ## Documentation
 
@@ -37,16 +46,13 @@ This project uses the [VERSION](./VERSION) file as the single source of truth fo
 
   - [NixOS Integration Guide](docs/nixos-integration.md)
   - [NixOS Module Configuration Reference](docs/nixos-module.md)
-  - [Environment Variable Integration](docs/environment-variable-integration.md)
   - [React Frontend Deployment](docs/react-deployment.md)
 
 - **Development**
 
   - [Development Environments Setup](docs/development-environments.md)
-  - [Frontend Development Guide](docs/frontend-development.md)
   - [VS Code Extensions](docs/vscode-extensions.md)
   - [Model Context Protocol Tools Setup](docs/mcp-tools-setup.md)
-  - [Poetry2Nix Integration](docs/poetry2nix-integration.md)
 
 - **Quality Tools**
   - [Code Quality Tools](docs/code-quality-tools.md)
@@ -65,9 +71,11 @@ This project uses the [VERSION](./VERSION) file as the single source of truth fo
 
 ## Prerequisites
 
-- Python 3.10+
+- Python 3.12+
 - Poetry (for dependency management and running scripts)
-- A configured CAN bus interface (e.g., `socketcan` on Linux).
+- Node.js 20+ (for the frontend)
+- A configured CAN bus interface (e.g., `socketcan` on Linux). For development on macOS, use the Nix devShell which provides a vCAN setup helper.
+- Optional: [Nix](https://nixos.org/download.html) with flakes enabled, for a fully reproducible dev environment.
 
 ## Installation & Setup
 
@@ -105,17 +113,13 @@ For quick start:
 
 3. **Running the application:**
 
-   - **Core Daemon:**
+   - **Backend (FastAPI):**
 
      ```bash
-     # Using the convenience script (recommended):
-     poetry run python run_server.py
-
-     # Direct module execution (for development):
-     poetry run python run_server.py
+     poetry run python run_server.py --reload --debug
      ```
 
-     The API server will typically start on `http://localhost:8000` (or as configured).
+     The API server starts on `http://localhost:8000` by default. Swagger UI at `/docs`.
 
    - **Frontend Development Server:**
 
@@ -123,14 +127,7 @@ For quick start:
      cd frontend && npm run dev
      ```
 
-     The frontend dev server will be accessible at `http://localhost:5173/`.
-
-   - **Console Client:**
-
-     ```bash
-     # Console client not yet implemented - use the web frontend instead
-     # Future: poetry run coachiq-console --help
-     ```
+     The frontend dev server is accessible at `http://localhost:5173/` and proxies `/api` and `/ws` to the backend.
 
 ## RV-C Documentation Search
 
@@ -193,26 +190,39 @@ For more details, see [docs/pdf-processing-guide.md](docs/pdf-processing-guide.m
 - **Running tests:**
 
   ```bash
-  poetry run pytest
+  poetry run pytest                       # backend
+  cd frontend && npm test                 # frontend
   ```
 
-- **Linting/Formatting:** (See [Code Quality Tools](docs/code-quality-tools.md) for details)
+- **Linting / Formatting / Type Checking:** (See [Code Quality Tools](docs/code-quality-tools.md) for details)
 
   ```bash
-  poetry run black .  # Formatting
-  poetry run ruff check .  # Linting (replaces Flake8)
+  poetry run ruff format backend          # format
+  poetry run ruff check .                 # lint
+  poetry run pyright backend              # type-check
+  cd frontend && npm run lint && npm run typecheck && npm run build
+  ```
+
+- **Reproducible CI environment via Nix (optional):**
+
+  ```bash
+  nix run .#test          # tests
+  nix run .#lint          # lint
+  nix run .#format        # format
+  nix run .#ci            # full CI suite
   ```
 
 ## API Endpoints
 
-(Refer to the FastAPI Swagger UI, typically at `http://localhost:8000/docs`, for a detailed API specification once the server is running.)
+Refer to the FastAPI Swagger UI at `http://localhost:8000/docs` (or ReDoc at `/redoc`) for the full, authoritative API specification.
 
-Key endpoint groups might include:
+Key endpoint groups:
 
-- `/api/can/`: For CAN interface status and raw message sending (if enabled).
-- `/api/entities/`: To list and control RV-C entities.
-- `/api/config/`: To view or update parts of the configuration.
-- `/ws`: WebSocket endpoint for real-time data.
+- `/api/entities/` and `/api/v2/entities/`: List and control RV-C entities (lights, locks, climate, etc.). All device-type operations are unified under entity endpoints (no `/api/lights`, `/api/locks`, etc.). Use `/api/v2/...` (Domain API v2) for new development — it supports bulk operations, partial-success responses, and richer schemas.
+- `/api/can/`: CAN interface status and message tools.
+- `/api/auth/`: Authentication, tokens, and PIN/MFA management.
+- `/api/health`, `/health`: Liveness and readiness probes.
+- `/ws/...`: WebSocket endpoints for real-time entity updates, log streaming, and CAN sniffer feeds.
 
 ## Development Tools & Resources
 
@@ -229,10 +239,6 @@ We have enhanced the development environment with several tools to streamline th
   - See [MCP Tools Setup](docs/mcp-tools-setup.md) for information on using @context7, @perplexity, and @github tools
   - Always use @context7 first for accurate, up-to-date library API information
   - Use @perplexity for general research and @github for repository exploration
-
-- **Poetry2nix Integration**: Proposed integration between Poetry and Nix
-
-  - See [Poetry2nix Integration](docs/poetry2nix-integration.md) for implementation details
 
 - **Development Environment**: Comprehensive development setup
   - Structured documentation for both [backend](docs/code-quality-tools.md) and [frontend](docs/frontend-development.md) development

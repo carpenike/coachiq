@@ -1,12 +1,11 @@
 {
   "include": [
-    "src"
+    "backend"
   ],
   "exclude": [
     "**/node_modules",
     "**/__pycache__",
-    ".venv",
-    "_deprecated"
+    ".venv"
   ],
   "typeCheckingMode": "basic",
   "reportMissingImports": true,

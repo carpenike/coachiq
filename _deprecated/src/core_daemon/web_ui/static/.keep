@@ -1,9 +1,0 @@
-# This placeholder file ensures the static directory is tracked by version control.
-
-This directory is reserved for static assets such as:
-- CSS stylesheets (e.g., Tailwind builds)
-- Images or icons
-- Fonts
-- Favicon or web manifest
-
-Even if unused now, it's referenced in the FastAPI app and should be preserved.

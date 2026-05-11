@@ -99,42 +99,50 @@ See `.github/instructions/eslint-typescript-config.instructions.md` for detailed
 
 ## Core Architecture
 
-### Management Services (REQUIRED FOR ALL BACKEND CODE)
+### Service Access (REQUIRED FOR ALL BACKEND CODE)
 
-All backend development MUST use these management services via dependency injection:
+All backend code MUST access services via FastAPI dependency injection from `backend.core.dependencies`. The legacy `AppState` class and `backend/core/state.py` were removed during the ServiceRegistry refactor; the global state is now decomposed into repositories and services managed by the `ServiceRegistry` (see `backend/core/service_registry.py`).
 
-#### Core Management Services
+#### Core Services
 
-- **FeatureManager** (`backend/services/feature_manager.py`): Feature registration, lifecycle management
-- **EntityManager** (`backend/core/entity_manager.py`): Entity operations, state management, device lookups
-- **AppState** (`backend/core/state.py`): Application state management, entity tracking
-- **DatabaseManager** (`backend/services/database_manager.py`): Database connections, health checks
-- **PersistenceService** (`backend/services/persistence_service.py`): Data persistence, backup operations
-- **ConfigService** (`backend/services/config_service.py`): Configuration management, environment variables
+- **ServiceRegistry** (`backend/core/service_registry.py`): Central service lifecycle and dependency resolution.
+- **FeatureManager** (`backend/services/feature_manager.py`): YAML-driven feature flag system.
+- **ConfigService** (`backend/services/config_service.py`): Configuration access (use this rather than reading `Settings` directly).
+- **DatabaseManager** (`backend/services/database_manager.py`): Async SQLAlchemy session management.
+- **PersistenceService** (`backend/services/persistence_service.py`): Backups and durable storage.
+- **AuthManager** / **AuthService** (`backend/services/auth_*.py`): Authentication, tokens, PIN/MFA.
 
-#### Domain Services (Use via dependency injection)
+#### Domain Services (access via DI)
 
-- **EntityService**: RV-C entity operations, light control, state management
-- **CANService**: CAN bus operations, interface monitoring, message sending
-- **RVCService**: RV-C protocol operations, message translation
-- **DashboardService**: Dashboard data aggregation, activity feeds
-- **WebSocketManager**: Client connections, real-time broadcasting
+- **EntityService** (`backend/services/entity_services.py`): RV-C entity CRUD and control.
+- **CANBusService** (`backend/services/can_bus_service.py`): CAN interface monitoring and message sending.
+- **RVCService** (`backend/services/rvc_service.py`): RV-C protocol decode/encode.
+- **WebSocketService** (`backend/services/websocket_service.py`): Client connections and broadcasting.
+- **SafetyService** (`backend/services/safety_service.py`): Safety-aware command validation.
 
-#### Multi-Protocol Services (NEW - Use via dependency injection)
+#### Multi-Protocol Integrations
 
-- **J1939Service**: J1939 protocol operations, engine/transmission integration
-- **FireflyService**: Firefly RV systems integration with multiplexing support
-- **SpartanK2Service**: Spartan K2 chassis system integration with safety interlocks
-- **MultiNetworkManager**: Multi-network CAN management with fault isolation
-- **DiagnosticsHandler**: Cross-protocol diagnostics with fault correlation
-- **PerformanceAnalyticsFeature**: Performance monitoring and optimization recommendations
+Multi-protocol support is implemented as **integrations**, not standalone services. The relevant code lives under `backend/integrations/`:
+
+- `backend/integrations/can/`: CAN interface management; includes `multi_network_manager.py` (`MultiNetworkManager` for multi-network CAN with fault isolation).
+- `backend/integrations/rvc/`: RV-C decoder, including Firefly extensions (`firefly_extensions.py`, `firefly_feature.py`, `firefly_registration.py`).
+- `backend/integrations/j1939/`: J1939 decoder (`decoder.py`, `registration.py`) and Spartan K2 chassis extensions (`spartan_k2_extensions.py`, `spartan_k2_registration.py`).
+- `backend/integrations/analytics/`: Performance analytics feature (`PerformanceAnalyticsFeature`).
+- `backend/integrations/diagnostics/`: Cross-protocol diagnostics.
+
+These integrations register themselves with the `FeatureManager` based on YAML feature flags; access them through the relevant service or repository, not via dedicated `get_*_service()` helpers.
 
 ### Project Structure
 
-- `backend/core/`: Core management services (EntityManager, AppState, dependencies)
-- `backend/services/`: Business logic services and FeatureManager
-- `backend/api/routers/`: FastAPI routes organized by domain
-- `frontend/`: React frontend with TypeScript, Vite, and Tailwind CSS
+- `backend/core/`: ServiceRegistry, dependencies, configuration, custom exceptions, structured logging, security validation.
+- `backend/services/`: Domain and management services.
+- `backend/repositories/`: Repository pattern for data access (replaces the previous monolithic `AppState`).
+- `backend/api/routers/`: REST API endpoints (legacy `/api/...`).
+- `backend/api/domains/`: Domain API v2 endpoints (`/api/v2/...`) with bulk operations and richer schemas.
+- `backend/middleware/`: HTTP middleware (auth, CSRF, structured logging).
+- `backend/integrations/`: Protocol integrations (CAN, RV-C, J1939, Firefly, Spartan K2, analytics, diagnostics).
+- `backend/websocket/`: WebSocket handlers.
+- `frontend/`: React 19 + TypeScript SPA.
 
 ## Deployment Architecture
 
@@ -147,43 +155,37 @@ All backend development MUST use these management services via dependency inject
 ### Backend Service Access (MANDATORY)
 
 ```python
-# ALWAYS use dependency injection for services
-from backend.core.dependencies import (
-    get_feature_manager_from_request, get_entity_service, get_app_state,
-    get_database_manager, get_config_service, get_can_service,
-    get_can_interface_service, get_websocket_manager, get_persistence_service
-)
+# ALWAYS use FastAPI dependency injection from backend.core.dependencies.
+# Prefer the Annotated[Type, Depends(...)] pattern for type-safe injection.
+from typing import Annotated
 
-# Multi-Protocol Service Dependencies (NEW)
+from fastapi import APIRouter, Depends
+
 from backend.core.dependencies import (
-    get_j1939_service, get_firefly_service, get_spartan_k2_service,
-    get_multi_network_manager, get_diagnostics_handler, get_performance_analytics
+    get_entity_service,
+    get_config_service,
+    get_can_facade,
+    get_safety_service,
+    get_rvc_service,
+    get_multi_network_manager,
 )
+from backend.services.entity_services import EntityService
+
+router = APIRouter()
+
 
 @router.get("/entities")
-async def get_entities(
-    entity_service: EntityService = Depends(get_entity_service),
-    feature_manager: FeatureManager = Depends(get_feature_manager_from_request)
+async def list_entities(
+    entity_service: Annotated[EntityService, Depends(get_entity_service)],
 ):
-    """Use EntityService for entity operations, FeatureManager for feature access."""
-    entities = await entity_service.get_all_entities()
-    return entities
+    return await entity_service.get_all_entities()
 
-# Multi-Protocol Service Access Pattern (NEW)
-@router.get("/protocols/status")
-async def get_protocol_status(
-    j1939_service: J1939Service = Depends(get_j1939_service),
-    diagnostics_handler: DiagnosticsHandler = Depends(get_diagnostics_handler),
-    multi_network: MultiNetworkManager = Depends(get_multi_network_manager)
-):
-    """Access multiple protocol services for unified status across RV-C, J1939, Firefly, Spartan K2."""
-    cross_protocol_status = await diagnostics_handler.get_cross_protocol_status()
-    network_health = await multi_network.get_network_health_summary()
-    return {"protocols": cross_protocol_status, "networks": network_health}
 
-# WRONG: Never access services directly or use incorrect dependency functions
-from backend.services.feature_manager import feature_manager  # DON'T DO THIS
-from backend.core.dependencies import get_entity_manager  # This function doesn't exist
+# WRONG: do not access app.state, the removed AppState, or import services as module-level globals.
+# from backend.services.feature_manager import feature_manager  # ❌ module-level singleton
+# from backend.core.state import AppState                       # ❌ removed
+# from backend.core.dependencies import get_app_state           # ❌ removed
+# from backend.core.dependencies import get_entity_manager      # ❌ removed (use get_entity_service)
 ```
 
 ### Development Patterns
@@ -192,7 +194,7 @@ from backend.core.dependencies import get_entity_manager  # This function doesn'
 - **Management Services**: ALWAYS access via dependency injection from `backend.core.dependencies`
 - **Feature Registration**: ALL features must extend Feature base class and register with FeatureManager
 - **WebSockets**: Use WebSocketManager feature for client connections and broadcasting
-- **State management**: Use AppState and EntityManager for application state
+- **State management**: Use repositories and services via DI; do **not** reach for `app.state` or any global `AppState` (both removed).
 - **Configuration**: Use ConfigService for all configuration access
 - **Database**: Use DatabaseManager and PersistenceService for data operations
 - **Error handling**: Structured exceptions with proper logging

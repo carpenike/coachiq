@@ -140,7 +140,7 @@ Always use Context7 for these scenarios:
 
 For more information about MCP tools and their integration with specific project areas, see:
 
-- [Python Backend Architecture](../.github/instructions/python-backend.instructions.md) - Backend-specific MCP usage
+- [Project Overview](../.github/instructions/project-overview.instructions.md) - Backend architecture and patterns
 - [React Frontend Architecture](../.github/instructions/react-frontend.instructions.md) - Frontend-specific MCP usage
 - [MCP Tools Guide](../.github/instructions/mcp-tools.instructions.md) - Complete MCP tools reference
 - [VS Code Tasks](../.github/instructions/vscode-tasks.instructions.md) - Tasks for managing MCP tools

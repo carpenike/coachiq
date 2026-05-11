@@ -70,7 +70,7 @@ node_modules, frontend/dist, frontend/coverage, frontend/htmlcov
 
 ### Project Specific
 ```
-_deprecated, result, result-*
+result, result-*
 ```
 
 ### Databases & Temporary Files

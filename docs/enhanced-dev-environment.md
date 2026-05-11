@@ -100,7 +100,7 @@ For GitHub Copilot and development guidance, see the `.github/instructions/` dir
 
 - **Code Style and Architecture**
 
-  - [Python Backend Architecture](../.github/instructions/python-backend.instructions.md)
+  - [Project Overview (Backend Architecture)](../.github/instructions/project-overview.instructions.md)
   - [React Frontend Architecture](../.github/instructions/react-frontend.instructions.md)
   - [Python Code Style Guidelines](../.github/instructions/python-code-style.instructions.md)
   - [TypeScript Code Style Guidelines](../.github/instructions/typescript-code-style.instructions.md)
