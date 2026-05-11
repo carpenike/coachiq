@@ -122,8 +122,19 @@ class TestWebhookNotificationChannel:
 
     @pytest.fixture
     def channel(self):
-        """Create webhook channel for testing."""
-        return WebhookNotificationChannel()
+        """Create webhook channel for testing.
+
+        WebhookChannelConfig.enabled defaults to False (production opt-in
+        security default; webhook notifications shouldn't fire unless an
+        operator explicitly enables them via
+        COACHIQ_NOTIFICATIONS__WEBHOOK__ENABLED=true). Tests in this class
+        need the channel enabled to exercise the delivery paths, so flip
+        the flag after construction rather than mutating the global
+        settings object.
+        """
+        ch = WebhookNotificationChannel()
+        ch.enabled = True
+        return ch
 
     @pytest.fixture
     def test_target(self):
@@ -151,7 +162,10 @@ class TestWebhookNotificationChannel:
     def test_channel_initialization(self, channel):
         """Test channel initialization."""
         assert channel.channel == NotificationChannel.WEBHOOK
-        assert channel.enabled is True  # Default from config
+        # The fixture explicitly enables the channel; the production default
+        # is False (opt-in security default). Asserting True here just
+        # confirms the fixture's flip took effect.
+        assert channel.enabled is True
         assert channel.targets == {}
         assert channel.stats["total_requests"] == 0
 
@@ -358,8 +372,12 @@ class TestWebhookDelivery:
 
     @pytest.fixture
     def channel(self):
-        """Create webhook channel for testing."""
-        return WebhookNotificationChannel()
+        """Create webhook channel for testing. See
+        TestWebhookNotificationChannel.channel for the rationale on
+        flipping `enabled` after construction."""
+        ch = WebhookNotificationChannel()
+        ch.enabled = True
+        return ch
 
     @pytest.fixture
     def test_target(self):
@@ -607,6 +625,10 @@ class TestWebhookIntegration:
     async def test_real_webhook_delivery(self):
         """Test delivery to a real webhook endpoint (httpbin.org)."""
         channel = WebhookNotificationChannel()
+        # Production default is `enabled=False` (security opt-in); flip it
+        # for the test scenario. See TestWebhookNotificationChannel.channel
+        # fixture for the rationale.
+        channel.enabled = True
         target = WebhookTarget(
             name="httpbin-test",
             url="https://httpbin.org/post",
@@ -635,6 +657,8 @@ class TestWebhookIntegration:
     async def test_unreachable_endpoint(self):
         """Test delivery to unreachable endpoint."""
         channel = WebhookNotificationChannel()
+        # See test_real_webhook_delivery for rationale on flipping `enabled`.
+        channel.enabled = True
         target = WebhookTarget(
             name="unreachable",
             url="https://unreachable.example.invalid/webhook",

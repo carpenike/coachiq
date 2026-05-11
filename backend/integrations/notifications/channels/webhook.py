@@ -27,7 +27,7 @@ import hmac
 import json
 import logging
 import time
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import Any
 
 import aiohttp
@@ -91,7 +91,12 @@ class WebhookTarget(BaseModel):
 
     # Retry configuration
     max_retries: int = Field(3, description="Maximum retry attempts")
-    retry_delay: int = Field(1, description="Initial retry delay in seconds")
+    # retry_delay accepts fractional seconds so callers can request sub-second
+    # backoff for testing / local-dev. Production CAN-bus politeness still
+    # benefits from longer real-world delays, but locking the type to int
+    # forced a 1s minimum that made test iteration painful and offered no
+    # real safety guarantee.
+    retry_delay: float = Field(1.0, description="Initial retry delay in seconds")
     retry_exponential: bool = Field(True, description="Use exponential backoff")
 
     # Security
@@ -367,15 +372,13 @@ class WebhookNotificationChannel:
 
                 duration_ms = (time.time() - start_time) * 1000
 
-                # Check if successful
+                # Check if successful. We deliberately DO NOT update stats
+                # here -- _deliver_to_target is per-attempt, but stats counters
+                # (successful_requests / failed_requests / last_*) are
+                # per-notification semantics, owned by send_notification's
+                # outer loop. Mixing the two led to double-counting on every
+                # retried failure.
                 success = 200 <= response.status < 300
-
-                if success:
-                    self.stats["successful_requests"] += 1
-                    self.stats["last_success"] = datetime.utcnow()
-                else:
-                    self.stats["failed_requests"] += 1
-                    self.stats["last_failure"] = datetime.utcnow()
 
                 return WebhookDeliveryResult(
                     success=success,
@@ -388,8 +391,6 @@ class WebhookNotificationChannel:
 
         except TimeoutError:
             duration_ms = (time.time() - start_time) * 1000
-            self.stats["failed_requests"] += 1
-            self.stats["last_failure"] = datetime.utcnow()
 
             return WebhookDeliveryResult(
                 success=False,
@@ -402,8 +403,6 @@ class WebhookNotificationChannel:
 
         except Exception as e:
             duration_ms = (time.time() - start_time) * 1000
-            self.stats["failed_requests"] += 1
-            self.stats["last_failure"] = datetime.utcnow()
 
             return WebhookDeliveryResult(
                 success=False,
@@ -413,6 +412,32 @@ class WebhookNotificationChannel:
                 duration_ms=duration_ms,
                 attempt_number=notification.retry_count + 1,
             )
+
+    @staticmethod
+    def _should_retry_status(status_code: int | None) -> bool:
+        """Decide whether a delivery attempt should trigger a retry.
+
+        Industry-standard webhook delivery (Stripe, GitHub, etc.) only
+        retries on transient failures:
+        - 5xx server errors (server might recover)
+        - Network errors / timeouts (status_code is None)
+
+        4xx client errors are NOT retried because the server has told us
+        the request itself is wrong (auth failure, malformed payload,
+        unknown endpoint, etc.) -- retrying wastes attempts and adds load
+        without ever succeeding. Production was previously retrying every
+        failure type, which surfaced as the test_failed_delivery_4xx
+        regression: a 4xx response would consume max_retries+1 attempts
+        and inflate failed_requests beyond the per-notification count.
+        """
+        if status_code is None:
+            # Network error / timeout -- transient, retry.
+            return True
+        if 400 <= status_code < 500:
+            # 4xx client error -- not transient, don't retry.
+            return False
+        # 5xx server error (or anything else non-2xx) -- retry.
+        return True
 
     async def send_notification(self, notification: NotificationPayload) -> bool:
         """
@@ -441,6 +466,15 @@ class WebhookNotificationChannel:
         successful_deliveries = 0
         total_targets = 0
 
+        # Track whether ANY target succeeded and whether ANY target failed,
+        # independently. This supports per-notification stats with
+        # partial-success semantics: a notification can simultaneously bump
+        # successful_requests (at least one target succeeded -> the operator
+        # was reached) AND failed_requests (at least one target failed ->
+        # an operator may want to investigate the broken endpoint).
+        any_target_succeeded = False
+        any_target_failed = False
+
         # Deliver to all applicable targets
         for target_name, target in self.targets.items():
             if not self._should_deliver_to_target(notification, target):
@@ -448,6 +482,7 @@ class WebhookNotificationChannel:
 
             total_targets += 1
             max_attempts = target.max_retries + 1
+            target_succeeded = False
 
             for attempt in range(max_attempts):
                 if attempt > 0:
@@ -474,13 +509,47 @@ class WebhookNotificationChannel:
 
                 if result.success:
                     successful_deliveries += 1
+                    target_succeeded = True
                     break  # Success, no need to retry
+
+                # Decide whether to retry. 4xx responses are not retried
+                # because they indicate a client-side error the server has
+                # already rejected -- retrying just wastes attempts.
+                if not self._should_retry_status(result.status_code):
+                    self.logger.info(
+                        f"Webhook delivery to {target_name} failed with non-retryable "
+                        f"status {result.status_code}; no further attempts."
+                    )
+                    break
+
                 if attempt == max_attempts - 1:
                     # Final attempt failed
                     self.logger.error(
                         f"Webhook delivery to {target_name} failed after {max_attempts} attempts: "
                         f"{result.error_message}"
                     )
+
+            # Per-target outcome roll-up.
+            if target_succeeded:
+                any_target_succeeded = True
+            else:
+                any_target_failed = True
+
+        # Update per-notification stat counters once. successful_requests
+        # and failed_requests are independent: a partial-success
+        # notification (one target OK, another not) bumps BOTH counters,
+        # because the operator dashboard cares about both "did the
+        # message get out at all?" (successful_requests) and "is some
+        # endpoint broken?" (failed_requests). last_success / last_failure
+        # track the most recent notification with that outcome type, not
+        # the most recent attempt.
+        now = datetime.now(UTC)
+        if any_target_succeeded:
+            self.stats["successful_requests"] += 1
+            self.stats["last_success"] = now
+        if any_target_failed:
+            self.stats["failed_requests"] += 1
+            self.stats["last_failure"] = now
 
         # Return True if at least one delivery succeeded
         return successful_deliveries > 0
