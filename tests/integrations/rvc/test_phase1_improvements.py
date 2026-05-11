@@ -37,28 +37,60 @@ class TestRVCEncoder:
     @pytest.fixture
     def encoder(self, mock_settings):
         """Create an RVC encoder for testing."""
-        with patch("backend.integrations.rvc.encoder.load_config_data") as mock_load:
-            # Mock the configuration data
-            mock_load.return_value = (
-                {
-                    0x1FFB1: {
-                        "pgn": "1FFB1",
-                        "signals": [{"name": "instance", "start_bit": 0, "length": 8}],
-                    }
-                },  # dgn_dict
-                {"version": "test"},  # spec_meta
-                {},  # mapping_dict
-                {("1FFB1", "1"): {"device_type": "light", "entity_id": "test_light"}},  # entity_map
-                {"test_light"},  # entity_ids
-                {"test_light": {"dgn_hex": "1FFB1", "instance": "1"}},  # inst_map
-                {},  # unique_instances
-                {},  # pgn_hex_to_name_map
-                {"1FFB2": "1FFB1"},  # dgn_pairs (command -> status mapping)
-                Mock(make="Test", model="TestCoach"),  # coach_info
-            )
+        # The decoder/encoder were refactored from a 10-element tuple
+        # (load_config_data) to a structured Pydantic model
+        # (load_config_data_v2 returning RVCConfiguration). Patch the new
+        # entry point and return a populated config object.
+        from backend.models.common import CoachInfo
+        from backend.models.rvc_config import RVCConfiguration, RVCSpecMeta
 
-            encoder = RVCEncoder(mock_settings)
-            return encoder
+        mock_config = RVCConfiguration(
+            dgn_dict={
+                0x1FFB1: {
+                    "pgn": "1FFB1",
+                    "signals": [{"name": "instance", "start_bit": 0, "length": 8}],
+                },
+                # encode_entity_command needs the COMMAND DGN's spec too;
+                # 1FFB2 is the command pair for 1FFB1.
+                0x1FFB2: {
+                    "pgn": "1FFB2",
+                    "signals": [
+                        {"name": "instance", "start_bit": 0, "length": 8},
+                        {
+                            "name": "brightness",
+                            "start_bit": 8,
+                            "length": 8,
+                            "scale": 1,
+                            "offset": 0,
+                        },
+                    ],
+                },
+            },
+            spec_meta=RVCSpecMeta(version="test", source="test", rvc_version="test"),
+            mapping_dict={},
+            entity_map={
+                ("1FFB1", "1"): {"device_type": "light", "entity_id": "test_light"}
+            },
+            entity_ids={"test_light"},
+            inst_map={"test_light": {"dgn_hex": "1FFB1", "instance": "1"}},
+            unique_instances={},
+            pgn_hex_to_name_map={},
+            dgn_pairs={"1FFB2": "1FFB1"},  # command -> status
+            coach_info=CoachInfo(
+                make="Test",
+                model="TestCoach",
+                year=None,
+                trim=None,
+                filename=None,
+                notes=None,
+            ),
+        )
+
+        with patch(
+            "backend.integrations.rvc.encoder.load_config_data_v2",
+            return_value=mock_config,
+        ):
+            return RVCEncoder(mock_settings)
 
     def test_encoder_initialization(self, encoder):
         """Test encoder initializes correctly."""
@@ -83,11 +115,14 @@ class TestRVCEncoder:
 
     def test_validate_command_invalid_brightness(self, encoder):
         """Test command validation with invalid brightness."""
-        command = ControlCommand(command="set", state="on", brightness=150)
-        is_valid, error_msg = encoder.validate_command("test_light", command)
+        # ControlCommand uses Pydantic v2 ge=0/le=100 on brightness, so the
+        # value is rejected at MODEL CONSTRUCTION TIME, not at validate_command.
+        # This is fine for our purposes -- the validation still happens, just
+        # earlier in the request lifecycle.
+        from pydantic import ValidationError
 
-        assert not is_valid
-        assert "Brightness must be between 0 and 100" in error_msg
+        with pytest.raises(ValidationError):
+            ControlCommand(command="set", state="on", brightness=150)
 
     def test_encode_entity_command(self, encoder):
         """Test encoding a basic entity command."""
@@ -120,42 +155,54 @@ class TestMessageValidator:
         settings = Mock()
         settings.rvc_spec_path = None
         settings.rvc_coach_mapping_path = None
+        # validate_source_permissions does int(controller_source_addr, 16),
+        # so this must be a hex string -- not a Mock auto-attribute.
+        settings.controller_source_addr = "0xF9"
         return settings
 
     @pytest.fixture
     def validator(self, mock_settings):
         """Create a message validator for testing."""
-        with patch("backend.integrations.rvc.validator.load_config_data") as mock_load:
-            # Mock the configuration data
-            mock_load.return_value = (
-                {
-                    0x1FFB1: {
-                        "pgn": "1FFB1",
-                        "signals": [
-                            {
-                                "name": "brightness",
-                                "start_bit": 8,
-                                "length": 8,
-                                "scale": 1,
-                                "offset": 0,
-                            },
-                            {"name": "instance", "start_bit": 0, "length": 8},
-                        ],
-                    }
-                },  # dgn_dict
-                {"version": "test"},  # spec_meta
-                {},  # mapping_dict
-                {},  # entity_map
-                set(),  # entity_ids
-                {},  # inst_map
-                {},  # unique_instances
-                {},  # pgn_hex_to_name_map
-                {},  # dgn_pairs
-                Mock(),  # coach_info
-            )
+        # Same refactor story as the encoder: load_config_data (10-tuple) was
+        # replaced by load_config_data_v2 (RVCConfiguration). Patch the
+        # current entry point.
+        from backend.models.common import CoachInfo
+        from backend.models.rvc_config import RVCConfiguration, RVCSpecMeta
 
-            validator = MessageValidator(mock_settings)
-            return validator
+        mock_config = RVCConfiguration(
+            dgn_dict={
+                0x1FFB1: {
+                    "pgn": "1FFB1",
+                    "signals": [
+                        {
+                            "name": "brightness",
+                            "start_bit": 8,
+                            "length": 8,
+                            "scale": 1,
+                            "offset": 0,
+                        },
+                        {"name": "instance", "start_bit": 0, "length": 8},
+                    ],
+                }
+            },
+            spec_meta=RVCSpecMeta(version="test", source="test", rvc_version="test"),
+            mapping_dict={},
+            entity_map={},
+            entity_ids=set(),
+            inst_map={},
+            unique_instances={},
+            pgn_hex_to_name_map={},
+            dgn_pairs={},
+            coach_info=CoachInfo(
+                make=None, model=None, year=None, trim=None, filename=None, notes=None
+            ),
+        )
+
+        with patch(
+            "backend.integrations.rvc.validator.load_config_data_v2",
+            return_value=mock_config,
+        ):
+            return MessageValidator(mock_settings)
 
     def test_validator_initialization(self, validator):
         """Test validator initializes correctly."""
@@ -295,8 +342,17 @@ class TestPriorityMessageHandler:
 
     @pytest.fixture
     def handler(self, mock_settings):
-        """Create a priority message handler for testing."""
-        return PriorityMessageHandler(mock_settings, max_queue_size=1000)
+        """Create a priority message handler for testing.
+
+        Disables the per-priority rate limiter so tests can queue many
+        messages back-to-back without hitting the production thresholds
+        (which are tuned for sustained traffic, not test microbursts).
+        """
+        h = PriorityMessageHandler(mock_settings, max_queue_size=1000)
+        # Replace _check_rate_limit with a no-op so tests aren't subject to
+        # production rate limiting timing.
+        h._check_rate_limit = lambda priority: True  # type: ignore[method-assign]
+        return h
 
     def test_handler_initialization(self, handler):
         """Test handler initializes correctly."""
@@ -434,10 +490,36 @@ class TestPhase1Integration:
 
     def test_components_integration(self, mock_settings):
         """Test that all Phase 1 components work together."""
+        # Patch the v2 config loader on each module that imports it. The
+        # old single-name load_config_data was replaced when the spec
+        # loader was structured into RVCConfiguration.
+        from backend.models.common import CoachInfo
+        from backend.models.rvc_config import RVCConfiguration, RVCSpecMeta
+
+        empty_config = RVCConfiguration(
+            dgn_dict={},
+            spec_meta=RVCSpecMeta(version="test", source="test", rvc_version="test"),
+            mapping_dict={},
+            entity_map={},
+            entity_ids=set(),
+            inst_map={},
+            unique_instances={},
+            pgn_hex_to_name_map={},
+            dgn_pairs={},
+            coach_info=CoachInfo(
+                make=None, model=None, year=None, trim=None, filename=None, notes=None
+            ),
+        )
+
         with (
-            patch("backend.integrations.rvc.encoder.load_config_data"),
-            patch("backend.integrations.rvc.validator.load_config_data"),
-            patch("backend.integrations.rvc.decode.load_config_data"),
+            patch(
+                "backend.integrations.rvc.encoder.load_config_data_v2",
+                return_value=empty_config,
+            ),
+            patch(
+                "backend.integrations.rvc.validator.load_config_data_v2",
+                return_value=empty_config,
+            ),
         ):
             # Initialize all components
             encoder = RVCEncoder(mock_settings)
@@ -453,10 +535,11 @@ class TestPhase1Integration:
 
     def test_error_handling(self, mock_settings):
         """Test graceful error handling in components."""
-        # Test with invalid configuration
+        # Test with invalid configuration: a v2 config loader that fails
+        # should propagate as an EncodingError on encoder construction.
         with (
             patch(
-                "backend.integrations.rvc.encoder.load_config_data",
+                "backend.integrations.rvc.encoder.load_config_data_v2",
                 side_effect=Exception("Config error"),
             ),
             pytest.raises(EncodingError),
@@ -464,59 +547,8 @@ class TestPhase1Integration:
             RVCEncoder(mock_settings)
 
 
-@pytest.mark.asyncio
-async def test_rvc_feature_with_phase1():
-    """Test the enhanced RVC feature with Phase 1 components."""
-    from backend.integrations.rvc.feature import RVCFeature
-
-    config = {
-        "enable_encoder": True,
-        "enable_validator": True,
-        "enable_security": True,
-        "enable_performance": True,
-        "max_queue_size": 1000,
-    }
-
-    feature = RVCFeature(
-        name="test_rvc",
-        enabled=True,
-        core=True,
-        config=config,
-    )
-
-    # Mock the data loading
-    with patch("backend.integrations.rvc.decode.load_config_data") as mock_load:
-        mock_load.return_value = (
-            {},  # dgn_dict
-            {"version": "test"},  # spec_meta
-            {},  # mapping_dict
-            {},  # entity_map
-            set(),  # entity_ids
-            {},  # inst_map
-            {},  # unique_instances
-            {},  # pgn_hex_to_name_map
-            {},  # dgn_pairs
-            Mock(),  # coach_info
-        )
-
-        # Mock the Phase 1 component initialization
-        with (
-            patch("backend.integrations.rvc.encoder.RVCEncoder"),
-            patch("backend.integrations.rvc.validator.MessageValidator"),
-            patch("backend.integrations.rvc.security.SecurityManager"),
-            patch("backend.integrations.rvc.performance.PriorityMessageHandler"),
-        ):
-            await feature.startup()
-
-            # Test feature health
-            assert feature.health in ("healthy", "degraded")
-
-            # Test component status
-            status = feature.get_component_status()
-            assert "components" in status
-            assert "encoder" in status["components"]
-            assert "validator" in status["components"]
-            assert "security" in status["components"]
-            assert "performance" in status["components"]
-
-            await feature.shutdown()
+# Note: test_rvc_feature_with_phase1 was removed in the dead-Feature-pattern
+# cleanup -- backend.integrations.rvc.feature no longer exists, and the
+# RVCFeature class it defined was orphaned (no live callers) by the
+# ServiceRegistry refactor. The Phase 1 components themselves are exercised
+# above via TestRVCEncoder, TestMessageValidator, and TestPriorityMessageHandler.
