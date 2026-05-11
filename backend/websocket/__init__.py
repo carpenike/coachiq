@@ -8,7 +8,6 @@ WebSocket handlers, log handler, entity integration, and route setup utilities.
 from backend.websocket.handlers import (
     WebSocketLogHandler,
     WebSocketManager,
-    get_websocket_manager,
     initialize_websocket_manager,
 )
 from backend.websocket.routes import router, setup_websocket_routes
@@ -17,7 +16,6 @@ from backend.websocket.setup import setup_websocket, shutdown_websocket
 __all__ = [
     "WebSocketLogHandler",
     "WebSocketManager",
-    "get_websocket_manager",
     "initialize_websocket_manager",
     "router",
     "setup_websocket",

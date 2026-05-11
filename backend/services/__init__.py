@@ -11,7 +11,6 @@ from backend.services.docs_service import DocsService
 from backend.services.entity_service import EntityService
 
 __all__ = [
-    "CANService",
     "ConfigService",
     "DocsService",
     "EntityService",

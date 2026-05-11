@@ -132,7 +132,7 @@
     "typescriptreact"
   ],
 
-  "terminal.integrated.defaultProfile.osx": "fish",
+  "terminal.integrated.defaultProfile.osx": "bash",
   "terminal.integrated.env.osx": {
     "DIRENV_LOG_FORMAT": ""
   },

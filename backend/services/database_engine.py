@@ -22,7 +22,11 @@ from sqlalchemy.ext.asyncio import (
     create_async_engine,
 )
 
-logger = logging.getLogger(__name__)
+from backend.core.database_pooling import create_optimized_pool, get_pool_preset
+from backend.core.query_optimization import create_essential_indexes, setup_query_monitoring
+from backend.core.structured_logging import get_logger
+
+logger = get_logger(__name__, "DatabaseEngine")
 
 
 def _setup_sqlite_performance_pragmas(
@@ -73,15 +77,12 @@ def _setup_sqlite_performance_pragmas(
         cursor.close()
 
         logger.info(
-            "SQLite performance optimizations applied: "
-            "cache_size=%s, mmap_size=%sMB, wal_autocheckpoint=%s",
-            settings.sqlite_cache_size,
-            settings.sqlite_mmap_size,
-            settings.sqlite_wal_autocheckpoint,
+            f"SQLite performance optimizations applied: "
+            f"cache_size={settings.sqlite_cache_size}, mmap_size={settings.sqlite_mmap_size}MB, wal_autocheckpoint={settings.sqlite_wal_autocheckpoint}"
         )
 
     except Exception as e:
-        logger.warning("Failed to apply SQLite performance optimizations: %s", e)
+        logger.warning(f"Failed to apply SQLite performance optimizations: {e}")
 
 
 class DatabaseBackend(str, Enum):
@@ -284,6 +285,7 @@ class DatabaseEngine:
         self._settings = settings or DatabaseSettings()
         self._engine: AsyncEngine | None = None
         self._session_factory: async_sessionmaker[AsyncSession] | None = None
+        self._connection_pool = None  # Will be initialized on engine creation
 
     async def _ensure_sqlite_directory(self) -> None:
         """Ensure the SQLite database directory exists."""
@@ -291,7 +293,7 @@ class DatabaseEngine:
         db_dir = db_path.parent
 
         if not db_dir.exists():
-            logger.info("Creating database directory: %s", db_dir)
+            logger.info(f"Creating database directory: {db_dir}")
             db_dir.mkdir(parents=True, exist_ok=True)
 
     @property
@@ -317,15 +319,41 @@ class DatabaseEngine:
             if self._settings.backend == DatabaseBackend.SQLITE:
                 await self._ensure_sqlite_directory()
 
+            # Determine environment and get pool preset
+            from backend.core.config import get_settings
+
+            app_settings = get_settings()
+            pool_preset_name = "development" if app_settings.is_development() else "production"
+
+            # Get pool preset and merge with custom settings
+            pool_settings = get_pool_preset(pool_preset_name)
+            pool_settings.update(
+                {
+                    "pool_size": self._settings.pool_size,
+                    "max_overflow": self._settings.max_overflow,
+                    "pool_timeout": self._settings.pool_timeout,
+                    "pool_recycle": self._settings.pool_recycle,
+                }
+            )
+
+            # Create optimized connection pool
+            self._connection_pool = create_optimized_pool(
+                backend=self._settings.backend.value, settings=pool_settings
+            )
+
+            # Get engine kwargs with optimized pool configuration
             engine_kwargs = self._settings.get_engine_kwargs()
 
             logger.info(
-                "Initializing database engine for %s with URL: %s://***",
-                self._settings.backend.value,
-                database_url.split("://", 1)[0],
+                f"Initializing database engine for {self._settings.backend.value} with URL: {database_url.split('://', 1)[0]}://*** (preset: {pool_preset_name})"
             )
 
-            self._engine = create_async_engine(database_url, **engine_kwargs)
+            # Create engine with optimized pooling
+            self._engine = await self._connection_pool.create_optimized_engine(
+                database_url,
+                echo=self._settings.echo_sql,
+                echo_pool=self._settings.echo_pool,
+            )
 
             # Set up SQLite performance optimizations if enabled
             if (
@@ -350,10 +378,24 @@ class DatabaseEngine:
             # Test the connection
             await self.health_check()
 
-            logger.info("Database engine initialized successfully for %s", self._settings.backend)
+            # Set up query monitoring for performance tracking
+            setup_query_monitoring(self._engine)
+
+            # For SQLite on Raspberry Pi, create essential indexes
+            if self._settings.backend == DatabaseBackend.SQLITE:
+                try:
+                    async for session in self.get_session():
+                        await create_essential_indexes(session)
+                    logger.debug("Essential indexes created for Raspberry Pi deployment")
+                except Exception as e:
+                    logger.warning(f"Failed to create indexes (may already exist): {e}")
+
+            logger.info(
+                f"Database engine initialized successfully for {self._settings.backend} with optimized pooling"
+            )
 
         except Exception as e:
-            logger.error("Failed to initialize database engine: %s", e)
+            logger.error(f"Failed to initialize database engine: {e}")
             raise
 
     async def health_check(self) -> bool:
@@ -371,8 +413,20 @@ class DatabaseEngine:
                 await conn.execute(text("SELECT 1"))
             return True
         except Exception as e:
-            logger.error("Database health check failed: %s", e)
+            logger.error(f"Database health check failed: {e}")
             return False
+
+    async def get_pool_health(self) -> dict[str, Any]:
+        """
+        Get detailed connection pool health metrics.
+
+        Returns:
+            Dictionary containing pool health information
+        """
+        if not self._connection_pool or not self._engine:
+            return {"error": "Engine not initialized"}
+
+        return await self._connection_pool.check_pool_health(self._engine)
 
     async def get_session(self) -> AsyncGenerator[AsyncSession, None]:
         """

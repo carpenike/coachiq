@@ -1414,8 +1414,8 @@ class APIDomainSettings(BaseSettings):
 
     model_config = SettingsConfigDict(env_prefix="COACHIQ_API_DOMAINS__", case_sensitive=False)
 
-    # Core domain API settings
-    enabled: bool = Field(default=False, description="Enable Domain API v2 architecture")
+    # Core domain API settings (V2 is the only supported architecture)
+    enabled: bool = Field(default=True, description="Domain API v2 architecture (always enabled)")
     safety_mode: str = Field(
         default="strict", description="Safety mode: strict, permissive, emergency_stop"
     )

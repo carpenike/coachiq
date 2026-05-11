@@ -354,11 +354,13 @@ class EnhancedServiceRegistry(ServiceRegistry):
             stages = self._resolver.resolve_dependencies()
             self._dependency_report = self._resolver.get_dependency_report()
 
-            # Log dependency report
-            logger.info("Dependency Resolution Complete:")
-            for line in self._dependency_report.split("\n"):
-                if line.strip():
-                    logger.info(f"  {line}")
+            # Log dependency report (only in main process, not reloader)
+            import os
+            if not os.environ.get('RUN_MAIN'):  # Only log in main process, not reloader
+                logger.info("Dependency Resolution Complete:")
+                for line in self._dependency_report.split("\n"):
+                    if line.strip():
+                        logger.info(f"  {line}")
 
             total_services = len(self._service_definitions)
             logger.info(f"Initializing {total_services} services across {len(stages)} stages")

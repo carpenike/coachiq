@@ -35,6 +35,7 @@ from backend.api.routers import (
     performance_analytics,
     pin_auth,
     predictive_maintenance,
+    rpi_performance,
     safety,
     schemas,
     security_config,
@@ -80,6 +81,7 @@ def configure_routers(app: FastAPI) -> None:
     app.include_router(
         performance_analytics.router, prefix="/api/performance", tags=["performance"]
     )
+    app.include_router(rpi_performance.router)
     app.include_router(analytics_dashboard.router)
     app.include_router(device_discovery.router)
     app.include_router(predictive_maintenance.router)

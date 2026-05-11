@@ -28,19 +28,21 @@ from slowapi.middleware import SlowAPIMiddleware
 from backend.api.router_config import configure_routers
 from backend.core.config import get_settings
 from backend.core.dependencies import ServiceRegistry
-from backend.core.exceptions import ServiceNotAvailableError
 from backend.core.logging_config import configure_unified_logging, setup_early_logging
 from backend.core.metrics import initialize_backend_metrics
 from backend.core.performance import PerformanceMonitor
+from backend.core.rpi_performance_monitor import initialize_rpi_performance_monitor
 from backend.core.safety_registry import SafetyServiceRegistry
+from backend.core.security_config_validator import validate_security_config
+from backend.core.security_hardening import configure_security_hardening
 from backend.core.service_dependency_resolver import DependencyType, ServiceDependency
 from backend.core.service_registry import ServiceStatus
 
 # CAN Tools Services
 from backend.integrations.can.message_injector import CANMessageInjector, SafetyLevel
-
-# from backend.integrations.registration import register_custom_features  # No longer needed - all services in ServiceRegistry
 from backend.middleware.auth import AuthenticationMiddleware
+from backend.middleware.csrf_protection import CSRFProtectionMiddleware
+from backend.middleware.logging_middleware import LoggingMiddleware
 
 # CORS handling moved to Caddy edge layer - see config/Caddyfile.example
 from backend.middleware.rate_limiting import limiter, rate_limit_exceeded_handler
@@ -73,7 +75,6 @@ from backend.repositories.security_event_repository import (
 from backend.services.analytics_dashboard_service import AnalyticsDashboardService
 
 # Phase 4 service imports
-from backend.services.auth_manager import AccountLockedError
 from backend.services.auth_service import AuthService
 
 # Group 2 service imports
@@ -95,10 +96,7 @@ from backend.services.database_services import (
 )
 from backend.services.edge_proxy_monitor_service import EdgeProxyMonitorService
 from backend.services.entity_initialization_service import EntityInitializationService
-
-# from backend.services.docs_service import DocsService  # Not used
 from backend.services.entity_manager_service import EntityManagerService
-from backend.services.entity_service import EntityService
 from backend.services.entity_services import (
     EntityControlService,
     EntityManagementService,
@@ -106,16 +104,10 @@ from backend.services.entity_services import (
 )
 from backend.services.pin_manager import PINConfig, PINManager
 from backend.services.protocol_manager import ProtocolManager
-
-# EntityService import removed - not used in this file
-# from backend.services.predictive_maintenance_service import PredictiveMaintenanceService  # Not migrated yet
-# RVCService import removed - not used in this file
 from backend.services.safety_service import SafetyService
 from backend.services.security_audit_service import RateLimitConfig, SecurityAuditService
 from backend.services.security_config_service import SecurityConfigService
 from backend.services.security_event_service import SecurityEventService
-
-# from backend.services.vector_service import VectorService  # Not used
 from backend.services.websocket_service import WebSocketService
 
 # Set up early logging before anything else
@@ -170,6 +162,16 @@ async def _configure_service_startup_stages(service_registry):
         description="Global performance monitoring instance",
         tags={"core", "monitoring", "performance"},
         health_check=lambda pm: {"healthy": pm is not None},
+    )
+
+    # RPi Performance Monitor (lightweight for embedded deployment)
+    service_registry.register_service(
+        name="rpi_performance_monitor",
+        init_func=lambda: initialize_rpi_performance_monitor(buffer_size=100, enable_detailed_logging=False),
+        dependencies=[],
+        description="Lightweight performance monitoring optimized for Raspberry Pi deployment",
+        tags={"core", "monitoring", "performance", "rpi", "optimized"},
+        health_check=lambda rpm: {"healthy": rpm is not None, "memory_kb": rpm._estimate_memory_usage() if rpm else 0},
     )
 
     # Edge proxy monitor (Caddy health monitoring)
@@ -344,6 +346,16 @@ async def _configure_service_startup_stages(service_registry):
 
     register_database_update_services(service_registry)
     logger.info("Database update services registered with ServiceRegistry")
+
+    # Register cache services for Raspberry Pi deployment
+    from backend.core.service_registration_cache import register_cache_services
+    register_cache_services(service_registry)
+    logger.info("Cache services registered with ServiceRegistry")
+
+    # Register entity services
+    from backend.core.service_registration_entity import register_entity_services
+    register_entity_services(service_registry)
+    logger.info("Entity services registered with ServiceRegistry")
 
 
 async def _init_app_settings():
@@ -1000,28 +1012,8 @@ def _register_group2_services(service_registry: SafetyServiceRegistry) -> None:
         health_check=lambda s: {"healthy": s is not None, "management_enabled": True},
     )
 
-    # EntityService - unified entity facade service
-    service_registry.register_service(
-        name="entity_service",
-        init_func=lambda websocket_manager,
-        entity_state_repository,
-        rvc_config_repository,
-        diagnostics_repository: EntityService(
-            websocket_manager=websocket_manager,
-            entity_state_repository=entity_state_repository,
-            rvc_config_repository=rvc_config_repository,
-            diagnostics_repository=diagnostics_repository,
-        ),
-        dependencies=[
-            ServiceDependency("websocket_manager", DependencyType.REQUIRED),
-            ServiceDependency("entity_state_repository", DependencyType.REQUIRED),
-            ServiceDependency("rvc_config_repository", DependencyType.REQUIRED),
-            ServiceDependency("diagnostics_repository", DependencyType.REQUIRED),
-        ],
-        description="Unified entity service facade providing comprehensive entity operations",
-        tags={"service", "entity", "facade", "api"},
-        health_check=lambda s: {"healthy": s is not None, "repositories_available": True},
-    )
+    # EntityService - Registered in service_registration_entity.py
+    # Pre-release: Using lightweight entity service optimized for embedded deployment
 
     # EntityDomainService - safety-critical entity domain operations
     from backend.services.entity_domain_service import EntityDomainService
@@ -1624,6 +1616,14 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         settings = service_registry.get_service("app_settings")
         rvc_config_provider = service_registry.get_service("rvc_config")
         security_event_manager = service_registry.get_service("security_event_manager")
+
+        # Validate security configuration
+        if not settings.is_development():
+            logger.info("Validating security configuration for production mode")
+            if not validate_security_config(settings):
+                logger.error("Security configuration validation failed - see errors above")
+                # In production, we should fail fast on security misconfigurations
+                # For now, just log the error and continue
         device_discovery_service = service_registry.get_service("device_discovery_service")
         persistence_service = service_registry.get_service("persistence_service")
         database_manager = service_registry.get_service("database_manager")
@@ -1822,9 +1822,34 @@ def create_app() -> FastAPI:
             },
         )
 
+    # Add comprehensive logging middleware
+    # This should be one of the first middleware to capture all requests
+    app.add_middleware(
+        LoggingMiddleware,
+        exclude_paths=["/healthz", "/api/healthz", "/metrics", "/readyz", "/startupz"],
+        log_request_body=False,  # Set to True with caution - can log sensitive data
+        log_response_body=False,  # Set to True with caution - can be large
+        slow_request_threshold_ms=1000,
+    )
+
+    # Add cache invalidation middleware for Raspberry Pi deployment
+    # This must be before authentication to ensure cache is invalidated even on auth failures
+    from backend.middleware.cache_invalidation import CacheInvalidationMiddleware
+    app.add_middleware(CacheInvalidationMiddleware)
+
     # Configure authentication middleware
     # The middleware will obtain the auth manager from app state at runtime
     app.add_middleware(AuthenticationMiddleware)
+
+    # Add CSRF protection for state-changing operations
+    # Only in production mode when HTTPS is enabled
+    if not settings.is_development():
+        csrf_secret = settings.auth.secret_key or "default-csrf-secret"
+        app.add_middleware(
+            CSRFProtectionMiddleware,
+            secret_key=csrf_secret,
+            secure_cookie=not settings.is_development()
+        )
 
     # Add runtime validation middleware for safety-critical operations
     app.add_middleware(
@@ -1836,37 +1861,12 @@ def create_app() -> FastAPI:
     app.add_middleware(SlowAPIMiddleware)
     app.add_exception_handler(RateLimitExceeded, rate_limit_exceeded_handler)  # type: ignore[attr-defined]
 
-    # Add custom exception handler for account lockout
-    @app.exception_handler(AccountLockedError)
-    async def account_locked_exception_handler(request: Request, exc: AccountLockedError):
-        logger = logging.getLogger(__name__)
-        logger.warning("Account locked: %s", exc)
+    # Configure security hardening (headers, session security, etc.)
+    configure_security_hardening(app, settings)
 
-        return JSONResponse(
-            status_code=423,  # HTTP_423_LOCKED
-            content={
-                "error": "account_locked",
-                "message": str(exc),
-                "lockout_until": (exc.lockout_until.isoformat() if exc.lockout_until else None),
-                "failed_attempts": exc.attempts,
-            },
-            headers={"WWW-Authenticate": "Bearer"},
-        )
-
-    # Add exception handler for ServiceNotAvailableError
-    @app.exception_handler(ServiceNotAvailableError)
-    async def service_not_available_handler(request: Request, exc: ServiceNotAvailableError):
-        logger = logging.getLogger(__name__)
-        logger.warning("Service not available: %s", exc.service_name)
-
-        return JSONResponse(
-            status_code=503,  # Service Unavailable
-            content={
-                "detail": str(exc),
-                "service": exc.service_name,
-                "message": "This service is not configured in the current deployment",
-            },
-        )
+    # Register comprehensive exception handlers
+    from backend.core.exception_handlers import register_exception_handlers
+    register_exception_handlers(app)
 
     # Configure and include routers
     configure_routers(app)

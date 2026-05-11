@@ -12,7 +12,7 @@ import logging
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 from pathlib import Path
-from typing import TYPE_CHECKING, Optional, cast
+from typing import TYPE_CHECKING, cast
 
 from sqlalchemy import inspect, text
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -127,6 +127,11 @@ class DatabaseManager:
     def backend(self) -> str:
         """Get the database backend type."""
         return self._engine.backend.value
+
+    @property
+    def initialized(self) -> bool:
+        """Check if the database manager is initialized."""
+        return self._initialized
 
     async def initialize(self) -> bool:
         """

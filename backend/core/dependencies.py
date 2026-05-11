@@ -8,7 +8,7 @@ and FastAPI's dependency injection system with no legacy fallbacks.
 import logging
 from typing import Annotated, Any, TypeVar
 
-from fastapi import Depends, HTTPException
+from fastapi import Depends, Header, HTTPException, status
 
 from backend.core.service_registry import EnhancedServiceRegistry
 
@@ -30,7 +30,7 @@ def initialize_service_registry(registry: EnhancedServiceRegistry) -> None:
     Args:
         registry: The service registry instance to use
     """
-    global _service_registry
+    global _service_registry  # noqa: PLW0603 - intentional module-level state
     _service_registry = registry
     logger.info("Service registry initialized for dependency injection")
 
@@ -434,9 +434,10 @@ def get_auth_manager() -> Any:
     if hasattr(auth_service, "get_auth_manager"):
         manager = auth_service.get_auth_manager()
         if manager is None:
-            raise RuntimeError(
+            msg = (
                 "AuthService failed to provide an AuthManager instance. Check service startup logs."
             )
+            raise RuntimeError(msg)
         return manager
     return auth_service
 
@@ -466,17 +467,99 @@ def get_security_event_manager() -> Any:
     return create_service_dependency("security_event_manager")()
 
 
-# Placeholder authentication dependencies - these should be replaced with proper auth implementation
-async def get_authenticated_user():
-    """Get the authenticated user - placeholder implementation."""
-    # TODO: Implement proper user authentication
-    return {"user_id": "user123", "id": "user123", "email": "user@example.com", "role": "user"}
+# Authentication dependencies with proper JWT validation
+async def get_authenticated_user(
+    auth_manager: Annotated[Any, Depends(get_auth_manager)],
+    authorization: str | None = Header(None),
+) -> dict:
+    """
+    Get the authenticated user from JWT token.
+
+    Args:
+        auth_manager: The authentication manager service
+        authorization: Authorization header with Bearer token
+
+    Returns:
+        User data dictionary with id, email, and role
+
+    Raises:
+        HTTPException: 401 if authentication fails
+    """
+    if not authorization:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Authorization header missing",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+
+    # Extract token from Bearer scheme
+    scheme, _, token = authorization.partition(" ")
+    if scheme.lower() != "bearer" or not token:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid authentication scheme. Use Bearer token.",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+
+    try:
+        # Validate token and get user data
+        user_data = await auth_manager.validate_token(token)
+        if not user_data:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid or expired token",
+                headers={"WWW-Authenticate": "Bearer"},
+            )
+        return user_data
+    except HTTPException:
+        # Re-raise HTTPException as-is
+        raise
+    except Exception as e:
+        logger.warning("Authentication failed: %s", e)
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Authentication failed",
+            headers={"WWW-Authenticate": "Bearer"},
+        ) from e
 
 
-async def get_authenticated_admin():
-    """Get the authenticated admin - placeholder implementation."""
-    # TODO: Implement proper admin authentication
-    return {"user_id": "admin123", "id": "admin123", "email": "admin@example.com", "role": "admin"}
+async def get_authenticated_admin(
+    user: Annotated[dict, Depends(get_authenticated_user)],
+) -> dict:
+    """
+    Get the authenticated admin user.
+
+    Verifies that the authenticated user has admin role.
+
+    Args:
+        user: The authenticated user from get_authenticated_user
+
+    Returns:
+        Admin user data dictionary
+
+    Raises:
+        HTTPException: 403 if user is not an admin
+    """
+    if user.get("role") != "admin":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Admin access required",
+        )
+    return user
+
+
+def get_rpi_performance_monitor() -> Any:
+    """
+    Get the RPi performance monitor from global instance.
+    
+    This provides access to the lightweight performance monitoring
+    optimized for Raspberry Pi deployment.
+    
+    Returns:
+        The RPi performance monitor instance
+    """
+    from backend.core.rpi_performance_monitor import get_rpi_performance_monitor as get_monitor
+    return get_monitor()
 
 
 # Type aliases for authentication dependencies

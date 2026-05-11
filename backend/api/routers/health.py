@@ -142,6 +142,31 @@ async def health_check(
                     checks=registry_health.get("service_details"),
                 )
 
+        # 2. Check cache health
+        try:
+            from backend.core.rpi_cache import get_cache_manager
+            cache_manager = get_cache_manager()
+            cache_metrics = await cache_manager.get_all_metrics()
+
+            if include_components:
+                checks["cache"] = ComponentHealth(
+                    component_name="cache",
+                    component_type="performance",
+                    status=HealthStatus.PASS,
+                    message="Cache operational",
+                    observed_value=cache_metrics["total"]["hit_rate"],
+                    observed_unit="hit_rate",
+                    checks=cache_metrics,
+                )
+        except Exception as e:
+            if include_components:
+                checks["cache"] = ComponentHealth(
+                    component_name="cache",
+                    component_type="performance",
+                    status=HealthStatus.WARN,
+                    message=f"Cache health check failed: {e}",
+                )
+
         # 3. Check critical services
         critical_services = ["persistence_service", "database_manager", "entity_service"]
         for service_name in critical_services:
@@ -159,11 +184,27 @@ async def health_check(
                         notes.append(f"{service_name}: {message}")
 
                     if include_components:
+                        component_checks = {}
+
+                        # Add database pool health if this is the database_manager
+                        if service_name == "database_manager" and hasattr(service, "engine"):
+                            try:
+                                pool_health = await service.engine.get_pool_health()
+                                if pool_health and "pool_metrics" in pool_health:
+                                    component_checks["connection_pool"] = {
+                                        "status": "healthy" if pool_health.get("healthy", False) else "unhealthy",
+                                        "metrics": pool_health["pool_metrics"],
+                                        "warnings": pool_health.get("warnings", []),
+                                    }
+                            except Exception:
+                                pass  # Pool health is optional
+
                         checks[service_name] = ComponentHealth(
                             component_name=service_name,
                             component_type="critical_service",
                             status=service_status,
                             message=message,
+                            checks=component_checks if component_checks else None,
                         )
 
         # 4. Check safety-critical components if enabled
