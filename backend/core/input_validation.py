@@ -42,20 +42,20 @@ def sanitize_string(
     value: str,
     max_length: int = MAX_STRING_LENGTH,
     allowed_chars: str | None = None,
-    strip_html: bool = True
+    strip_html: bool = True,
 ) -> str:
     """
     Sanitize string input for safe usage.
-    
+
     Args:
         value: Input string to sanitize
         max_length: Maximum allowed length
         allowed_chars: Optional whitelist of allowed characters
         strip_html: Whether to strip HTML tags
-        
+
     Returns:
         Sanitized string
-        
+
     Raises:
         ValidationError: If string contains invalid content
     """
@@ -87,13 +87,13 @@ def sanitize_string(
 def validate_email(email: str) -> str:
     """
     Validate and normalize email address.
-    
+
     Args:
         email: Email address to validate
-        
+
     Returns:
         Normalized email address
-        
+
     Raises:
         ValidationError: If email is invalid
     """
@@ -111,13 +111,13 @@ def validate_email(email: str) -> str:
 def validate_username(username: str) -> str:
     """
     Validate username for authentication.
-    
+
     Args:
         username: Username to validate
-        
+
     Returns:
         Validated username
-        
+
     Raises:
         ValidationError: If username is invalid
     """
@@ -127,7 +127,7 @@ def validate_username(username: str) -> str:
         raise ValidationError(
             "Username must be 3-32 characters, alphanumeric with _ and -",
             field="username",
-            value=username
+            value=username,
         )
 
     return username
@@ -136,22 +136,18 @@ def validate_username(username: str) -> str:
 def validate_entity_id(entity_id: str) -> str:
     """
     Validate RV-C entity identifier.
-    
+
     Args:
         entity_id: Entity ID to validate
-        
+
     Returns:
         Validated entity ID
-        
+
     Raises:
         ValidationError: If entity ID is invalid
     """
     if not ENTITY_ID_PATTERN.match(entity_id):
-        raise ValidationError(
-            "Invalid entity ID format",
-            field="entity_id",
-            value=entity_id
-        )
+        raise ValidationError("Invalid entity ID format", field="entity_id", value=entity_id)
 
     return entity_id
 
@@ -159,32 +155,24 @@ def validate_entity_id(entity_id: str) -> str:
 def validate_can_id(can_id: str | int) -> int:
     """
     Validate and parse CAN identifier.
-    
+
     Args:
         can_id: CAN ID as string or int
-        
+
     Returns:
         Validated CAN ID as integer
-        
+
     Raises:
         ValidationError: If CAN ID is invalid
     """
     if isinstance(can_id, int):
         if 0 <= can_id <= 0x1FFFFFFF:  # 29-bit extended CAN ID
             return can_id
-        raise ValidationError(
-            "CAN ID out of range",
-            field="can_id",
-            value=can_id
-        )
+        raise ValidationError("CAN ID out of range", field="can_id", value=can_id)
 
     if isinstance(can_id, str):
         if not CAN_ID_PATTERN.match(can_id):
-            raise ValidationError(
-                "Invalid CAN ID format",
-                field="can_id",
-                value=can_id
-            )
+            raise ValidationError("Invalid CAN ID format", field="can_id", value=can_id)
 
         # Parse hex or decimal
         try:
@@ -195,44 +183,30 @@ def validate_can_id(can_id: str | int) -> int:
 
             return validate_can_id(parsed)
         except ValueError:
-            raise ValidationError(
-                "Invalid CAN ID value",
-                field="can_id",
-                value=can_id
-            )
+            raise ValidationError("Invalid CAN ID value", field="can_id", value=can_id)
 
-    raise ValidationError(
-        "CAN ID must be string or int",
-        field="can_id",
-        value=can_id
-    )
+    raise ValidationError("CAN ID must be string or int", field="can_id", value=can_id)
 
 
 def validate_pin(pin: str) -> str:
     """
     Validate PIN for safety operations.
-    
+
     Args:
         pin: PIN to validate
-        
+
     Returns:
         Validated PIN
-        
+
     Raises:
         ValidationError: If PIN is invalid
     """
     if not PIN_PATTERN.match(pin):
-        raise ValidationError(
-            "PIN must be 4-8 digits",
-            field="pin"
-        )
+        raise ValidationError("PIN must be 4-8 digits", field="pin")
 
     # Check for weak PINs
     if pin in {"0000", "1111", "1234", "4321", "9999"}:
-        raise ValidationError(
-            "PIN is too weak",
-            field="pin"
-        )
+        raise ValidationError("PIN is too weak", field="pin")
 
     return pin
 
@@ -240,13 +214,13 @@ def validate_pin(pin: str) -> str:
 def validate_ip_address(ip: str) -> str:
     """
     Validate IP address.
-    
+
     Args:
         ip: IP address to validate
-        
+
     Returns:
         Validated IP address
-        
+
     Raises:
         ValidationError: If IP is invalid
     """
@@ -255,33 +229,25 @@ def validate_ip_address(ip: str) -> str:
 
         # Reject private/local addresses for external APIs
         if ip_obj.is_private or ip_obj.is_loopback:
-            raise ValidationError(
-                "Private IP addresses not allowed",
-                field="ip_address",
-                value=ip
-            )
+            raise ValidationError("Private IP addresses not allowed", field="ip_address", value=ip)
 
         return str(ip_obj)
 
     except (AddressValueError, ValueError) as e:
-        raise ValidationError(
-            "Invalid IP address",
-            field="ip_address",
-            value=ip
-        ) from e
+        raise ValidationError("Invalid IP address", field="ip_address", value=ip) from e
 
 
 def validate_url(url: str, allowed_schemes: list[str] = ["http", "https"]) -> str:
     """
     Validate and sanitize URL.
-    
+
     Args:
         url: URL to validate
         allowed_schemes: List of allowed URL schemes
-        
+
     Returns:
         Validated URL
-        
+
     Raises:
         ValidationError: If URL is invalid or dangerous
     """
@@ -291,18 +257,12 @@ def validate_url(url: str, allowed_schemes: list[str] = ["http", "https"]) -> st
         # Check scheme
         if parsed.scheme not in allowed_schemes:
             raise ValidationError(
-                f"URL scheme must be one of {allowed_schemes}",
-                field="url",
-                value=url
+                f"URL scheme must be one of {allowed_schemes}", field="url", value=url
             )
 
         # Check for empty host
         if not parsed.netloc:
-            raise ValidationError(
-                "URL must have a valid host",
-                field="url",
-                value=url
-            )
+            raise ValidationError("URL must have a valid host", field="url", value=url)
 
         hostname = (parsed.hostname or "").lower()
 
@@ -339,107 +299,88 @@ def validate_url(url: str, allowed_schemes: list[str] = ["http", "https"]) -> st
             )
 
         # Reconstruct clean URL
-        clean_url = urllib.parse.urlunparse((
-            parsed.scheme,
-            parsed.netloc,
-            parsed.path,
-            parsed.params,
-            parsed.query,
-            ""  # Remove fragment
-        ))
+        clean_url = urllib.parse.urlunparse(
+            (
+                parsed.scheme,
+                parsed.netloc,
+                parsed.path,
+                parsed.params,
+                parsed.query,
+                "",  # Remove fragment
+            )
+        )
 
         return clean_url
 
     except Exception as e:
-        raise ValidationError(
-            f"Invalid URL: {e!s}",
-            field="url",
-            value=url
-        )
+        raise ValidationError(f"Invalid URL: {e!s}", field="url", value=url)
 
 
 def validate_numeric_range(
     value: int | float,
     min_value: int | float | None = None,
     max_value: int | float | None = None,
-    field_name: str = "value"
+    field_name: str = "value",
 ) -> int | float:
     """
     Validate numeric value is within allowed range.
-    
+
     Args:
         value: Numeric value to validate
         min_value: Minimum allowed value
         max_value: Maximum allowed value
         field_name: Field name for error messages
-        
+
     Returns:
         Validated value
-        
+
     Raises:
         ValidationError: If value is out of range
     """
     if not isinstance(value, (int, float)):
-        raise ValidationError(
-            f"{field_name} must be numeric",
-            field=field_name,
-            value=value
-        )
+        raise ValidationError(f"{field_name} must be numeric", field=field_name, value=value)
 
     if min_value is not None and value < min_value:
-        raise ValidationError(
-            f"{field_name} must be >= {min_value}",
-            field=field_name,
-            value=value
-        )
+        raise ValidationError(f"{field_name} must be >= {min_value}", field=field_name, value=value)
 
     if max_value is not None and value > max_value:
-        raise ValidationError(
-            f"{field_name} must be <= {max_value}",
-            field=field_name,
-            value=value
-        )
+        raise ValidationError(f"{field_name} must be <= {max_value}", field=field_name, value=value)
 
     return value
 
 
 def validate_array_length(
-    array: list[Any],
-    max_length: int = MAX_ARRAY_LENGTH,
-    field_name: str = "array"
+    array: list[Any], max_length: int = MAX_ARRAY_LENGTH, field_name: str = "array"
 ) -> list[Any]:
     """
     Validate array length to prevent resource exhaustion.
-    
+
     Args:
         array: Array to validate
         max_length: Maximum allowed length
         field_name: Field name for error messages
-        
+
     Returns:
         Validated array
-        
+
     Raises:
         ValidationError: If array is too long
     """
     if not isinstance(array, list):
-        raise ValidationError(
-            f"{field_name} must be a list",
-            field=field_name,
-            value=array
-        )
+        raise ValidationError(f"{field_name} must be a list", field=field_name, value=array)
 
     if len(array) > max_length:
         raise ValidationError(
             f"{field_name} exceeds maximum length of {max_length}",
             field=field_name,
-            value=f"[{len(array)} items]"
+            value=f"[{len(array)} items]",
         )
 
     return array
 
 
 # Pydantic models for complex validation
+
 
 class SafetyOperationRequest(BaseModel):
     """Validated safety operation request."""

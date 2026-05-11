@@ -12,4 +12,3 @@ Timestamp: {{timestamp|default(now())}}
 
 This is an automated message from {{app_name}} monitoring system.
 For support, contact {{support_email}}.
-                

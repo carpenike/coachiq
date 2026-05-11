@@ -441,7 +441,9 @@ class CANBusService(SafetyAware):
                     logger.info("Started CAN listener for interface", interface_name=interface_name)
 
                 except Exception as e:
-                    logger.error("Failed to start CAN listener", interface_name=interface_name, error=str(e))
+                    logger.error(
+                        "Failed to start CAN listener", interface_name=interface_name, error=str(e)
+                    )
 
         except Exception as e:
             logger.error("Failed to set up CAN listeners", exc_info=True)
@@ -505,7 +507,9 @@ class CANBusService(SafetyAware):
 
                 except Exception as e:
                     if self._running:  # Only log errors if we're still supposed to be running
-                        logger.error("Error receiving CAN message", interface=interface_name, error=str(e))
+                        logger.error(
+                            "Error receiving CAN message", interface=interface_name, error=str(e)
+                        )
                     break
 
         except asyncio.CancelledError:
@@ -898,9 +902,7 @@ class CANBusService(SafetyAware):
                 logger.warning("Failed to update entity %s state", entity_id)
 
         except Exception as e:
-            logger.error(
-                "Error updating entity %s from CAN message", entity_id, exc_info=True
-            )
+            logger.error("Error updating entity %s from CAN message", entity_id, exc_info=True)
 
     async def _update_light_state(
         self, payload: dict[str, Any], decoded_data: dict[str, Any], raw_data: dict[str, Any]

@@ -20,9 +20,7 @@ from typing import Any, TypeVar
 from backend.core.custom_exceptions import SafetyException
 
 # Context variables for request tracking
-request_context: contextvars.ContextVar[dict[str, Any]] = contextvars.ContextVar(
-    "request_context"
-)
+request_context: contextvars.ContextVar[dict[str, Any]] = contextvars.ContextVar("request_context")
 
 F = TypeVar("F", bound=Callable[..., Any])
 

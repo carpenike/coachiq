@@ -1874,6 +1874,7 @@ def create_app() -> FastAPI:
     # This replaces the previous inline handlers for AccountLockedError and
     # ServiceNotAvailableError with a unified handler covering all custom exceptions.
     from backend.core.exception_handlers import register_exception_handlers
+
     register_exception_handlers(app)
 
     # Configure and include routers

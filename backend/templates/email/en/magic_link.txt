@@ -13,4 +13,3 @@ If you didn't request this login, please ignore this email.
 Need help? Contact {{support_email}}.
 
 This email was sent from {{app_name}}.
-                

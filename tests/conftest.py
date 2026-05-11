@@ -16,8 +16,12 @@ from unittest.mock import AsyncMock, Mock
 # Settings models that validate at construction time (e.g. AuthenticationSettings'
 # JWT secret check) don't reject test configurations. These values are for
 # tests only and must never be used in real environments.
-os.environ.setdefault("COACHIQ_AUTH__SECRET_KEY", "test-secret-key-do-not-use-in-production-32bytes")
-os.environ.setdefault("COACHIQ_SECURITY__SECRET_KEY", "test-security-secret-do-not-use-in-production")
+os.environ.setdefault(
+    "COACHIQ_AUTH__SECRET_KEY", "test-secret-key-do-not-use-in-production-32bytes"
+)
+os.environ.setdefault(
+    "COACHIQ_SECURITY__SECRET_KEY", "test-security-secret-do-not-use-in-production"
+)
 
 import pytest
 from fastapi.testclient import TestClient

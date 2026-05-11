@@ -29,7 +29,7 @@ logger = logging.getLogger(__name__)
 class CSRFProtectionMiddleware(BaseHTTPMiddleware):
     """
     CSRF Protection using Double Submit Cookie pattern.
-    
+
     This middleware protects against Cross-Site Request Forgery attacks
     by requiring a matching token in both cookie and header/form data.
     """
@@ -58,7 +58,7 @@ class CSRFProtectionMiddleware(BaseHTTPMiddleware):
     def __init__(self, app, secret_key: str, secure_cookie: bool = True):
         """
         Initialize CSRF protection middleware.
-        
+
         Args:
             app: The ASGI application
             secret_key: Secret key for HMAC signing
@@ -146,9 +146,7 @@ class CSRFProtectionMiddleware(BaseHTTPMiddleware):
             return False
 
         # Validate tokens match and are properly signed
-        return self._verify_token(cookie_token) and hmac.compare_digest(
-            cookie_token, header_token
-        )
+        return self._verify_token(cookie_token) and hmac.compare_digest(cookie_token, header_token)
 
     def _should_set_token(self, request: Request, response: Response) -> bool:
         """Determine if CSRF token should be set in response."""
@@ -215,7 +213,7 @@ class CSRFProtectionMiddleware(BaseHTTPMiddleware):
 def get_csrf_token(request: Request) -> str | None:
     """
     Get CSRF token from request for template rendering.
-    
+
     This is useful for including the token in forms or making it
     available to JavaScript.
     """

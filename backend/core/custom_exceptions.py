@@ -414,7 +414,9 @@ class ServiceDependencyError(CoachIQException):
     """Raised when service dependency is not met."""
 
     def __init__(self, service_name: str, missing_dependencies: list[str]):
-        message = f"Service '{service_name}' missing dependencies: {', '.join(missing_dependencies)}"
+        message = (
+            f"Service '{service_name}' missing dependencies: {', '.join(missing_dependencies)}"
+        )
         details = {
             "service_name": service_name,
             "missing_dependencies": missing_dependencies,

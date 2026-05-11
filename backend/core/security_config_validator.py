@@ -26,7 +26,7 @@ class SecurityConfigValidator:
     def validate(self) -> tuple[bool, list[str], list[str]]:
         """
         Validate all security settings.
-        
+
         Returns:
             Tuple of (is_valid, errors, warnings)
         """
@@ -171,7 +171,7 @@ class SecurityConfigValidator:
     def get_security_report(self) -> dict[str, Any]:
         """
         Generate a comprehensive security report.
-        
+
         Returns:
             Dictionary with security status and recommendations
         """
@@ -225,10 +225,10 @@ class SecurityConfigValidator:
 def validate_security_config(settings: Settings) -> bool:
     """
     Validate security configuration and log results.
-    
+
     Args:
         settings: Application settings to validate
-        
+
     Returns:
         True if configuration is valid, False otherwise
     """

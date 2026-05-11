@@ -11,4 +11,3 @@ Test Details:
 - Time: {{timestamp|default(now())}}
 
 This is a test message from {{app_name}}. No action required.
-                

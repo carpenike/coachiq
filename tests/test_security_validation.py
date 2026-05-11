@@ -82,7 +82,7 @@ class TestCSRFProtection:
         app.add_middleware(
             CSRFProtectionMiddleware,
             secret_key="test-secret-key",
-            secure_cookie=False  # For testing
+            secure_cookie=False,  # For testing
         )
 
         @app.post("/test")
@@ -127,7 +127,7 @@ class TestCSRFProtection:
                 "/test",
                 json={"data": "test"},
                 cookies={CSRFProtectionMiddleware.COOKIE_NAME: mock_token},
-                headers={CSRFProtectionMiddleware.HEADER_NAME: mock_token}
+                headers={CSRFProtectionMiddleware.HEADER_NAME: mock_token},
             )
 
         assert response.status_code == 200
