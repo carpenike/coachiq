@@ -2,7 +2,31 @@
 
 ## Overview
 
-This document outlines security best practices for the CoachIQ RV-C control system. These practices are critical for protecting vehicle systems from unauthorized access and ensuring safe operation.
+This document outlines security best practices for the CoachIQ RV-C control system. These practices protect the API surface from unauthorized access and keep CoachIQ a polite citizen on the shared CAN bus.
+
+## Threat model (read first)
+
+CoachIQ is a soft control surface that talks to a **Firefly MIRA** multiplex
+panel over RV-C / J1939. Firefly owns the physical-safety case (brake,
+slides, leveling, etc.) and will refuse or fail-safe any command it
+considers unsafe. CoachIQ cannot bypass it.
+
+That shifts what "security" means here:
+
+| Realistic threat | Mitigation |
+|---|---|
+| Unauth'd API access → attacker controls lights/HVAC/etc via our endpoints | JWT auth + CSRF + role-based authorization on every state-changing route |
+| Credential compromise → same as above | Short token TTLs, refresh rotation, MFA for admin |
+| Bus flooding from a buggy loop or malicious request | Outbound CAN-message rate limiting (token-bucket), backpressure on websocket / dispatcher loops |
+| Malformed RV-C / J1939 frames confusing Firefly | Validate before encoding (Pydantic models, `input_validation.py`), encode via the message-factory layer, never raw-write user payloads |
+| Web XSS / template injection | Jinja sandbox + autoescape; “safe notification manager” uses sandboxed env |
+| Persistent log / audit tampering | Server-side audit log, no client-controlled identifiers in audit fields |
+
+Not in CoachIQ's threat model:
+
+- "Attacker releases the brake" — Firefly enforces brake interlocks; we cannot bypass them by sending a CAN frame.
+- "Attacker overrides physical safety interlocks" — same; the interlocks live on Firefly, not in CoachIQ.
+- "Failure of CoachIQ kills the user" — the OEM controller fails safe with or without us.
 
 ## Architecture Overview
 

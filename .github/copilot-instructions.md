@@ -54,6 +54,30 @@ Each `.instructions.md` file contains targeted guidance for specific languages, 
 - **Typed code** with Pydantic models and full type hints
 - **API Documentation** with MkDocs, Material theme, and OpenAPI integration
 
+## System role (READ THIS FIRST)
+
+CoachIQ is **NOT** a direct hardware controller. In the reference RV install
+it talks to a **Firefly MIRA** multiplex panel over RV-C / J1939. Firefly
+owns the physical-safety case and decides what commands to act on.
+CoachIQ's role is the same as a wall-switch panel or HMI: it emits well-formed
+CAN frames; Firefly chooses to act on them or not.
+
+Implications for code generation in this repo:
+
+- **Do NOT frame requirements as DO-178C / aerospace / life-critical.**
+  This is convenience automation, not certified safety equipment. See
+  `docs/safety.md` for the operational-safety policy.
+- **Realistic threats are API-side**: bus flooding, malformed frames,
+  unauth'd API access, credential compromise. NOT "the brakes release".
+- **In-process "safety" code (`backend/services/safety_service.py`,
+  `brake_safety_monitor.py`, etc.) is defense-in-depth API guardrail**,
+  not the actual safety system. It exists to keep CoachIQ from being
+  a stupid CAN-bus citizen, not to enforce vehicle-level safety.
+- **Aim for "good consumer-grade backend"** quality, not aerospace:
+  ~70-80% coverage on the API guardrail paths, strict types, fast tests,
+  proper auth/CSRF, no bus flooding. Don't propose mutation testing,
+  100% MC/DC coverage, formal methods, etc.
+
 ## Linting & Code Quality Requirements
 
 **INCREMENTAL QUALITY WORKFLOW**:

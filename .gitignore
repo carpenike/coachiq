@@ -264,6 +264,3 @@ alembic/logs/
 /.mcp.json
 
 prompt.txt
-
-# Serena AI tool cache
-.serena/cache/

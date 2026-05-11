@@ -1,14 +1,48 @@
 # CoachIQ
 
-Intelligent RV-C network management system with advanced analytics and control. This project provides a backend daemon, a web UI for monitoring and control, and a console client for direct interaction.
+Intelligent RV-C network management system with advanced analytics and control.
+This project provides a backend daemon, a web UI for monitoring and control,
+and a console client for direct interaction.
 
 ## Overview
 
 `CoachIQ` is designed to intelligently bridge RV-C networks with modern applications by providing a structured API and real-time data streaming. It decodes RV-C messages, manages device states, and allows for sending commands to the RV-C bus.
 
-## Version Management
+## System role and architecture (important)
 
-This project uses the [VERSION](./VERSION) file as the single source of truth for version information. The version is managed with [release-please](https://github.com/googleapis/release-please) which automatically creates release PRs based on conventional commits. See [Version Management documentation](./docs/version-management.md) for details.
+CoachIQ is **not** a direct hardware controller. In a typical RV install
+(this project's reference build is a 2021 Entegra Aspire 44R with a
+**Firefly MIRA** multiplex panel) the architecture looks like:
+
+```
+  CoachIQ                          Firefly MIRA panel              Hardware
+  (this project)                   (the OEM controller)            (lights,
+        │                                  │                       slides,
+        │  RV-C / J1939 over CAN bus       │  proprietary backplane locks,
+        │  (acts like a smart sensor /     │  + RV-C output bus     fans,
+        ├───remote panel emitting frames)──►Firefly────────────────────►…)
+        │                                  │
+        │  reads bus traffic               │  enforces real safety
+        │  for state / telemetry           │  interlocks (slides,
+        │                                  │  brake, leveling, etc.)
+        ▼                                  ▼
+   FastAPI + WebSocket UI            (owns the safety case)
+```
+
+What this means in practice:
+
+- **Firefly owns physical safety.** It will refuse, ignore, or fail-safe any
+  command it considers unsafe. CoachIQ cannot bypass it.
+- **CoachIQ is a polite citizen on the CAN bus.** It emits well-formed
+  RV-C/J1939 frames the same way a wall switch or HMI panel would. Firefly
+  decides whether to act on them.
+- **The realistic threat model is API-side, not hardware-side.** The risks
+  CoachIQ must guard against are: bus flooding, malformed frames, unauth'd
+  API access, and credential compromise — not "the brakes get released".
+- **CoachIQ is convenience automation, not certified safety equipment.**
+  See [docs/safety.md](docs/safety.md) for the full operational-safety policy.
+  Quality-engineering choices (test coverage, type checking, linting)
+  should be calibrated to "good consumer-grade backend" — not aerospace.
 
 ## Key Components
 

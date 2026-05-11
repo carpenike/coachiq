@@ -13,6 +13,27 @@ applyTo: "**"
 - Comprehensive Nix flake for reproducible development environments
 - Hierarchical environment configuration with `COACHIQ_` prefix
 
+## System role and architecture (important context)
+
+CoachIQ is **NOT** a direct hardware controller. The reference RV install
+talks to a **Firefly MIRA** multiplex panel over RV-C / J1939. Firefly
+owns the physical safety case and physical control authority. CoachIQ
+plays the role of a smart wall-switch or HMI panel: it emits well-formed
+CAN frames; Firefly decides whether to act on them.
+
+Keep this in mind when designing or modifying code:
+
+- The realistic threat model is **API-side** (bus flooding, malformed
+  frames, unauth'd API access, credential compromise) — NOT hardware-side.
+- In-process "safety" services (`safety_service.py`,
+  `brake_safety_monitor.py`, etc.) are **defense-in-depth API guardrails**,
+  not the actual vehicle safety system.
+- Code-quality standards target **good consumer-grade backend**, not
+  aerospace. Mutation testing, 100% MC/DC coverage, formal methods are
+  out of scope. Strict types, ~70-80% coverage on API guardrail paths,
+  proper auth/CSRF, and CAN-bus politeness (rate limiting, message
+  validation) are in scope.
+
 ## Current Structure
 
 - `backend/`: FastAPI app, API routes, services, and business logic
