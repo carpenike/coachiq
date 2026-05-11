@@ -27,8 +27,21 @@ from backend.services.security_audit_service import SecurityAuditService
 
 @pytest.fixture
 async def mock_db_session():
-    """Mock database session for testing."""
+    """Mock database session for testing.
+
+    Configured so that ``await session.execute(...)`` returns a MagicMock
+    whose query methods default to safe values:
+      - scalar_one_or_none() → None    ('no row')
+      - scalar() → 0                    (count = 0)
+      - scalars().all() → []            (no rows)
+    Individual tests can override these before calling.
+    """
     session = AsyncMock(spec=AsyncSession)
+    result_mock = MagicMock()
+    result_mock.scalar_one_or_none = MagicMock(return_value=None)
+    result_mock.scalar = MagicMock(return_value=0)
+    result_mock.scalars.return_value.all = MagicMock(return_value=[])
+    session.execute.return_value = result_mock
     return session
 
 
@@ -78,12 +91,14 @@ async def security_audit_service():
 @pytest.fixture
 async def safety_service(pin_manager, security_audit_service):
     """Create safety service with PIN manager."""
-    feature_manager = MagicMock()
-    feature_manager.features = {}
-    feature_manager.check_system_health = AsyncMock(return_value={"failed_critical": []})
+    # Modern SafetyService takes a SafetyServiceRegistry, not a feature_manager.
+    # Use a permissive mock here since these tests exercise PIN-related paths,
+    # not the registry-driven health checks.
+    service_registry = MagicMock()
+    service_registry.check_system_health = AsyncMock(return_value={"failed_critical": []})
 
     service = SafetyService(
-        feature_manager=feature_manager,
+        service_registry=service_registry,
         pin_manager=pin_manager,
         security_audit_service=security_audit_service,
     )
@@ -102,7 +117,7 @@ class TestPINValidation:
         mock_db_session.refresh = AsyncMock()
 
         # Create PIN
-        result = await pin_manager.create_pin(
+        result = await pin_manager.set_pin(
             user_id=mock_user.id,
             pin="1234",
             pin_type="emergency",
@@ -115,29 +130,31 @@ class TestPINValidation:
 
     async def test_create_pin_invalid_format(self, pin_manager, mock_user):
         """Test PIN creation with invalid format."""
+        # set_pin raises ValueError on invalid format (rather than returning
+        # False) so callers must handle the exception explicitly.
         # Too short
-        result = await pin_manager.create_pin(
-            user_id=mock_user.id,
-            pin="123",
-            pin_type="emergency",
-        )
-        assert result is False
+        with pytest.raises(ValueError, match="format"):
+            await pin_manager.set_pin(
+                user_id=mock_user.id,
+                pin="123",
+                pin_type="emergency",
+            )
 
         # Too long
-        result = await pin_manager.create_pin(
-            user_id=mock_user.id,
-            pin="123456789",
-            pin_type="emergency",
-        )
-        assert result is False
+        with pytest.raises(ValueError, match="format"):
+            await pin_manager.set_pin(
+                user_id=mock_user.id,
+                pin="123456789",
+                pin_type="emergency",
+            )
 
         # No numbers (required by config)
-        result = await pin_manager.create_pin(
-            user_id=mock_user.id,
-            pin="abcd",
-            pin_type="emergency",
-        )
-        assert result is False
+        with pytest.raises(ValueError, match="format"):
+            await pin_manager.set_pin(
+                user_id=mock_user.id,
+                pin="abcd",
+                pin_type="emergency",
+            )
 
     async def test_validate_pin_success(self, pin_manager, mock_db_session, mock_user):
         """Test successful PIN validation and session creation."""
@@ -151,6 +168,7 @@ class TestPINValidation:
             is_active=True,
             lockout_after_failures=3,
             lockout_duration_minutes=15,
+            use_count=0,
         )
 
         # Mock database queries
@@ -159,17 +177,21 @@ class TestPINValidation:
         mock_db_session.add = MagicMock()
         mock_db_session.commit = AsyncMock()
 
-        # Mock PIN verification
-        with patch.object(pin_manager, "_verify_pin", return_value=True):
-            session_id = await pin_manager.validate_pin(
+        # validate_pin computes hashed_pin = self._hash_pin(pin, pin_record.salt)
+        # then compares to pin_record.pin_hash. Make _hash_pin return the
+        # configured pin_hash so the comparison succeeds.
+        with patch.object(pin_manager, "_hash_pin", return_value="hashed_pin"):
+            result = await pin_manager.validate_pin(
                 user_id=mock_user.id,
                 pin="1234",
                 pin_type="emergency",
                 ip_address="127.0.0.1",
             )
 
-        assert session_id is not None
-        assert isinstance(session_id, str)
+        # validate_pin returns a PINValidationResult with the session id on success.
+        assert result.success is True
+        assert result.session_id is not None
+        assert isinstance(result.session_id, str)
         mock_db_session.add.assert_called()
         mock_db_session.commit.assert_called()
 
@@ -185,6 +207,7 @@ class TestPINValidation:
             is_active=True,
             lockout_after_failures=3,
             lockout_duration_minutes=15,
+            use_count=0,
         )
 
         # Create recent failed attempts
@@ -199,18 +222,28 @@ class TestPINValidation:
             for i in range(3)
         ]
 
-        # Mock database queries
+        # Mock database queries.
+        # _is_user_locked_out runs:
+        #   1. SELECT count(*) ...  -> result.scalar()  (failed-attempt count)
+        #   2. SELECT attempted_at ORDER BY ... LIMIT 1 -> result.scalar()
+        # Both go through the same execute() return_value, so mock scalar()
+        # to return enough failed attempts to trigger lockout, then a recent
+        # timestamp for the lockout-expiry calculation.
+        mock_db_session.execute.return_value.scalar = MagicMock(
+            side_effect=[3, datetime.now(UTC) - timedelta(minutes=5)]
+        )
         mock_db_session.execute.return_value.scalar_one_or_none.return_value = mock_pin
         mock_db_session.execute.return_value.scalars.return_value.all.return_value = recent_attempts
 
         # Try to validate PIN - should fail due to lockout
-        session_id = await pin_manager.validate_pin(
+        result = await pin_manager.validate_pin(
             user_id=mock_user.id,
             pin="1234",
             pin_type="emergency",
         )
 
-        assert session_id is None
+        assert result.success is False
+        assert result.lockout_until is not None
 
     async def test_authorize_operation_success(self, pin_manager, mock_db_session):
         """Test successful operation authorization."""
@@ -510,7 +543,10 @@ class TestSecurityAuditIntegration:
             triggered_by="testuser",
         )
 
-        # Verify security audit was called
+        # Verify security audit was called.
+        # The audit call passes emergency_context=True because the operation
+        # being attempted IS an emergency stop, regardless of whether the PIN
+        # check succeeded.
         security_audit_service.log_security_event.assert_called_with(
             event_type="unauthorized_access",
             severity="high",
@@ -520,7 +556,7 @@ class TestSecurityAuditIntegration:
                 "failure_reason": "pin_authorization_failed",
                 "pin_session_id": "invalid",
             },
-            emergency_context=False,
+            emergency_context=True,
         )
 
     async def test_rate_limiting_integration(self, safety_service, security_audit_service):
@@ -569,6 +605,7 @@ class TestConcurrentPINOperations:
             pin_hash="hashed_pin",
             salt="salt",
             is_active=True,
+            use_count=0,
         )
 
         mock_db_session.execute.return_value.scalar_one_or_none.return_value = mock_pin
@@ -576,8 +613,10 @@ class TestConcurrentPINOperations:
         mock_db_session.add = MagicMock()
         mock_db_session.commit = AsyncMock()
 
-        # Mock PIN verification
-        with patch.object(pin_manager, "_verify_pin", return_value=True):
+        # validate_pin uses _hash_pin (the older _verify_pin was removed during
+        # the repo-pattern refactor). Mock it to return the configured pin_hash
+        # so every concurrent attempt's PIN comparison succeeds.
+        with patch.object(pin_manager, "_hash_pin", return_value="hashed_pin"):
             # Create multiple concurrent validation attempts
             tasks = [
                 pin_manager.validate_pin(
@@ -591,6 +630,8 @@ class TestConcurrentPINOperations:
             # Run concurrently
             results = await asyncio.gather(*tasks)
 
-        # All should succeed with different session IDs
-        assert all(r is not None for r in results)
-        assert len(set(results)) == 5  # All unique session IDs
+        # All should succeed with unique session IDs.
+        assert all(r.success for r in results)
+        session_ids = [r.session_id for r in results]
+        assert all(sid is not None for sid in session_ids)
+        assert len(set(session_ids)) == 5  # All unique session IDs
