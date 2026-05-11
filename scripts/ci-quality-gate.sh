@@ -1,5 +1,5 @@
 #!/bin/bash
-# CI Quality Gate for Safety-Critical RV-C System
+# CI Quality Gate for the CoachIQ Backend
 # This script implements a diff-aware quality gate that:
 # 1. Blocks new linting issues in changed files
 # 2. Always enforces security standards on the full project
@@ -32,7 +32,7 @@ echo -e "${BLUE}📡 Fetching latest changes...${RESET}"
 git fetch origin || true
 
 echo -e "\n${BLUE}============================================================${RESET}"
-echo -e "${BLUE}Safety-Critical Code Quality Gate${RESET}"
+echo -e "${BLUE}CoachIQ CI Quality Gate${RESET}"
 echo -e "${BLUE}============================================================${RESET}\n"
 
 # ===== STAGE 1: Fast Linting on Changed Files Only =====
@@ -80,7 +80,7 @@ else
         ACTUAL_PYRIGHT_ERRORS=0
     else
         echo -e "${YELLOW}⚠️  Warning: Could not parse Pyright output, assuming errors exist${RESET}"
-        ACTUAL_PYRIGHT_ERRORS=999999  # Force failure for safety
+        ACTUAL_PYRIGHT_ERRORS=999999  # Force failure on parse error
     fi
 fi
 
@@ -137,7 +137,7 @@ fi
 echo -e "\n${BLUE}============================================================${RESET}"
 echo -e "${GREEN}✅ ALL QUALITY GATES PASSED!${RESET}"
 echo -e "${GREEN}🚀 Code is ready for merge${RESET}"
-echo -e "${GREEN}🛡️  Safety-critical standards maintained${RESET}"
+echo -e "${GREEN}🛡️  CoachIQ quality standards maintained${RESET}"
 echo -e "${BLUE}============================================================${RESET}\n"
 
 exit 0

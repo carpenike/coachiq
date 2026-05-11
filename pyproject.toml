@@ -201,7 +201,7 @@ exclude = [
     "tmp/",
     "temp/",
 ]
-# Type checking mode for safety-critical CAN/RV-C code.
+# Type checking mode for the CoachIQ backend.
 # Currently "basic" -- ratchet up to "strict" incrementally as the
 # uncovered fallout from the ServiceRegistry refactor is cleaned up.
 typeCheckingMode = "basic"
@@ -247,7 +247,7 @@ reportOptionalIterable = "error"
 reportOptionalContextManager = "error"
 reportOptionalOperand = "error"
 stubPath = "typings"
-# Strict analysis for safety-critical paths
+# Strict inference settings (defense in depth for the API surface).
 strictListInference = true
 strictDictionaryInference = true
 strictSetInference = true
@@ -264,7 +264,10 @@ indent-style = "space"
 quote-style = "double"
 
 [tool.ruff.lint]
-# Safety-critical rules for RV-C CAN bus system
+# Lint rules for the CoachIQ backend.
+# Calibrated for a good consumer-grade backend service that talks to a
+# Firefly MIRA panel over CAN -- NOT aerospace / DO-178C standards.
+# (See README.md > 'System role and architecture'.)
 select = [
     "E",      # pycodestyle errors
     "F",      # pyflakes
@@ -307,7 +310,7 @@ select = [
     "FURB",   # refurb (modernization)
     "LOG",    # flake8-logging
 ]
-# Force explicit per-line suppressions for safety-critical code
+# Force explicit per-line suppressions so suppressed lint findings get reviewed.
 ignore = []
 # Allow auto-fixing for safe rules only
 unfixable = [
