@@ -139,7 +139,7 @@ class DocsService:
                         total_endpoints += 1
 
             return {
-                "title": info.get("title", "coachiq"),
+                "title": info.get("title", "CoachIQ"),
                 "description": info.get("description", ""),
                 "version": info.get("version", "unknown"),
                 "openapi_version": schema.get("openapi", "unknown"),

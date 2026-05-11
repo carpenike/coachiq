@@ -10,13 +10,18 @@ Tests cover the complete request/response cycle for:
 """
 
 from datetime import UTC, datetime, timedelta
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
-from fastapi import status
+from fastapi import FastAPI, status
 from fastapi.testclient import TestClient
 
 from backend.api.routers.safety import router
+from backend.core.dependencies import (
+    get_authenticated_admin,
+    get_authenticated_user,
+    get_safety_service,
+)
 from backend.services.safety_service import SafetyInterlock, SystemOperationalMode
 
 
@@ -48,37 +53,35 @@ def mock_safety_service():
 
 
 @pytest.fixture
-def mock_dependencies(mock_safety_service):
-    """Mock dependencies for testing."""
-    with patch("backend.api.routers.safety.get_safety_service", return_value=mock_safety_service):
-        with patch(
-            "backend.api.routers.safety.get_authenticated_admin",
-            return_value={
-                "user_id": "admin-123",
-                "username": "admin",
-                "email": "admin@example.com",
-            },
-        ):
-            with patch(
-                "backend.api.routers.safety.get_authenticated_user",
-                return_value={
-                    "user_id": "user-123",
-                    "username": "testuser",
-                    "email": "user@example.com",
-                },
-            ):
-                yield
+def client(mock_safety_service):
+    """Create test client with FastAPI dependency overrides.
 
-
-@pytest.fixture
-def client(mock_dependencies):
-    """Create test client with mocked dependencies."""
-    from fastapi import FastAPI
-
+    NOTE: We override the dependency callables at the FastAPI app level rather
+    than patching module attributes. FastAPI captures the dependency callable
+    at route-registration time, so monkey-patching the module attribute later
+    does not affect routes that were already registered.
+    """
     app = FastAPI()
     app.include_router(router)
 
-    return TestClient(app)
+    admin_user = {
+        "user_id": "admin-123",
+        "username": "admin",
+        "email": "admin@example.com",
+    }
+    regular_user = {
+        "user_id": "user-123",
+        "username": "testuser",
+        "email": "user@example.com",
+    }
+
+    app.dependency_overrides[get_safety_service] = lambda: mock_safety_service
+    app.dependency_overrides[get_authenticated_admin] = lambda: admin_user
+    app.dependency_overrides[get_authenticated_user] = lambda: regular_user
+
+    yield TestClient(app)
+
+    app.dependency_overrides.clear()
 
 
 class TestPINEmergencyStopEndpoints:
@@ -371,41 +374,61 @@ class TestDiagnosticModeEndpoints:
 class TestSafetyEndpointsAuthentication:
     """Test authentication requirements for safety endpoints."""
 
-    def test_unauthenticated_access_denied(self, client):
+    def test_unauthenticated_access_denied(self, mock_safety_service):
         """Test that unauthenticated access is denied."""
-        # Remove authentication mocks
-        with patch(
-            "backend.api.routers.safety.get_authenticated_admin",
-            side_effect=Exception("Unauthorized"),
-        ):
-            # Try PIN emergency stop
-            response = client.post(
-                "/api/safety/pin/emergency-stop",
-                json={
-                    "pin_session_id": "test-session-123",
-                    "reason": "Test",
-                },
-            )
 
-            assert response.status_code == status.HTTP_500_INTERNAL_SERVER_ERROR
+        def _unauthorized():
+            raise Exception("Unauthorized")
 
-    def test_non_admin_access_denied(self, client):
+        app = FastAPI()
+        app.include_router(router)
+        app.dependency_overrides[get_safety_service] = lambda: mock_safety_service
+        app.dependency_overrides[get_authenticated_admin] = _unauthorized
+        app.dependency_overrides[get_authenticated_user] = _unauthorized
+
+        client = TestClient(app, raise_server_exceptions=False)
+
+        response = client.post(
+            "/api/safety/pin/emergency-stop",
+            json={
+                "pin_session_id": "test-session-123",
+                "reason": "Test",
+            },
+        )
+
+        app.dependency_overrides.clear()
+
+        assert response.status_code == status.HTTP_500_INTERNAL_SERVER_ERROR
+
+    def test_non_admin_access_denied(self, mock_safety_service):
         """Test that non-admin users cannot access admin endpoints."""
-        # Mock non-admin user
-        with patch(
-            "backend.api.routers.safety.get_authenticated_admin", side_effect=Exception("Not admin")
-        ):
-            # Try maintenance mode entry
-            response = client.post(
-                "/api/safety/pin/maintenance-mode/enter",
-                json={
-                    "pin_session_id": "test-session-123",
-                    "reason": "Test",
-                    "duration_minutes": 60,
-                },
-            )
 
-            assert response.status_code == status.HTTP_500_INTERNAL_SERVER_ERROR
+        def _not_admin():
+            raise Exception("Not admin")
+
+        app = FastAPI()
+        app.include_router(router)
+        app.dependency_overrides[get_safety_service] = lambda: mock_safety_service
+        app.dependency_overrides[get_authenticated_admin] = _not_admin
+        app.dependency_overrides[get_authenticated_user] = lambda: {
+            "user_id": "user-123",
+            "username": "testuser",
+        }
+
+        client = TestClient(app, raise_server_exceptions=False)
+
+        response = client.post(
+            "/api/safety/pin/maintenance-mode/enter",
+            json={
+                "pin_session_id": "test-session-123",
+                "reason": "Test",
+                "duration_minutes": 60,
+            },
+        )
+
+        app.dependency_overrides.clear()
+
+        assert response.status_code == status.HTTP_500_INTERNAL_SERVER_ERROR
 
 
 class TestErrorHandling:

@@ -13,20 +13,17 @@ Tests cover:
 """
 
 import asyncio
-import json
 import tempfile
 from datetime import datetime, timedelta
 from pathlib import Path
-from unittest.mock import AsyncMock, patch
+from unittest.mock import patch
 
 import pytest
 
 from backend.models.notification import (
     NotificationChannel,
     NotificationPayload,
-    NotificationStatus,
     NotificationType,
-    QueueStatistics,
 )
 from backend.services.notification_queue import NotificationQueue
 
@@ -44,6 +41,16 @@ async def notification_queue(temp_db_path):
     """Create and initialize NotificationQueue for testing."""
     queue = NotificationQueue(temp_db_path)
     await queue.initialize()
+
+    # Force synchronous writes for deterministic tests by flushing after every
+    # enqueue. The production default is to batch up to 10 writes or wait
+    # 500ms — both of which would race with assertions that read back state
+    # immediately after enqueue.
+    queue._batch_size = 1
+
+    # Override exponential-backoff retry delay (production: 30-300s) so retried
+    # notifications are immediately eligible for redequeue in tests.
+    queue._retry_delay_seconds = 0.0
 
     # Disable maintenance loop for testing
     if hasattr(queue, "_maintenance_task"):
@@ -180,6 +187,9 @@ class TestNotificationEnqueuing:
         """Test that write batching works correctly."""
         # Set small batch size for testing
         notification_queue._batch_size = 3
+        # Tighten the timeout so the test doesn't wait the production default
+        # (500ms) for the trailing partial batch to flush.
+        notification_queue._batch_timeout = 0.05
 
         notifications = []
         for i in range(5):
@@ -194,7 +204,9 @@ class TestNotificationEnqueuing:
         tasks = [notification_queue.enqueue(notification) for notification in notifications]
         await asyncio.gather(*tasks)
 
-        # Verify all notifications are persisted
+        # Wait for the trailing-batch timer to fire, then verify all are persisted.
+        await asyncio.sleep(0.2)
+
         stats = await notification_queue.get_statistics()
         assert stats.pending_count == 5
 
@@ -345,19 +357,22 @@ class TestNotificationCompletion:
 
     async def test_mark_notification_failed_move_to_dlq(self, notification_queue):
         """Test marking notification as failed and moving to DLQ."""
-        # Create notification with max retries = 1
+        # max_retries=2 in the queue's bookkeeping means total attempts:
+        # the first failure increments retry_count to 1 (which is < 2,
+        # so it gets retried), and the second failure increments to 2
+        # (which is NOT < 2, so it moves to DLQ).
         notification = NotificationPayload(
             message="Will fail",
             level=NotificationType.INFO,
             channels=[NotificationChannel.SYSTEM],
-            max_retries=1,
+            max_retries=2,
         )
 
         await notification_queue.enqueue(notification)
         batch = await notification_queue.dequeue_batch(size=1)
         dequeued = batch[0]
 
-        # Fail once (should retry)
+        # Fail once (should retry — fixture sets _retry_delay_seconds=0)
         await notification_queue.mark_failed(dequeued.id, "First failure", should_retry=True)
 
         # Dequeue again and fail (should move to DLQ)
@@ -499,7 +514,9 @@ class TestQueueStatistics:
         batch = await notification_queue.dequeue_batch(size=1)
         await notification_queue.mark_complete(batch[0].id)
 
-        # Mark one as failed
+        # Mark one as failed-without-retry. The queue does NOT keep these in
+        # status='failed' on the main table; mark_failed(should_retry=False)
+        # moves them straight to the dead_letter_queue table.
         batch = await notification_queue.dequeue_batch(size=1)
         await notification_queue.mark_failed(batch[0].id, "Test failure", should_retry=False)
 
@@ -507,7 +524,9 @@ class TestQueueStatistics:
         assert stats.pending_count == 1
         assert stats.processing_count == 0
         assert stats.completed_count == 1
-        assert stats.failed_count == 1
+        # Final-failure notifications are tracked in the DLQ, not failed_count.
+        assert stats.failed_count == 0
+        assert stats.dlq_count == 1
 
     async def test_statistics_caching(self, notification_queue, sample_notification):
         """Test that statistics are cached appropriately."""
@@ -769,27 +788,28 @@ class TestIntegrationScenarios:
 
     async def test_retry_and_dlq_scenario(self, notification_queue):
         """Test retry scenario that eventually moves to DLQ."""
-        # Create notification with limited retries
+        # max_retries=3 means: failures 1 and 2 retry (retry_count<3),
+        # failure 3 moves to DLQ (retry_count NOT < 3).
         notification = NotificationPayload(
             message="Will eventually fail",
             level=NotificationType.ERROR,
             channels=[NotificationChannel.SYSTEM],
-            max_retries=2,
+            max_retries=3,
         )
 
         await notification_queue.enqueue(notification)
 
         # Fail through all retries
-        for attempt in range(3):  # 0, 1, 2 (max_retries = 2, so 3rd failure moves to DLQ)
+        for attempt in range(3):  # 0, 1, 2 (3rd failure moves to DLQ)
             batch = await notification_queue.dequeue_batch(size=1)
-            assert len(batch) == 1
+            assert len(batch) == 1, f"Could not dequeue on attempt {attempt}"
 
+            notification_id = batch[0].id
             await notification_queue.mark_failed(
-                batch[0].id, f"Attempt {attempt} failed", should_retry=True
+                notification_id, f"Attempt {attempt} failed", should_retry=True
             )
 
             if attempt < 2:
-                # Should be back in queue for retry
                 stats = await notification_queue.get_statistics()
                 assert stats.pending_count == 1
             else:

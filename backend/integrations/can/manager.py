@@ -19,6 +19,7 @@ from can.exceptions import CanInterfaceNotImplementedError
 
 from backend.core.config import get_settings
 from backend.core.metrics import get_can_tx_queue_length
+from backend.integrations.can.tx_rate_limiter import get_default_can_tx_rate_limiter
 
 logger = logging.getLogger(__name__)
 
@@ -40,6 +41,7 @@ async def can_writer(
     """
     settings = get_settings()
     default_bustype = settings.can.bustype
+    rate_limiter = get_default_can_tx_rate_limiter()
     try:
         while True:
             msg, interface_name = await can_tx_queue.get()
@@ -83,6 +85,11 @@ async def can_writer(
                         can_tx_queue.task_done()
                         continue
                 try:
+                    # Bus politeness: wait for token-bucket capacity before
+                    # emitting each frame. Prevents CoachIQ (or a bug in
+                    # CoachIQ) from saturating a bus shared with the OEM
+                    # multiplex panel.
+                    await rate_limiter.acquire(msg.arbitration_id)
                     bus.send(msg)
                     logger.info(
                         "CAN TX (1/2): %s ID: %08X Data: %s",
@@ -132,6 +139,7 @@ async def can_writer(
                             "CAN tracking repository not available for sniffer/command tracking"
                         )
                     await asyncio.sleep(0.05)  # RV-C spec: send commands twice
+                    await rate_limiter.acquire(msg.arbitration_id)
                     bus.send(msg)
                     logger.info(
                         "CAN TX (2/2): %s ID: %08X Data: %s",

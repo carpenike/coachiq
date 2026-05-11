@@ -133,11 +133,12 @@ class SecuritySettings(BaseSettings):
         env = os.environ.get("COACHIQ_ENV", "development").lower()
 
         if env in ["production", "prod", "staging"] and not self.secret_key:
-            raise ValueError(
+            msg = (
                 "Security secret key is required in production environments. "
                 "Please set COACHIQ_SECURITY__SECRET_KEY environment variable with a secure random value. "
                 "Generate one with: openssl rand -hex 32"
             )
+            raise ValueError(msg)
 
         # Provide a development default if not in production
         if not self.secret_key:
@@ -487,7 +488,10 @@ class PersistenceSettings(BaseSettings):
 
     def get_database_dir(self) -> Path:
         """Get the database storage directory."""
-        return self.data_dir / "database"
+        # Note: subdirectory is plural ('databases') to match the layout
+        # produced by PersistenceRepository._ensure_directories(). These two
+        # have to agree or backup/list_backups assertions break.
+        return self.data_dir / "databases"
 
     def get_backup_dir(self) -> Path:
         """Get the backup storage directory."""
@@ -818,11 +822,12 @@ class AuthenticationSettings(BaseSettings):
     def validate_jwt_secret(self) -> "AuthenticationSettings":
         """Ensure JWT secret is provided when authentication is enabled."""
         if self.enabled and not self.secret_key:
-            raise ValueError(
+            msg = (
                 "JWT secret key is required when authentication is enabled. "
                 "Please set COACHIQ_AUTH__SECRET_KEY environment variable with a secure random value. "
                 "Generate one with: openssl rand -hex 32"
             )
+            raise ValueError(msg)
 
         # Set refresh token secret to main secret if not provided
         if self.enabled and self.enable_refresh_tokens and not self.refresh_token_secret:

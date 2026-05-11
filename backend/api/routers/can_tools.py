@@ -10,7 +10,10 @@ from typing import Annotated, Any
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field, validator
 
-from backend.core.dependencies import get_can_message_injector
+from backend.core.dependencies import (
+    get_authenticated_admin,
+    get_can_message_injector,
+)
 from backend.integrations.can.message_injector import (
     CANMessageInjector,
     InjectionMode,
@@ -45,22 +48,25 @@ class MessageInjectionRequest(BaseModel):
     reason: str = Field(default="", description="Reason for injection")
 
     @validator("data")
-    def validate_hex_data(cls, v):
+    def validate_hex_data(cls, v):  # noqa: N805 - Pydantic v1 @validator binds first arg as cls
         """Validate and convert hex string to bytes."""
         try:
             # Remove spaces and validate hex
             hex_str = v.replace(" ", "").upper()
             if len(hex_str) % 2 != 0:
-                raise ValueError("Hex string must have even length")
+                msg = "Hex string must have even length"
+                raise ValueError(msg)
 
             # Convert to bytes
             data = bytes.fromhex(hex_str)
             if len(data) > 8:
-                raise ValueError("Data too long (max 8 bytes)")
+                msg = "Data too long (max 8 bytes)"
+                raise ValueError(msg)
 
             return hex_str
         except ValueError as e:
-            raise ValueError(f"Invalid hex data: {e}")
+            msg = f"Invalid hex data: {e}"
+            raise ValueError(msg) from e
 
     class Config:
         json_schema_extra = {
@@ -99,20 +105,23 @@ class J1939MessageRequest(BaseModel):
     mode: InjectionMode = Field(default=InjectionMode.SINGLE, description="Injection mode")
 
     @validator("data")
-    def validate_hex_data(cls, v):
+    def validate_hex_data(cls, v):  # noqa: N805 - Pydantic v1 @validator binds first arg as cls
         """Validate and convert hex string to bytes."""
         try:
             hex_str = v.replace(" ", "").upper()
             if len(hex_str) % 2 != 0:
-                raise ValueError("Hex string must have even length")
+                msg = "Hex string must have even length"
+                raise ValueError(msg)
 
             data = bytes.fromhex(hex_str)
             if len(data) > 8:
-                raise ValueError("Data too long (max 8 bytes)")
+                msg = "Data too long (max 8 bytes)"
+                raise ValueError(msg)
 
             return hex_str
         except ValueError as e:
-            raise ValueError(f"Invalid hex data: {e}")
+            msg = f"Invalid hex data: {e}"
+            raise ValueError(msg) from e
 
 
 class InjectorStatusResponse(BaseModel):
@@ -156,9 +165,14 @@ async def get_injector_status(
 async def inject_message(
     request: MessageInjectionRequest,
     injector: Annotated[CANMessageInjector, Depends(get_can_message_injector)],
+    admin: Annotated[dict, Depends(get_authenticated_admin)],
 ) -> MessageInjectionResponse:
     """
     Inject CAN message(s) for testing and diagnostics.
+
+    Admin-only: this bypasses normal entity-control validation and emits raw
+    frames onto the bus. Audited via the request `user` field which is
+    populated from the authenticated session, NOT a hardcoded value.
 
     Safety levels:
     - STRICT: Blocks dangerous messages
@@ -183,7 +197,7 @@ async def inject_message(
             destination_address=request.destination_address,
             description=request.description,
             reason=request.reason,
-            user="api",  # TODO: Get from auth context
+            user=admin.get("username") or admin.get("user_id") or "unknown-admin",
         )
 
         # Perform injection
@@ -210,9 +224,12 @@ async def inject_message(
 async def inject_j1939_message(
     request: J1939MessageRequest,
     injector: Annotated[CANMessageInjector, Depends(get_can_message_injector)],
+    admin: Annotated[dict, Depends(get_authenticated_admin)],
 ) -> MessageInjectionResponse:
     """
     Inject J1939 message with automatic CAN ID generation.
+
+    Admin-only. See /inject for the same security rationale.
 
     This endpoint simplifies J1939 message injection by automatically
     constructing the proper 29-bit CAN identifier from PGN and addresses.
@@ -241,7 +258,7 @@ async def inject_j1939_message(
             destination_address=request.destination_address,
             description=f"J1939 PGN 0x{request.pgn:04X}",
             reason="J1939 message injection",
-            user="api",
+            user=admin.get("username") or admin.get("user_id") or "unknown-admin",
         )
 
         # Perform injection

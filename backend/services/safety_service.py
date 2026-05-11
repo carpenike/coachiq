@@ -1329,9 +1329,14 @@ class SafetyService:
             self._mode_entered_at = None
             self._mode_expires_at = None
 
-            # Clear any active overrides
+            # Clear any active overrides. Pop directly first so orphaned
+            # override entries (whose underlying interlock has been
+            # unregistered) are still removed; then call the canonical
+            # clear method to fire audit events for any that ARE registered.
             for interlock_name in list(self._active_overrides.keys()):
-                self.clear_interlock_override(interlock_name)
+                self._active_overrides.pop(interlock_name, None)
+                if interlock_name in self._interlocks:
+                    self.clear_interlock_override(interlock_name)
 
             # Synchronous audit log for compatibility
             self._add_audit_log_entry(

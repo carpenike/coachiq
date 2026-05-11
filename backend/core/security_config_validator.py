@@ -101,10 +101,16 @@ class SecurityConfigValidator:
 
     def _validate_network_settings(self) -> None:
         """Validate network security settings."""
-        # Check bind address
-        if self.settings.server.host == "0.0.0.0":
-            if not self.settings.is_development():
-                self.warnings.append("NETWORK: Binding to 0.0.0.0 in production")
+        # Check bind address. The literal "0.0.0.0" here is a comparison
+        # target, not a bind operation; this validator's job is to detect
+        # bind-all in production and warn about it. False-positive against
+        # both bandit B104 and ruff S104 (hardcoded-bind-all-interfaces);
+        # neither tool models comparison vs. assignment so suppress both.
+        if (
+            self.settings.server.host == "0.0.0.0"  # noqa: S104  # nosec B104
+            and not self.settings.is_development()
+        ):
+            self.warnings.append("NETWORK: Binding to 0.0.0.0 in production")
 
         # Check trusted hosts
         if hasattr(self.settings, "allowed_hosts"):

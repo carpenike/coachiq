@@ -34,7 +34,10 @@ repos:
 
   # Python linting and formatting with Ruff
   - repo: https://github.com/astral-sh/ruff-pre-commit
-    rev: v0.12.0
+    # Keep pinned to the same version poetry resolves so pre-commit's
+    # ruff-format hook agrees with `poetry run ruff format`. See
+    # .pre-commit-config.yaml for the full rationale.
+    rev: v0.11.13
     hooks:
       - id: ruff
         args: [--fix, --exit-non-zero-on-fix]  # Auto-fix to reduce friction

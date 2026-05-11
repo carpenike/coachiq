@@ -846,7 +846,10 @@ class WebSocketLogHandler(logging.Handler):
     - Rate limits outgoing messages (10/sec per client)
     - Supports per-client log level and logger/module filtering
     - Robust connection management and error handling
-    - TODO: Authentication/authorization for log access
+
+    Authentication: connections to the /ws/logs endpoint are authenticated
+    AND admin-restricted in WebSocketService.handle_log_connection. Clients
+    that this handler broadcasts to have already been verified there.
     """
 
     BUFFER_SIZE = 100

@@ -109,7 +109,11 @@ class PriorityMessageHandler:
 
         # Processing state
         self._processing_active = False
-        self._last_priority_check = time.time()
+        # Last-emit timestamp PER PRIORITY (not a single global value); the
+        # rate limiter must track each class independently or a high-rate
+        # critical message would block subsequent normal/low traffic for
+        # one normal-priority interval.
+        self._last_emit_at: dict[MessagePriority, float] = dict.fromkeys(MessagePriority, 0.0)
 
         logger.info("Priority message handler initialized")
 
@@ -300,22 +304,20 @@ class PriorityMessageHandler:
         return True
 
     def _check_rate_limit(self, priority: MessagePriority) -> bool:
-        """Check if priority level is under rate limit."""
+        """Check if priority level is under rate limit.
+
+        Tracks the last-emit timestamp per priority class, so a high-rate
+        critical message stream cannot starve unrelated normal/low traffic.
+        """
         current_time = time.time()
-
-        # Simple rate limiting based on priority
-        # More sophisticated implementation could use token bucket algorithm
-
         limit = self._priority_limits.get(priority, 50.0)  # messages per second
+        min_interval = 1.0 / limit
 
-        # For now, just check time since last priority check
-        # This is a simplified implementation
-        time_since_check = current_time - self._last_priority_check
+        last_emit = self._last_emit_at.get(priority, 0.0)
+        if current_time - last_emit < min_interval:
+            return False
 
-        if time_since_check < (1.0 / limit):
-            return False  # Rate limited
-
-        self._last_priority_check = current_time
+        self._last_emit_at[priority] = current_time
         return True
 
     def _drop_lowest_priority_message(self) -> bool:

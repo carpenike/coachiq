@@ -22,10 +22,11 @@ Example:
 """
 
 import asyncio
+import contextlib
 import json
 import logging
 import time
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import aiosqlite
@@ -65,6 +66,11 @@ class NotificationQueue:
         self._batch_timer: asyncio.Task | None = None
         self._batch_size = 10
         self._batch_timeout = 0.5  # 500ms
+
+        # Retry backoff configuration. Production default uses exponential
+        # backoff capped at 5 minutes; tests can override to a constant short
+        # delay (e.g. 0.0) for determinism.
+        self._retry_delay_seconds: float | None = None  # None = exponential
 
         # Statistics tracking
         self._stats_cache: QueueStatistics | None = None
@@ -137,52 +143,74 @@ class NotificationQueue:
 
         try:
             async with aiosqlite.connect(self.db_path) as db:
-                # Get notifications ready for processing
-                async with db.execute(
-                    """
-                    SELECT data, retry_count, scheduled_for
-                    FROM notifications
-                    WHERE status = 'pending'
-                    AND (scheduled_for IS NULL OR scheduled_for <= ?)
-                    ORDER BY priority ASC, created_at ASC
-                    LIMIT ?
-                """,
-                    (datetime.utcnow().isoformat(), size),
-                ) as cursor:
-                    rows = await cursor.fetchall()
+                # Run SELECT + UPDATE atomically so concurrent dequeuers cannot
+                # claim the same notifications. BEGIN IMMEDIATE acquires a write
+                # lock immediately, serializing dequeue calls — appropriate for
+                # SQLite's single-writer model.
+                await db.execute("BEGIN IMMEDIATE")
+                try:
+                    # Get notifications ready for processing
+                    async with db.execute(
+                        """
+                        SELECT data, retry_count, scheduled_for
+                        FROM notifications
+                        WHERE status = 'pending'
+                        AND (scheduled_for IS NULL OR scheduled_for <= ?)
+                        ORDER BY priority ASC, created_at ASC
+                        LIMIT ?
+                    """,
+                        (datetime.now(UTC).isoformat(), size),
+                    ) as cursor:
+                        rows = await cursor.fetchall()
 
-                if not rows:
-                    return []
+                    if not rows:
+                        await db.execute("ROLLBACK")
+                        return []
 
-                # Parse notification data
-                notifications = []
-                notification_ids = []
+                    # Parse notification data
+                    notifications = []
+                    notification_ids = []
 
-                for row in rows:
-                    try:
-                        data = json.loads(row[0])
-                        notification = NotificationPayload.model_validate(data)
-                        notification.retry_count = row[1]
-                        notifications.append(notification)
-                        notification_ids.append(notification.id)
-                    except Exception as e:
-                        self.logger.warning(f"Failed to parse notification data: {e}")
-                        continue
+                    for row in rows:
+                        try:
+                            data = json.loads(row[0])
+                            notification = NotificationPayload.model_validate(data)
+                            notification.retry_count = row[1]
+                            notifications.append(notification)
+                            notification_ids.append(notification.id)
+                        except Exception as e:
+                            self.logger.warning("Failed to parse notification data: %s", e)
+                            continue
 
-                # Mark as processing to prevent duplicate processing
-                if notification_ids:
-                    # Generate safe parameterized query with correct number of placeholders
-                    await db.execute(
-                        """  # nosec B608
-                        UPDATE notifications
-                        SET status = 'processing', last_attempt = ?
-                        WHERE id IN ({})
-                    """.format(",".join("?" * len(notification_ids))),  # nosec B608
-                        [datetime.utcnow().isoformat(), *notification_ids],
-                    )
+                    # Mark as processing to prevent duplicate processing
+                    if notification_ids:
+                        # Generate safe parameterized query with correct number
+                        # of placeholders. notification_ids are server-generated
+                        # UUIDs, not user input; the format only inserts the
+                        # right number of "?" placeholders. We carry both the
+                        # ruff suppression (S608) and the bandit one (B608) -
+                        # they're the same SQL-injection rule under different
+                        # tool prefixes and bandit ignores ruff-style noqa
+                        # directives, so both annotations are required.
+                        placeholders = ",".join("?" * len(notification_ids))
+                        await db.execute(
+                            f"""
+                            UPDATE notifications
+                            SET status = 'processing', last_attempt = ?
+                            WHERE id IN ({placeholders})
+                            """,  # noqa: S608  # nosec B608
+                            [datetime.now(UTC).isoformat(), *notification_ids],
+                        )
+
                     await db.commit()
-
-                return notifications
+                    # Stats cache reflects queue state; invalidate after writes so
+                    # the next get_statistics() call recomputes.
+                    self._stats_cache = None
+                    self._stats_cache_expires = None
+                    return notifications
+                except Exception:
+                    await db.execute("ROLLBACK")
+                    raise
 
         except Exception as e:
             self.logger.error(f"Failed to dequeue notifications: {e}")
@@ -209,6 +237,8 @@ class NotificationQueue:
                     (datetime.utcnow().isoformat(), notification_id),
                 )
                 await db.commit()
+                self._stats_cache = None
+                self._stats_cache_expires = None
                 return True
 
         except Exception as e:
@@ -250,8 +280,13 @@ class NotificationQueue:
 
                 # Check if we should retry or move to DLQ
                 if should_retry and retry_count < max_retries:
-                    # Schedule retry with exponential backoff
-                    retry_delay = min(300, 30 * (2**retry_count))  # Max 5 minutes
+                    # Schedule retry. Default is exponential backoff capped at
+                    # 5 minutes; tests / future tuning can override via
+                    # _retry_delay_seconds for a constant delay.
+                    if self._retry_delay_seconds is not None:
+                        retry_delay = self._retry_delay_seconds
+                    else:
+                        retry_delay = min(300, 30 * (2**retry_count))
                     retry_time = datetime.utcnow() + timedelta(seconds=retry_delay)
 
                     await db.execute(
@@ -275,6 +310,8 @@ class NotificationQueue:
                     await self._move_to_dlq(notification_id, error_message, retry_count)
 
                 await db.commit()
+                self._stats_cache = None
+                self._stats_cache_expires = None
                 return True
 
         except Exception as e:
@@ -526,6 +563,8 @@ class NotificationQueue:
                 # Remove from DLQ
                 await db.execute("DELETE FROM dead_letter_queue WHERE id = ?", (dlq_entry_id,))
                 await db.commit()
+                self._stats_cache = None
+                self._stats_cache_expires = None
 
                 self.logger.info(f"Notification {notification.id} retried from DLQ")
                 return True
@@ -540,10 +579,8 @@ class NotificationQueue:
             # Cancel maintenance task
             if self._maintenance_task and not self._maintenance_task.done():
                 self._maintenance_task.cancel()
-                try:
+                with contextlib.suppress(asyncio.CancelledError):
                     await self._maintenance_task
-                except asyncio.CancelledError:
-                    pass
 
             # Flush any pending writes
             async with self._batch_lock:
@@ -657,6 +694,9 @@ class NotificationQueue:
 
             self.logger.debug(f"Flushed batch of {len(self._write_batch)} notifications")
             self._write_batch.clear()
+            # Stats cache reflects queue state; invalidate after writes.
+            self._stats_cache = None
+            self._stats_cache_expires = None
 
         except Exception as e:
             self.logger.error(f"Failed to flush write batch: {e}")
@@ -735,7 +775,12 @@ class NotificationQueue:
                 # Remove from main queue
                 await db.execute("DELETE FROM notifications WHERE id = ?", (notification_id,))
 
-                self.logger.warning(f"Notification {notification_id} moved to DLQ: {error_message}")
+                # Persist both the DLQ insert and the deletion atomically.
+                await db.commit()
+
+                self.logger.warning(
+                    "Notification %s moved to DLQ: %s", notification_id, error_message
+                )
 
         except Exception as e:
             self.logger.error(f"Failed to move notification to DLQ: {e}")

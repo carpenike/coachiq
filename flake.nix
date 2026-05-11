@@ -1078,7 +1078,7 @@ EOF
               enableDomainApiV2 = lib.mkOption {
                 type = lib.types.bool;
                 default = true;
-                description = "Enable Domain-driven API v2 with safety-critical command patterns";
+                description = "Enable Domain-driven API v2 with command/ack patterns";
               };
 
               enableEntitiesApiV2 = lib.mkOption {

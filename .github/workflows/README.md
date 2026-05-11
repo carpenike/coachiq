@@ -1,34 +1,32 @@
 # GitHub Actions Workflows
 
-This directory contains GitHub Actions workflows for building, testing, and deploying the CoachIQ project.
+This directory contains GitHub Actions workflows for building, testing, and
+versioning the CoachIQ project.
 
 ## Workflows
 
-### deploy-docs.yml
+### `nix-ci.yml`
 
-This workflow builds and deploys the MkDocs documentation to GitHub Pages whenever changes are made to the docs folder or mkdocs.yml file.
+Main CI: runs `nix run .#ci` (pre-commit, tests, lints, lock-check) and
+`nix flake check` on every push to `main` and PR targeting `main`.
 
-### deploy-deb-repo.yml
+The Cachix step (`cachix-action`) is configured with `continue-on-error: true`
+so a missing/revoked auth token will not fail the run — Nix will just rebuild
+from source. To restore caching, generate a new token at
+<https://app.cachix.org/cache/coachiq> and set it as the `CACHIX_AUTH_TOKEN`
+repository secret.
 
-This workflow is for building and deploying the Debian package repository. It is currently disabled by default and needs to be configured before use.
+### `test-docs.yml`
 
-### deploy-combined.yml
+Builds the MkDocs documentation on PRs that touch `docs/` or `mkdocs.yml`.
+Verifies that the docs still build (and that `scripts/export_openapi.py`
+still runs) before merging. Does NOT deploy.
 
-This workflow combines both documentation and Debian package repository deployment. It builds and deploys the documentation on every push to main, and additionally builds and deploys the Debian repository when a new tag is pushed.
+### `release-please.yml`
 
-## Configuration
-
-To enable these workflows:
-
-1. Go to your GitHub repository settings
-2. Navigate to "Pages"
-3. Under "Build and deployment", select "GitHub Actions" as the source
-4. Enable the GitHub Pages feature
-
-## Custom Domain (Optional)
-
-If you want to use a custom domain for your GitHub Pages site:
-
-1. Add your custom domain in the repository settings under "Pages"
-2. Create a CNAME file in the root of your documentation
-3. Add DNS records for your domain
+Runs on push to `main`. Uses [release-please](https://github.com/googleapis/release-please)
+to track Conventional Commits and open/update a release PR that bumps
+`VERSION`, updates `CHANGELOG.md`, and updates `tool.poetry.version` in
+`pyproject.toml` (configured via `release-please-config.json`).
+</content>
+</invoke>

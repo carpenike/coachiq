@@ -207,6 +207,12 @@ class AsyncNotificationDispatcher:
 
         while self._running:
             try:
+                # Prune completed batch tasks BEFORE the capacity check.
+                # Without this, the capacity check in a tight loop can see a
+                # full _active_batches set even after the tasks have finished,
+                # because cleanup only happened after the most recent spawn.
+                self._active_batches = {task for task in self._active_batches if not task.done()}
+
                 # Check if we have capacity for more batches
                 if len(self._active_batches) >= self.max_concurrent_batches:
                     await asyncio.sleep(self.processing_interval)
@@ -223,9 +229,6 @@ class AsyncNotificationDispatcher:
                 # Process batch in background task
                 batch_task = asyncio.create_task(self._process_batch(batch))
                 self._active_batches.add(batch_task)
-
-                # Clean up completed batch tasks
-                self._active_batches = {task for task in self._active_batches if not task.done()}
 
                 # Update activity timestamp
                 self.metrics["last_activity"] = datetime.utcnow()

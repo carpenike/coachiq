@@ -4,12 +4,54 @@ Core services for entity management including:
 - Query operations for entity data
 - Hardware control with security validation
 - Entity lifecycle and configuration management
+
+Authorization model
+-------------------
+These services are called from FastAPI routers that have already validated
+the caller's session. The router passes the user dict (`user_context`) into
+every state-changing service method. We re-validate here as defense in
+depth: a router could be added later that forgets to authenticate, and the
+service must never act on an unauthenticated request just because it was
+given `None`.
+
+Roles understood here:
+- ``user``: any authenticated user. May call control_entity / control_light.
+- ``admin``: may additionally create / update / delete entity mappings
+  (configuration ops that change which hardware our API can address).
 """
 
 import logging
 import time
 from asyncio import Queue
 from datetime import UTC, datetime
+
+
+class _AuthorizationError(PermissionError):
+    """Raised when a service operation is invoked without sufficient privileges."""
+
+
+def _require_role(
+    user_context: dict | None,
+    *,
+    allowed_roles: tuple[str, ...] = ("user", "operator", "admin"),
+    operation: str,
+) -> None:
+    """Defense-in-depth role check at the service boundary.
+
+    Routers should already enforce auth, but services must never trust that.
+    Raises ``_AuthorizationError`` (a ``PermissionError`` subclass) when the
+    caller is unauthenticated or lacks the required role; callers in this
+    module catch it and convert to ``{"success": False, "error": ...}``.
+    """
+    if not user_context:
+        msg = f"Authentication required for {operation}"
+        raise _AuthorizationError(msg)
+    role = user_context.get("role")
+    if role not in allowed_roles:
+        msg = f"Role {role!r} not permitted for {operation}; requires one of {allowed_roles}"
+        raise _AuthorizationError(msg)
+
+
 from typing import Any, Dict, List, Optional
 
 from backend.core.performance import PerformanceMonitor
@@ -171,9 +213,7 @@ class EntityQueryService:
         end_time = time.time()
         start_time = end_time - (hours * 3600)
 
-        history = await self._history_repo.get_entity_history(entity_id, start_time, end_time)
-
-        return history
+        return await self._history_repo.get_entity_history(entity_id, start_time, end_time)
 
     async def get_unmapped_entries(self) -> dict[str, list[Any]]:
         """Get unmapped RV-C entries.
@@ -274,6 +314,10 @@ class EntityControlService:
         user_id = user_context.get("user_id") if user_context else None
 
         try:
+            # Defense-in-depth role check: the router should have already
+            # authenticated the caller, but never trust None here.
+            _require_role(user_context, operation=f"control_entity({entity_id})")
+
             # Validate entity exists
             entity = self._entity_manager.get_entity(entity_id)
             if not entity:
@@ -290,14 +334,6 @@ class EntityControlService:
                     entity_id, command, timestamp, user_id, False, error
                 )
                 return {"success": False, "error": error}
-
-            # TODO: Add security validation here
-            # if not await self._validate_command_access(user_context, entity_id, command):
-            #     error = "Access denied"
-            #     await self._command_repo.record_command(
-            #         entity_id, command, timestamp, user_id, False, error
-            #     )
-            #     return {"success": False, "error": error}
 
             # Execute control
             result = await entity.control(command)
@@ -323,6 +359,13 @@ class EntityControlService:
                 await self._websocket_manager.broadcast_entity_update(entity_id, entity.to_dict())
 
             return result
+
+        except _AuthorizationError as e:
+            logger.warning("Authorization denied: %s", e)
+            await self._command_repo.record_command(
+                entity_id, command, timestamp, user_id, False, str(e)
+            )
+            return {"success": False, "error": str(e)}
 
         except Exception as e:
             error = f"Control failed: {e!s}"
@@ -367,10 +410,20 @@ class EntityControlService:
         Returns:
             Results by entity ID
         """
+        try:
+            # Emergency stop is a privileged operation: must be authenticated
+            # and have at least operator role. Admin works too.
+            _require_role(
+                user_context,
+                allowed_roles=("operator", "admin"),
+                operation="emergency_stop_all",
+            )
+        except _AuthorizationError as e:
+            logger.warning("Authorization denied for emergency_stop_all: %s", e)
+            return {"_error": {"success": False, "error": str(e)}}
+
         results = {}
         entities = self._entity_manager.get_entities()
-
-        # TODO: Add emergency access validation
 
         for entity_id, entity in entities.items():
             if hasattr(entity, "control"):
@@ -436,7 +489,15 @@ class EntityManagementService:
         Returns:
             Created entity data
         """
-        # TODO: Add permission check
+        try:
+            _require_role(
+                user_context,
+                allowed_roles=("admin",),
+                operation="create_entity_mapping",
+            )
+        except _AuthorizationError as e:
+            logger.warning("Authorization denied: %s", e)
+            return {"success": False, "error": str(e)}
 
         # Validate mapping
         required_fields = ["entity_id", "name", "device_type"]
@@ -479,7 +540,15 @@ class EntityManagementService:
         Returns:
             Updated entity data
         """
-        # TODO: Add permission check
+        try:
+            _require_role(
+                user_context,
+                allowed_roles=("admin",),
+                operation=f"update_entity_config({entity_id})",
+            )
+        except _AuthorizationError as e:
+            logger.warning("Authorization denied: %s", e)
+            return {"success": False, "error": str(e)}
 
         # Validate entity exists
         entity = self._entity_manager.get_entity(entity_id)
@@ -528,7 +597,15 @@ class EntityManagementService:
         Returns:
             Deletion result
         """
-        # TODO: Add permission check
+        try:
+            _require_role(
+                user_context,
+                allowed_roles=("admin",),
+                operation=f"delete_entity({entity_id})",
+            )
+        except _AuthorizationError as e:
+            logger.warning("Authorization denied: %s", e)
+            return {"success": False, "error": str(e)}
 
         # Validate entity exists
         if not self._entity_manager.get_entity(entity_id):

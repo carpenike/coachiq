@@ -8,10 +8,11 @@ Tests the documentation service business logic, including:
 - Documentation content management
 """
 
-from unittest.mock import Mock
+from unittest.mock import AsyncMock, MagicMock, Mock
 
 import pytest
 
+from backend.core.performance import PerformanceMonitor
 from backend.services.docs_service import DocsService
 
 # ================================
@@ -40,15 +41,50 @@ def mock_fastapi_app():
 
 
 @pytest.fixture
-def docs_service(mock_fastapi_app):
-    """Create DocsService instance for testing."""
-    return DocsService(app_instance=mock_fastapi_app)
+def mock_repository():
+    """Mock DocsRepository with sensible async stubs.
+
+    The default get_cached_schema returns None so tests fall through to the
+    app_instance.openapi() path; individual tests can set the return_value to
+    inject cached schemas.
+    """
+    repo = AsyncMock()
+    repo.get_cached_schema = AsyncMock(return_value=None)
+    repo.cache_schema = AsyncMock(return_value=True)
+    repo.store_endpoint_metadata = AsyncMock(return_value=True)
+    repo.get_endpoint_metadata = AsyncMock(return_value=None)
+    repo.list_cached_endpoints = AsyncMock(return_value=[])
+    repo.clear_cache = AsyncMock(return_value=True)
+    repo.get_cache_info = MagicMock(return_value={"cached_schemas": 0, "cached_endpoints": 0})
+    return repo
 
 
 @pytest.fixture
-def docs_service_no_app():
+def mock_monitor():
+    """No-op PerformanceMonitor that returns the wrapped fn unchanged."""
+    monitor = MagicMock(spec=PerformanceMonitor)
+    # monitor_service_method is a decorator factory; make it a passthrough.
+    monitor.monitor_service_method = MagicMock(return_value=lambda fn: fn)
+    return monitor
+
+
+@pytest.fixture
+def docs_service(mock_fastapi_app, mock_repository, mock_monitor):
+    """Create DocsService instance for testing."""
+    return DocsService(
+        docs_repository=mock_repository,
+        performance_monitor=mock_monitor,
+        app_instance=mock_fastapi_app,
+    )
+
+
+@pytest.fixture
+def docs_service_no_app(mock_repository, mock_monitor):
     """Create DocsService instance without app for testing."""
-    return DocsService()
+    return DocsService(
+        docs_repository=mock_repository,
+        performance_monitor=mock_monitor,
+    )
 
 
 @pytest.fixture
@@ -105,19 +141,30 @@ def sample_openapi_schema():
 class TestDocsServiceInitialization:
     """Test DocsService initialization and setup."""
 
-    def test_init_with_app_instance(self, mock_fastapi_app):
+    def test_init_with_app_instance(self, mock_fastapi_app, mock_repository, mock_monitor):
         """Test service initialization with app instance."""
-        service = DocsService(app_instance=mock_fastapi_app)
+        service = DocsService(
+            docs_repository=mock_repository,
+            performance_monitor=mock_monitor,
+            app_instance=mock_fastapi_app,
+        )
         assert service.app_instance is mock_fastapi_app
 
-    def test_init_without_app_instance(self):
+    def test_init_without_app_instance(self, mock_repository, mock_monitor):
         """Test service initialization without app instance."""
-        service = DocsService()
+        service = DocsService(
+            docs_repository=mock_repository,
+            performance_monitor=mock_monitor,
+        )
         assert service.app_instance is None
 
-    def test_init_with_none_app_instance(self):
+    def test_init_with_none_app_instance(self, mock_repository, mock_monitor):
         """Test service initialization with explicit None app instance."""
-        service = DocsService(app_instance=None)
+        service = DocsService(
+            docs_repository=mock_repository,
+            performance_monitor=mock_monitor,
+            app_instance=None,
+        )
         assert service.app_instance is None
 
 

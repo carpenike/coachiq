@@ -460,6 +460,21 @@ class PersistenceService:
             error=None,
         )
 
+    async def cleanup_old_backups(self) -> int:
+        """
+        Remove backups older than the configured retention period.
+
+        Delegates to the repository's cleanup. Useful as a public API for
+        scheduled maintenance and for tests; also called automatically during
+        shutdown when persistence + backups are enabled.
+
+        Returns:
+            Number of backup files removed.
+        """
+        if not self.enabled:
+            return 0
+        return await self._repository.cleanup_old_backups()
+
     async def shutdown(self) -> None:
         """Clean shutdown of the persistence service."""
         if not self._initialized:
