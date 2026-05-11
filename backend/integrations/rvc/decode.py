@@ -44,8 +44,35 @@ logger = logging.getLogger(__name__)
 get_bits = _get_bits
 decode_payload = _decode_payload
 
+# Top-level keys in a coach mapping YAML that are configuration metadata
+# rather than DGN sections. The mapping iterator MUST skip these or it would
+# attempt to treat per-area / per-interface metadata as if it were a DGN's
+# instance dictionary, silently producing phantom (dgn_hex, instance) entries.
+#
+# Keep this in lockstep with the structure of the coach mapping YAMLs in
+# `config/`. The previous implementation inlined this list and missed
+# `interface_requirements`, which the 2021_Entegra_Aspire_44R.yml mapping
+# uses; that bug only avoided producing bogus mapping entries because the
+# nested children happen to be dicts (not lists). Centralising the list
+# stops the same bug from creeping back if a new section gets added to the
+# coach mapping schema without updating decode.py.
+DEVICE_MAPPING_METADATA_SECTIONS: tuple[str, ...] = (
+    "coach_info",
+    "dgn_pairs",
+    "templates",
+    "global_defaults",
+    "areas",
+    "lighting_scenes",
+    "lighting_groups",
+    "validation_rules",
+    "file_metadata",
+    "can_interface_mapping",
+    "interface_requirements",
+)
+
 # Re-export missing DGN functions for backward compatibility
 __all__ = [
+    "DEVICE_MAPPING_METADATA_SECTIONS",
     "clear_config_cache",
     "clear_missing_dgns",
     "decode_payload",
@@ -221,19 +248,9 @@ def load_config_data(
             # Skip comment lines
             continue
 
-        # Skip metadata sections
-        if dgn_hex in (
-            "coach_info",
-            "dgn_pairs",
-            "templates",
-            "global_defaults",
-            "areas",
-            "lighting_scenes",
-            "lighting_groups",
-            "validation_rules",
-            "file_metadata",
-            "can_interface_mapping",
-        ):
+        # Skip metadata sections (kept in lockstep with the coach mapping
+        # YAML schema; see DEVICE_MAPPING_METADATA_SECTIONS for rationale).
+        if dgn_hex in DEVICE_MAPPING_METADATA_SECTIONS:
             continue
 
         for instance_id, devices in instance_dict.items():

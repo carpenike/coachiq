@@ -19,7 +19,10 @@ from pathlib import Path
 import pytest
 import yaml
 
+from backend.integrations.rvc.config_loader import ConfigValidationError
 from backend.integrations.rvc.decode import (
+    DEVICE_MAPPING_METADATA_SECTIONS,
+    clear_config_cache,
     clear_missing_dgns,
     decode_payload,
     decode_payload_safe,
@@ -28,11 +31,18 @@ from backend.integrations.rvc.decode import (
     load_config_data,
     record_missing_dgn,
 )
+from backend.integrations.rvc.decoder_core import DecodedValue
+
+# The historical hard-coded `/workspace/backend/integrations/rvc/config` path
+# referred to a devcontainer mount that no longer exists. The reference
+# rvc.json + coach mapping live in the repo's top-level `config/` directory
+# and are resolved by RVCSettings.get_config_dir() in production.
+_REPO_CONFIG_DIR = Path(__file__).resolve().parents[1] / "config"
 
 
 def discover_coach_mapping_files():
     """Dynamically discover all coach mapping YAML files in the config directory."""
-    config_directory = "/workspace/backend/integrations/rvc/config"
+    config_directory = str(_REPO_CONFIG_DIR)
 
     # Find all .yml and .yaml files in the config directory
     yaml_pattern = os.path.join(config_directory, "*.yml")
@@ -78,7 +88,7 @@ class TestRVCJsonStructure:
     @pytest.fixture
     def rvc_spec_path(self):
         """Get path to RVC spec file."""
-        return "/workspace/backend/integrations/rvc/config/rvc.json"
+        return str(_REPO_CONFIG_DIR / "rvc.json")
 
     @pytest.fixture
     def rvc_spec(self, rvc_spec_path):
@@ -167,7 +177,7 @@ class TestCoachMappingFiles:
     @pytest.fixture
     def config_directory(self):
         """Get path to the config directory containing mapping files."""
-        return "/workspace/backend/integrations/rvc/config"
+        return str(_REPO_CONFIG_DIR)
 
     @pytest.fixture
     def mapping_files(self, config_directory):
@@ -252,11 +262,13 @@ class TestCoachMappingFiles:
             with open(mapping_path, encoding="utf-8") as f:
                 mapping = yaml.safe_load(f)
 
-            # Find DGN mapping entries (not special sections)
+            # Find DGN mapping entries (not special sections). Use the
+            # production exclusion list so the test stays in lockstep with
+            # what load_config_data() actually iterates over.
             dgn_keys = [
                 k
                 for k in mapping
-                if not k.startswith("_") and k not in ["coach_info", "dgn_pairs", "templates"]
+                if not k.startswith("_") and k not in DEVICE_MAPPING_METADATA_SECTIONS
             ]
 
             for dgn_key in dgn_keys:
@@ -285,7 +297,7 @@ class TestDGNMappingConsistency:
     @pytest.fixture
     def config_directory(self):
         """Get path to the config directory containing mapping files."""
-        return "/workspace/backend/integrations/rvc/config"
+        return str(_REPO_CONFIG_DIR)
 
     @pytest.fixture
     def mapping_files(self, config_directory):
@@ -330,7 +342,7 @@ class TestDGNMappingConsistency:
     @pytest.fixture
     def spec_data(self):
         """Load RVC spec data once for all tests."""
-        spec_file = Path("/workspace/backend/integrations/rvc/config/rvc.json")
+        spec_file = _REPO_CONFIG_DIR / "rvc.json"
         with open(spec_file, encoding="utf-8") as f:
             rvc_spec = json.load(f)
 
@@ -374,11 +386,12 @@ class TestDGNMappingConsistency:
             with open(mapping_path, encoding="utf-8") as f:
                 mapping = yaml.safe_load(f)
 
-            # Find DGN mapping entries (not special sections)
+            # Find DGN mapping entries (not special sections). Use the
+            # production exclusion list to avoid drift.
             dgn_keys = [
                 k
                 for k in mapping
-                if not k.startswith("_") and k not in ["coach_info", "dgn_pairs", "templates"]
+                if not k.startswith("_") and k not in DEVICE_MAPPING_METADATA_SECTIONS
             ]
 
             for dgn_hex in dgn_keys:
@@ -435,17 +448,25 @@ class TestSignalDecoding:
             entry = dgn_dict[test_dgn]
             test_data = b"\x19\x7c\xff\xff\xff\xff\xff\xff"
 
-            decoded, raw_values = decode_payload(entry, test_data)
+            # Modern decode_payload returns (results, errors) where each result
+            # is a DecodedValue with .value (display) and .raw_value (numeric).
+            results, errors = decode_payload(entry, test_data)
 
-            # Check that we get expected fields
-            assert "instance" in decoded
-            assert "group" in decoded
-            assert decoded["instance"] == "25"
-            assert decoded["group"] == "124"
+            assert errors == []
+            assert "instance" in results
+            assert "group" in results
 
-            # Check raw values
-            assert raw_values["instance"] == 25
-            assert raw_values["group"] == 124
+            instance_dv = results["instance"]
+            group_dv = results["group"]
+
+            assert isinstance(instance_dv, DecodedValue)
+            assert isinstance(group_dv, DecodedValue)
+
+            # Display value (post-scale, post-enum) and raw bit value
+            assert instance_dv.value == 25
+            assert instance_dv.raw_value == 25
+            assert group_dv.value == 124
+            assert group_dv.raw_value == 124
 
     def test_decode_payload_edge_cases(self):
         """Test payload decoding with edge cases."""
@@ -459,13 +480,15 @@ class TestSignalDecoding:
 
         # Test with different data lengths
         test_data_8 = b"\x42\x00\x00\x00\x00\x00\x00\x00"
-        decoded, raw_values = decode_payload(test_entry, test_data_8)
-        assert raw_values["test_field"] == 0x42
+        results, errors = decode_payload(test_entry, test_data_8)
+        assert errors == []
+        assert results["test_field"].raw_value == 0x42
 
         # Test with shorter data (should still work)
         test_data_4 = b"\x42\x00\x00\x00"
-        decoded, raw_values = decode_payload(test_entry, test_data_4)
-        assert raw_values["test_field"] == 0x42
+        results, errors = decode_payload(test_entry, test_data_4)
+        assert errors == []
+        assert results["test_field"].raw_value == 0x42
 
 
 class TestMissingDGNHandling:
@@ -487,7 +510,13 @@ class TestMissingDGNHandling:
             invalid_yaml_path = f.name
 
         try:
-            with pytest.raises(yaml.YAMLError):
+            # load_device_mapping wraps the underlying yaml.YAMLError in a
+            # ConfigValidationError with the parser detail preserved as the
+            # cause. Either type satisfies the contract for callers that just
+            # want to know the file failed to parse.
+            with pytest.raises((ConfigValidationError, yaml.YAMLError)):
+                # Bypass any cached result from a previous successful load.
+                clear_config_cache()
                 load_config_data(device_mapping_path_override=invalid_yaml_path)
         finally:
             os.unlink(invalid_yaml_path)
@@ -500,7 +529,11 @@ class TestMissingDGNHandling:
             invalid_json_path = f.name
 
         try:
-            with pytest.raises(json.JSONDecodeError):
+            # load_rvc_spec wraps the underlying json.JSONDecodeError in a
+            # ConfigValidationError with the parser detail preserved as the
+            # cause. Accept either to keep the test robust to the wrapping.
+            with pytest.raises((ConfigValidationError, json.JSONDecodeError)):
+                clear_config_cache()
                 load_config_data(rvc_spec_path_override=invalid_json_path)
         finally:
             os.unlink(invalid_json_path)
@@ -690,14 +723,27 @@ class TestMissingDGNHandling:
         dgn_id = 0x1FEDA
         data_bytes = b"\x19\x7c\xff\xff\xff\xff\xff\xff"
 
-        # Compare safe vs regular decoding
+        # Compare safe vs regular decoding. They use intentionally different
+        # output shapes:
+        #   - decode_payload (core API) returns dict[str, DecodedValue]
+        #     where each value carries .value, .raw_value, .unit, .valid.
+        #   - decode_payload_safe returns dict[str, str], dict[str, int], bool
+        #     for callers that just want the display + raw + status.
+        # The contract is that decode_payload_safe's outputs match the
+        # corresponding fields of the DecodedValue objects produced by
+        # decode_payload, NOT object equality between the two dicts.
         dgn_entry = dgn_dict[dgn_id]
-        regular_decoded, regular_raw = decode_payload(dgn_entry, data_bytes)
+        regular_results, regular_errors = decode_payload(dgn_entry, data_bytes)
         safe_decoded, safe_raw, success = decode_payload_safe(dgn_dict, dgn_id, data_bytes)
 
         assert success is True
-        assert safe_decoded == regular_decoded
-        assert safe_raw == regular_raw
+        assert regular_errors == []
+        assert set(safe_decoded) == set(regular_results)
+        for signal_name, dv in regular_results.items():
+            assert isinstance(dv, DecodedValue)
+            # safe_decoded uses str(value); raw_values mirror DecodedValue.raw_value
+            assert safe_decoded[signal_name] == str(dv.value)
+            assert safe_raw[signal_name] == int(dv.raw_value)
 
 
 class TestEndToEndFunctionality:
@@ -705,38 +751,23 @@ class TestEndToEndFunctionality:
 
     @pytest.fixture
     def config_data(self):
-        """Load configuration data."""
+        """Load configuration data as a structured RVCConfiguration object.
+
+        Historically this fixture returned a 10-element tuple, which is what
+        load_config_data() also returns. That tuple is fragile (it referenced
+        attributes like ``decoder_map`` and ``raw_device_mapping`` that no
+        longer exist on RVCConfiguration). Returning the structured object
+        and accessing named fields keeps the tests durable across decoder
+        evolutions.
+        """
         from backend.integrations.rvc.decode import load_config_data_v2
 
-        config = load_config_data_v2()
-        # Return as tuple for backward compatibility with test expectations
-        return (
-            config.dgn_dict,
-            config.pgn_hex_to_name_map,
-            config.decoder_map,
-            config.inst_map,
-            config.unique_instances,
-            config.entity_map,
-            config.entity_ids,
-            config.mapping_dict,
-            config.raw_device_mapping,
-            config.coach_info,
-        )
+        return load_config_data_v2()
 
     def test_complete_decoding_workflow(self, config_data):
         """Test complete decoding workflow from CAN data to entities."""
-        (
-            dgn_dict,
-            spec_meta,
-            mapping_dict,
-            entity_map,
-            entity_ids,
-            inst_map,
-            unique_instances,
-            pgn_hex_to_name_map,
-            dgn_pairs,
-            coach_info,
-        ) = config_data
+        dgn_dict = config_data.dgn_dict
+        mapping_dict = config_data.mapping_dict
 
         # Simulate a CAN message for light status
         can_id = 0x0019FEDA  # DC_DIMMER_STATUS_3
@@ -747,10 +778,13 @@ class TestEndToEndFunctionality:
 
         # Step 2: Decode the payload
         entry = dgn_dict[can_id]
-        decoded, raw_values = decode_payload(entry, can_data)
+        results, errors = decode_payload(entry, can_data)
+        assert errors == []
 
         # Step 3: Look up entity mapping
-        instance = raw_values.get("instance", 0)
+        instance_dv = results.get("instance")
+        assert isinstance(instance_dv, DecodedValue)
+        instance = instance_dv.raw_value
         dgn_hex = "1FEDA"
         mapping_key = (dgn_hex, str(instance))
 
@@ -766,7 +800,7 @@ class TestEndToEndFunctionality:
 
     def test_coach_info_extraction(self, config_data):
         """Test coach information extraction."""
-        coach_info = config_data[9]
+        coach_info = config_data.coach_info
 
         # Should have basic structure
         assert hasattr(coach_info, "filename")
@@ -774,7 +808,7 @@ class TestEndToEndFunctionality:
 
     def test_dgn_pairs_processing(self, config_data):
         """Test DGN pairs processing."""
-        dgn_pairs = config_data[8]
+        dgn_pairs = config_data.dgn_pairs
 
         # Should have at least one pair
         assert len(dgn_pairs) > 0
