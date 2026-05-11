@@ -261,7 +261,12 @@ class PersistenceRepository(MonitoredRepository):
         if not backup_dir.exists():
             return 0
 
-        cutoff_date = datetime.now() - timedelta(days=self._backup_retention_days)
+        # cutoff is offset-aware (UTC) to match modified_at, which uses
+        # tz=UTC below. Mixing naive and aware datetimes raises TypeError
+        # at comparison time -- which used to silently fail this method
+        # before the fromtimestamp(tz=UTC) hardening landed. Both sides
+        # must be timezone-aware for the < comparison to work.
+        cutoff_date = datetime.now(UTC) - timedelta(days=self._backup_retention_days)
         deleted_count = 0
 
         for backup_file in backup_dir.glob("*.db"):
@@ -272,7 +277,7 @@ class PersistenceRepository(MonitoredRepository):
                     deleted_count += 1
                     logger.debug(f"Deleted old backup: {backup_file}")
             except Exception as e:
-                logger.warning(f"Failed to delete backup {backup_file}: {e}")
+                logger.warning("Failed to delete backup %s: %s", backup_file, e)
 
         if deleted_count > 0:
             logger.info(f"Cleaned up {deleted_count} old backups")
