@@ -118,30 +118,38 @@ class SafeNotificationManager:
     async def initialize(self) -> None:
         """Initialize all components."""
         try:
-            # Initialize queue
-            queue_path = getattr(self.config, "queue_db_path", "data/notifications.db")
-            self.queue = NotificationQueue(queue_path)
+            # Initialize queue. Fields below were previously read via
+            # ``getattr(..., default)`` because they weren't defined on
+            # ``NotificationSettings``; now that they are real fields,
+            # access them directly so misconfiguration surfaces loudly.
+            self.queue = NotificationQueue(self.config.queue_db_path)
             await self.queue.initialize()
 
             # Initialize rate limiting
-            max_tokens = getattr(self.config, "rate_limit_max_tokens", 100)
-            refill_rate = getattr(self.config, "rate_limit_per_minute", 60)
-
             self.rate_limiter = TokenBucketRateLimiter(
-                max_tokens=max_tokens, refill_rate=refill_rate
+                max_tokens=self.config.rate_limit_max_tokens,
+                refill_rate=self.config.rate_limit_per_minute,
             )
 
             # Initialize debouncing
-            debounce_minutes = getattr(self.config, "debounce_minutes", 15)
-            self.debouncer = NotificationDebouncer(suppress_window_minutes=debounce_minutes)
+            self.debouncer = NotificationDebouncer(
+                suppress_window_minutes=self.config.debounce_minutes
+            )
 
             # Initialize per-channel rate limiting
             self.channel_rate_limiter = ChannelSpecificRateLimiter()
 
-            # Initialize email template manager
-            if hasattr(self.config, "smtp") and self.config.smtp.enabled:
-                self.template_manager = EmailTemplateManager(self.config)
-                await self.template_manager.initialize()
+            # Initialize email template manager.
+            # Earlier revisions only created this when ``self.config.smtp.enabled``,
+            # which conflated "user wants to send via SMTP" with "user wants
+            # to render templates". Templates are also useful for non-SMTP
+            # channels (system log structured rendering, magic-link previews
+            # in tests, etc.), and ``create_email_template`` /
+            # ``render_template_preview`` failed silently when SMTP was off.
+            # Always construct the template manager; it has no SMTP-specific
+            # initialisation cost.
+            self.template_manager = EmailTemplateManager(self.config)
+            await self.template_manager.initialize()
 
             # Initialize notification router
             self.router = NotificationRouter()
@@ -247,7 +255,15 @@ class SafeNotificationManager:
             )
 
             # Use router to determine optimal channels if available
-            if self.router:
+            # AND the caller didn't explicitly request specific channels.
+            # When ``channels`` is explicitly supplied, honour the
+            # caller's intent rather than letting the router second-guess
+            # them. Earlier revisions silently discarded the explicit
+            # ``channels`` argument and let routing decide -- a real
+            # API contract violation that broke any caller that wanted
+            # to pin a notification to e.g. the local "system" channel
+            # only (e.g. structured-log fan-out, integration tests).
+            if self.router and not channels:
                 system_context = SystemContext(
                     queue_depth=await self._get_queue_depth(),
                     connectivity_status=self._get_connectivity_status(),
@@ -265,7 +281,9 @@ class SafeNotificationManager:
                 preliminary_notification.scheduled_for = routing_decision.scheduled_for
 
             else:
-                # Fallback to simple channel resolution
+                # Caller-supplied channels OR no router available: use the
+                # explicit channel list (or all enabled channels if not
+                # supplied).
                 target_channels = self._resolve_target_channels(channels)
 
             # Apply per-channel rate limiting
@@ -386,7 +404,7 @@ class SafeNotificationManager:
         context = {
             "magic_link": magic_link,
             "user_name": user_name or "User",
-            "app_name": "CoachIQ",
+            "app_name": self.config.app_name,
             "support_email": self.config.smtp.from_email or "support@coachiq.com",
             "expires_minutes": expires_minutes,
         }
@@ -628,7 +646,7 @@ class SafeNotificationManager:
             # Provide sample context for preview
             context = {
                 "user_name": "John Doe",
-                "app_name": "CoachIQ",
+                "app_name": self.config.app_name,
                 "magic_link": "https://example.com/auth/magic/sample-token",
                 "expires_minutes": 15,
                 "support_email": "support@coachiq.com",

@@ -24,6 +24,7 @@ Example:
 """
 
 import logging
+import re
 from collections.abc import Callable
 from datetime import datetime, time
 from enum import Enum
@@ -597,14 +598,21 @@ class NotificationRouter:
         """Evaluate content-based routing conditions."""
         notification = context["notification"]
 
-        # Keyword matching
+        # Keyword matching. Earlier revisions used naive substring
+        # matching (``"update" in "Status Update"`` -> True), which
+        # produced false-positive routes for any notification whose
+        # title happened to contain a configured keyword as a
+        # substring. Use word-boundary regex matching so the configured
+        # keyword "update" matches "Status update" but NOT
+        # "updateserver" or arbitrary substring collisions.
         keywords = conditions.get("keywords", [])
         if keywords:
-            message_lower = notification.message.lower()
-            title_lower = (notification.title or "").lower()
-
+            haystack = f"{notification.message or ''} {notification.title or ''}".lower()
             for keyword in keywords:
-                if keyword.lower() in message_lower or keyword.lower() in title_lower:
+                if not keyword:
+                    continue
+                pattern = r"\b" + re.escape(keyword.lower()) + r"\b"
+                if re.search(pattern, haystack):
                     return True
 
         # Tag matching
@@ -718,7 +726,15 @@ class NotificationRouter:
         user_prefs: UserNotificationPreferences | None,
         notification: NotificationPayload,
     ) -> RoutingDecision:
-        """Apply user preferences to routing decision."""
+        """Apply user preferences to routing decision.
+
+        Adds preferred channels and removes blocked channels, but ALSO
+        respects per-channel minimum-priority thresholds so a user who
+        opts into SMTP only for WARNING+ doesn't get every INFO
+        notification emailed to them. Earlier revisions added every
+        preferred channel unconditionally, which silently spammed
+        users for INFO notifications they had configured to ignore.
+        """
         if not user_prefs:
             return decision
 
@@ -729,11 +745,50 @@ class NotificationRouter:
                 ch for ch in decision.target_channels if ch.value not in blocked
             ]
 
-        # Add preferred channels if not already included
+        # Map of channel -> per-channel minimum-priority threshold the
+        # user configured. Channels not in the map have no per-channel
+        # threshold and are always added when preferred.
+        priority_levels = {
+            NotificationType.INFO: 1,
+            NotificationType.SUCCESS: 1,
+            NotificationType.WARNING: 2,
+            NotificationType.ERROR: 3,
+            NotificationType.CRITICAL: 4,
+        }
+        notification_level = priority_levels.get(notification.level, 1)
+
+        per_channel_min = {
+            NotificationChannel.SMTP: user_prefs.min_priority_email,
+            NotificationChannel.PUSHOVER: user_prefs.min_priority_push,
+        }
+
+        # Add preferred channels if not already included AND the
+        # notification meets that channel's minimum priority.
         for preferred_channel in user_prefs.preferred_channels:
+            min_priority = per_channel_min.get(preferred_channel)
+            if min_priority is not None:
+                required_level = priority_levels.get(min_priority, 1)
+                if notification_level < required_level:
+                    # User opted into this channel only for higher priorities;
+                    # honour the threshold and skip the add.
+                    continue
             if preferred_channel not in decision.target_channels:
                 decision.target_channels.append(preferred_channel)
                 decision.user_preference_override = True
+
+        # Symmetrically, REMOVE channels from a base routing decision
+        # if the user's per-channel threshold says this notification
+        # is too low priority for that channel. (Without this, the
+        # "Default Routing" rule could attach SMTP to an INFO and
+        # the user's WARNING-only preference would be ignored.)
+        decision.target_channels = [
+            ch
+            for ch in decision.target_channels
+            if (
+                per_channel_min.get(ch) is None
+                or notification_level >= priority_levels.get(per_channel_min[ch], 1)  # type: ignore[arg-type]
+            )
+        ]
 
         return decision
 

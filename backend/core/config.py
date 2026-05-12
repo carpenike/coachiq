@@ -680,11 +680,47 @@ class NotificationSettings(BaseSettings):
     default_title: str = Field(
         default="CoachIQ Notification", description="Default notification title"
     )
+    app_name: str = Field(
+        default="CoachIQ",
+        description="Application name used in notification templates and headers",
+    )
     template_path: str = Field(
-        default="templates/notifications/", description="Path to notification templates"
+        default="backend/templates/email",
+        description=(
+            "Directory containing email notification templates. Earlier "
+            "revisions defaulted to ``templates/notifications/`` but the "
+            "shipped templates actually live at ``backend/templates/email`` "
+            "and ``EmailTemplateManager`` ignored this field anyway. "
+            "Default updated to match what's actually on disk and the "
+            "field is now honoured by the manager."
+        ),
     )
     log_notifications: bool = Field(
         default=True, description="Log notification attempts and results"
+    )
+
+    # SafeNotificationManager / NotificationQueue knobs.
+    # Production previously read these via ``getattr(self.config, ..., default)``
+    # because they weren't defined here, which meant operators couldn't
+    # actually tune them via env vars -- the ``getattr`` default was the
+    # only path. Defining them as proper fields restores the config
+    # surface and matches what the integration test fixture has expected
+    # for a long time.
+    queue_db_path: str = Field(
+        default="data/notifications.db",
+        description="SQLite path for the persistent notification queue (':memory:' for tests)",
+    )
+    rate_limit_max_tokens: int = Field(
+        default=100,
+        description="Token-bucket capacity for outbound notification rate limiting",
+    )
+    rate_limit_per_minute: int = Field(
+        default=60,
+        description="Token-bucket refill rate (tokens per minute) for outbound notifications",
+    )
+    debounce_minutes: int = Field(
+        default=15,
+        description="Suppression window for duplicate notifications (minutes)",
     )
 
     # Channel configurations
