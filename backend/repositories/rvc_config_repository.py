@@ -2,7 +2,7 @@
 RVC Configuration Repository
 
 Manages RV-C protocol configuration data with clear separation of concerns.
-Part of Phase 2R: AppState Repository Migration
+Replaces the RVC-config portion of the removed ``AppState`` monolith.
 
 This repository handles:
 - RV-C specification data

@@ -2,7 +2,7 @@
 Entity State Repository
 
 Manages entity state and history data with clear separation of concerns.
-Part of Phase 2R: AppState Repository Migration
+Replaces the entity-state portion of the removed ``AppState`` monolith.
 
 This repository handles:
 - Entity state storage and retrieval
