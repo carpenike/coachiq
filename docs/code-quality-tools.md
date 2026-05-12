@@ -114,7 +114,23 @@ Both scripts are wired into Stage 1 of `scripts/ci-quality-gate.sh`, which is wh
 
 ### Updating baselines
 
-Some tools also have project-wide baselines (counts of acknowledged debt) inside `scripts/ci-quality-gate.sh`. When you legitimately reduce the count, lower the baseline in the same PR. The script prints "🎉 EXCELLENT" with the new count when this happens, and the gate fails until you lower the baseline — which locks in the improvement permanently.
+Three tools have project-wide baselines in `scripts/ci-quality-gate.sh` that act as one-way ratchets:
+
+| Tool | Variable | Stage | Current |
+|------|----------|-------|---------|
+| pyright | `EXPECTED_PYRIGHT_ERRORS` | Stage 3 | 1484 (PR #117) |
+| TypeScript (`tsc --noEmit`) | `EXPECTED_FRONTEND_TS_ERRORS` | Stage 4 | 0 (PR #110) |
+| ESLint (whole project) | `EXPECTED_FRONTEND_ESLINT_ERRORS` | Stage 5 | 648 (PR #117) |
+
+Behavior:
+
+- **Count goes UP** → CI fails. A regression was introduced; either fix it or (rare and discouraged) raise the baseline with a clear PR explanation.
+- **Count goes DOWN without baseline update** → CI also fails. This forces the author to lower the baseline in the same PR, locking in the improvement so a later regression can't silently restore the old count.
+- **Count equals baseline** → CI passes silently.
+
+The "fail on improvement" behavior is intentional. The first PR that reduces a baseline does the work twice (write the fix, lower the number); every subsequent PR benefits because the project has now committed to the new ceiling.
+
+For ESLint and ruff specifically, Stage 1's diff-aware checks (`scripts/eslint_diff_check.py`, `scripts/ruff_diff_check.py`) run *before* the whole-project ratchets and produce focused per-line error reports. The whole-project ratchets exist as a backstop in case the diff-check ever undercounts (e.g., issue #116, the shallow-clone false-positive bug).
 
 ## Pre-commit Integration
 

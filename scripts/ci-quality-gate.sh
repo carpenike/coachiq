@@ -19,8 +19,9 @@ RESET="\033[0m"
 # gate's job is to stop the count from going UP (a ratchet); fixing actual
 # pyright errors lower the count and the script will print a green message
 # nudging you to update the baseline downward.
-EXPECTED_PYRIGHT_ERRORS=1533  # Ratcheted 2026-05-11 by PIN-manager fixes (Pydantic Field(default=...) keyword form cleared 10 latent errors).
+EXPECTED_PYRIGHT_ERRORS=1484  # Ratcheted 2026-05-12 (PR #117). PRs #109+#111 dropped the count from 1533 by deleting AppState/entity_services dead code that was carrying type errors.
 EXPECTED_FRONTEND_TS_ERRORS=0  # Ratcheted 2026-05-12 to 0 by PR #110 (DatabaseManagementTab + can-sniffer + useCANScanWebSocket generic). Any new TS error is a hard fail.
+EXPECTED_FRONTEND_ESLINT_ERRORS=648  # Captured 2026-05-12 by PR #117. Whole-project ESLint baseline; the diff-aware gate (eslint_diff_check.py in Stage 1) catches NEW issues per-line, this baseline is the project-wide ratchet.
 
 # Determine target branch (for GitHub Actions or local testing)
 if [ -n "${GITHUB_BASE_REF:-}" ]; then
@@ -143,8 +144,11 @@ if [ "$ACTUAL_PYRIGHT_ERRORS" -gt "$EXPECTED_PYRIGHT_ERRORS" ]; then
     exit 1
 elif [ "$ACTUAL_PYRIGHT_ERRORS" -lt "$EXPECTED_PYRIGHT_ERRORS" ]; then
     echo -e "${GREEN}🎉 EXCELLENT: Type errors reduced from $EXPECTED_PYRIGHT_ERRORS to $ACTUAL_PYRIGHT_ERRORS!${RESET}"
-    echo -e "${GREEN}   Please update EXPECTED_PYRIGHT_ERRORS in this script to $ACTUAL_PYRIGHT_ERRORS${RESET}"
-    echo -e "${GREEN}   Include this baseline update in your PR${RESET}"
+    echo -e "${YELLOW}   Update EXPECTED_PYRIGHT_ERRORS in this script to $ACTUAL_PYRIGHT_ERRORS${RESET}"
+    echo -e "${YELLOW}   and include the baseline update in your PR. Failing here so the${RESET}"
+    echo -e "${YELLOW}   improvement is locked in (a future regression can't silently restore it).${RESET}"
+    rm -f "$PYRIGHT_OUTPUT_FILE"
+    exit 1
 else
     echo -e "${GREEN}✅ SUCCESS: Pyright error count stable at baseline of $EXPECTED_PYRIGHT_ERRORS${RESET}"
 fi
@@ -188,6 +192,54 @@ if [ -d "frontend" ]; then
 
     cd ..
     rm -f /tmp/ts-output.log
+fi
+
+# ===== STAGE 5: Whole-Project Frontend ESLint with Baseline =====
+# Stage 1's eslint_diff_check.py catches NEW issues on changed lines.
+# Stage 5 is the project-wide ratchet: it tracks total error count and
+# fails if the count goes UP (regression) OR DOWN without a baseline
+# update in the same PR (locking in any improvement).
+#
+# This mirrors Stage 3 (pyright). When the baseline reaches 0 the
+# diff-check in Stage 1 becomes redundant for blocking purposes, but
+# we keep both because the diff-check gives MUCH better error messages
+# (only the new ones, not the full 648-error wall of text).
+if [ -d "frontend" ]; then
+    echo -e "\n${BLUE}🎨 Stage 5: Full-project ESLint with baseline...${RESET}"
+
+    cd frontend
+
+    ESLINT_OUTPUT_FILE=$(mktemp)
+    npx eslint --format=json --no-error-on-unmatched-pattern -- \
+        "src/**/*.{ts,tsx,js,jsx}" > "$ESLINT_OUTPUT_FILE" 2>/dev/null || true
+
+    # Sum severity-2 (error) messages across all files. The python
+    # one-liner mirrors what scripts/eslint_diff_check.py uses, keeping
+    # the count semantics identical between the two stages.
+    ACTUAL_ESLINT_ERRORS=$(python3 -c "
+import json, sys
+with open('$ESLINT_OUTPUT_FILE') as f:
+    data = json.load(f)
+print(sum(1 for r in data for m in r.get('messages', []) if m.get('severity') == 2))
+")
+
+    rm -f "$ESLINT_OUTPUT_FILE"
+    cd ..
+
+    if [ "$ACTUAL_ESLINT_ERRORS" -gt "$EXPECTED_FRONTEND_ESLINT_ERRORS" ]; then
+        echo -e "${RED}❌ FAILURE: ESLint found $ACTUAL_ESLINT_ERRORS errors, exceeding baseline of $EXPECTED_FRONTEND_ESLINT_ERRORS${RESET}"
+        echo -e "${RED}   Stage 1's eslint_diff_check.py should have caught the specific new error(s).${RESET}"
+        echo -e "${RED}   Re-run with the failure context above to find which line is the regression.${RESET}"
+        exit 1
+    elif [ "$ACTUAL_ESLINT_ERRORS" -lt "$EXPECTED_FRONTEND_ESLINT_ERRORS" ]; then
+        echo -e "${GREEN}🎉 EXCELLENT: ESLint errors reduced from $EXPECTED_FRONTEND_ESLINT_ERRORS to $ACTUAL_ESLINT_ERRORS!${RESET}"
+        echo -e "${YELLOW}   Update EXPECTED_FRONTEND_ESLINT_ERRORS in this script to $ACTUAL_ESLINT_ERRORS${RESET}"
+        echo -e "${YELLOW}   and include the baseline update in your PR. Failing here so the${RESET}"
+        echo -e "${YELLOW}   improvement is locked in (a future regression can't silently restore it).${RESET}"
+        exit 1
+    else
+        echo -e "${GREEN}✅ SUCCESS: ESLint error count stable at baseline of $EXPECTED_FRONTEND_ESLINT_ERRORS${RESET}"
+    fi
 fi
 
 # ===== SUCCESS =====
