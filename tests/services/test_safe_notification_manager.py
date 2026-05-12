@@ -20,7 +20,12 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from backend.core.config import NotificationSettings
+from backend.core.config import (
+    NotificationSettings,
+    PushoverChannelConfig,
+    SlackChannelConfig,
+    SMTPChannelConfig,
+)
 from backend.models.notification import (
     NotificationChannel,
     NotificationStatus,
@@ -32,61 +37,63 @@ from backend.services.safe_notification_manager import SafeNotificationManager
 
 
 @pytest.fixture
-def notification_settings():
-    """Create test notification settings."""
-    settings = MagicMock(spec=NotificationSettings)
-    settings.enabled = True
-    settings.default_title = "Test Title"
-    settings.log_notifications = True
-    settings.template_path = "templates/"
+def notification_settings(tmp_path):
+    """Create real NotificationSettings for testing.
 
-    # SMTP settings
-    settings.smtp = MagicMock()
-    settings.smtp.enabled = True
-    settings.smtp.from_email = "test@example.com"
+    A previous version of this fixture used ``MagicMock(spec=NotificationSettings)``
+    but that doesn't work for Pydantic v2 BaseSettings models: the model fields
+    are descriptors that materialize on instances, not the class, so ``spec=`` walks
+    ``dir(NotificationSettings)`` and finds nothing -- every ``getattr(mock, field)``
+    raises AttributeError.
 
-    # Slack settings
-    settings.slack = MagicMock()
-    settings.slack.enabled = True
-
-    # Discord settings
-    settings.discord = MagicMock()
-    settings.discord.enabled = False
-
-    # Pushover settings
-    settings.pushover = MagicMock()
-    settings.pushover.enabled = True
-    settings.pushover.user_key = "test_user_key"
-    settings.pushover.token = "test_token"
-    settings.pushover.device = "test_device"
-
-    # Mock get_enabled_channels method
-    settings.get_enabled_channels.return_value = [
-        ("smtp", settings.smtp),
-        ("slack", settings.slack),
-        ("pushover", settings.pushover),
-    ]
-
-    return settings
+    We use a real instance with explicit, test-friendly defaults so:
+    - All field reads work (no Mock attribute errors)
+    - Pydantic validation runs as it would in production
+    - The fixture self-documents what production-shape config looks like
+    """
+    return NotificationSettings(
+        enabled=True,
+        default_title="Test Title",
+        log_notifications=True,
+        # Use a tmp_path-derived db so tests are isolated from each other.
+        queue_db_path=str(tmp_path / "test_safe_notifications.db"),
+        rate_limit_max_tokens=100,
+        rate_limit_per_minute=60,
+        debounce_minutes=15,
+        smtp=SMTPChannelConfig(
+            enabled=True,
+            host="smtp.example.com",
+            from_email="test@example.com",
+        ),
+        slack=SlackChannelConfig(
+            enabled=True,
+            webhook_url="https://hooks.slack.com/services/T/B/X",
+        ),
+        pushover=PushoverChannelConfig(
+            enabled=True,
+            user_key="test_user_key",
+            token="test_token",
+            device="test_device",
+        ),
+    )
 
 
 @pytest.fixture
-async def temp_db_path():
+async def temp_db_path(tmp_path):
     """Create temporary database path for testing."""
-    with tempfile.TemporaryDirectory() as temp_dir:
-        db_path = Path(temp_dir) / "test_safe_notifications.db"
-        yield str(db_path)
+    db_path = tmp_path / "test_safe_notifications_alt.db"
+    return str(db_path)
 
 
 @pytest.fixture
-async def safe_manager(notification_settings, temp_db_path):
-    """Create SafeNotificationManager for testing."""
-    # Add queue configuration to settings
-    notification_settings.queue_db_path = temp_db_path
-    notification_settings.rate_limit_max_tokens = 100
-    notification_settings.rate_limit_per_minute = 60
-    notification_settings.debounce_minutes = 15
+async def safe_manager(notification_settings):
+    """Create SafeNotificationManager for testing.
 
+    The notification_settings fixture is already a real, fully-configured
+    NotificationSettings instance with a unique queue_db_path per test
+    (via tmp_path), so we don't need the manual configuration step the old
+    fixture had.
+    """
     manager = SafeNotificationManager(notification_settings)
     await manager.initialize()
     yield manager
@@ -417,7 +424,9 @@ class TestEmailNotifications:
         )
 
         assert result
-        assert safe_manager.stats["emails_sent"] == 1
+        # Production tracks aggregate counters; per-channel counters
+        # (emails_sent, etc.) are not part of the public stats API.
+        assert safe_manager.stats["successful_notifications"] == 1
 
     async def test_magic_link_email(self, safe_manager):
         """Test magic link email sending."""
@@ -429,7 +438,7 @@ class TestEmailNotifications:
         )
 
         assert result
-        assert safe_manager.stats["emails_sent"] == 1
+        assert safe_manager.stats["successful_notifications"] == 1
 
     async def test_email_with_from_override(self, safe_manager):
         """Test email with from address override."""
@@ -456,7 +465,9 @@ class TestSystemNotifications:
         )
 
         assert result
-        assert safe_manager.stats["system_notifications"] == 1
+        # Production aggregates into successful_notifications; there is no
+        # per-channel system_notifications counter.
+        assert safe_manager.stats["successful_notifications"] == 1
 
     async def test_system_notification_with_error_level(self, safe_manager):
         """Test system notification with error level."""
@@ -505,15 +516,17 @@ class TestPushoverNotifications:
         assert result
 
     async def test_pushover_url_building(self, safe_manager):
-        """Test Pushover URL building."""
-        # This tests the internal URL building logic
-        notification_payload = MagicMock()
-        notification_payload.pushover_device = "test_device"
-        notification_payload.pushover_priority = 2
+        """Pushover URL construction is now owned by PushoverChannelConfig.to_apprise_url().
 
-        # Should not raise exception
-        url = safe_manager._build_pushover_url(notification_payload)
+        Production no longer has SafeNotificationManager._build_pushover_url --
+        the channel config (PushoverChannelConfig) builds its own Apprise URL
+        and SafeNotificationManager just consults config.get_enabled_channels().
+        Verify the channel config side here so the responsibility split is
+        documented.
+        """
+        url = safe_manager.config.pushover.to_apprise_url()
         assert isinstance(url, str)
+        assert url.startswith(("pover://", "pushover://", "pover"))
 
 
 class TestStatisticsAndMonitoring:
@@ -594,17 +607,29 @@ class TestChannelTesting:
 class TestErrorHandling:
     """Test error handling and fallback scenarios."""
 
-    async def test_initialization_without_required_settings(self, notification_settings):
-        """Test initialization with missing required settings."""
-        # Remove queue path
-        if hasattr(notification_settings, "queue_db_path"):
-            delattr(notification_settings, "queue_db_path")
+    async def test_initialization_without_required_settings(self, tmp_path):
+        """NotificationSettings has sensible defaults; the manager must initialize cleanly
+        when only ``enabled`` and ``queue_db_path`` are supplied.
 
-        manager = SafeNotificationManager(notification_settings)
-        # Should still initialize with defaults
+        Old version of this test tried to ``delattr`` queue_db_path off a Mock;
+        that doesn't translate to Pydantic v2 (model fields are descriptors).
+        Better to verify the documented defaulting behaviour: a minimally-
+        configured NotificationSettings is valid input.
+        """
+        minimal_settings = NotificationSettings(
+            enabled=True,
+            queue_db_path=str(tmp_path / "minimal.db"),
+        )
+        manager = SafeNotificationManager(minimal_settings)
         await manager.initialize()
 
         assert manager._initialized
+        assert manager.queue is not None
+        assert manager.rate_limiter is not None
+        # Defaults from NotificationSettings (rate_limit_max_tokens=100, etc.).
+        assert manager.rate_limiter.max_tokens == 100
+        assert manager.rate_limiter.refill_rate == 60
+
         await manager.cleanup()
 
     async def test_notification_with_sanitization_failure(self, safe_manager):
@@ -759,8 +784,10 @@ class TestIntegrationScenarios:
 
         # Verify statistics
         stats = safe_manager.get_statistics()
-        assert stats["emails_sent"] >= 1
-        assert stats["system_notifications"] >= 1
+        # Production tracks aggregate counters, not per-channel ones (no
+        # emails_sent / system_notifications keys).
+        assert stats["successful_notifications"] >= 4
+        assert stats["total_notifications"] >= 4
 
     async def test_rate_limiting_and_queue_interaction(self, safe_manager):
         """Test interaction between rate limiting and queue processing."""
