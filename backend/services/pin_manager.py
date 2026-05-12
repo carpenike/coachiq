@@ -10,12 +10,13 @@ Provides PIN-based authorization for safety-critical operations including:
 For RV deployment security with internet connectivity.
 """
 
+import asyncio
 import hashlib
 import logging
 import secrets
 import uuid
 from datetime import UTC, datetime, timedelta
-from typing import Optional
+from typing import Any, overload
 
 from pydantic import BaseModel, Field
 from sqlalchemy import and_, func, select
@@ -28,28 +29,67 @@ from backend.models.auth import UserPIN
 logger = logging.getLogger(__name__)
 
 
+def _ensure_utc_aware(dt: datetime | None) -> datetime | None:
+    """Coerce a datetime read back from the database to UTC-aware.
+
+    SQLite has no native ``TIMESTAMP WITH TIME ZONE`` type. SQLAlchemy's
+    ``DateTime(timezone=True)`` declaration is honoured by Postgres but
+    silently degraded by the SQLite dialect: writes that go in tz-aware
+    come back tz-naive. CoachIQ's reference deployment uses SQLite, so
+    every Python-side comparison between ``datetime.now(UTC)`` and a
+    value loaded from the DB is a latent ``TypeError: can't compare
+    offset-naive and offset-aware datetimes`` waiting to fire.
+
+    Treat naive datetimes as UTC (which is how the writer intended them)
+    so authorization checks and lockout windows work identically on
+    SQLite and Postgres. Returns ``None`` unchanged so callers can keep
+    using nullable columns; the overload narrows the return type so
+    non-nullable callers don't need a redundant ``assert``.
+    """
+    if dt is None:
+        return None
+    if dt.tzinfo is None:
+        return dt.replace(tzinfo=UTC)
+    return dt
+
+
+@overload
+def _coerce_utc_aware(dt: datetime) -> datetime: ...
+@overload
+def _coerce_utc_aware(dt: None) -> None: ...
+def _coerce_utc_aware(dt: datetime | None) -> datetime | None:
+    """Non-nullable-narrowing wrapper around ``_ensure_utc_aware``."""
+    return _ensure_utc_aware(dt)
+
+
 class PINConfig(BaseModel):
     """PIN system configuration."""
 
     # PIN Requirements
-    min_pin_length: int = Field(4, description="Minimum PIN length")
-    max_pin_length: int = Field(8, description="Maximum PIN length")
-    require_numeric_only: bool = Field(True, description="Require numeric PINs only")
+    min_pin_length: int = Field(default=4, description="Minimum PIN length")
+    max_pin_length: int = Field(default=8, description="Maximum PIN length")
+    require_numeric_only: bool = Field(default=True, description="Require numeric PINs only")
 
     # Authorization Settings
-    emergency_pin_expires_minutes: int = Field(5, description="Emergency PIN session timeout")
-    max_failed_attempts: int = Field(3, description="Max failed PIN attempts before lockout")
-    lockout_duration_minutes: int = Field(15, description="Lockout duration after max failures")
+    emergency_pin_expires_minutes: int = Field(
+        default=5, description="Emergency PIN session timeout"
+    )
+    max_failed_attempts: int = Field(
+        default=3, description="Max failed PIN attempts before lockout"
+    )
+    lockout_duration_minutes: int = Field(
+        default=15, description="Lockout duration after max failures"
+    )
 
     # Session Management
-    session_timeout_minutes: int = Field(30, description="General PIN session timeout")
-    max_concurrent_sessions: int = Field(2, description="Max concurrent PIN sessions")
+    session_timeout_minutes: int = Field(default=30, description="General PIN session timeout")
+    max_concurrent_sessions: int = Field(default=2, description="Max concurrent PIN sessions")
 
     # Security Features
-    enable_pin_rotation: bool = Field(True, description="Enable automatic PIN rotation")
-    pin_rotation_days: int = Field(30, description="Days between PIN rotation")
+    enable_pin_rotation: bool = Field(default=True, description="Enable automatic PIN rotation")
+    pin_rotation_days: int = Field(default=30, description="Days between PIN rotation")
     require_pin_confirmation: bool = Field(
-        True, description="Require PIN confirmation for critical ops"
+        default=True, description="Require PIN confirmation for critical ops"
     )
 
 
@@ -61,31 +101,31 @@ class PINSessionData(BaseModel):
     pin_type: str = Field(..., description="Type of PIN: emergency, override, maintenance")
     created_at: datetime = Field(..., description="Session creation timestamp")
     expires_at: datetime = Field(..., description="Session expiration timestamp")
-    operations_used: int = Field(0, description="Number of operations performed")
-    max_operations: int | None = Field(None, description="Maximum operations allowed")
-    is_active: bool = Field(True, description="Whether session is active")
+    operations_used: int = Field(default=0, description="Number of operations performed")
+    max_operations: int | None = Field(default=None, description="Maximum operations allowed")
+    is_active: bool = Field(default=True, description="Whether session is active")
 
 
 class PINAttemptData(BaseModel):
     """PIN attempt data for API responses."""
 
-    user_id: str | None = Field(None, description="User attempting PIN validation")
+    user_id: str | None = Field(default=None, description="User attempting PIN validation")
     pin_type: str = Field(..., description="Type of PIN attempted")
     timestamp: datetime = Field(..., description="Attempt timestamp")
     success: bool = Field(..., description="Whether attempt was successful")
-    ip_address: str | None = Field(None, description="Source IP address")
-    session_id: str | None = Field(None, description="Created session ID if successful")
-    failure_reason: str | None = Field(None, description="Reason for failure")
+    ip_address: str | None = Field(default=None, description="Source IP address")
+    session_id: str | None = Field(default=None, description="Created session ID if successful")
+    failure_reason: str | None = Field(default=None, description="Reason for failure")
 
 
 class PINValidationResult(BaseModel):
     """Result of PIN validation."""
 
     success: bool = Field(..., description="Whether validation was successful")
-    session_id: str | None = Field(None, description="Created session ID if successful")
-    error_message: str | None = Field(None, description="Error message if failed")
+    session_id: str | None = Field(default=None, description="Created session ID if successful")
+    error_message: str | None = Field(default=None, description="Error message if failed")
     lockout_until: datetime | None = Field(
-        None, description="Lockout expiration if user is locked out"
+        default=None, description="Lockout expiration if user is locked out"
     )
 
 
@@ -107,6 +147,18 @@ class PINManager:
         """
         self.config = config or PINConfig()
         self.db_session = db_session
+        # SQLAlchemy AsyncSession is NOT safe for concurrent use: a flush in
+        # one task colliding with a Session.add()/execute() in another task
+        # produces "Session.add() within flush process" warnings and can
+        # leave the session in an inconsistent state. The PIN flow on a real
+        # request is single-threaded, but this manager can be exercised from
+        # parallel WebSocket / API calls that share a request-scoped session
+        # (and the test suite explicitly drives concurrent validate_pin /
+        # authorize_operation calls). Serialise all DB-mutating public
+        # methods through a per-instance lock to keep the threat model
+        # honest: brute-force or burst-style PIN attempts must not corrupt
+        # auth state.
+        self._db_lock: asyncio.Lock = asyncio.Lock()
 
         logger.info("PIN Manager initialized with database persistence for RV safety operations")
 
@@ -186,46 +238,49 @@ class PINManager:
         if not self._validate_pin_format(pin):
             raise ValueError("PIN doesn't meet format requirements")
 
-        # Generate salt and hash PIN
-        salt = self._generate_salt()
-        pin_hash = self._hash_pin(pin, salt)
+        async with self._db_lock:
+            # Generate salt and hash PIN
+            salt = self._generate_salt()
+            pin_hash = self._hash_pin(pin, salt)
 
-        # Check if PIN already exists for this user and type
-        existing_pin = await self.db_session.execute(
-            select(UserPIN).where(and_(UserPIN.user_id == user_id, UserPIN.pin_type == pin_type))
-        )
-        existing = existing_pin.scalar_one_or_none()
-
-        if existing:
-            # Update existing PIN
-            existing.pin_hash = pin_hash
-            existing.salt = salt
-            existing.updated_at = datetime.now(UTC)
-            if description:
-                existing.description = description
-        else:
-            # Create new PIN
-            new_pin = UserPIN(
-                id=str(uuid.uuid4()),
-                user_id=user_id,
-                pin_type=pin_type,
-                pin_hash=pin_hash,
-                salt=salt,
-                description=description,
-                is_active=True,
-                use_count=0,
-                lockout_after_failures=self.config.max_failed_attempts,
-                lockout_duration_minutes=self.config.lockout_duration_minutes,
-                created_at=datetime.now(UTC),
-                updated_at=datetime.now(UTC),
+            # Check if PIN already exists for this user and type
+            existing_pin = await self.db_session.execute(
+                select(UserPIN).where(
+                    and_(UserPIN.user_id == user_id, UserPIN.pin_type == pin_type)
+                )
             )
-            self.db_session.add(new_pin)
+            existing = existing_pin.scalar_one_or_none()
 
-        await self.db_session.commit()
-        logger.info(
-            f"PIN {'updated' if existing else 'created'} for user {user_id}, type: {pin_type}"
-        )
-        return True
+            if existing:
+                # Update existing PIN
+                existing.pin_hash = pin_hash
+                existing.salt = salt
+                existing.updated_at = datetime.now(UTC)
+                if description:
+                    existing.description = description
+            else:
+                # Create new PIN
+                new_pin = UserPIN(
+                    id=str(uuid.uuid4()),
+                    user_id=user_id,
+                    pin_type=pin_type,
+                    pin_hash=pin_hash,
+                    salt=salt,
+                    description=description,
+                    is_active=True,
+                    use_count=0,
+                    lockout_after_failures=self.config.max_failed_attempts,
+                    lockout_duration_minutes=self.config.lockout_duration_minutes,
+                    created_at=datetime.now(UTC),
+                    updated_at=datetime.now(UTC),
+                )
+                self.db_session.add(new_pin)
+
+            await self.db_session.commit()
+            logger.info(
+                f"PIN {'updated' if existing else 'created'} for user {user_id}, type: {pin_type}"
+            )
+            return True
 
     async def create_pin(
         self,
@@ -305,24 +360,25 @@ class PINManager:
             msg = "Database session not available"
             raise RuntimeError(msg)
 
-        result = await self.db_session.execute(
-            select(UserPIN).where(
-                and_(
-                    UserPIN.user_id == user_id,
-                    UserPIN.pin_type == pin_type,
-                    UserPIN.is_active.is_(True),
+        async with self._db_lock:
+            result = await self.db_session.execute(
+                select(UserPIN).where(
+                    and_(
+                        UserPIN.user_id == user_id,
+                        UserPIN.pin_type == pin_type,
+                        UserPIN.is_active.is_(True),
+                    )
                 )
             )
-        )
-        pin = result.scalar_one_or_none()
-        if pin is None:
-            return False
+            pin = result.scalar_one_or_none()
+            if pin is None:
+                return False
 
-        pin.is_active = False
-        pin.updated_at = datetime.now(UTC)
-        await self.db_session.commit()
-        logger.info("PIN deactivated for user %s type %s", user_id, pin_type)
-        return True
+            pin.is_active = False
+            pin.updated_at = datetime.now(UTC)
+            await self.db_session.commit()
+            logger.info("PIN deactivated for user %s type %s", user_id, pin_type)
+            return True
 
     def _validate_pin_format(self, pin: str) -> bool:
         """Validate PIN format requirements."""
@@ -377,6 +433,7 @@ class PINManager:
 
             last_attempt_time = last_attempt.scalar()
             if last_attempt_time:
+                last_attempt_time = _coerce_utc_aware(last_attempt_time)
                 lockout_until = last_attempt_time + timedelta(
                     minutes=self.config.lockout_duration_minutes
                 )
@@ -436,76 +493,98 @@ class PINManager:
             PINValidationResult: Validation result with session info or error
         """
         if not self.db_session:
+            # No DB session: nothing to serialize, but still record the attempt
+            # via the (no-op) recorder for symmetry with the rest of the flow.
             await self._record_attempt(
                 user_id, pin_type, False, ip_address, user_agent, "Database unavailable"
             )
             return PINValidationResult(success=False, error_message="Database service unavailable")
 
-        # Check if user is locked out
-        lockout_until = await self._is_user_locked_out(user_id, pin_type)
-        if lockout_until:
-            logger.warning(
-                f"PIN attempt blocked - user {user_id} is locked out until {lockout_until}"
-            )
-            await self._record_attempt(
-                user_id, pin_type, False, ip_address, user_agent, "User locked out"
-            )
-            return PINValidationResult(
-                success=False,
-                error_message="User is locked out due to failed attempts",
-                lockout_until=lockout_until,
-            )
+        async with self._db_lock:
+            # Check if user is locked out
+            lockout_until = await self._is_user_locked_out(user_id, pin_type)
+            if lockout_until:
+                logger.warning(
+                    f"PIN attempt blocked - user {user_id} is locked out until {lockout_until}"
+                )
+                await self._record_attempt(
+                    user_id, pin_type, False, ip_address, user_agent, "User locked out"
+                )
+                return PINValidationResult(
+                    success=False,
+                    error_message="User is locked out due to failed attempts",
+                    lockout_until=lockout_until,
+                )
 
-        # Get PIN from database
-        user_pin = await self.db_session.execute(
-            select(UserPIN).where(
-                and_(
-                    UserPIN.user_id == user_id,
-                    UserPIN.pin_type == pin_type,
-                    UserPIN.is_active == True,
+            # Get PIN from database
+            user_pin = await self.db_session.execute(
+                select(UserPIN).where(
+                    and_(
+                        UserPIN.user_id == user_id,
+                        UserPIN.pin_type == pin_type,
+                        UserPIN.is_active == True,
+                    )
                 )
             )
-        )
-        pin_record = user_pin.scalar_one_or_none()
+            pin_record = user_pin.scalar_one_or_none()
 
-        if not pin_record:
-            logger.warning(f"No active PIN found for user {user_id}, type {pin_type}")
+            if not pin_record:
+                logger.warning(f"No active PIN found for user {user_id}, type {pin_type}")
+                await self._record_attempt(
+                    user_id, pin_type, False, ip_address, user_agent, "PIN not found"
+                )
+                return PINValidationResult(
+                    success=False, error_message="PIN not configured or inactive"
+                )
+
+            # Validate PIN
+            hashed_pin = self._hash_pin(pin, pin_record.salt)
+            is_valid = hashed_pin == pin_record.pin_hash
+
+            if not is_valid:
+                logger.warning(f"Invalid PIN attempt by user {user_id} for type {pin_type}")
+                await self._record_attempt(
+                    user_id, pin_type, False, ip_address, user_agent, "Invalid PIN"
+                )
+                return PINValidationResult(success=False, error_message="Invalid PIN")
+
+            # PIN is valid - create session
+            session_id = await self._create_session(
+                user_id, pin_type, pin_record, ip_address=ip_address, user_agent=user_agent
+            )
+
+            # Update PIN usage count
+            pin_record.use_count += 1
+            pin_record.last_used_at = datetime.now(UTC)
+            await self.db_session.commit()
+
+            # Record successful attempt
             await self._record_attempt(
-                user_id, pin_type, False, ip_address, user_agent, "PIN not found"
-            )
-            return PINValidationResult(
-                success=False, error_message="PIN not configured or inactive"
+                user_id, pin_type, True, ip_address, user_agent, session_id=session_id
             )
 
-        # Validate PIN
-        hashed_pin = self._hash_pin(pin, pin_record.salt)
-        is_valid = hashed_pin == pin_record.pin_hash
+            logger.info(f"PIN validation successful for user {user_id}, type {pin_type}")
+            return PINValidationResult(success=True, session_id=session_id)
 
-        if not is_valid:
-            logger.warning(f"Invalid PIN attempt by user {user_id} for type {pin_type}")
-            await self._record_attempt(
-                user_id, pin_type, False, ip_address, user_agent, "Invalid PIN"
-            )
-            return PINValidationResult(success=False, error_message="Invalid PIN")
+    async def _create_session(
+        self,
+        user_id: str,
+        pin_type: str,
+        user_pin: UserPIN,
+        ip_address: str | None = None,
+        user_agent: str | None = None,
+    ) -> str:
+        """Create a new PIN authorization session in the database.
 
-        # PIN is valid - create session
-        session_id = await self._create_session(user_id, pin_type, pin_record)
-
-        # Update PIN usage count
-        pin_record.use_count += 1
-        pin_record.last_used_at = datetime.now(UTC)
-        await self.db_session.commit()
-
-        # Record successful attempt
-        await self._record_attempt(
-            user_id, pin_type, True, ip_address, user_agent, session_id=session_id
-        )
-
-        logger.info(f"PIN validation successful for user {user_id}, type {pin_type}")
-        return PINValidationResult(success=True, session_id=session_id)
-
-    async def _create_session(self, user_id: str, pin_type: str, user_pin: UserPIN) -> str:
-        """Create a new PIN authorization session in the database."""
+        ``ip_address`` / ``user_agent`` are propagated from the originating
+        request so the audit trail on ``PINSession`` matches the audit
+        trail on ``PINAttempt``. Earlier revisions accepted these on
+        ``validate_pin`` but silently dropped them here, leaving the
+        session row with NULL audit fields even when the caller supplied
+        them — a real audit-completeness bug for the realistic threat
+        model (see ``coachiq-architecture.md``: API-side abuse is the
+        threat we actually defend against).
+        """
         if not self.db_session:
             raise RuntimeError("Database session not available")
 
@@ -562,6 +641,8 @@ class PINManager:
             user_pin_id=user_pin.id,
             session_id=session_id,
             created_by_user_id=user_id,
+            ip_address=ip_address,
+            user_agent=user_agent,
             max_duration_minutes=self.config.session_timeout_minutes,
             max_operations=max_operations,
             operation_count=0,
@@ -595,52 +676,55 @@ class PINManager:
             logger.error("Database session not available for operation authorization")
             return False
 
-        # Get session from database
-        session_query = await self.db_session.execute(
-            select(DBPINSession).where(
-                and_(DBPINSession.session_id == session_id, DBPINSession.is_active == True)
+        async with self._db_lock:
+            # Get session from database
+            session_query = await self.db_session.execute(
+                select(DBPINSession).where(
+                    and_(DBPINSession.session_id == session_id, DBPINSession.is_active == True)
+                )
             )
-        )
-        session = session_query.scalar_one_or_none()
+            session = session_query.scalar_one_or_none()
 
-        if not session:
-            logger.warning(f"Unknown or inactive session ID: {session_id}")
-            return False
+            if not session:
+                logger.warning(f"Unknown or inactive session ID: {session_id}")
+                return False
 
-        # Check session expiration
-        if datetime.now(UTC) > session.expires_at:
-            logger.warning(f"Expired session used: {session_id}")
-            session.is_active = False
-            session.terminated_at = datetime.now(UTC)
+            # Check session expiration
+            if datetime.now(UTC) > _coerce_utc_aware(session.expires_at):
+                logger.warning(f"Expired session used: {session_id}")
+                session.is_active = False
+                session.terminated_at = datetime.now(UTC)
+                await self.db_session.commit()
+                return False
+
+            # Check user matches (if provided)
+            if user_id and session.created_by_user_id != user_id:
+                logger.warning(
+                    f"Session user mismatch: {session.created_by_user_id} != {user_id}"
+                )
+                return False
+
+            # Check usage limits
+            if session.max_operations and session.operation_count >= session.max_operations:
+                logger.warning(f"Session {session_id} usage limit exceeded")
+                session.is_active = False
+                session.terminated_at = datetime.now(UTC)
+                await self.db_session.commit()
+                return False
+
+            # Authorize operation
+            session.operation_count += 1
+            session.last_used_at = datetime.now(UTC)
+
+            # Terminate session if single-use
+            if session.max_operations == 1:
+                session.is_active = False
+                session.terminated_at = datetime.now(UTC)
+                logger.info(f"Terminated single-use session {session_id}")
+
             await self.db_session.commit()
-            return False
-
-        # Check user matches (if provided)
-        if user_id and session.created_by_user_id != user_id:
-            logger.warning(f"Session user mismatch: {session.created_by_user_id} != {user_id}")
-            return False
-
-        # Check usage limits
-        if session.max_operations and session.operation_count >= session.max_operations:
-            logger.warning(f"Session {session_id} usage limit exceeded")
-            session.is_active = False
-            session.terminated_at = datetime.now(UTC)
-            await self.db_session.commit()
-            return False
-
-        # Authorize operation
-        session.operation_count += 1
-        session.last_used_at = datetime.now(UTC)
-
-        # Terminate session if single-use
-        if session.max_operations == 1:
-            session.is_active = False
-            session.terminated_at = datetime.now(UTC)
-            logger.info(f"Terminated single-use session {session_id}")
-
-        await self.db_session.commit()
-        logger.info(f"Authorized operation {operation} for session {session_id}")
-        return True
+            logger.info(f"Authorized operation {operation} for session {session_id}")
+            return True
 
     async def revoke_session(self, session_id: str) -> bool:
         """
@@ -655,21 +739,24 @@ class PINManager:
         if not self.db_session:
             return False
 
-        session_query = await self.db_session.execute(
-            select(DBPINSession).where(
-                and_(DBPINSession.session_id == session_id, DBPINSession.is_active == True)
+        async with self._db_lock:
+            session_query = await self.db_session.execute(
+                select(DBPINSession).where(
+                    and_(DBPINSession.session_id == session_id, DBPINSession.is_active == True)
+                )
             )
-        )
-        session = session_query.scalar_one_or_none()
+            session = session_query.scalar_one_or_none()
 
-        if session:
-            session.is_active = False
-            session.terminated_at = datetime.now(UTC)
-            await self.db_session.commit()
-            logger.info(f"Revoked PIN session {session_id} for user {session.created_by_user_id}")
-            return True
+            if session:
+                session.is_active = False
+                session.terminated_at = datetime.now(UTC)
+                await self.db_session.commit()
+                logger.info(
+                    f"Revoked PIN session {session_id} for user {session.created_by_user_id}"
+                )
+                return True
 
-        return False
+            return False
 
     async def revoke_all_user_sessions(self, user_id: str) -> int:
         """
@@ -684,26 +771,30 @@ class PINManager:
         if not self.db_session:
             return 0
 
-        # Get all active sessions for user
-        active_sessions = await self.db_session.execute(
-            select(DBPINSession).where(
-                and_(DBPINSession.created_by_user_id == user_id, DBPINSession.is_active == True)
+        async with self._db_lock:
+            # Get all active sessions for user
+            active_sessions = await self.db_session.execute(
+                select(DBPINSession).where(
+                    and_(
+                        DBPINSession.created_by_user_id == user_id,
+                        DBPINSession.is_active == True,
+                    )
+                )
             )
-        )
 
-        sessions = active_sessions.scalars().all()
-        revoked_count = 0
+            sessions = active_sessions.scalars().all()
+            revoked_count = 0
 
-        for session in sessions:
-            session.is_active = False
-            session.terminated_at = datetime.now(UTC)
-            revoked_count += 1
+            for session in sessions:
+                session.is_active = False
+                session.terminated_at = datetime.now(UTC)
+                revoked_count += 1
 
-        if revoked_count > 0:
-            await self.db_session.commit()
-            logger.info(f"Revoked {revoked_count} sessions for user {user_id}")
+            if revoked_count > 0:
+                await self.db_session.commit()
+                logger.info(f"Revoked {revoked_count} sessions for user {user_id}")
 
-        return revoked_count
+            return revoked_count
 
     async def _cleanup_expired_sessions(self) -> None:
         """Clean up expired sessions."""
@@ -753,10 +844,11 @@ class PINManager:
             expires_at=session.expires_at,
             operations_used=session.operation_count,
             max_operations=session.max_operations,
-            is_active=session.is_active and datetime.now(UTC) < session.expires_at,
+            is_active=session.is_active
+            and datetime.now(UTC) < _coerce_utc_aware(session.expires_at),
         )
 
-    async def get_user_status(self, user_id: str) -> dict:
+    async def get_user_status(self, user_id: str) -> dict[str, Any]:
         """Get PIN status for a user."""
         if not self.db_session:
             return {"error": "Database unavailable"}
@@ -801,7 +893,7 @@ class PINManager:
             "can_use_pins": len(lockout_times) == 0,
         }
 
-    async def get_system_status(self) -> dict:
+    async def get_system_status(self) -> dict[str, Any]:
         """Get overall PIN system status."""
         if not self.db_session:
             return {"error": "Database unavailable"}

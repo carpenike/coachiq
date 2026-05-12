@@ -19,7 +19,7 @@ RESET="\033[0m"
 # gate's job is to stop the count from going UP (a ratchet); fixing actual
 # pyright errors lower the count and the script will print a green message
 # nudging you to update the baseline downward.
-EXPECTED_PYRIGHT_ERRORS=1543  # Resynced 2026-05-11 after long stale period; previous 962 was hit before pyright 1.1.401 + new code accumulated since.
+EXPECTED_PYRIGHT_ERRORS=1533  # Ratcheted 2026-05-11 by PIN-manager fixes (Pydantic Field(default=...) keyword form cleared 10 latent errors).
 EXPECTED_FRONTEND_TS_ERRORS=4  # Resynced 2026-05-11; pre-existing TS debt in DatabaseManagementTab + can-sniffer.
 
 # Determine target branch (for GitHub Actions or local testing)
