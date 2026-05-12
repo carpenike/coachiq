@@ -66,7 +66,7 @@ class EmailTemplateManager:
     def __init__(
         self,
         config: NotificationSettings,
-        template_dir: str = "backend/templates/email",
+        template_dir: str | None = None,
         cache_ttl_minutes: int = 60,
         enable_template_caching: bool = True,
     ):
@@ -75,12 +75,20 @@ class EmailTemplateManager:
 
         Args:
             config: NotificationSettings configuration
-            template_dir: Directory containing email templates
+            template_dir: Optional override for the directory containing
+                email templates. When None (the typical case), the
+                directory is read from ``config.template_path`` so
+                operators can relocate templates via env var without
+                having to subclass. Earlier revisions hardcoded
+                ``backend/templates/email`` and ignored the config
+                field, which made the ``COACHIQ_NOTIFICATIONS__TEMPLATE_PATH``
+                env var a no-op AND caused tests to scribble into the
+                real shipped templates directory.
             cache_ttl_minutes: Template cache TTL in minutes
             enable_template_caching: Whether to enable template caching
         """
         self.config = config
-        self.template_dir = Path(template_dir)
+        self.template_dir = Path(template_dir or config.template_path)
         self.cache_ttl = timedelta(minutes=cache_ttl_minutes)
         self.enable_caching = enable_template_caching
 
@@ -472,12 +480,22 @@ This is a test message from {{app_name}}. No action required.
             bool: True if created successfully
         """
         try:
-            # Validate template syntax
+            # Validate template syntax. Surface syntax errors as exceptions
+            # rather than swallowing them and returning False -- a silent
+            # False here hid programmer errors (typos in templates) behind
+            # a generic boolean return for a long time. Render-time
+            # ``StrictUndefined`` violations remain a separate concern.
+            from jinja2 import TemplateSyntaxError
+
             if self.jinja_env:
-                self.jinja_env.parse(subject)
-                self.jinja_env.parse(html_content)
-                if text_content:
-                    self.jinja_env.parse(text_content)
+                try:
+                    self.jinja_env.parse(subject)
+                    self.jinja_env.parse(html_content)
+                    if text_content:
+                        self.jinja_env.parse(text_content)
+                except TemplateSyntaxError:
+                    self.logger.exception("Template syntax error creating '%s'", template_name)
+                    raise
 
             # Create template directory
             lang_dir = self.template_dir / language
@@ -504,6 +522,13 @@ This is a test message from {{app_name}}. No action required.
 
         except Exception as e:
             self.logger.error(f"Failed to create template '{template_name}': {e}")
+            # Re-raise template syntax errors so callers can react; swallow
+            # other (probably-IO) failures with a False return for backward
+            # compat.
+            from jinja2 import TemplateSyntaxError
+
+            if isinstance(e, TemplateSyntaxError):
+                raise
             return False
 
     def clear_cache(self) -> None:

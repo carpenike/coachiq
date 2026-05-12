@@ -85,15 +85,27 @@ def integration_config():
 
 
 @pytest.fixture
-async def test_notification_config(integration_config):
-    """Create test notification configuration."""
+async def test_notification_config(integration_config, tmp_path):
+    """Create test notification configuration.
+
+    Uses a per-test temp file rather than ``:memory:`` for the queue
+    DB. SQLite ``:memory:`` databases are scoped to a single connection
+    -- ``NotificationQueue`` opens a fresh connection per operation,
+    so a literal ``:memory:`` path means each call sees an empty
+    schema. ``tmp_path`` is pytest-managed and auto-cleans, and per-test
+    isolation is preserved because each test gets its own directory.
+    """
     smtp_enabled = integration_config.use_real_smtp
 
     config = NotificationSettings(
         enabled=True,
         default_title="CoachIQ Test",
         app_name="CoachIQ Test",
-        queue_db_path=":memory:",  # Use in-memory SQLite for tests
+        queue_db_path=str(tmp_path / "notifications.db"),
+        # Per-test temp dir for templates so create_template tests don't
+        # scribble into the real shipped ``backend/templates/email``
+        # directory and check those files into git accidentally.
+        template_path=str(tmp_path / "email_templates"),
         rate_limit_max_tokens=1000,  # Higher limits for testing
         rate_limit_per_minute=600,
         debounce_minutes=1,  # Shorter debounce for testing
@@ -362,13 +374,21 @@ class TestEmailTemplateIntegration:
         assert rendered_subject == "Test Subject: John Doe"
 
     async def test_template_validation(self, email_template_manager):
-        """Test template validation catches errors."""
-        # Test invalid template syntax
+        """Test template validation catches errors.
+
+        ``EmailTemplateManager.create_template`` validates Jinja syntax
+        at parse time. ``{{invalid.variable.access}}`` is valid Jinja
+        syntax (a chained attribute access expression) and only fails
+        at *render* time when ``StrictUndefined`` sees ``invalid`` is
+        undefined. Use an actually-malformed template (unclosed
+        ``{{ ... }}``) so the parse step in ``create_template`` raises.
+        """
+        # Test invalid template syntax (unclosed expression)
         with pytest.raises(Exception):
             await email_template_manager.create_template(
                 "invalid_template",
                 "Valid Subject",
-                "<html><body>{{invalid.variable.access}}</body></html>",
+                "<html><body>{{ broken.unterminated.expression </body></html>",
                 "Valid text",
             )
 
@@ -503,10 +523,15 @@ class TestNotificationRoutingIntegration:
         assert "maintenance_alerts" in decision.applied_rules
         assert decision.target_channels == [NotificationChannel.SYSTEM]
 
-        # Test notification not matching rule
+        # Test notification not matching rule. Title is intentionally
+        # picked to avoid every configured keyword
+        # (``maintenance``/``update``/``scheduled``); production now uses
+        # word-boundary matching, so e.g. ``"Status Update"`` would
+        # still match the keyword ``"update"`` (which is the right
+        # routing behaviour). Use a title that doesn't collide.
         regular_notification = NotificationPayload(
             message="Battery level normal",
-            title="Status Update",
+            title="Battery Status",
             level=NotificationType.INFO,
             channels=[],
         )
@@ -800,14 +825,24 @@ class TestMockedServiceIntegration:
         # Allow dispatcher to process notifications
         await asyncio.sleep(1)
 
-        # Force processing completion
+        # Force processing completion. The dispatcher's background worker
+        # runs at ``processing_interval=0.1`` (per the fixture) so it may
+        # have already drained the queue during the sleep above; that's
+        # fine, ``force_queue_processing`` is idempotent and just no-ops
+        # when there's nothing left. Don't assert on
+        # ``result["processed_batches"]`` -- that's an implementation
+        # detail of who-drained-first (worker vs force call). Assert on
+        # the actual user-visible outcome instead: every enqueued
+        # notification was delivered and the queue is empty.
         result = await mock_dispatcher.force_queue_processing()
+        assert "error" not in result, f"force_queue_processing errored: {result}"
+        assert result["queue_depth_after"] == 0, (
+            f"Queue not drained: {result['queue_depth_after']} notifications still pending"
+        )
 
-        # Verify processing
-        assert result["processed_batches"] >= 1
-        assert result["queue_depth_after"] < result["queue_depth_before"]
-
-        # Check dispatcher metrics
+        # Check dispatcher metrics -- the real success criterion. The
+        # mock notification manager returns True for every send, so all
+        # 5 notifications should be processed and counted as successful.
         metrics = mock_dispatcher.get_metrics()
         assert metrics["total_processed"] >= len(notifications)
         assert metrics["successful_deliveries"] >= len(notifications)

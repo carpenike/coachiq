@@ -128,6 +128,26 @@ class NotificationQueue:
 
         return notification.id
 
+    async def flush(self) -> None:
+        """Persist any in-memory write batch to disk immediately.
+
+        ``enqueue`` returns as soon as the notification is in the
+        in-memory batch — actual disk persistence is deferred until
+        either the batch fills, the batch timer fires, or ``close()``
+        runs. For callers that need an immediate after-write read
+        (statistics, durability checks, controlled shutdown without
+        closing the queue), this method flushes the batch synchronously.
+
+        Note: ``get_statistics()`` and ``dequeue_batch()`` already call
+        ``flush()`` internally so reads always reflect the latest
+        ``enqueue()`` calls. This is exposed as a public method so
+        callers that need durability without reading can still force a
+        flush (e.g. before a controlled restart in tests).
+        """
+        async with self._batch_lock:
+            if self._write_batch:
+                await self._flush_write_batch()
+
     async def dequeue_batch(self, size: int = 10) -> list[NotificationPayload]:
         """
         Get batch of pending notifications for processing.
@@ -140,6 +160,13 @@ class NotificationQueue:
         """
         if not self._db_initialized:
             await self.initialize()
+
+        # Flush any in-memory batch first so a dequeuer immediately after
+        # an enqueue actually sees the new row instead of waiting for the
+        # batch timer. Production previously had a window where enqueue()
+        # returned success but dequeue_batch() saw nothing for up to a
+        # batch-timeout interval -- a real consumer-perceived bug.
+        await self.flush()
 
         try:
             async with aiosqlite.connect(self.db_path) as db:
@@ -325,6 +352,13 @@ class NotificationQueue:
         Returns:
             QueueStatistics: Current queue statistics
         """
+        # Flush any in-memory batch first so the stats reflect every
+        # row a caller has already enqueued. Without this, callers who
+        # do enqueue() -> get_statistics() back-to-back see stale
+        # counts until the batch timer fires (up to ``_batch_timeout``
+        # seconds later).
+        await self.flush()
+
         # Use cached stats if recent
         now = datetime.utcnow()
         if self._stats_cache and self._stats_cache_expires and now < self._stats_cache_expires:
