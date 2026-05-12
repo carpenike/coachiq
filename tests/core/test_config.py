@@ -1,9 +1,27 @@
 """
 Tests for the configuration management module.
 
-This module tests the core configuration loading, validation,
-and environment variable handling functionality.
+Covers ``backend.core.config.Settings`` and ``get_settings()``.
+
+Environment variable convention (verified against production 2026-05-12)
+------------------------------------------------------------------------
+All settings use the ``COACHIQ_`` prefix with hierarchical naming via the
+``__`` (double-underscore) delimiter for nested fields. The previous
+revision of this test file asserted against legacy unprefixed env vars
+(``LOG_LEVEL``, ``CAN_BITRATE``, ``RVC_SPEC_PATH`` etc.) that production
+hasn't honoured since the audit-2026-05-12 cleanup. Rewritten in PR #122
+to match the actual env-var contract.
+
+Examples of the current contract:
+- ``COACHIQ_DEBUG=true`` -> ``settings.debug``
+- ``COACHIQ_LOGGING__LEVEL=DEBUG`` -> ``settings.logging.level``
+- ``COACHIQ_CAN__BUSTYPE=virtual`` -> ``settings.can.bustype``
+- ``COACHIQ_CAN__INTERFACES=can0,can1`` -> ``settings.can.interfaces``
+- ``COACHIQ_RVC_SPEC_PATH=/path/to/spec.json`` -> ``settings.rvc_spec_path``
+- ``COACHIQ_FEATURES__ENABLE_NOTIFICATIONS=true``
 """
+
+from __future__ import annotations
 
 import os
 import time
@@ -14,92 +32,161 @@ import pytest
 
 from backend.core.config import Settings, get_settings
 
+# ----------------------------------------------------------------------------
+# Helpers
+# ----------------------------------------------------------------------------
+
+
+def _isolated_env(env: dict[str, str]) -> dict[str, str]:
+    """Build a clean env mapping that strips any pre-existing COACHIQ_* vars.
+
+    pytest may inherit COACHIQ_* settings from the developer's shell or .env
+    file, which would pollute test assertions. We construct a fully-isolated
+    env containing ONLY the variables the test wants set.
+    """
+    base = {k: v for k, v in os.environ.items() if not k.startswith("COACHIQ_")}
+    base.update(env)
+    return base
+
+
+def _settings_no_env_file(**kwargs) -> Settings:
+    """Construct Settings with .env file loading disabled.
+
+    The production Settings class is configured to auto-load values from
+    a ``.env`` file in the current directory. That's correct for runtime
+    but wrong for tests that assert against the documented defaults --
+    a developer's local ``.env`` (e.g. ``COACHIQ_CAN__INTERFACES=virtual0``)
+    would otherwise override what we're trying to test.
+
+    Pydantic-Settings honours the underscore-prefixed ``_env_file=None``
+    keyword to disable the env_file path entirely.
+    """
+    return Settings(_env_file=None, **kwargs)
+
+
+# ----------------------------------------------------------------------------
+# TestSettings - default values + env-var overrides
+# ----------------------------------------------------------------------------
+
 
 @pytest.mark.unit
 class TestSettings:
-    """Test suite for Settings configuration class."""
+    """Test suite for the Settings configuration class."""
 
     def test_default_settings(self):
-        """Test that default settings are loaded correctly."""
-        settings = Settings()
+        """Default settings load with their documented field defaults."""
+        with patch.dict(os.environ, _isolated_env({}), clear=True):
+            settings = _settings_no_env_file()
 
         assert settings.app_name == "CoachIQ"
         assert settings.app_description == "API for RV-C CANbus"
-        assert settings.app_version == "0.0.0"
+        assert settings.app_version == "1.0.0"  # Production default
         assert settings.debug is False
         assert settings.logging.level == "INFO"
 
-    def test_environment_variable_override(self):
-        """Test that environment variables override default settings."""
-        with patch.dict(os.environ, {"DEBUG": "true", "LOG_LEVEL": "DEBUG"}, clear=False):
-            settings = Settings()
-
-            # These should be overridden
+    def test_top_level_env_override(self):
+        """``COACHIQ_DEBUG=true`` flips the top-level debug flag."""
+        with patch.dict(os.environ, _isolated_env({"COACHIQ_DEBUG": "true"}), clear=True):
+            settings = _settings_no_env_file()
             assert settings.debug is True
+            # Other top-level fields keep defaults.
+            assert settings.app_name == "CoachIQ"
+
+    def test_nested_env_override(self):
+        """``COACHIQ_LOGGING__LEVEL=DEBUG`` (double-underscore) reaches nested settings."""
+        with patch.dict(
+            os.environ,
+            _isolated_env({"COACHIQ_LOGGING__LEVEL": "DEBUG"}),
+            clear=True,
+        ):
+            settings = _settings_no_env_file()
             assert settings.logging.level == "DEBUG"
-            # These have specific env var names or don't support overrides
-            assert settings.app_name == "CoachIQ"  # No env override defined for this
-            assert settings.app_description == "API for CoachIQ"  # No env override defined for this
 
     def test_can_configuration_defaults(self):
-        """Test CAN bus configuration defaults."""
-        settings = Settings()
+        """CANSettings carries its own defaults (interface=can0, socketcan, 500000)."""
+        with patch.dict(os.environ, _isolated_env({}), clear=True):
+            settings = _settings_no_env_file()
 
-        # Default interface is can0 (updated from vcan0)
         assert "can0" in settings.can.all_interfaces
         assert settings.can.bustype == "socketcan"
-        assert settings.can.bitrate == 250000  # Default is 250000
+        # Production default is 500000 (CANSettings.bitrate, line 200 of config.py).
+        assert settings.can.bitrate == 500000
 
     def test_can_configuration_from_env(self):
-        """Test CAN configuration from environment variables."""
+        """``COACHIQ_CAN__*`` env vars flow into the nested ``can`` settings."""
         with patch.dict(
             os.environ,
-            {
-                "CAN_CHANNELS": "can0,can1",
-                "CAN_BUSTYPE": "virtual",
-                "CAN_BITRATE": "250000",
-            },
-            clear=False,
+            _isolated_env(
+                {
+                    "COACHIQ_CAN__INTERFACES": "can0,can1",
+                    "COACHIQ_CAN__BUSTYPE": "virtual",
+                    "COACHIQ_CAN__BITRATE": "250000",
+                }
+            ),
+            clear=True,
         ):
-            settings = Settings()
+            settings = _settings_no_env_file()
 
-            assert settings.can_channels == "can0,can1"
-            assert settings.can_bustype == "virtual"
-            assert settings.can_bitrate == 250000
-            # The environment variables should override the canbus settings
-            assert "can0" in settings.canbus.channels
-            assert "can1" in settings.canbus.channels
-            assert settings.canbus.bustype == "virtual"
+        # The CANSettings.parse_interfaces validator handles the comma split.
+        assert settings.can.interfaces == ["can0", "can1"]
+        assert settings.can.bustype == "virtual"
+        assert settings.can.bitrate == 250000
+        # all_interfaces helper returns the full list when interfaces != default.
+        assert "can0" in settings.can.all_interfaces
+        assert "can1" in settings.can.all_interfaces
 
-    def test_file_path_configuration(self):
-        """Test file path configuration settings."""
+    def test_file_path_configuration(self, tmp_path):
+        """``COACHIQ_RVC_SPEC_PATH`` sets the top-level Path field on Settings.
+
+        These are top-level (not nested) Settings fields, so the env var uses
+        the single-underscore form ``COACHIQ_<FIELD>``, NOT
+        ``COACHIQ_RVC__<FIELD>`` -- the latter would map to the nested ``rvc``
+        settings group.
+        """
+        spec_file = tmp_path / "spec.json"
+        mapping_file = tmp_path / "mapping.yml"
+
         with patch.dict(
             os.environ,
-            {
-                "RVC_SPEC_PATH": "/custom/path/spec.json",
-                "RVC_COACH_MAPPING_PATH": "/custom/path/mapping.yml",
-            },
-            clear=False,
+            _isolated_env(
+                {
+                    "COACHIQ_RVC_SPEC_PATH": str(spec_file),
+                    "COACHIQ_RVC_COACH_MAPPING_PATH": str(mapping_file),
+                }
+            ),
+            clear=True,
         ):
-            settings = Settings()
+            settings = _settings_no_env_file()
 
-            # Settings returns Path objects, not strings
-            assert str(settings.rvc_spec_path) == "/custom/path/spec.json"
-            assert str(settings.rvc_coach_mapping_path) == "/custom/path/mapping.yml"
-            assert isinstance(settings.rvc_spec_path, Path)
-            assert isinstance(settings.rvc_coach_mapping_path, Path)
+        # Pydantic coerces to Path because the field type is Path | None.
+        assert isinstance(settings.rvc_spec_path, Path)
+        assert isinstance(settings.rvc_coach_mapping_path, Path)
+        assert settings.rvc_spec_path == spec_file
+        assert settings.rvc_coach_mapping_path == mapping_file
 
     def test_validation_errors(self):
-        """Test that invalid configuration raises validation errors."""
+        """Invalid integer for a CAN field raises a Pydantic ValidationError.
+
+        Pydantic raises ``pydantic.ValidationError`` (a subclass of
+        ``ValueError``) when env-var coercion fails, so ``pytest.raises(ValueError)``
+        catches it correctly. Match on a substring of the expected error so
+        a future Pydantic upgrade that changes the message format fails
+        loudly instead of silently passing on a different ValueError.
+        """
         with (
-            patch.dict(os.environ, {"CAN_BITRATE": "invalid_number"}, clear=False),
-            pytest.raises(ValueError),
+            patch.dict(
+                os.environ,
+                _isolated_env({"COACHIQ_CAN__BITRATE": "not_a_number"}),
+                clear=True,
+            ),
+            pytest.raises(ValueError, match="bitrate"),
         ):
-            Settings()
+            _settings_no_env_file()
 
     def test_feature_flags_defaults(self):
-        """Test feature flags have correct defaults."""
-        settings = Settings()
+        """FeaturesSettings defaults are stable across releases."""
+        with patch.dict(os.environ, _isolated_env({}), clear=True):
+            settings = _settings_no_env_file()
 
         assert settings.features.enable_maintenance_tracking is False
         assert settings.features.enable_notifications is False
@@ -107,99 +194,135 @@ class TestSettings:
         assert settings.features.enable_pushover is False
         assert settings.features.enable_vector_search is True
 
-    def test_settings_immutability(self):
-        """Test that settings are properly frozen after creation."""
-        settings = Settings()
-        original_name = settings.app_name
+    def test_feature_flags_from_env(self):
+        """Nested feature flags toggle via ``COACHIQ_FEATURES__ENABLE_*``."""
+        with patch.dict(
+            os.environ,
+            _isolated_env(
+                {
+                    "COACHIQ_FEATURES__ENABLE_NOTIFICATIONS": "true",
+                    "COACHIQ_FEATURES__ENABLE_VECTOR_SEARCH": "false",
+                }
+            ),
+            clear=True,
+        ):
+            settings = _settings_no_env_file()
 
-        # Pydantic models are not frozen by default, but we can test that the value is correct
-        # If we want immutability, we'd need to add frozen=True to the model config
-        assert settings.app_name == original_name
+        assert settings.features.enable_notifications is True
+        assert settings.features.enable_vector_search is False
+
+    def test_settings_value_stable_after_init(self):
+        """After construction, reading a field returns the same value.
+
+        We don't enforce frozen=True (production needs occasional mutation
+        for things like environment swaps in tests), but the field-read
+        path is deterministic.
+        """
+        with patch.dict(os.environ, _isolated_env({}), clear=True):
+            settings = _settings_no_env_file()
+        assert settings.app_name == "CoachIQ"
+        assert settings.app_name == "CoachIQ"  # Read again, same value
+
+
+# ----------------------------------------------------------------------------
+# TestGetSettings - module-level singleton
+# ----------------------------------------------------------------------------
 
 
 @pytest.mark.unit
 class TestGetSettings:
-    """Test the get_settings dependency function."""
+    """``get_settings()`` is the singleton accessor used by FastAPI deps."""
 
     def test_get_settings_returns_singleton(self):
-        """Test that get_settings returns the same instance."""
+        """Two calls to ``get_settings()`` return the same instance."""
         settings1 = get_settings()
         settings2 = get_settings()
-
         assert settings1 is settings2
 
-    def test_get_settings_with_env_changes(self):
-        """Test that settings reflect environment changes correctly."""
-        # Clear any cached settings
+    def test_get_settings_with_env_changes_after_cache_clear(self):
+        """``get_settings()`` is ``@lru_cache``'d; clearing the cache picks up env."""
         get_settings.cache_clear()
-
-        with patch.dict(os.environ, {"LOG_LEVEL": "DEBUG", "DEBUG": "true"}, clear=False):
+        with patch.dict(
+            os.environ,
+            _isolated_env({"COACHIQ_DEBUG": "true", "COACHIQ_LOGGING__LEVEL": "DEBUG"}),
+            clear=True,
+        ):
             settings = get_settings()
-
             assert settings.debug is True
             assert settings.logging.level == "DEBUG"
+        # Reset cache so other tests in the run aren't polluted.
+        get_settings.cache_clear()
+
+
+# ----------------------------------------------------------------------------
+# Integration: real filesystem paths
+# ----------------------------------------------------------------------------
 
 
 @pytest.mark.integration
 class TestSettingsIntegration:
-    """Integration tests for settings with real environment."""
+    """Tests that touch the filesystem (via tmp_path) for the path fields."""
 
     def test_settings_with_real_paths(self, tmp_path):
-        """Test settings with real file paths."""
-        # Create temporary files
+        """When the path fields point at real files, the file content isn't
+        loaded -- the Settings object just carries the Path through."""
         spec_file = tmp_path / "test_spec.json"
         mapping_file = tmp_path / "test_mapping.yml"
-
         spec_file.write_text('{"test": "spec"}')
         mapping_file.write_text("test: mapping")
 
         with patch.dict(
             os.environ,
-            {
-                "RVC_SPEC_PATH": str(spec_file),
-                "RVC_COACH_MAPPING_PATH": str(mapping_file),
-            },
-            clear=False,
+            _isolated_env(
+                {
+                    "COACHIQ_RVC_SPEC_PATH": str(spec_file),
+                    "COACHIQ_RVC_COACH_MAPPING_PATH": str(mapping_file),
+                }
+            ),
+            clear=True,
         ):
-            settings = Settings()
+            settings = _settings_no_env_file()
 
-            # Settings returns Path objects
-            assert str(settings.rvc_spec_path) == str(spec_file)
-            assert str(settings.rvc_coach_mapping_path) == str(mapping_file)
+        assert settings.rvc_spec_path == spec_file
+        assert settings.rvc_coach_mapping_path == mapping_file
 
-    def test_settings_env_file_loading(self, tmp_path):
-        """Test loading settings from .env file."""
-        # Settings class automatically loads from .env file in current directory
-        # This test verifies basic settings creation works
-        settings = Settings()
+    def test_settings_with_missing_optional_files(self):
+        """Pointing the path fields at nonexistent files does NOT raise.
 
-        # Basic assertion - settings should be created successfully
+        These fields are documented as optional file references; the
+        consumers (e.g. RVC decoder) handle missing files at use time, not
+        at config construction.
+        """
+        with patch.dict(
+            os.environ,
+            _isolated_env(
+                {
+                    "COACHIQ_RVC_SPEC_PATH": "/nonexistent/spec.json",
+                    "COACHIQ_RVC_COACH_MAPPING_PATH": "/nonexistent/mapping.yml",
+                }
+            ),
+            clear=True,
+        ):
+            settings = _settings_no_env_file()
+
+        assert str(settings.rvc_spec_path) == "/nonexistent/spec.json"
+        assert str(settings.rvc_coach_mapping_path) == "/nonexistent/mapping.yml"
+
+    def test_settings_env_file_loading(self):
+        """Settings construction succeeds even without explicit env or .env tweaks."""
+        with patch.dict(os.environ, _isolated_env({}), clear=True):
+            settings = _settings_no_env_file()
         assert isinstance(settings.app_name, str)
         assert isinstance(settings.app_description, str)
 
     @pytest.mark.performance
     def test_settings_creation_performance(self):
-        """Test that settings creation is performant."""
-        start_time = time.time()
-        for _ in range(10):  # Reduced from 100 to be more realistic
-            Settings()
-        end_time = time.time()
+        """Settings construction is fast enough that it isn't a bottleneck."""
+        with patch.dict(os.environ, _isolated_env({}), clear=True):
+            start_time = time.time()
+            for _ in range(10):
+                _settings_no_env_file()
+            end_time = time.time()
 
-        # Settings creation should be reasonable (< 1 second for 10 instances)
+        # 10 instances in <1s is comfortably above realistic perf.
         assert (end_time - start_time) < 1.0
-
-    def test_settings_with_missing_optional_files(self):
-        """Test settings behavior with missing optional configuration files."""
-        with patch.dict(
-            os.environ,
-            {
-                "RVC_SPEC_PATH": "/nonexistent/spec.json",
-                "RVC_COACH_MAPPING_PATH": "/nonexistent/mapping.yml",
-            },
-            clear=False,
-        ):
-            # Should not raise an error for missing files
-            settings = Settings()
-
-            assert str(settings.rvc_spec_path) == "/nonexistent/spec.json"
-            assert str(settings.rvc_coach_mapping_path) == "/nonexistent/mapping.yml"
