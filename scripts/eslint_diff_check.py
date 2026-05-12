@@ -124,7 +124,7 @@ def _changed_frontend_files(base_ref: str) -> list[str]:
     bumps).
     """
     out = _run(
-        ["git", "diff", "--name-only", "--diff-filter=AM", _diff_range(base_ref)],  # noqa: S607
+        ["git", "diff", "--name-only", "--diff-filter=AM", _diff_range(base_ref)],
     )
     skip_prefixes = (
         "frontend/node_modules/",
@@ -176,7 +176,7 @@ def _changed_lines(base_ref: str, files: list[str]) -> dict[str, set[int]]:
         return {}
 
     out = _run(
-        ["git", "diff", "--unified=0", _diff_range(base_ref), "--", *files],  # noqa: S607
+        ["git", "diff", "--unified=0", _diff_range(base_ref), "--", *files],
     )
 
     result: dict[str, set[int]] = defaultdict(set)
@@ -219,7 +219,7 @@ def _eslint_issues(repo_relative_files: list[str], frontend_dir: Path) -> list[d
     stripped = [f[len("frontend/") :] for f in repo_relative_files]
 
     out = _run(
-        ["npx", "eslint", "--format=json", "--no-error-on-unmatched-pattern", "--", *stripped],  # noqa: S607
+        ["npx", "eslint", "--format=json", "--no-error-on-unmatched-pattern", "--", *stripped],
         cwd=frontend_dir,
         allow_nonzero=True,  # eslint exits 1 when issues found; that's fine
     )
@@ -348,7 +348,9 @@ def main() -> int:
     sys.stderr.write(":\n")
     _print_messages("Errors", new_errors, stream=sys.stderr)
     if warnings_fail:
-        _print_messages("Warnings (failing because --warnings-fail)", new_warnings, stream=sys.stderr)
+        _print_messages(
+            "Warnings (failing because --warnings-fail)", new_warnings, stream=sys.stderr
+        )
     elif new_warnings:
         _print_messages("Warnings (advisory; not blocking)", new_warnings, stream=sys.stdout)
 
