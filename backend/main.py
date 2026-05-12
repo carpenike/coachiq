@@ -101,11 +101,6 @@ from backend.services.entity_initialization_service import EntityInitializationS
 # from backend.services.docs_service import DocsService  # Not used
 from backend.services.entity_manager_service import EntityManagerService
 from backend.services.entity_service import EntityService
-from backend.services.entity_services import (
-    EntityControlService,
-    EntityManagementService,
-    EntityQueryService,
-)
 from backend.services.pin_manager import PINConfig, PINManager
 from backend.services.protocol_manager import ProtocolManager
 
@@ -891,116 +886,15 @@ def _register_group2_services(service_registry: SafetyServiceRegistry) -> None:
     )
 
     # Entity Services
-    # Note: These services have complex dependencies on entity_manager and websocket_manager
-    # which are now retrieved from ServiceRegistry dynamically during initialization.
-
-    def _init_entity_query_service(
-        entity_state_repository,
-        entity_history_repository,
-        performance_monitor,
-        entity_manager_service,
-    ):
-        # Get entity manager from injected service
-        entity_manager = (
-            entity_manager_service.get_entity_manager() if entity_manager_service else None
-        )
-
-        return EntityQueryService(
-            entity_manager=entity_manager,
-            state_repository=entity_state_repository,
-            history_repository=entity_history_repository,
-            performance_monitor=performance_monitor,
-        )
-
-    service_registry.register_service(
-        name="entity_query_service",
-        init_func=_init_entity_query_service,
-        dependencies=[
-            ServiceDependency("entity_state_repository", DependencyType.REQUIRED),
-            ServiceDependency("entity_history_repository", DependencyType.REQUIRED),
-            ServiceDependency("performance_monitor", DependencyType.REQUIRED),
-            ServiceDependency("entity_manager_service", DependencyType.REQUIRED),
-        ],
-        description="Service for entity read operations and queries",
-        tags={"service", "entity", "query", "readonly"},
-        health_check=lambda s: {"healthy": s is not None, "repositories_connected": True},
-    )
-
-    def _init_entity_control_service(
-        entity_state_repository,
-        can_command_repository,
-        entity_query_service,
-        performance_monitor,
-        entity_manager_service,
-        websocket_manager,
-    ):
-        # Get entity manager from injected service
-        entity_manager = (
-            entity_manager_service.get_entity_manager() if entity_manager_service else None
-        )
-
-        # Get CAN TX queue
-        from backend.integrations.can.manager import can_tx_queue
-
-        return EntityControlService(
-            entity_manager=entity_manager,
-            websocket_manager=websocket_manager,
-            can_tx_queue=can_tx_queue,
-            command_repository=can_command_repository,
-            performance_monitor=performance_monitor,
-        )
-
-    service_registry.register_service(
-        name="entity_control_service",
-        init_func=_init_entity_control_service,
-        dependencies=[
-            ServiceDependency("entity_state_repository", DependencyType.REQUIRED),
-            ServiceDependency("can_command_repository", DependencyType.REQUIRED),
-            ServiceDependency("entity_query_service", DependencyType.REQUIRED),
-            ServiceDependency("performance_monitor", DependencyType.REQUIRED),
-            ServiceDependency("entity_manager_service", DependencyType.REQUIRED),
-            ServiceDependency("websocket_manager", DependencyType.REQUIRED),
-        ],
-        description="Service for hardware control with security validation",
-        tags={"service", "entity", "control", "hardware", "security"},
-        health_check=lambda s: {"healthy": s is not None, "can_enabled": s._can_enabled},
-    )
-
-    def _init_entity_management_service(
-        entity_config_repository,
-        entity_state_repository,
-        entity_query_service,
-        performance_monitor,
-        entity_manager_service,
-        websocket_manager,
-    ):
-        # Get entity manager from injected service
-        entity_manager = (
-            entity_manager_service.get_entity_manager() if entity_manager_service else None
-        )
-
-        return EntityManagementService(
-            entity_manager=entity_manager,
-            websocket_manager=websocket_manager,
-            config_repository=entity_config_repository,
-            performance_monitor=performance_monitor,
-        )
-
-    service_registry.register_service(
-        name="entity_management_service",
-        init_func=_init_entity_management_service,
-        dependencies=[
-            ServiceDependency("entity_config_repository", DependencyType.REQUIRED),
-            ServiceDependency("entity_state_repository", DependencyType.REQUIRED),
-            ServiceDependency("entity_query_service", DependencyType.REQUIRED),
-            ServiceDependency("performance_monitor", DependencyType.REQUIRED),
-            ServiceDependency("entity_manager_service", DependencyType.REQUIRED),
-            ServiceDependency("websocket_manager", DependencyType.REQUIRED),
-        ],
-        description="Service for entity lifecycle management",
-        tags={"service", "entity", "management", "lifecycle"},
-        health_check=lambda s: {"healthy": s is not None, "management_enabled": True},
-    )
+    # The unified `entity_service` (EntityService facade, registered below)
+    # is the single source of truth for entity reads, control, and mapping
+    # CRUD. The previous EntityQueryService / EntityControlService /
+    # EntityManagementService split was scaffolded as part of an unfinished
+    # migration; their implementations were stubs (empty unmapped entries,
+    # no real CAN message construction, etc.) and they had zero router
+    # consumers. Removed in PR #111 to eliminate ambiguity. The
+    # `_require_role` defense-in-depth pattern those classes pioneered was
+    # ported into EntityService in the same PR.
 
     # EntityService - unified entity facade service
     service_registry.register_service(

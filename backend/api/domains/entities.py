@@ -20,13 +20,13 @@ from pydantic import BaseModel, Field
 from backend.api.domains import register_domain_router
 from backend.core.dependencies import (
     create_service_dependency,
+    get_authenticated_admin,
+    get_authenticated_user,
     get_entity_service,
 )
 
 # Create missing dependencies
 get_entity_domain_service = create_service_dependency("entity_domain_service")
-get_authenticated_user = lambda: None  # Placeholder
-get_authenticated_admin = lambda: None  # Placeholder
 
 # ControlCommand import removed - not used in this file
 
@@ -445,12 +445,34 @@ def create_entities_router() -> APIRouter:
         request: Request,
         mapping_request: dict,
         entity_service: Annotated[Any, Depends(get_entity_service)],
+        admin_user: Annotated[dict, Depends(get_authenticated_admin)],
     ) -> dict:
-        """Create new entity mapping from unmapped entry"""
+        """Create new entity mapping from unmapped entry (admin only).
+
+        Configuration ops that change which hardware our API can address
+        require admin role; the service layer also re-validates as
+        defense in depth.
+        """
 
         try:
-            result = await entity_service.create_entity_mapping(mapping_request)
-            return result
+            from backend.models.entity import CreateEntityMappingRequest
+
+            # Coerce raw dict to the typed request the service expects;
+            # invalid payloads should produce 422, not crash the service.
+            try:
+                typed_request = CreateEntityMappingRequest(**mapping_request)
+            except Exception as e:
+                raise HTTPException(
+                    status_code=422, detail=f"Invalid mapping request: {e!s}"
+                ) from e
+
+            result = await entity_service.create_entity_mapping(
+                typed_request, user_context=admin_user
+            )
+            # Service returns a Pydantic response model; convert for JSON.
+            return result.model_dump() if hasattr(result, "model_dump") else result
+        except HTTPException:
+            raise
         except Exception as e:
             logger.error(f"Failed to create entity mapping: {e}")
             raise HTTPException(status_code=500, detail=f"Failed to create entity mapping: {e!s}")
@@ -511,8 +533,11 @@ def create_entities_router() -> APIRouter:
                 timeout_seconds=5.0,  # Fast timeout for local CAN bus
             )
 
-            # Execute safety-critical control
-            result = await domain_service.control_entity_safe(entity_id, safety_command)
+            # Execute safety-critical control with the authenticated user
+            # context so the service layer can audit + enforce RBAC.
+            result = await domain_service.control_entity_safe(
+                entity_id, safety_command, user_context=user
+            )
             return result.dict()
 
         except Exception as e:
@@ -552,8 +577,11 @@ def create_entities_router() -> APIRouter:
                 max_concurrent=min(5, len(bulk_request.entity_ids)),  # Pi-safe concurrency
             )
 
-            # Execute safety-critical bulk control
-            result = await domain_service.bulk_control_entities_safe(safety_bulk_request)
+            # Execute safety-critical bulk control with the authenticated
+            # user context so the service layer can audit + enforce RBAC.
+            result = await domain_service.bulk_control_entities_safe(
+                safety_bulk_request, user_context=user
+            )
             return result.dict()
 
         except Exception as e:
