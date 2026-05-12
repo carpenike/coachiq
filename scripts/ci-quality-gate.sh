@@ -20,7 +20,7 @@ RESET="\033[0m"
 # pyright errors lower the count and the script will print a green message
 # nudging you to update the baseline downward.
 EXPECTED_PYRIGHT_ERRORS=1533  # Ratcheted 2026-05-11 by PIN-manager fixes (Pydantic Field(default=...) keyword form cleared 10 latent errors).
-EXPECTED_FRONTEND_TS_ERRORS=4  # Resynced 2026-05-11; pre-existing TS debt in DatabaseManagementTab + can-sniffer.
+EXPECTED_FRONTEND_TS_ERRORS=0  # Ratcheted 2026-05-12 to 0 by PR #110 (DatabaseManagementTab + can-sniffer + useCANScanWebSocket generic). Any new TS error is a hard fail.
 
 # Determine target branch (for GitHub Actions or local testing)
 if [ -n "${GITHUB_BASE_REF:-}" ]; then
@@ -166,12 +166,23 @@ if [ -d "frontend" ]; then
 
         if [ "$ACTUAL_TS_ERRORS" -gt "$EXPECTED_FRONTEND_TS_ERRORS" ]; then
             echo -e "${RED}❌ FAILURE: TypeScript found $ACTUAL_TS_ERRORS errors, exceeding baseline of $EXPECTED_FRONTEND_TS_ERRORS${RESET}"
+            cd ..
+            rm -f /tmp/ts-output.log
             exit 1
         elif [ "$ACTUAL_TS_ERRORS" -lt "$EXPECTED_FRONTEND_TS_ERRORS" ]; then
             echo -e "${GREEN}🎉 EXCELLENT: TypeScript errors reduced from $EXPECTED_FRONTEND_TS_ERRORS to $ACTUAL_TS_ERRORS!${RESET}"
-            echo -e "${GREEN}   Please update EXPECTED_FRONTEND_TS_ERRORS in this script${RESET}"
+            echo -e "${GREEN}   Please update EXPECTED_FRONTEND_TS_ERRORS in this script to $ACTUAL_TS_ERRORS${RESET}"
+            echo -e "${GREEN}   Include this baseline update in your PR${RESET}"
+            cd ..
+            rm -f /tmp/ts-output.log
+            exit 1  # Force the author to ratchet the baseline down so the win is locked in.
         else
-            echo -e "${YELLOW}⚠️  TypeScript compilation failed but error count within baseline${RESET}"
+            # Failure exit code from npm run typecheck but error count == baseline.
+            # When baseline is 0 this branch is unreachable. When baseline > 0
+            # this means the same number of pre-existing errors are still there
+            # (no regression, no improvement) — still treated as success since
+            # the diff didn't make things worse.
+            echo -e "${YELLOW}⚠️  TypeScript compilation failed but error count ($ACTUAL_TS_ERRORS) within baseline of $EXPECTED_FRONTEND_TS_ERRORS— ratchet down when fixed.${RESET}"
         fi
     fi
 

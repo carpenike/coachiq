@@ -428,11 +428,16 @@ export function useEntityWebSocket(options?: { autoConnect?: boolean }) {
 }
 
 /**
- * Hook for CAN message scanning via WebSocket
+ * Hook for CAN message scanning via WebSocket.
+ *
+ * The generic `TMessage` lets call sites opt into a narrower payload
+ * shape (e.g. `useCANScanWebSocket<CANMessage>({ onMessage: m => ... })`).
+ * Defaults to `unknown` because WebSocket frames are untrusted JSON;
+ * narrowing is the caller's responsibility.
  */
-export function useCANScanWebSocket(options?: {
+export function useCANScanWebSocket<TMessage = unknown>(options?: {
   autoConnect?: boolean;
-  onMessage?: (message: unknown) => void;
+  onMessage?: (message: TMessage) => void;
 }) {
   const queryClient = useQueryClient();
   const queryClientRef = useRef(queryClient);
@@ -443,7 +448,7 @@ export function useCANScanWebSocket(options?: {
     autoConnect: options?.autoConnect ?? false,
     onMessage: (message) => {
       setMessageCount(prev => prev + 1);
-      options?.onMessage?.(message);
+      options?.onMessage?.(message as TMessage);
 
       // Periodically invalidate CAN statistics
       if (messageCount % 100 === 0) {
