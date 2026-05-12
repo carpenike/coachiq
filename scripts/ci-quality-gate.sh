@@ -19,7 +19,7 @@ RESET="\033[0m"
 # gate's job is to stop the count from going UP (a ratchet); fixing actual
 # pyright errors lower the count and the script will print a green message
 # nudging you to update the baseline downward.
-EXPECTED_PYRIGHT_ERRORS=1484  # Ratcheted 2026-05-12 (PR #117). PRs #109+#111 dropped the count from 1533 by deleting AppState/entity_services dead code that was carrying type errors.
+EXPECTED_PYRIGHT_ERRORS=1455  # Ratcheted 2026-05-12 (PR #118). CI's pyright environment reports 1455 (vs 1484 on local macOS dev). The CI count is the canonical one — local dev uses an older pyright version (1.1.401 per CI warning vs 1.1.409 in CI), accounting for the ~30-error delta. Self-tested the new ratchet-down-locks-in pattern (#117) along the way: CI failed at 1455, prompted update, here we are.
 EXPECTED_FRONTEND_TS_ERRORS=0  # Ratcheted 2026-05-12 to 0 by PR #110 (DatabaseManagementTab + can-sniffer + useCANScanWebSocket generic). Any new TS error is a hard fail.
 EXPECTED_FRONTEND_ESLINT_ERRORS=648  # Captured 2026-05-12 by PR #117. Whole-project ESLint baseline; the diff-aware gate (eslint_diff_check.py in Stage 1) catches NEW issues per-line, this baseline is the project-wide ratchet.
 

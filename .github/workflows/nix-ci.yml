@@ -17,6 +17,17 @@ jobs:
     steps:
       - name: "Checkout repository"
         uses: actions/checkout@v4
+        with:
+          # Diff-aware quality gates (scripts/ruff_diff_check.py,
+          # scripts/eslint_diff_check.py) need access to the merge-base
+          # with `origin/main`. The default `fetch-depth: 1` (shallow
+          # clone) makes `git merge-base` fail, producing false-positive
+          # blocks when the base branch advances past the PR's branch
+          # base. See issue #116 for the exact failure mode that bit
+          # PR #115. The full clone adds a few seconds; the correctness
+          # gain is worth it. The `flake-build` job below does NOT need
+          # this since it doesn't run diff-aware checks.
+          fetch-depth: 0
 
       - name: "Install Nix (with flakes enabled)"
         uses: cachix/install-nix-action@v31

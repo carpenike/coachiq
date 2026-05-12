@@ -99,9 +99,19 @@ def _run(cmd: list[str], *, cwd: Path | None = None, allow_nonzero: bool = False
 def _diff_range(base_ref: str) -> str:
     """Return the git diff range to use against ``base_ref``.
 
-    Prefers three-dot (``A...HEAD``) which compares against the merge
-    base -- matches GitHub PR diffs. Falls back to two-dot on shallow
-    clones where the merge base isn't fetched.
+    Always uses three-dot (``A...HEAD``) which compares against the
+    merge base -- matches what GitHub PR diffs show. If the merge base
+    can't be found (typically because the base ref isn't fully fetched
+    on a shallow CI clone), exit with a clear error rather than fall
+    back to two-dot.
+
+    Two-dot ``A..HEAD`` is intentionally NOT a fallback: when the base
+    branch has advanced past the PR's branch base, two-dot reports lines
+    that exist in HEAD but were ALREADY removed from main as "new in
+    this PR", producing false-positive blocks. See issue #116 for the
+    exact failure that bit PR #115. If you hit this error in CI, set
+    ``fetch-depth: 0`` on the actions/checkout step so the merge base
+    is reachable.
     """
     probe = subprocess.run(  # noqa: S603 - controlled git invocation; see _run() docstring
         ["git", "merge-base", base_ref, "HEAD"],  # noqa: S607
@@ -111,7 +121,13 @@ def _diff_range(base_ref: str) -> str:
     )
     if probe.returncode == 0 and probe.stdout.strip():
         return f"{base_ref}...HEAD"
-    return f"{base_ref}..HEAD"
+    sys.stderr.write(
+        f"ERROR: cannot find merge base for {base_ref} vs HEAD.\n"
+        f"This usually means a shallow clone (CI default fetch-depth: 1).\n"
+        f"Set fetch-depth: 0 on actions/checkout, or run\n"
+        f"  `git fetch --unshallow` locally, then retry.\n"
+    )
+    sys.exit(2)
 
 
 def _changed_frontend_files(base_ref: str) -> list[str]:
