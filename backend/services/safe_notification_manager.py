@@ -200,11 +200,17 @@ class SafeNotificationManager:
 
         self.stats["total_notifications"] += 1
 
-        try:
-            # Normalize level
-            if isinstance(level, str):
-                level = NotificationType(level.lower())
+        # Validate the level argument BEFORE the broad except block below.
+        # An invalid level string is a programmer error (or malicious input)
+        # that should fail loudly, not be silently dropped via the
+        # graceful-degradation try/except. The try/except is for runtime
+        # failures like 'queue is down' or 'sanitization timed out' where
+        # returning False is the right call -- input-validation errors are
+        # a different kind of failure.
+        if isinstance(level, str):
+            level = NotificationType(level.lower())
 
+        try:
             # Create message hash for rate limiting and deduplication
             message_hash = create_message_hash(message, context)
 
