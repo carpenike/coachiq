@@ -99,10 +99,10 @@ Implications for code generation in this repo:
 
 ### TypeScript/React
 
-- **ESLint**: Using flat config in eslint.config.js and eslint.config.mjs - **ZERO WARNINGS REQUIRED**
-- **TypeScript**: Strict mode enabled with project references - **COMPILATION MUST SUCCEED**
+- **ESLint**: Using flat config in eslint.config.js and eslint.config.mjs. Project runs in **pragmatic mode**: legacy debt on unchanged lines is allowed, but any NEW ESLint **error** on a line you touched fails CI (warnings are advisory). Enforced by `scripts/eslint_diff_check.py` in `scripts/ci-quality-gate.sh` Stage 1.
+- **TypeScript**: Strict mode enabled with project references - **COMPILATION MUST SUCCEED** (`npm run typecheck` baseline = 0 errors).
 - **Build Verification**: `npm run build` must complete successfully
-- **Formatting**: Follow ESLint configuration rules
+- **Formatting**: Follow ESLint configuration rules; the `eslint-staged` pre-commit hook applies `--fix` automatically on staged files.
 - **Line Endings**: LF (Unix style)
 - **Indentation**: 2 spaces
 - **TypeScript Interfaces**: Ensure all standalone interface files have imports to avoid parsing errors

@@ -66,6 +66,56 @@ npx pyright src
 # Use the built-in type checking with Pylance
 ```
 
+## Frontend Code Quality Tools
+
+### ESLint
+
+[ESLint](https://eslint.org/) is the standard linter for the React + TypeScript frontend. The configuration lives in `frontend/eslint.config.js` (flat config) and is imported from the repo-root `eslint.config.js` so monorepo-wide tooling stays consistent.
+
+#### Usage
+
+```bash
+# Check the frontend
+cd frontend && npm run lint
+
+# Apply auto-fixes
+cd frontend && npm run lint:fix
+```
+
+### TypeScript Compiler (`tsc --noEmit`)
+
+```bash
+# Type-check the frontend (strict mode)
+cd frontend && npm run typecheck
+```
+
+The CI quality gate runs `npm run typecheck` and fails if any error is found (baseline ratcheted to 0 in PR #110).
+
+## Diff-Aware Quality Gates ("Pragmatic Mode")
+
+Both Python and frontend toolchains have *pragmatic-mode* gates: pre-existing legacy debt on lines you didn't touch is allowed, but any **new** violation on a line you DID touch fails the gate. This lets the project ratchet down legacy debt over time without each PR drowning in it.
+
+The gates are implemented as paired diff-check scripts that mirror each other's UX:
+
+| Concern | Script | Invocation |
+|---------|--------|------------|
+| Python lint (ruff) | `scripts/ruff_diff_check.py` | `poetry run python scripts/ruff_diff_check.py [BASE_REF]` |
+| Frontend lint (ESLint) | `scripts/eslint_diff_check.py` | `poetry run python scripts/eslint_diff_check.py [BASE_REF] [--warnings-fail]` |
+
+Both scripts:
+
+1. Find files changed since `BASE_REF` (default `origin/main`, three-dot range to match GitHub PR diffs).
+2. Run the underlying tool with JSON output on those files.
+3. Cross-reference each diagnostic's line against the diff's added/changed line set.
+4. Exit 0 if no NEW issues; exit 1 with a focused report if any new issues; exit 2 on tooling failure.
+5. Print a "(N legacy issues on unchanged lines were ignored.)" footer so it's obvious what was suppressed.
+
+Both scripts are wired into Stage 1 of `scripts/ci-quality-gate.sh`, which is what GitHub Actions runs via `nix run .#ci`. The pre-commit hook for each tool runs only the autofix half (`ruff format`, `eslint --fix`) and ignores legacy errors; the diff-aware blocking is CI's job.
+
+### Updating baselines
+
+Some tools also have project-wide baselines (counts of acknowledged debt) inside `scripts/ci-quality-gate.sh`. When you legitimately reduce the count, lower the baseline in the same PR. The script prints "🎉 EXCELLENT" with the new count when this happens, and the gate fails until you lower the baseline — which locks in the improvement permanently.
+
 ## Pre-commit Integration
 
 These tools are integrated into our [pre-commit](https://pre-commit.com/) configuration, ensuring code quality checks run automatically before each commit.
