@@ -415,8 +415,11 @@ export default function CANSniffer() {
   const [maxMessages] = useState(1000)
   const [messages, setMessages] = useState<CANMessage[]>([])
 
-  // WebSocket connection for real-time CAN messages
-  const { isConnected, error: wsError, connect } = useCANScanWebSocket({
+  // WebSocket connection for real-time CAN messages.
+  // The generic `<CANMessage>` opts into a typed callback; payloads are
+  // still untrusted JSON at the wire — narrow further if/when the schema
+  // is validated server-side.
+  const { isConnected, error: wsError, connect } = useCANScanWebSocket<CANMessage>({
     autoConnect: !isPaused,
     onMessage: (message: CANMessage) => {
       if (!isPaused) {

@@ -109,8 +109,8 @@ const startMigration = async (options: {
   confirm: boolean
   force?: boolean
   skip_backup?: boolean
-}) => {
-  return apiRequest("/api/database/migrate", {
+}): Promise<{ job_id: string }> => {
+  return apiRequest<{ job_id: string }>("/api/database/migrate", {
     method: "POST",
     body: JSON.stringify(options),
   })
@@ -123,7 +123,9 @@ function SafetyStatusCard({
   error,
   onRefresh
 }: {
-  safetyStatus?: SafetyStatus
+  // Allow explicit `undefined` (exactOptionalPropertyTypes-friendly) so
+  // react-query's `data: T | undefined` flows in without a wrapper.
+  safetyStatus?: SafetyStatus | undefined
   isLoading: boolean
   error: Error | null
   onRefresh: () => void
@@ -278,8 +280,10 @@ function MigrationControlCard({
   onMigrationStart,
   activeJobId,
 }: {
-  databaseStatus?: DatabaseStatus
-  safetyStatus?: SafetyStatus
+  // Allow explicit `undefined` (exactOptionalPropertyTypes-friendly) so
+  // react-query's `data: T | undefined` flows in without a wrapper.
+  databaseStatus?: DatabaseStatus | undefined
+  safetyStatus?: SafetyStatus | undefined
   onMigrationStart: (jobId: string) => void
   activeJobId: string | null
 }) {
@@ -728,14 +732,14 @@ export function DatabaseManagementTab() {
         safetyStatus={safetyStatus}
         isLoading={safetyLoading}
         error={safetyError}
-        onRefresh={refetchSafety}
+        onRefresh={() => { void refetchSafety() }}
       />
 
       {/* Migration Control / Progress */}
       <MigrationControlCard
         databaseStatus={databaseStatus}
         safetyStatus={safetyStatus}
-        onMigrationStart={setActiveJobId}
+        onMigrationStart={(jobId) => setActiveJobId(jobId)}
         activeJobId={activeJobId}
       />
 
