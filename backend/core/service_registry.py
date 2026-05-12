@@ -902,3 +902,136 @@ class EnhancedServiceRegistry(ServiceRegistry):
         except Exception as e:
             await self._handle_service_failure(name, e, ServiceFailureReason.INITIALIZATION_ERROR)
             raise
+
+    # ------------------------------------------------------------------ #
+    # Lifecycle + health surface for ESR-registered services.
+    #
+    # The base ``ServiceRegistry`` operates on the legacy
+    # ``register_startup_stage`` model and stores services in
+    # ``_startup_stages``. ``EnhancedServiceRegistry`` registers via
+    # ``register_service`` into ``_service_definitions`` and resolves
+    # stages on demand inside ``startup_all`` -- so the inherited
+    # ``shutdown()`` (which iterates ``_startup_stages``) is a silent
+    # no-op for ESR users. Likewise ``SafetyService._health_monitoring_loop``
+    # calls ``service_registry.get_health_summary()`` which previously
+    # only existed on ``backend/monitoring/health_probe_metrics.py`` --
+    # the safety monitor would crash on its first iteration in any
+    # ESR-based deployment.
+    #
+    # The four methods below close those gaps. Names match what the rest
+    # of the codebase (and the integration tests) already expect.
+    # ------------------------------------------------------------------ #
+
+    async def shutdown_all(self) -> None:
+        """Graceful shutdown of all ESR-registered services in reverse stage order.
+
+        Cancels background tasks first, then walks the resolved
+        dependency stages back-to-front (latest started, first stopped).
+        Silently no-ops if startup never ran. Failures are logged but do
+        not abort the rest of the shutdown sweep -- partial cleanup is
+        still better than none.
+        """
+        if self._shutdown_complete:
+            return
+
+        # Cancel background tasks first (mirror the base class behaviour).
+        if self._background_tasks:
+            for task in self._background_tasks:
+                if not task.done():
+                    task.cancel()
+            try:
+                await asyncio.wait_for(
+                    asyncio.gather(*self._background_tasks, return_exceptions=True),
+                    timeout=5.0,
+                )
+            except TimeoutError:
+                logger.warning("Background tasks did not cancel within 5s during shutdown_all()")
+
+        # Walk stages in reverse. If startup never resolved stages, fall
+        # back to shutting down whatever's actually instantiated in
+        # ``_services`` -- order doesn't matter then because nothing
+        # successfully started a dependency chain.
+        try:
+            stages = self._resolver.resolve_dependencies()
+            shutdown_order = [
+                name
+                for stage_num in sorted(stages.keys(), reverse=True)
+                for name in stages[stage_num]
+                if name in self._services
+            ]
+        except Exception as e:
+            msg = (
+                "shutdown_all: dependency resolution failed (%s); "
+                "falling back to arbitrary order over instantiated services"
+            )
+            logger.warning(msg, e)
+            shutdown_order = list(self._services.keys())
+
+        for name in shutdown_order:
+            await self._shutdown_service(name)
+
+        self._shutdown_complete = True
+
+    async def check_system_health(self) -> dict[str, Any]:
+        """Run a fresh health check across every running service.
+
+        Calls ``check_service_health(name)`` per service (which honours
+        any registered ``health_check`` callable, falling back to the
+        cached status), updates the cached status, and returns an
+        aggregate suitable for monitoring/UI consumers.
+
+        Returns a dict with:
+          - ``status``: ``"healthy"`` if every service is HEALTHY, else
+            ``"degraded"`` if any are DEGRADED but none FAILED, else
+            ``"failed"``.
+          - ``services``: ``{name: status_value}`` for every known
+            service definition.
+          - ``failed``: list of failed service names.
+          - ``degraded``: list of degraded service names.
+        """
+        services_status: dict[str, str] = {}
+        failed: list[str] = []
+        degraded: list[str] = []
+
+        for name in self._service_definitions:
+            status = await self.check_service_health(name)
+            self._service_status[name] = status
+            services_status[name] = status.value
+            if status == ServiceStatus.FAILED:
+                failed.append(name)
+            elif status == ServiceStatus.DEGRADED:
+                degraded.append(name)
+
+        if failed:
+            overall = "failed"
+        elif degraded:
+            overall = "degraded"
+        else:
+            overall = "healthy"
+
+        return {
+            "status": overall,
+            "services": services_status,
+            "failed": failed,
+            "degraded": degraded,
+        }
+
+    def get_health_summary(self) -> dict[str, dict[str, str]]:
+        """Synchronous snapshot of cached service status.
+
+        Used by ``SafetyService._health_monitoring_loop`` to avoid an
+        async fan-out on every watchdog tick. Returns the most recently
+        observed status per service in the shape that loop expects:
+        ``{name: {"status": "<STATUS_NAME>"}}`` (uppercase enum name,
+        matching how the rest of the codebase compares against
+        ``"FAILED"`` / ``"DEGRADED"`` strings).
+        """
+        return {name: {"status": status.name} for name, status in self._service_status.items()}
+
+    def get_service_status(self, name: str) -> ServiceStatus:
+        """Synchronous accessor for the cached status of a single service.
+
+        Returns ``ServiceStatus.PENDING`` for unknown services so callers
+        can branch on registration without raising.
+        """
+        return self._service_status.get(name, ServiceStatus.PENDING)
