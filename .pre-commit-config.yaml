@@ -60,8 +60,20 @@ repos:
   - repo: local
     hooks:
       - id: eslint-staged
-        name: eslint (staged files)
-        entry: bash -c 'cd frontend && npx eslint --fix -- "$@"' --
+        name: eslint --fix (staged files, autofix only)
+        # Pre-commit passes paths repo-relative (e.g. frontend/src/foo.tsx).
+        # After `cd frontend` those paths are wrong, so we strip the leading
+        # `frontend/` from each argument before invoking eslint.
+        #
+        # We deliberately apply --fix to canonicalize formatting on staged
+        # files but treat eslint's exit code as advisory: pre-existing
+        # legacy errors should NOT block a commit (the project has ~648
+        # baseline errors). The diff-aware gate that BLOCKS on NEW errors
+        # lives in `scripts/eslint_diff_check.py` and runs in CI via
+        # `scripts/ci-quality-gate.sh` Stage 1.5 -- mirroring how ruff is
+        # split into `ruff-format` (file-level autofix) and
+        # `ruff_diff_check.py` (line-level gate).
+        entry: bash -c 'cd frontend && args=(); for f in "$@"; do args+=("${f#frontend/}"); done; npx eslint --fix --no-error-on-unmatched-pattern -- "${args[@]}" || true' --
         language: system
         files: ^frontend/.*\.(js|jsx|ts|tsx)$
         exclude: ^frontend/(node_modules|dist|coverage)/

@@ -61,12 +61,14 @@ echo -e "${BLUE}🔧 Stage 1: Checking changed files for new linting issues...${
 # on PATH but pre-commit and ruff live inside the poetry-managed venv.
 PRECOMMIT_OK=true
 RUFF_OK=true
+ESLINT_OK=true
 
-# Skip pre-commit's `ruff` (linter) hook in Stage 1 — ruff_diff_check.py
-# below covers the ruff lint side with line-level filtering. We still
-# want pre-commit's `ruff-format` hook to run (formatting is correctly
-# a file-level concern: a file is either canonically formatted or not).
-if ! SKIP=ruff poetry run pre-commit run --from-ref "$TARGET_BRANCH" --to-ref HEAD; then
+# Skip pre-commit's `ruff` (linter) hook AND `eslint-staged` hook in Stage 1.
+# Their diff-aware counterparts (ruff_diff_check.py, eslint_diff_check.py)
+# below handle line-level filtering. We still want pre-commit's `ruff-format`
+# hook to run (formatting is correctly a file-level concern: a file is
+# either canonically formatted or not).
+if ! SKIP=ruff,eslint-staged poetry run pre-commit run --from-ref "$TARGET_BRANCH" --to-ref HEAD; then
     PRECOMMIT_OK=false
 fi
 
@@ -74,7 +76,16 @@ if ! poetry run python scripts/ruff_diff_check.py "$TARGET_BRANCH"; then
     RUFF_OK=false
 fi
 
-if $PRECOMMIT_OK && $RUFF_OK; then
+# Frontend ESLint diff-aware gate (mirror of ruff_diff_check.py).
+# Only relevant if the PR touches frontend files; the script reports
+# "No changed frontend files" and exits 0 in the no-op case.
+if [ -d "frontend" ]; then
+    if ! poetry run python scripts/eslint_diff_check.py "$TARGET_BRANCH"; then
+        ESLINT_OK=false
+    fi
+fi
+
+if $PRECOMMIT_OK && $RUFF_OK && $ESLINT_OK; then
     echo -e "${GREEN}✅ SUCCESS: No new linting issues in changed files${RESET}"
 else
     echo -e "${RED}❌ FAILURE: New linting issues found in your changes${RESET}"
