@@ -427,7 +427,7 @@ class EntityService:
         msg = f"Control not supported for device type '{device_type}'. Supported types: light"
         raise ValueError(msg)
 
-    async def control_light(
+    async def control_light(  # noqa: C901, PLR0912, PLR0915 (legacy complexity; the brightness decision tree predates this PR's auth refactor and deserves its own focused refactor PR — see issue #112)
         self,
         entity_id: str,
         cmd: ControlCommand,

@@ -462,7 +462,9 @@ def create_entities_router() -> APIRouter:
             try:
                 typed_request = CreateEntityMappingRequest(**mapping_request)
             except Exception as e:
-                raise HTTPException(status_code=422, detail=f"Invalid mapping request: {e!s}")
+                raise HTTPException(
+                    status_code=422, detail=f"Invalid mapping request: {e!s}"
+                ) from e
 
             result = await entity_service.create_entity_mapping(
                 typed_request, user_context=admin_user
