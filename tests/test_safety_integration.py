@@ -345,9 +345,7 @@ class TestSystemStartupShutdown:
         critical_services = ["persistence", "can_interface", "rvc_protocol"]
         for service_name in critical_services:
             service = services[service_name]
-            assert service.startup_count > 0, (
-                f"Critical service {service_name} startup not called"
-            )
+            assert service.startup_count > 0, f"Critical service {service_name} startup not called"
             assert service.shutdown_count > 0, (
                 f"Critical service {service_name} not cleanly shut down after abort"
             )
@@ -434,7 +432,9 @@ class TestEmergencyScenarios:
         firefly.state = ServiceStatus.FAILED
 
         # Trigger emergency response
-        await safety_service.trigger_emergency_stop("Position-critical system failure", triggered_by="integration_test")
+        await safety_service.trigger_emergency_stop(
+            "Position-critical system failure", triggered_by="integration_test"
+        )
 
         # Verify position-critical services entered safe shutdown
         assert safety_service._emergency_stop_active
@@ -459,13 +459,17 @@ class TestEmergencyScenarios:
         services["rvc_protocol"].state = ServiceStatus.FAILED
 
         # Trigger emergency stop
-        await safety_service.trigger_emergency_stop("Critical system failures detected", triggered_by="integration_test")
+        await safety_service.trigger_emergency_stop(
+            "Critical system failures detected", triggered_by="integration_test"
+        )
 
         # Verify emergency stop state
         assert safety_service._emergency_stop_active
 
         # Test emergency stop reset
-        success = await safety_service.reset_emergency_stop("SAFETY_OVERRIDE_ADMIN", reset_by="integration_test")
+        success = await safety_service.reset_emergency_stop(
+            "SAFETY_OVERRIDE_ADMIN", reset_by="integration_test"
+        )
         assert success
         assert not safety_service._emergency_stop_active
 
@@ -674,7 +678,9 @@ class TestSafetyInterlockIntegration:
         firefly.state = ServiceStatus.FAILED
 
         # Trigger emergency stop
-        await safety_service.trigger_emergency_stop("Service failure simulation", triggered_by="integration_test")
+        await safety_service.trigger_emergency_stop(
+            "Service failure simulation", triggered_by="integration_test"
+        )
 
         # Verify interlock state matches service state
         safety_status = safety_service.get_safety_status()

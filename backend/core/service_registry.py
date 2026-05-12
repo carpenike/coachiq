@@ -960,10 +960,11 @@ class EnhancedServiceRegistry(ServiceRegistry):
                 if name in self._services
             ]
         except Exception as e:
-            logger.warning(
-                "shutdown_all: dependency resolution failed (%s); falling back to arbitrary order over instantiated services",
-                e,
+            msg = (
+                "shutdown_all: dependency resolution failed (%s); "
+                "falling back to arbitrary order over instantiated services"
             )
+            logger.warning(msg, e)
             shutdown_order = list(self._services.keys())
 
         for name in shutdown_order:
@@ -1025,10 +1026,7 @@ class EnhancedServiceRegistry(ServiceRegistry):
         matching how the rest of the codebase compares against
         ``"FAILED"`` / ``"DEGRADED"`` strings).
         """
-        return {
-            name: {"status": status.name}
-            for name, status in self._service_status.items()
-        }
+        return {name: {"status": status.name} for name, status in self._service_status.items()}
 
     def get_service_status(self, name: str) -> ServiceStatus:
         """Synchronous accessor for the cached status of a single service.
