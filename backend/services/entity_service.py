@@ -1,8 +1,22 @@
 """
 Entity Service - Repository Pattern Implementation
 
-Service for managing RV-C entities using clean repository pattern
-with no legacy AppState dependencies.
+Service for managing RV-C entities using clean repository pattern.
+
+Authorization model
+-------------------
+Mutating methods (``control_entity``, ``control_light``,
+``create_entity_mapping``) require an authenticated user context. FastAPI
+routers MUST already validate the caller's session and pass the user dict
+in via ``user_context``; we re-validate here as defense in depth so a
+router that forgets to authenticate cannot accidentally reach hardware
+control or configuration mutations.
+
+Roles understood here:
+- ``user`` / ``operator`` / ``admin``: may call ``control_entity`` /
+  ``control_light``.
+- ``admin`` only: may call ``create_entity_mapping`` (configuration op
+  that changes which hardware our API can address).
 """
 
 import logging
@@ -23,6 +37,32 @@ from backend.repositories import DiagnosticsRepository, EntityStateRepository, R
 from backend.websocket.handlers import WebSocketManager
 
 logger = logging.getLogger(__name__)
+
+
+class _AuthorizationError(PermissionError):
+    """Raised when a service operation is invoked without sufficient privileges."""
+
+
+def _require_role(
+    user_context: dict | None,
+    *,
+    allowed_roles: tuple[str, ...] = ("user", "operator", "admin"),
+    operation: str,
+) -> None:
+    """Defense-in-depth role check at the service boundary.
+
+    Routers should already enforce auth via ``Depends(get_authenticated_*)``,
+    but services must never trust that. Raises ``_AuthorizationError``
+    (a ``PermissionError`` subclass) when the caller is unauthenticated
+    or lacks the required role.
+    """
+    if not user_context:
+        msg = f"Authentication required for {operation}"
+        raise _AuthorizationError(msg)
+    role = user_context.get("role")
+    if role not in allowed_roles:
+        msg = f"Role {role!r} not permitted for {operation}; requires one of {allowed_roles}"
+        raise _AuthorizationError(msg)
 
 
 class EntityService:
@@ -243,21 +283,38 @@ class EntityService:
         return protocol_summary
 
     async def create_entity_mapping(
-        self, request: CreateEntityMappingRequest
+        self,
+        request: CreateEntityMappingRequest,
+        user_context: dict[str, Any] | None = None,
     ) -> CreateEntityMappingResponse:
         """
         Create a new entity mapping from an unmapped entry.
 
+        Admin-only: configuration ops that change which hardware our API
+        can address must require the strongest available role.
+
         Args:
             request: CreateEntityMappingRequest with entity configuration details
+            user_context: Authenticated user dict (router must populate)
 
         Returns:
             CreateEntityMappingResponse: Response with status and entity information
-
-        Raises:
-            ValueError: If entity_id already exists or invalid configuration
-            RuntimeError: If entity registration fails
         """
+        try:
+            _require_role(
+                user_context,
+                allowed_roles=("admin",),
+                operation=f"create_entity_mapping({request.entity_id})",
+            )
+        except _AuthorizationError as e:
+            logger.warning("Authorization denied for create_entity_mapping: %s", e)
+            return CreateEntityMappingResponse(
+                status="error",
+                entity_id=request.entity_id,
+                message=str(e),
+                entity_data=None,
+            )
+
         try:
             # Check if entity already exists
             existing_entity = self._entity_state_repo.get_entity(request.entity_id)
@@ -329,22 +386,31 @@ class EntityService:
             )
 
     async def control_entity(
-        self, entity_id: str, command: ControlCommand
+        self,
+        entity_id: str,
+        command: ControlCommand,
+        user_context: dict[str, Any] | None = None,
     ) -> ControlEntityResponse:
         """
         Control an entity by routing to the appropriate device-specific control method.
 
+        Requires an authenticated user (``user`` / ``operator`` / ``admin``).
+
         Args:
             entity_id: The ID of the entity to control
             command: Control command with action details
+            user_context: Authenticated user dict (router must populate)
 
         Returns:
             ControlEntityResponse: Response with status and action description
 
         Raises:
             ValueError: If entity not found or device type not supported
+            PermissionError: If user_context is missing or lacks required role
             RuntimeError: If control command fails
         """
+        _require_role(user_context, operation=f"control_entity({entity_id})")
+
         entity = self._entity_state_repo.get_entity(entity_id)
         if not entity:
             msg = f"Entity '{entity_id}' not found"
@@ -357,25 +423,36 @@ class EntityService:
         )
 
         if device_type == "light":
-            return await self.control_light(entity_id, command)
+            return await self.control_light(entity_id, command, user_context=user_context)
         msg = f"Control not supported for device type '{device_type}'. Supported types: light"
         raise ValueError(msg)
 
-    async def control_light(self, entity_id: str, cmd: ControlCommand) -> ControlEntityResponse:
+    async def control_light(
+        self,
+        entity_id: str,
+        cmd: ControlCommand,
+        user_context: dict[str, Any] | None = None,
+    ) -> ControlEntityResponse:
         """
         Control a light entity.
+
+        Requires an authenticated user (``user`` / ``operator`` / ``admin``).
 
         Args:
             entity_id: The ID of the light entity to control
             cmd: Control command with action details
+            user_context: Authenticated user dict (router must populate)
 
         Returns:
             ControlEntityResponse: Response with status and action description
 
         Raises:
             ValueError: If entity not found or command invalid
+            PermissionError: If user_context is missing or lacks required role
             RuntimeError: If CAN command fails to send
         """
+        _require_role(user_context, operation=f"control_light({entity_id})")
+
         entity = self._entity_state_repo.get_entity(entity_id)
         if not entity:
             msg = f"Entity '{entity_id}' not found"

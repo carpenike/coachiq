@@ -618,7 +618,7 @@ class SafetyService:
         # Fallback: Define known safety-critical services for basic operation
         fallback_critical_services = [
             "can_bus_service",  # Vehicle CAN bus control
-            "entity_control_service",  # Entity state control
+            "entity_service",  # Entity state read + control (unified facade)
             "auth_manager",  # Access control security
             "websocket_manager",  # Real-time communication
         ]
