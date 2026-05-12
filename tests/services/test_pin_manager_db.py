@@ -70,15 +70,26 @@ async def test_user(db_session):
 
 @pytest.fixture
 def pin_config():
-    """PIN configuration for testing."""
+    """PIN configuration for testing.
+
+    NOTE: ``PINConfig`` field names are ``min_pin_length`` /
+    ``max_failed_attempts`` etc. — earlier revisions of this fixture used
+    bare names (``min_length`` / ``max_attempts``) that Pydantic v2
+    silently dropped because ``model_config`` allows extras, so the test
+    config wasn't actually overriding production defaults. Fixed.
+
+    ``max_concurrent_sessions`` is bumped to 10 so the concurrent-session
+    test can mint 5 sessions in parallel without the LRU eviction in
+    ``_create_session`` kicking in.
+    """
     return PINConfig(
-        min_length=4,
-        max_length=8,
-        require_numbers=True,
-        require_letters=False,
-        session_duration_minutes=60,
-        max_attempts=3,
+        min_pin_length=4,
+        max_pin_length=8,
+        require_numeric_only=True,
+        session_timeout_minutes=60,
+        max_failed_attempts=3,
         lockout_duration_minutes=15,
+        max_concurrent_sessions=10,
     )
 
 
@@ -146,12 +157,19 @@ class TestPINCreationAndStorage:
         assert len(pins) == 1
         assert pins[0].description == "Updated PIN"
 
-        # Verify new PIN works
-        session_id = await pin_manager_with_db.validate_pin(
+        # Verify new PIN works.
+        # NOTE: ``validate_pin`` returns a ``PINValidationResult`` Pydantic
+        # model (``.success`` / ``.session_id`` / ``.error_message`` /
+        # ``.lockout_until``); ``.session_id`` is None on any failure path.
+        # Tests in this file unwrap to ``session_id`` for compactness; use
+        # ``result.success`` directly when the session id isn't otherwise
+        # needed.
+        result = await pin_manager_with_db.validate_pin(
             user_id=test_user.id,
             pin="5678",
             pin_type="emergency",
         )
+        session_id = result.session_id
         assert session_id is not None
 
     async def test_create_multiple_pin_types(self, pin_manager_with_db, db_session, test_user):
@@ -198,13 +216,14 @@ class TestPINValidationAndSessions:
         )
 
         # Validate PIN
-        session_id = await pin_manager_with_db.validate_pin(
+        result = await pin_manager_with_db.validate_pin(
             user_id=test_user.id,
             pin="1234",
             pin_type="emergency",
             ip_address="127.0.0.1",
             user_agent="Test Agent",
         )
+        session_id = result.session_id
 
         assert session_id is not None
 
@@ -218,7 +237,14 @@ class TestPINValidationAndSessions:
         assert session.is_active is True
         assert session.ip_address == "127.0.0.1"
         assert session.user_agent == "Test Agent"
-        assert session.expires_at > datetime.now(UTC)
+        # SQLite strips tzinfo on round-trip even with DateTime(timezone=True);
+        # production code now coerces back to UTC-aware via _ensure_utc_aware
+        # at every comparison site. Mirror that here so the test matches the
+        # production contract instead of asserting a SQLAlchemy-dialect-quirk.
+        session_expires_at = session.expires_at
+        if session_expires_at.tzinfo is None:
+            session_expires_at = session_expires_at.replace(tzinfo=UTC)
+        assert session_expires_at > datetime.now(UTC)
 
     async def test_validate_wrong_pin_fails(self, pin_manager_with_db, db_session, test_user):
         """Test that wrong PIN validation fails."""
@@ -230,22 +256,27 @@ class TestPINValidationAndSessions:
         )
 
         # Try wrong PIN
-        session_id = await pin_manager_with_db.validate_pin(
+        result = await pin_manager_with_db.validate_pin(
             user_id=test_user.id,
             pin="5678",  # Wrong PIN
             pin_type="emergency",
         )
 
-        assert session_id is None
+        assert result.session_id is None
+        assert not result.success
 
         # Verify attempt was logged
         stmt = select(PINAttempt).filter_by(attempted_by_user_id=test_user.id)
-        result = await db_session.execute(stmt)
-        attempt = result.scalar_one_or_none()
+        result_db = await db_session.execute(stmt)
+        attempt = result_db.scalar_one_or_none()
 
         assert attempt is not None
         assert attempt.success is False
-        assert attempt.failure_reason == "invalid_pin"
+        # Production records human-readable failure reasons (not snake_case
+        # codes); see PINManager._record_attempt call sites in
+        # backend/services/pin_manager.py. Other failure_reasons used:
+        # "Database unavailable", "User locked out", "PIN not found".
+        assert attempt.failure_reason == "Invalid PIN"
 
     async def test_session_expiration(self, pin_manager_with_db, db_session, test_user):
         """Test that expired sessions are not valid."""
@@ -293,21 +324,22 @@ class TestLockoutProtection:
 
         # Make multiple failed attempts
         for _ in range(3):  # Max attempts = 3
-            session_id = await pin_manager_with_db.validate_pin(
+            result = await pin_manager_with_db.validate_pin(
                 user_id=test_user.id,
                 pin="wrong",
                 pin_type="emergency",
             )
-            assert session_id is None
+            assert result.session_id is None
 
         # Next attempt should fail due to lockout
-        session_id = await pin_manager_with_db.validate_pin(
+        result = await pin_manager_with_db.validate_pin(
             user_id=test_user.id,
             pin="1234",  # Even correct PIN should fail
             pin_type="emergency",
         )
 
-        assert session_id is None
+        assert result.session_id is None
+        assert result.lockout_until is not None  # locked out, not just rejected
 
         # Verify attempts were logged
         stmt = select(PINAttempt).filter_by(attempted_by_user_id=test_user.id)
@@ -348,13 +380,13 @@ class TestLockoutProtection:
         await db_session.commit()
 
         # Should be able to validate now
-        session_id = await pin_manager_with_db.validate_pin(
+        result = await pin_manager_with_db.validate_pin(
             user_id=test_user.id,
             pin="1234",
             pin_type="emergency",
         )
 
-        assert session_id is not None
+        assert result.session_id is not None
 
 
 class TestConcurrentOperations:
@@ -379,16 +411,18 @@ class TestConcurrentOperations:
 
         # Run 5 concurrent validations
         tasks = [validate() for _ in range(5)]
-        session_ids = await asyncio.gather(*tasks)
+        results = await asyncio.gather(*tasks)
+        session_ids = [r.session_id for r in results]
 
         # All should succeed with unique session IDs
+        assert all(r.success for r in results)
         assert all(sid is not None for sid in session_ids)
         assert len(set(session_ids)) == 5  # All unique
 
         # Verify all sessions exist in database
         stmt = select(PINSession).filter(PINSession.session_id.in_(session_ids))
-        result = await db_session.execute(stmt)
-        sessions = result.scalars().all()
+        db_result = await db_session.execute(stmt)
+        sessions = db_result.scalars().all()
 
         assert len(sessions) == 5
         assert all(s.is_active for s in sessions)
@@ -405,11 +439,13 @@ class TestConcurrentOperations:
         )
 
         # Create session with operation limit
-        session_id = await pin_manager_with_db.validate_pin(
+        result = await pin_manager_with_db.validate_pin(
             user_id=test_user.id,
             pin="1234",
             pin_type="emergency",
         )
+        session_id = result.session_id
+        assert session_id is not None
 
         # Update session to have max operations
         stmt = select(PINSession).filter_by(session_id=session_id)
@@ -452,37 +488,37 @@ class TestPINRotationAndManagement:
         )
 
         # Validate old PIN works
-        session_id = await pin_manager_with_db.validate_pin(
+        result = await pin_manager_with_db.validate_pin(
             user_id=test_user.id,
             pin="1234",
             pin_type="emergency",
         )
-        assert session_id is not None
+        assert result.session_id is not None
 
         # Rotate PIN
-        result = await pin_manager_with_db.rotate_pin(
+        result_bool = await pin_manager_with_db.rotate_pin(
             user_id=test_user.id,
             pin_type="emergency",
             old_pin="1234",
             new_pin="5678",
         )
-        assert result is True
+        assert result_bool is True
 
         # Old PIN should not work
-        session_id = await pin_manager_with_db.validate_pin(
+        result = await pin_manager_with_db.validate_pin(
             user_id=test_user.id,
             pin="1234",
             pin_type="emergency",
         )
-        assert session_id is None
+        assert result.session_id is None
 
         # New PIN should work
-        session_id = await pin_manager_with_db.validate_pin(
+        result = await pin_manager_with_db.validate_pin(
             user_id=test_user.id,
             pin="5678",
             pin_type="emergency",
         )
-        assert session_id is not None
+        assert result.session_id is not None
 
     async def test_deactivate_pin(self, pin_manager_with_db, db_session, test_user):
         """Test deactivating a PIN."""
@@ -494,22 +530,22 @@ class TestPINRotationAndManagement:
         )
 
         # Deactivate PIN
-        result = await pin_manager_with_db.deactivate_pin(
+        result_bool = await pin_manager_with_db.deactivate_pin(
             user_id=test_user.id,
             pin_type="emergency",
         )
-        assert result is True
+        assert result_bool is True
 
         # PIN should not work
-        session_id = await pin_manager_with_db.validate_pin(
+        result = await pin_manager_with_db.validate_pin(
             user_id=test_user.id,
             pin="1234",
             pin_type="emergency",
         )
-        assert session_id is None
+        assert result.session_id is None
 
         # Verify PIN is inactive in database
         stmt = select(UserPIN).filter_by(user_id=test_user.id, pin_type="emergency")
-        result = await db_session.execute(stmt)
-        pin = result.scalar_one()
+        db_result = await db_session.execute(stmt)
+        pin = db_result.scalar_one()
         assert pin.is_active is False
