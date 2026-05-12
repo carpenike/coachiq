@@ -168,6 +168,28 @@ class NotificationDeliveryLog(Base, TimestampMixin):
         Index("idx_delivery_logs_recipient", "recipient"),
     )
 
+    # Compatibility shim: ``metadata`` is a SQLAlchemy reserved attribute
+    # on ``Base`` (it holds the MetaData registry), which is why the
+    # actual column is ``delivery_metadata``. The public
+    # ``track_delivery`` / ``track_engagement`` API and most callers
+    # naturally think of this field as plain ``metadata``; accept it
+    # as a constructor kwarg so call sites can use the natural name
+    # without having to remember the SQLAlchemy collision.
+    #
+    # Reads MUST go through ``log.delivery_metadata`` (the actual
+    # column attribute) -- not ``log.metadata``, which would resolve
+    # to the SQLAlchemy MetaData registry on the class. We can't add a
+    # ``@property metadata`` because Python attribute lookup finds the
+    # class attribute first and SQLAlchemy needs the registry to
+    # remain reachable.
+    def __init__(self, **kwargs: Any) -> None:
+        if "metadata" in kwargs:
+            if "delivery_metadata" in kwargs:
+                msg = "Pass either 'metadata' or 'delivery_metadata', not both"
+                raise TypeError(msg)
+            kwargs["delivery_metadata"] = kwargs.pop("metadata")
+        super().__init__(**kwargs)
+
 
 class NotificationMetricAggregate(Base, TimestampMixin):
     """

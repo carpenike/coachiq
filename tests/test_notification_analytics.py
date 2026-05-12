@@ -37,11 +37,35 @@ from backend.services.notification_reporting_service import (
 
 @pytest.fixture
 async def db_manager():
-    """Mock database manager."""
+    """Mock database manager.
+
+    Wires the session mock so that ``session.execute(stmt)`` is async
+    (matching the ``AsyncSession`` API) but the *result* it returns is
+    a synchronous ``MagicMock``. SQLAlchemy 2.x's ``Result`` object
+    has sync ``.all()`` / ``.scalars()`` / ``.scalar_one_or_none()``
+    methods even when the session is async, so the result mock must
+    not be ``AsyncMock`` -- otherwise calling ``.all()`` returns an
+    un-awaited coroutine.
+
+    Earlier revisions used ``AsyncMock(spec=AsyncSession)`` directly,
+    which auto-asyncified every attribute (including the sync result
+    methods). Production code calling ``result.all()`` then got back
+    a coroutine and exploded with ``'coroutine' object is not
+    iterable``. This wiring fixes that mock-shape mismatch without
+    changing any production behaviour.
+    """
     manager = MagicMock(spec=DatabaseManager)
 
-    # Mock get_session to return AsyncMock context manager
     session_mock = AsyncMock(spec=AsyncSession)
+    # Override AsyncMock-by-default for ``execute`` so the awaitable
+    # returns a sync ``MagicMock`` result whose ``.all`` /
+    # ``.scalars`` / ``.scalar_one_or_none`` are sync (matching
+    # SQLAlchemy 2.x's actual ``Result`` shape).
+    session_mock.execute = AsyncMock(return_value=MagicMock())
+    # ``session.scalar`` IS async (returns a single value), so leave
+    # it as the default AsyncMock; tests can set ``side_effect`` /
+    # ``return_value`` directly.
+
     manager.get_session.return_value.__aenter__.return_value = session_mock
     manager.get_session.return_value.__aexit__.return_value = None
 
@@ -119,7 +143,12 @@ class TestNotificationAnalyticsService:
         assert log.status == NotificationStatus.FAILED.value
         assert log.error_message == "Connection timeout"
         assert log.error_code == "TIMEOUT_ERROR"
-        assert log.metadata["attempt"] == 1
+        # NOTE: column is ``delivery_metadata`` on disk; ``metadata`` on
+        # the class would resolve to the SQLAlchemy MetaData registry
+        # because ``Base.metadata`` is reserved. ``__init__`` accepts
+        # ``metadata=`` as a kwarg sugar (used by callers above), but
+        # reads must go through the real column name.
+        assert log.delivery_metadata["attempt"] == 1
 
     async def test_track_engagement(self, analytics_service, db_manager):
         """Test tracking user engagement."""
@@ -199,12 +228,16 @@ class TestNotificationAnalyticsService:
         # Mock database results
         session_mock = db_manager.get_session.return_value.__aenter__.return_value
 
-        # Mock error patterns
+        # Mock error patterns. Production aliases the SQL ``count(*)``
+        # column to ``occurrences`` to avoid colliding with
+        # SQLAlchemy ``Row.count`` (which is a built-in method, not an
+        # attribute). The mock therefore exposes ``.occurrences`` to
+        # match the production name.
         mock_pattern = MagicMock()
         mock_pattern.error_code = "TIMEOUT_ERROR"
         mock_pattern.error_message = "Connection timeout"
         mock_pattern.channel = NotificationChannel.SLACK.value
-        mock_pattern.count = 25
+        mock_pattern.occurrences = 25
         mock_pattern.first_seen = datetime.now(UTC) - timedelta(hours=2)
         mock_pattern.last_seen = datetime.now(UTC) - timedelta(minutes=10)
         mock_pattern.affected_recipients = 15
@@ -601,7 +634,10 @@ class TestAnalyticsIntegration:
         # Flush buffer
         await analytics_service._flush_buffer()
 
-        # Mock analytics retrieval
+        # Mock analytics retrieval. The DailyDigestTemplate also calls
+        # ``get_aggregated_metrics``, ``analyze_errors``, and
+        # ``get_queue_health`` -- mock all four so the report
+        # generation doesn't hit the (mocked-too-thin) DB session.
         analytics_service.get_channel_metrics = AsyncMock(
             return_value=[
                 ChannelMetrics(
@@ -617,6 +653,23 @@ class TestAnalyticsIntegration:
                     error_breakdown={"Test error": 2},
                 )
             ]
+        )
+        analytics_service.get_aggregated_metrics = AsyncMock(return_value=[])
+        analytics_service.analyze_errors = AsyncMock(return_value=[])
+        analytics_service.get_queue_health = AsyncMock(
+            return_value=NotificationQueueHealth(
+                timestamp=datetime.now(UTC),
+                queue_depth=0,
+                processing_rate=0.0,
+                success_rate=0.8,
+                average_wait_time=0.0,
+                average_processing_time=0.145,
+                dlq_size=0,
+                active_workers=1,
+                memory_usage_mb=None,
+                cpu_usage_percent=None,
+                health_score=0.8,
+            )
         )
 
         # Generate report

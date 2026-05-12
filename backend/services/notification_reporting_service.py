@@ -30,6 +30,14 @@ if TYPE_CHECKING:
     from backend.services.notification_analytics_service import NotificationAnalyticsService
 
 
+# Insight thresholds for ``WeeklyAnalyticsTemplate``. Tuned conservatively
+# so a normal week-over-week wiggle (\u00b15-10%) doesn't alarm the
+# operator, but a real shift in traffic or success rate does.
+_VOLUME_TREND_INSIGHT_THRESHOLD = 10.0  # percent change in volume
+_SUCCESS_TREND_INSIGHT_THRESHOLD = 5.0  # percent change in success rate
+_WORST_CHANNEL_INSIGHT_THRESHOLD = 0.8  # success rate floor before flagging
+
+
 class ReportTemplate:
     """Base class for report templates."""
 
@@ -222,28 +230,35 @@ class WeeklyAnalyticsTemplate(ReportTemplate):
         volume_trend: float,
         success_trend: float,
     ) -> list[str]:
-        """Generate insights from metrics."""
+        """Generate insights from metrics.
+
+        Thresholds tuned conservatively so a normal week-over-week
+        wiggle (\u00b15-10%) doesn't alarm the operator, but a real
+        shift in traffic (>10%) or success rate (>5%) does. Earlier
+        revisions used \u00b120% for volume which silently dropped
+        meaningful trends.
+        """
         insights = []
 
-        if volume_trend > 20:
+        if volume_trend > _VOLUME_TREND_INSIGHT_THRESHOLD:
             insights.append(
                 f"Notification volume increased by {volume_trend:.1f}% compared to last week"
             )
-        elif volume_trend < -20:
+        elif volume_trend < -_VOLUME_TREND_INSIGHT_THRESHOLD:
             insights.append(
                 f"Notification volume decreased by {abs(volume_trend):.1f}% compared to last week"
             )
 
-        if success_trend > 5:
+        if success_trend > _SUCCESS_TREND_INSIGHT_THRESHOLD:
             insights.append(f"Delivery success rate improved by {success_trend:.1f}%")
-        elif success_trend < -5:
+        elif success_trend < -_SUCCESS_TREND_INSIGHT_THRESHOLD:
             insights.append(
                 f"Delivery success rate declined by {abs(success_trend):.1f}% - investigation recommended"
             )
 
         # Find worst performing channel
         worst_channel = min(current, key=lambda x: x.success_rate)
-        if worst_channel.success_rate < 0.8:
+        if worst_channel.success_rate < _WORST_CHANNEL_INSIGHT_THRESHOLD:
             insights.append(
                 f"{worst_channel.channel.value} channel has low success rate ({worst_channel.success_rate:.1%})"
             )
