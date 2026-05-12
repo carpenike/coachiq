@@ -1,10 +1,10 @@
 """
 Repository Pattern Implementation
 
-Part of Phase 2R: AppState Repository Migration
-
-This package contains repository classes that separate data concerns
-from the monolithic AppState, following the Single Responsibility Principle.
+This package contains repository classes that decompose what used to be
+the monolithic ``AppState`` into focused, single-responsibility data
+access objects. ``AppState`` itself was removed in 2026-05; the
+repository pattern is the canonical replacement.
 """
 
 from backend.repositories.can_tracking_repository import CANTrackingRepository

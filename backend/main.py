@@ -313,13 +313,13 @@ async def _configure_service_startup_stages(service_registry):
         health_check=lambda sas: {"healthy": sas is not None, "audit_active": True},
     )
 
-    # Register repositories (Phase 2R.2)
+    # Register repositories (replaced the removed AppState monolith)
     from backend.repositories.service_registration import (
         register_repositories_with_service_registry,
     )
 
     register_repositories_with_service_registry(service_registry)
-    logger.info("Repositories registered with ServiceRegistry (Phase 2R.2)")
+    logger.info("Repositories registered with ServiceRegistry")
 
     # Register ConfigService after repositories are available
     def _init_config_service(rvc_config_repository):

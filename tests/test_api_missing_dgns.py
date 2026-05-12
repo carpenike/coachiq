@@ -36,7 +36,6 @@ class TestMissingDGNsAPI:
         mock_app_state = Mock()
 
         with (
-            patch("backend.core.state.AppState"),
             patch(
                 "backend.services.feature_manager.get_feature_manager",
                 return_value=mock_feature_manager,

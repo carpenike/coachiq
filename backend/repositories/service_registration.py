@@ -1,8 +1,9 @@
 """
 Repository Service Registration
 
-Factory functions and registration helpers for repositories.
-Part of Phase 2R.2: Register repositories with EnhancedServiceRegistry
+Factory functions and registration helpers that register the
+repositories (which replaced the removed ``AppState`` monolith) with
+the ``EnhancedServiceRegistry``.
 """
 
 import logging
@@ -30,8 +31,9 @@ def _init_entity_state_repository() -> EntityStateRepository:
     """
     logger.info("Initializing EntityStateRepository")
 
-    # For now, create with a new EntityManager
-    # In Phase 2R.3, this will be refactored to share the EntityManager
+    # Each repository currently constructs its own EntityManager. A
+    # future refactor may consolidate these into a single shared
+    # EntityManager owned by the ServiceRegistry.
     entity_manager = EntityManager()
     repository = EntityStateRepository(entity_manager)
 
@@ -48,7 +50,8 @@ def _init_rvc_config_repository() -> RVCConfigRepository:
     logger.info("Initializing RVCConfigRepository")
     repository = RVCConfigRepository()
     logger.info(
-        "RVCConfigRepository initialized (configuration will be loaded during AppState startup)"
+        "RVCConfigRepository initialized (configuration is loaded later "
+        "during application lifespan startup)"
     )
     return repository
 
@@ -70,8 +73,7 @@ def _init_diagnostics_repository() -> DiagnosticsRepository:
     Initialize DiagnosticsRepository.
 
     This repository manages diagnostic data including unmapped entries
-    and unknown PGNs that were previously in AppState.
-    Part of Phase 2R.4: Legacy Data Cleanup.
+    and unknown PGNs that used to live in the removed ``AppState`` monolith.
     """
     logger.info("Initializing DiagnosticsRepository")
     repository = DiagnosticsRepository()
@@ -152,8 +154,8 @@ def register_repositories_with_service_registry(service_registry: Any) -> None:
     """
     Register all repositories with the ServiceRegistry.
 
-    This enables repositories to be accessed independently of AppState,
-    supporting the gradual migration away from the monolithic design.
+    These repositories replace what used to be the monolithic
+    ``AppState`` class.
 
     Args:
         service_registry: The EnhancedServiceRegistry instance
@@ -189,7 +191,7 @@ def register_repositories_with_service_registry(service_registry: Any) -> None:
         health_check=lambda repo: repo.get_health_status(),
     )
 
-    # Register DiagnosticsRepository (Phase 2R.4)
+    # Register DiagnosticsRepository
     service_registry.register_service(
         name="diagnostics_repository",
         init_func=_init_diagnostics_repository,

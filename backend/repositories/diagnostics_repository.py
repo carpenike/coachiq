@@ -1,10 +1,9 @@
 """
 Diagnostics Repository
 
-This repository manages diagnostic data that was previously scattered
-in AppState, including unmapped entries and unknown PGNs.
-
-Part of Phase 2R.4: Legacy Data Cleanup
+This repository manages diagnostic data that used to live in the
+removed ``AppState`` monolith, including unmapped entries and unknown
+PGNs.
 """
 
 import logging
@@ -18,8 +17,8 @@ class DiagnosticsRepository:
     """
     Repository for diagnostic and debugging data.
 
-    This repository consolidates diagnostic data that was previously
-    stored directly in AppState:
+    This repository consolidates diagnostic data that used to live
+    in the removed ``AppState`` monolith:
     - Unmapped entries: Entity configs that couldn't be mapped
     - Unknown PGNs: RV-C messages with unrecognized PGNs
     - Other diagnostic counters and metrics

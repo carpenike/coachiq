@@ -2,7 +2,7 @@
 CAN Tracking Repository
 
 Manages real-time CAN message tracking with performance optimization.
-Part of Phase 2R: AppState Repository Migration
+Replaces the CAN-tracking portion of the removed ``AppState`` monolith.
 
 This repository handles:
 - CAN sniffer logs
