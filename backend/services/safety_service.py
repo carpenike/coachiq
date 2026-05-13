@@ -535,6 +535,20 @@ class SafetyService:
             return
 
         self._emergency_stop_active = True
+        # Record reason + source so observers (``get_safety_status()``,
+        # audit consumers, integration tests) can see WHY the system
+        # stopped, not just that it did. Previously only the public
+        # ``trigger_emergency_stop`` populated these fields, so any
+        # auto-triggered stop from the monitoring loop
+        # (``_check_emergency_conditions`` -> ``emergency_stop``) left
+        # ``_emergency_stop_reason`` as None -- losing critical
+        # forensic context. The fields stay None on the explicit
+        # ``trigger_emergency_stop`` path because that one sets them
+        # itself with richer ``triggered_by`` info; here we use a
+        # generic ``"safety_monitoring"`` source.
+        self._emergency_stop_reason = reason
+        self._emergency_stop_triggered_by = "safety_monitoring"
+        self._emergency_stop_time = datetime.now(UTC)
         logger.critical("=== EMERGENCY STOP ACTIVATED ===")
         logger.critical("Reason: %s", reason)
 
@@ -594,6 +608,21 @@ class SafetyService:
             for interlock in self._interlocks.values():
                 if not interlock.is_engaged:
                     await interlock.engage(f"Emergency stop: {reason}")
+                    # Mirror the action-tracking that
+                    # ``_execute_emergency_stop_actions`` performs on
+                    # the ``trigger_emergency_stop`` path. Without this,
+                    # observers calling ``get_safety_status()`` on an
+                    # auto-triggered (loop-driven) emergency stop see
+                    # an EMPTY ``active_safety_actions`` list -- losing
+                    # forensic context about what got engaged.
+                    self._active_safety_actions.append(f"interlock_engaged_{interlock.name}")
+
+            # Record the high-level shutdown action for parity with
+            # the ``trigger_emergency_stop`` path (line 1628-1629).
+            if "safety_critical_safe_shutdown" not in self._active_safety_actions:
+                self._active_safety_actions.append("safety_critical_safe_shutdown")
+            if "maintain_safe_state" not in self._active_safety_actions:
+                self._active_safety_actions.append("maintain_safe_state")
 
             # Enter system-wide safe state
             await self._enter_safe_state(f"Emergency stop: {reason}")
