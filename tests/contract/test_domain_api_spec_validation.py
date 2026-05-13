@@ -15,10 +15,16 @@ from backend.main import create_app
 
 
 def test_openapi_spec_generation():
-    """Test that FastAPI generates a valid OpenAPI specification"""
+    """Test that FastAPI generates a valid OpenAPI specification.
+
+    Updated 2026-05-13: the legacy ``/api/entities`` route was retired
+    in favor of ``/api/v2/entities`` (see PR #126); assert against the
+    v2 path instead. The route comes from
+    ``backend/api/domains/entities.py`` mounted under
+    ``/api/v2/entities`` by ``register_all_domain_routers``.
+    """
     app = create_app()
 
-    # Generate OpenAPI spec
     openapi_schema = get_openapi(
         title="CoachIQ Domain API",
         version="2.0.0",
@@ -26,31 +32,33 @@ def test_openapi_spec_generation():
         routes=app.routes,
     )
 
-    # Basic validation
     assert openapi_schema["openapi"] in ["3.0.2", "3.1.0"], (
         f"Should use OpenAPI 3.x, got {openapi_schema['openapi']}"
     )
     assert "info" in openapi_schema, "Should have info section"
     assert "paths" in openapi_schema, "Should have paths section"
 
-    # Check that we have legacy routes
+    # Check that we have the v2 entity routes (legacy /api/entities is gone).
     paths = openapi_schema["paths"]
-    assert any("/api/entities" in path for path in paths), "Should have legacy entity routes"
+    assert any("/api/v2/entities" in path for path in paths), "Should have v2 entity routes"
 
 
 def test_domain_api_route_structure():
-    """Test that domain API routes follow expected patterns"""
+    """Test that domain API routes follow expected patterns.
+
+    Updated 2026-05-13: legacy ``/api/entities`` is gone; the v2 entity
+    routes live under ``/api/v2/entities``. See PR #126.
+    """
     app = create_app()
 
-    # Get all routes
     routes = []
     for route in app.routes:
         if hasattr(route, "path"):
             routes.append(route.path)
 
-    # Should have legacy routes (these always exist)
-    legacy_routes = [r for r in routes if r.startswith("/api/entities")]
-    assert len(legacy_routes) > 0, "Should have legacy /api/entities routes"
+    # Should have v2 entity routes
+    v2_entity_routes = [r for r in routes if r.startswith("/api/v2/entities")]
+    assert len(v2_entity_routes) > 0, "Should have /api/v2/entities routes"
 
     # Check that route patterns match expected structure
     api_routes = [r for r in routes if r.startswith("/api/")]
@@ -58,15 +66,24 @@ def test_domain_api_route_structure():
 
 
 def test_legacy_entities_endpoint():
-    """Test that legacy entities endpoint still works"""
+    """Test that the v2 entities endpoint is reachable.
+
+    Renamed 2026-05-13 (was ``test_legacy_entities_endpoint``): the
+    legacy ``/api/entities`` path no longer exists. We point at
+    ``/api/v2/entities`` and accept either 200 (full success) or 500
+    (expected when the EntityService can't fully start in this minimal
+    test app). 404 specifically must NOT happen -- if it does, the
+    domain router registration is broken (see PR #126 cluster context).
+    """
     app = create_app()
     client = TestClient(app)
 
-    # Test legacy endpoint
-    response = client.get("/api/entities")
+    response = client.get("/api/v2/entities")
 
-    # Should get either 200 (success) or 500 (expected in test env without full services)
-    assert response.status_code in [200, 500], f"Unexpected status: {response.status_code}"
+    assert response.status_code in [200, 500], (
+        f"Unexpected status: {response.status_code} -- 404 means the"
+        " /api/v2/entities router is no longer registered"
+    )
 
 
 def test_openapi_spec_has_required_sections():
@@ -96,37 +113,54 @@ def test_openapi_spec_has_required_sections():
 
 
 def test_response_schema_patterns():
-    """Test that our documented response patterns are followed"""
+    """Test that our documented response patterns are followed.
+
+    Updated 2026-05-13: replaced legacy ``/api/entities`` probe with
+    the v2 path. See PR #126.
+    """
     app = create_app()
     client = TestClient(app)
 
-    # Test health endpoint (if available)
     response = client.get("/api/health")
     if response.status_code == 200:
         data = response.json()
-        # Should follow basic health check pattern
         assert "status" in data, "Health response should have status"
 
-    # Test entities endpoint structure
-    response = client.get("/api/entities")
+    response = client.get("/api/v2/entities")
     if response.status_code == 200:
         data = response.json()
-        # Should be a list or dictionary
         assert isinstance(data, (list, dict)), "Entities response should be list or dict"
 
 
 def test_error_response_patterns():
-    """Test that error responses follow expected patterns"""
+    """Test that error responses follow expected patterns.
+
+    Updated 2026-05-13: the project ships a custom
+    ``http_exception_handler`` (see
+    ``backend/core/exception_handlers.py:165``) that wraps every HTTP
+    error as ``{"error": {"code": "HTTP_<status>", "message": ...}}``
+    rather than the FastAPI default ``{"detail": ...}``. The previous
+    assertion (``assert 'detail' in error_data``) targeted the default
+    shape and would fail for every non-2xx response. See PR #125 where
+    this was first encountered.
+    """
     app = create_app()
     client = TestClient(app)
 
-    # Test non-existent endpoint
     response = client.get("/api/nonexistent")
     assert response.status_code == 404, "Should return 404 for non-existent endpoints"
 
-    # Check error response structure
+    # Check the project's wrapped error envelope.
     error_data = response.json()
-    assert "detail" in error_data, "Error response should have detail field"
+    assert "error" in error_data, (
+        "Error response should be wrapped in 'error' key per"
+        " backend/core/exception_handlers.py:http_exception_handler"
+    )
+    assert "message" in error_data["error"], "Error envelope should have a 'message'"
+    assert "code" in error_data["error"], "Error envelope should have a 'code'"
+    assert error_data["error"]["code"] == "HTTP_404", (
+        f"Expected HTTP_404 code, got {error_data['error']['code']}"
+    )
 
 
 class TestContractBaseline:
