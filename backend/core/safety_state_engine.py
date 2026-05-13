@@ -137,20 +137,32 @@ class SafetyStateEngine:
         if self.current_state == VehicleState.UNSAFE:
             return False, "Vehicle in unsafe state - no operations allowed"
 
-        # Operation-specific safety rules
+        # Operation-specific safety rules.
+        #
+        # Important: parking-brake-required operations use ``is not True``
+        # rather than ``is False`` so that an *unknown* brake state
+        # (parking_brake_set is None — we never observed a brake event yet)
+        # blocks the operation. For a defense-in-depth API guardrail
+        # (Firefly MIRA owns the actual vehicle safety case; see
+        # /memories/repo/coachiq-architecture.md), the safer default is
+        # "deny unless we have confirmation the brake is set", not "allow
+        # whenever we haven't seen a release event".
         if operation == "slideout_extend":
+            # Check parking brake FIRST so the failure reason is actionable
+            # rather than the generic "state unknown" message that the
+            # state-check below would produce.
+            if self.state_data.parking_brake_set is not True:
+                return False, "Slideout extension requires parking brake to be set"
+
             if self.current_state not in [VehicleState.PARKED_SAFE, VehicleState.PARKED_RUNNING]:
                 return False, f"Slideout extension not allowed in state {self.current_state.value}"
-
-            if self.state_data.parking_brake_set is False:
-                return False, "Slideout extension requires parking brake to be set"
 
         elif operation == "engine_start":
             if self.state_data.transmission_gear not in [None, "park", "P"]:
                 return False, "Engine start not allowed when transmission not in park"
 
         elif operation in ["leveling_extend", "leveling_retract"]:
-            if self.state_data.parking_brake_set is False:
+            if self.state_data.parking_brake_set is not True:
                 return False, "Leveling operations require parking brake to be set"
 
         return True, "Operation allowed"
