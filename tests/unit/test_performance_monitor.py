@@ -191,12 +191,21 @@ class TestPerformanceMonitor:
         return PerformanceMonitor(collection_interval=0.1, retention_hours=1)
 
     def test_monitor_initialization(self, monitor):
-        """Test performance monitor initialization."""
+        """Test performance monitor initialization.
+
+        Updated 2026-05-13: production groups counters into
+        ``system_stats`` / ``security_stats`` dicts (see
+        ``backend/integrations/can/performance_monitor.py:184``)
+        rather than exposing them as top-level attributes. This is
+        consistent with how every other test in this file already
+        accesses these counters (e.g. ``monitor.system_stats[...]``
+        on line 213).
+        """
         assert monitor.collection_interval == 0.1
         assert monitor.retention_hours == 1
         assert len(monitor.component_stats) == len(ComponentType)
-        assert monitor.total_messages_processed == 0
-        assert monitor.total_anomalies_detected == 0
+        assert monitor.system_stats["total_messages_processed"] == 0
+        assert monitor.security_stats["anomalies_detected"] == 0
 
         # Check that all components have stats
         for component in ComponentType:
@@ -442,9 +451,22 @@ class TestPerformanceMonitor:
             assert stats.error_count == 0
 
     def test_metric_retention_limits(self, monitor):
-        """Test metric retention and memory management."""
-        # Set very small retention for testing
-        monitor.metrics.maxlen = 5
+        """Test metric retention and memory management.
+
+        Updated 2026-05-13: ``collections.deque.maxlen`` is read-only
+        in Python 3.12 (and was always read-only at runtime --
+        attribute setting raises ``AttributeError``). The previous
+        version of this test wrote ``monitor.metrics.maxlen = 5``
+        which crashed before any retention logic could be exercised.
+
+        Replace the deque entirely with a fresh ``deque(maxlen=5)``
+        so we can verify the actual retention contract: when more
+        than ``maxlen`` metrics are appended, only the most recent
+        ``maxlen`` are kept (FIFO eviction).
+        """
+        from collections import deque as _deque
+
+        monitor.metrics = _deque(maxlen=5)
 
         # Add more metrics than the limit
         for i in range(10):

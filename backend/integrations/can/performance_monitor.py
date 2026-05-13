@@ -236,56 +236,70 @@ class PerformanceMonitor:
                 await asyncio.sleep(self.collection_interval)
 
     async def _collect_metrics(self) -> None:
-        """Collect current performance metrics."""
+        """Collect current performance metrics.
+
+        Per-component collection is wrapped in try/except so a single
+        broken ``ComponentStats`` (e.g. a faulty subclass that raises
+        from ``get_avg_processing_time``) cannot crash the whole
+        background monitoring task. The bad component's metric for
+        this tick is dropped and logged; the next tick will retry.
+        """
         current_time = time.time()
 
         with self._lock:
             # Collect component metrics
             for component, stats in self.component_stats.items():
-                # Processing time metrics
-                if stats.messages_processed > 0:
+                try:
+                    # Processing time metrics
+                    if stats.messages_processed > 0:
+                        self._add_metric(
+                            f"{component.value}_avg_processing_time_ms",
+                            MetricType.GAUGE,
+                            component,
+                            stats.get_avg_processing_time(),
+                            {"component": component.value},
+                        )
+
+                        self._add_metric(
+                            f"{component.value}_p95_processing_time_ms",
+                            MetricType.GAUGE,
+                            component,
+                            stats.get_percentile_processing_time(95.0),
+                            {"component": component.value},
+                        )
+
+                    # Throughput metrics
                     self._add_metric(
-                        f"{component.value}_avg_processing_time_ms",
+                        f"{component.value}_throughput_msg_sec",
                         MetricType.GAUGE,
                         component,
-                        stats.get_avg_processing_time(),
+                        stats.get_throughput(),
                         {"component": component.value},
                     )
 
+                    # Error rate metrics
                     self._add_metric(
-                        f"{component.value}_p95_processing_time_ms",
+                        f"{component.value}_error_rate_percent",
                         MetricType.GAUGE,
                         component,
-                        stats.get_percentile_processing_time(95.0),
+                        stats.get_error_rate(),
                         {"component": component.value},
                     )
 
-                # Throughput metrics
-                self._add_metric(
-                    f"{component.value}_throughput_msg_sec",
-                    MetricType.GAUGE,
-                    component,
-                    stats.get_throughput(),
-                    {"component": component.value},
-                )
-
-                # Error rate metrics
-                self._add_metric(
-                    f"{component.value}_error_rate_percent",
-                    MetricType.GAUGE,
-                    component,
-                    stats.get_error_rate(),
-                    {"component": component.value},
-                )
-
-                # Message count metrics
-                self._add_metric(
-                    f"{component.value}_messages_total",
-                    MetricType.COUNTER,
-                    component,
-                    stats.messages_processed,
-                    {"component": component.value},
-                )
+                    # Message count metrics
+                    self._add_metric(
+                        f"{component.value}_messages_total",
+                        MetricType.COUNTER,
+                        component,
+                        stats.messages_processed,
+                        {"component": component.value},
+                    )
+                except Exception as exc:  # defensive: see method docstring
+                    logger.warning(
+                        "Skipping metrics for component %s this tick: %s",
+                        getattr(component, "value", component),
+                        exc,
+                    )
 
             # BAM-specific metrics
             self._collect_bam_metrics()
