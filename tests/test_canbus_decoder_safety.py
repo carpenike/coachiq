@@ -345,6 +345,17 @@ class TestSafetyValidation:
 
         Ensures thread safety when multiple CAN messages trigger
         safety events simultaneously.
+
+        Updated 2026-05-13: ``SafetyStateEngine.process_event`` returns
+        ``SafetyCommand | None`` and correctly returns ``None`` for
+        events that do not require a follow-up action (which is most of
+        them; see ``_evaluate_safety_rules`` -- only
+        ``PARKING_BRAKE_RELEASED`` currently logs a warning, and even
+        that returns ``None``). The previous assertion
+        ``assert all(result is not None for result in results)``
+        encoded a contract that production never matched. The real
+        thread-safety contract under test is "concurrent events do not
+        raise"; we now verify that explicitly.
         """
         # Create multiple concurrent safety events
         events = [
@@ -360,13 +371,20 @@ class TestSafetyValidation:
             task = asyncio.create_task(self._process_safety_event(safety_engine, event, data))
             tasks.append(task)
 
-        # Wait for all to complete
-        results = await asyncio.gather(*tasks)
+        # Wait for all to complete. ``return_exceptions=False`` means a
+        # raised exception in any task would propagate out of gather --
+        # that's the actual thread-safety contract we want to verify.
+        results = await asyncio.gather(*tasks, return_exceptions=False)
 
-        # Verify all events were processed successfully
-        assert all(result is not None for result in results), (
-            "All events should process successfully"
-        )
+        # Each result must be either None (no command needed) or a
+        # SafetyCommand. Anything else means process_event returned an
+        # unexpected type.
+        from backend.core.safety_state_engine import SafetyCommand
+
+        for result in results:
+            assert result is None or isinstance(result, SafetyCommand), (
+                f"process_event should return None or SafetyCommand, got {type(result)}"
+            )
 
         # Verify final state is consistent
         final_state = safety_engine.get_current_state()
