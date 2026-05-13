@@ -34,7 +34,6 @@ from backend.core.dependencies import (
 )
 
 # Persistence is now default - using dependencies from core.dependencies
-from backend.core.services import CoreServices
 from backend.main import app
 from backend.services.database_engine import DatabaseSettings
 from backend.services.database_manager import DatabaseManager
@@ -160,70 +159,6 @@ async def test_persistence_feature(
 
 
 # ================================
-# CoreServices Test Fixtures
-# ================================
-
-
-@pytest.fixture
-async def test_core_services(
-    test_database_manager: DatabaseManager,
-) -> AsyncGenerator[CoreServices, None]:
-    """
-    Create and initialize CoreServices with test database.
-
-    This fixture provides a fully initialized CoreServices instance that uses
-    the test database manager, enabling realistic testing of core infrastructure
-    services without mocking the service layer.
-    """
-    from unittest.mock import patch
-
-    core_services = CoreServices()
-
-    # Patch the service initialization to use our test database manager
-    with (
-        patch("backend.core.services.PersistenceService") as mock_persistence_class,
-        patch("backend.core.services.DatabaseManager") as mock_db_manager_class,
-    ):
-        # Create persistence service mock that works with our test database
-        mock_persistence = Mock()
-        mock_persistence.set_database_manager = Mock()
-        mock_persistence_class.return_value = mock_persistence
-
-        # Use the test database manager directly
-        mock_db_manager_class.return_value = test_database_manager
-
-        # Patch database schema validation to avoid Alembic issues in tests
-        with patch.object(core_services, "_validate_database_schema"):
-            await core_services.startup()
-
-        try:
-            yield core_services
-        finally:
-            await core_services.shutdown()
-
-
-@pytest.fixture
-def mock_core_services() -> CoreServices:
-    """
-    Create a CoreServices instance with fully mocked services.
-
-    Use this fixture for unit tests that need to isolate the code under test
-    from actual database operations. All core services are mocked.
-    """
-    core_services = CoreServices()
-
-    # Mock all services
-    mock_persistence = Mock()
-    mock_db_manager = Mock()
-
-    core_services._persistence = mock_persistence
-    core_services._database_manager = mock_db_manager
-    core_services._initialized = True
-
-    return core_services
-
-
-# ================================
 # Event Loop Configuration
 # ================================
 
@@ -316,65 +251,6 @@ async def async_client_with_persistence(
     app.dependency_overrides[get_database_manager] = (
         lambda: test_persistence_feature._database_manager  # noqa: SLF001
     )  # type: ignore[attr-defined]
-
-    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
-        yield ac
-
-    # Clean up overrides
-    app.dependency_overrides.clear()  # type: ignore[attr-defined]
-
-
-@pytest.fixture
-def client_with_core_services(
-    test_core_services: CoreServices,
-) -> Generator[TestClient, None, None]:
-    """
-    Synchronous TestClient fixture with CoreServices dependency injection.
-
-    Use this for testing API endpoints that require CoreServices infrastructure
-    such as persistence and database access. This replaces the legacy
-    persistence feature dependency pattern.
-    """
-    _setup_test_app_state()
-
-    # Add CoreServices to app state
-    app.state.core_services = test_core_services
-    app.state.persistence_service = test_core_services.persistence
-    app.state.database_manager = test_core_services.database_manager
-
-    # Override legacy dependencies for backward compatibility
-    app.dependency_overrides[get_persistence_feature] = lambda: test_core_services.persistence  # type: ignore[attr-defined]
-    app.dependency_overrides[get_database_manager] = lambda: test_core_services.database_manager  # type: ignore[attr-defined]
-
-    with TestClient(app=app, base_url="http://test") as test_client:
-        yield test_client
-
-    # Clean up overrides
-    app.dependency_overrides.clear()  # type: ignore[attr-defined]
-
-
-@pytest.fixture
-async def async_client_with_core_services(
-    test_core_services: CoreServices,
-) -> AsyncGenerator[AsyncClient, None]:
-    """
-    Asynchronous AsyncClient fixture with CoreServices dependency injection.
-
-    Use this for testing async endpoints that require CoreServices infrastructure.
-    This provides the most realistic testing environment for CoreServices integration.
-    """
-    from httpx import ASGITransport
-
-    _setup_test_app_state()
-
-    # Add CoreServices to app state
-    app.state.core_services = test_core_services
-    app.state.persistence_service = test_core_services.persistence
-    app.state.database_manager = test_core_services.database_manager
-
-    # Override legacy dependencies for backward compatibility
-    app.dependency_overrides[get_persistence_feature] = lambda: test_core_services.persistence  # type: ignore[attr-defined]
-    app.dependency_overrides[get_database_manager] = lambda: test_core_services.database_manager  # type: ignore[attr-defined]
 
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
         yield ac
