@@ -141,5 +141,3 @@ When controlling entities via the `/api/entities/{id}/control` endpoint, the req
 { "command": "brightness_up" }
 { "command": "brightness_down" }
 ```
-
-- [Feature Flags](architecture/feature-flags.md): Feature flag system, configuration, and runtime overrides
