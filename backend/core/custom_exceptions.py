@@ -3,6 +3,11 @@ Custom Exceptions for RV-C Control System
 
 Comprehensive exception hierarchy for proper error handling throughout
 the application, following safety-critical system best practices.
+
+Note: "safety-critical" / "safety" naming in this file is historical and
+refers to **API guardrail / command-validation** behavior, NOT vehicle safety.
+The OEM Firefly MIRA panel owns the actual vehicle safety case. See
+`docs/adr/ADR-0004-coachiq-is-not-the-safety-system.md`.
 """
 
 from typing import Any, Dict, Optional

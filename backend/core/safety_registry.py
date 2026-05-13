@@ -1,9 +1,13 @@
 """
-Safety-aware ServiceRegistry for ISO 26262-compliant RV-C vehicle control.
+Guardrail-aware ServiceRegistry for the API command-validation tier.
 
-This module extends the standard ServiceRegistry with safety-specific functionality,
-enabling centralized safety monitoring, emergency stop coordination, and safety
-classification management across all services.
+Extends the standard ServiceRegistry with classification, emergency-stop
+coordination, and status monitoring across CRITICAL services. "Safety"
+naming here is historical -- this is API guardrails, not vehicle safety.
+The OEM Firefly MIRA panel owns the actual vehicle safety case.
+
+See `docs/adr/ADR-0004-coachiq-is-not-the-safety-system.md` for the full
+framing.
 """
 
 import logging
@@ -47,7 +51,8 @@ class SafetyServiceRegistry(EnhancedServiceRegistry):
         Args:
             name: Service name
             init_func: Service initialization function
-            safety_classification: ISO 26262 safety classification
+            safety_classification: Service-criticality classification (see
+                ``SafetyClassification`` -- historical name, not ISO 26262).
             dependencies: Service dependencies
             description: Service description
             tags: Service tags
@@ -87,7 +92,7 @@ class SafetyServiceRegistry(EnhancedServiceRegistry):
 
     def get_safety_critical_services(self) -> list[str]:
         """
-        Get list of safety-critical service names.
+        Get list of CRITICAL-classified service names.
 
         Returns:
             List of service names with CRITICAL classifications
@@ -130,7 +135,7 @@ class SafetyServiceRegistry(EnhancedServiceRegistry):
 
     async def execute_emergency_stop(self, reason: str, triggered_by: str) -> dict[str, bool]:
         """
-        Execute emergency stop on all safety-critical services.
+        Execute emergency stop on all CRITICAL-classified services.
 
         Args:
             reason: Reason for emergency stop

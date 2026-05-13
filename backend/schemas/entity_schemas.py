@@ -3,6 +3,11 @@ Entity Schema Definitions for Domain API v2
 
 Provides Pydantic schemas with Zod export capability for runtime type safety.
 These schemas are based on the safety-critical models from EntityDomainService.
+
+Note: "safety-critical" / "safety" naming in this file is historical and
+refers to **API guardrail / command-validation** behavior, NOT vehicle safety.
+The OEM Firefly MIRA panel owns the actual vehicle safety case. See
+`docs/adr/ADR-0004-coachiq-is-not-the-safety-system.md`.
 """
 
 from typing import Any

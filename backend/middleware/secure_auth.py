@@ -4,6 +4,11 @@ Secure Authentication Middleware
 Enhanced authentication middleware with HttpOnly cookie support for Domain API v2.
 Provides automatic token refresh, secure cookie handling, and safety-critical
 validation for vehicle control operations.
+
+Note: "safety-critical" / "safety" naming in this file is historical and
+refers to **API guardrail / command-validation** behavior, NOT vehicle safety.
+The OEM Firefly MIRA panel owns the actual vehicle safety case. See
+`docs/adr/ADR-0004-coachiq-is-not-the-safety-system.md`.
 """
 
 import logging

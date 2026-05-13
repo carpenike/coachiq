@@ -1,9 +1,15 @@
 """
-Safety interfaces and protocols for ISO 26262-compliant RV-C vehicle control.
+Service-classification interfaces and protocols for the ServiceRegistry.
 
-This module provides the foundation for safety-aware services in the
-ServiceRegistry architecture, ensuring all safety capabilities are preserved
-for ISO 26262-compliant vehicle control systems.
+This module provides the foundation for "safety-aware" services in the
+ServiceRegistry architecture. The "safety" naming here is historical and
+refers to **API guardrail behavior** (refuse to forward bad commands,
+emergency-stop the orchestration loop, validate interlocks before sending
+CAN frames) -- NOT vehicle safety. The OEM Firefly MIRA panel owns the
+actual vehicle safety case.
+
+See `docs/adr/ADR-0004-coachiq-is-not-the-safety-system.md` for the full
+framing.
 """
 
 from abc import ABC, abstractmethod
@@ -12,13 +18,19 @@ from typing import Any, Protocol
 
 
 class SafetyClassification(str, Enum):
-    """Safety classification levels for features and services."""
+    """Service-criticality classification for ServiceRegistry startup, restart,
+    and emergency-stop policy.
+
+    Despite the historical name, this is **operational criticality**, not
+    a vehicle-safety classification. See ADR-0004.
+    """
 
     CRITICAL = "critical"
-    """Safety-critical: failure could result in injury or damage."""
+    """Operationally critical: API guardrail or auth path; failure should
+    block startup and trigger emergency-stop on other CRITICAL services."""
 
     OPERATIONAL = "operational"
-    """Important for operation but not safety-critical."""
+    """Important for normal operation but not in the API-guardrail path."""
 
     MAINTENANCE = "maintenance"
     """Diagnostic and utility features."""
@@ -41,7 +53,7 @@ class SafeStateAction(str, Enum):
 
 
 class SafetyStatus(Enum):
-    """Service safety status enumeration for ISO 26262 compliance."""
+    """Service guardrail status. "Safety" here is historical -- see ADR-0004."""
 
     SAFE = "safe"
     DEGRADED = "degraded"
@@ -77,10 +89,12 @@ class SafetyCapable(Protocol):
 
 class SafetyAware(ABC):
     """
-    Base class for safety-aware services.
+    Base class for guardrail-aware services.
 
-    Provides default implementations of safety interfaces and ensures
-    consistent safety behavior across all safety-critical services.
+    Provides default implementations of the guardrail interfaces and ensures
+    consistent behavior across all CRITICAL-classified services. "Safety"
+    naming is historical -- this is API command-validation, not vehicle
+    safety. See ADR-0004.
     """
 
     def __init__(
@@ -89,11 +103,12 @@ class SafetyAware(ABC):
         safe_state_action: SafeStateAction = SafeStateAction.MAINTAIN_POSITION,
     ):
         """
-        Initialize safety-aware service.
+        Initialize guardrail-aware service.
 
         Args:
-            safety_classification: ISO 26262 safety classification
-            safe_state_action: Action to take when entering safe state
+            safety_classification: Service-criticality classification (see
+                ``SafetyClassification``); historical name, not ISO 26262.
+            safe_state_action: Action to take when entering safe state.
         """
         self._safety_classification = safety_classification
         self._safe_state_action = safe_state_action

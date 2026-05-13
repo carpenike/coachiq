@@ -3,6 +3,11 @@ Schema API Router
 
 Provides schema export endpoints for frontend runtime validation.
 Serves Zod-compatible schemas for Domain API v2 with safety-critical validation.
+
+Note: "safety-critical" / "safety" naming in this file is historical and
+refers to **API guardrail / command-validation** behavior, NOT vehicle safety.
+The OEM Firefly MIRA panel owns the actual vehicle safety case. See
+`docs/adr/ADR-0004-coachiq-is-not-the-safety-system.md`.
 """
 
 from typing import Annotated, Any

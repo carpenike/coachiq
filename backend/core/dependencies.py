@@ -228,16 +228,19 @@ def get_can_protocol_analyzer() -> Any:
 
 def get_safety_service() -> Any:
     """
-    Get the safety service from ServiceRegistry.
+    Get the API guardrail service from ServiceRegistry.
 
-    CRITICAL: This service provides ISO 26262-compliant safety monitoring,
-    emergency stops, safety interlocks, and safety validation for RV-C vehicle control.
+    Provides command-validation interlocks, emergency stop on the
+    orchestration loop, and watchdog monitoring of CRITICAL-classified
+    services. "Safety" naming is historical -- the OEM Firefly MIRA panel
+    owns the actual vehicle safety case. See ADR-0004.
 
     Returns:
-        The SafetyService instance with full safety capabilities
+        The SafetyService instance.
 
     Raises:
-        RuntimeError: If safety service not available (critical safety issue)
+        RuntimeError: If the service is not available (orchestration tier
+            cannot accept commands without it).
     """
     return create_service_dependency("safety_service")()
 

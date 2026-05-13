@@ -919,7 +919,9 @@ def _register_group2_services(service_registry: SafetyServiceRegistry) -> None:
         health_check=lambda s: {"healthy": s is not None, "repositories_available": True},
     )
 
-    # EntityDomainService - safety-critical entity domain operations
+    # EntityDomainService - operationally-critical entity domain operations.
+    # CRITICAL classification means startup priority + emergency-stop
+    # participation, not vehicle safety -- see ADR-0004.
     from backend.services.entity_domain_service import EntityDomainService
 
     service_registry.register_service(
@@ -982,7 +984,7 @@ def _register_phase4_services(service_registry: SafetyServiceRegistry) -> None:
         else {"healthy": m is not None},
     )
 
-    # SafetyService - ISO 26262-compliant safety monitoring (CRITICAL)
+    # SafetyService - API command-validation guardrail (CRITICAL classification, see ADR-0004)
     async def _init_safety_service(pin_manager, security_audit_service):
         """Initialize SafetyService - service_registry will be injected after registration."""
         service = SafetyService(
@@ -1008,8 +1010,11 @@ def _register_phase4_services(service_registry: SafetyServiceRegistry) -> None:
             ServiceDependency("security_audit_service", DependencyType.REQUIRED),
             # Note: service_registry removed to avoid circular dependency
         ],
-        description="ISO 26262-compliant safety monitoring and emergency stop system",
-        tags={"service", "safety", "critical", "iso26262"},
+        description=(
+            "API command-validation guardrails and emergency stop on the "
+            "orchestration loop (see ADR-0004)"
+        ),
+        tags={"service", "safety", "critical", "api-guardrail"},
         health_check=lambda s: s.get_health_status(),
     )
 
@@ -1027,7 +1032,8 @@ def _register_phase4_services(service_registry: SafetyServiceRegistry) -> None:
     service_registry.register_safety_service(
         name="websocket_manager",
         init_func=_init_websocket_service,
-        safety_classification=SafetyClassification.OPERATIONAL,  # Real-time communication is important for operation
+        # Real-time communication is important for operation.
+        safety_classification=SafetyClassification.OPERATIONAL,
         dependencies=[
             ServiceDependency("can_tracking_repository", DependencyType.OPTIONAL),
             ServiceDependency("system_state_repository", DependencyType.OPTIONAL),
@@ -1101,7 +1107,8 @@ def _register_phase4_services(service_registry: SafetyServiceRegistry) -> None:
     service_registry.register_safety_service(
         name="auth_manager",
         init_func=_init_auth_service,
-        safety_classification=SafetyClassification.CRITICAL,  # Access control is safety-critical
+        # Access control is operationally critical (see ADR-0004).
+        safety_classification=SafetyClassification.CRITICAL,
         dependencies=[
             ServiceDependency("credential_repository", DependencyType.REQUIRED),
             ServiceDependency("session_repository", DependencyType.REQUIRED),
@@ -1161,7 +1168,8 @@ def _register_phase4_services(service_registry: SafetyServiceRegistry) -> None:
     service_registry.register_safety_service(
         name="can_bus_service",
         init_func=_init_can_bus_service,
-        safety_classification=SafetyClassification.CRITICAL,  # CAN bus control is safety-critical for vehicle control
+        # CAN bus orchestration is operationally critical (see ADR-0004).
+        safety_classification=SafetyClassification.CRITICAL,
         dependencies=[
             ServiceDependency("can_tracking_repository", DependencyType.REQUIRED),
             ServiceDependency("system_state_repository", DependencyType.REQUIRED),
@@ -1215,7 +1223,8 @@ def _register_phase4_services(service_registry: SafetyServiceRegistry) -> None:
     service_registry.register_safety_service(
         name="can_message_injector",
         init_func=_init_can_message_injector,
-        safety_classification=SafetyClassification.CRITICAL,  # CAN message injection is safety-critical
+        # CAN message injection requires guardrail oversight (see ADR-0004).
+        safety_classification=SafetyClassification.CRITICAL,
         dependencies=[
             ServiceDependency("security_audit_service", DependencyType.OPTIONAL),
         ],
@@ -1482,7 +1491,8 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     logger.info("Starting coachiq backend application")
 
     # Initialize EnhancedServiceRegistry for advanced dependency management
-    # Use SafetyServiceRegistry for ISO 26262-compliant safety monitoring
+    # Use SafetyServiceRegistry for guardrail-tier classification + emergency stop
+    # ("safety" naming is historical -- see ADR-0004)
     service_registry = SafetyServiceRegistry()
 
     # Initialize the module-level service registry for dependency injection
@@ -1751,7 +1761,7 @@ def create_app() -> FastAPI:
             secure_cookie=not settings.is_development(),
         )
 
-    # Add runtime validation middleware for safety-critical operations
+    # Add runtime validation middleware for command-validation operations
     app.add_middleware(
         RuntimeValidationMiddleware, validate_requests=True, validate_responses=False
     )
