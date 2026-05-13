@@ -21,21 +21,22 @@ graph TD
     subgraph "API Layer"
         REST --> FastAPI[FastAPI Server]
         WS --> WSServer[WebSocket Server]
-        FastAPI --> AppState[Application State]
-        WSServer --> AppState
+        FastAPI -->|Depends| Services[Services]
+        WSServer -->|Depends| Services
     end
 
     subgraph "Business Logic"
-        AppState --> EntityManager[Entity Manager]
-        AppState --> HistoryManager[History Manager]
-        EntityManager --> Decoder[RV-C Decoder]
-        HistoryManager --> Storage[State Storage]
+        Services --> Repos[Repositories]
+        Services --> Decoder[RV-C Decoder]
+        Services --> CANFacade[CAN Facade]
+        Repos --> SQL[(SQLite via DatabaseManager)]
     end
 
     subgraph "Device Layer"
-        Decoder --> CanManager[CAN Manager]
-        CanManager --> CanInterface[CAN Bus Interface]
-        CanInterface --> RVCBus[RV-C CAN Bus]
+        Decoder --> CANFacade
+        CANFacade --> CANInterface[CAN Bus Interface]
+        CANInterface --> RVCBus[RV-C / J1939 CAN Bus]
+        RVCBus <--> Firefly[Firefly MIRA Panel]
     end
 
     classDef user fill:#f5f5f5,stroke:#bdbdbd,color:#212121;
@@ -46,10 +47,18 @@ graph TD
 
     class User user;
     class WebUI,MobileApp,REST,WS frontend;
-    class FastAPI,WSServer,AppState api;
-    class EntityManager,HistoryManager,Decoder,Storage logic;
-    class CanManager,CanInterface,RVCBus device;
+    class FastAPI,WSServer,Services api;
+    class Repos,Decoder,CANFacade,SQL logic;
+    class CANInterface,RVCBus,Firefly device;
 ```
+
+> **What CoachIQ is and is not.** CoachIQ talks to the OEM Firefly MIRA
+> multiplex panel over CAN. Firefly owns the actual vehicle-safety
+> case (slide-with-brake interlocks, leveling-while-moving, etc.).
+> CoachIQ plays the same role as a wall switch or HMI -- emit
+> well-formed frames, trust Firefly to refuse the unsafe ones. See
+> the architecture-decision record (or
+> `/memories/repo/coachiq-architecture.md`) for the full framing.
 
 ### Backend Components
 
@@ -76,18 +85,17 @@ The project follows a monorepo structure:
 ```text
 coachiq/
 ├── backend/              # Python backend application
-│   ├── api/              # FastAPI routers and endpoints
-│   ├── core/             # Core configuration and utilities
+│   ├── api/              # FastAPI routers (legacy + domain v2)
+│   ├── core/             # Config, ServiceRegistry, dependencies
 │   ├── services/         # Business logic services
-│   ├── integrations/     # External integrations (CAN, etc.)
+│   ├── repositories/     # Repository pattern data access
+│   ├── integrations/     # CAN, RV-C, J1939, Firefly, Spartan K2
+│   ├── middleware/       # Auth, CSRF, structured logging
 │   ├── websocket/        # WebSocket handlers
-│   └── models/           # Data models and schemas
-├── src/                  # Shared components
-│   ├── common/           # Shared models and utilities
-│   └── rvc_decoder/      # RV-C protocol decoder
-├── frontend/               # React frontend
-│   ├── src/              # Frontend source code
-│   └── docs/             # Frontend-specific documentation
+│   ├── models/           # Pydantic request/response models
+│   ├── schemas/          # Zod-exportable schemas for the frontend
+│   └── alembic/          # SQLite migrations
+├── frontend/             # React 19 + TypeScript + Vite SPA
 ├── docs/                 # Project documentation
 └── scripts/              # Utility scripts
 ```

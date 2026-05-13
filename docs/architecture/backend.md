@@ -1,171 +1,172 @@
 # Backend Architecture
 
-This page provides an overview of the CoachIQ backend architecture, focusing on how the API components are structured.
+The CoachIQ backend is a Python 3.12 + FastAPI service that talks to
+the OEM Firefly MIRA panel over RV-C / J1939 CAN. Architecturally it
+plays the same role as a smart wall-switch or HMI: it emits well-formed
+CAN frames; the OEM controller decides whether to act on them.
 
-## Core Components
+For the architectural framing (what CoachIQ is and is not, the realistic
+threat model, why we calibrate code quality to "good consumer-grade
+backend" rather than aerospace), see
+[`/memories/repo/coachiq-architecture.md`](../../memories/repo/coachiq-architecture.md)
+or, once it lands, `docs/adr/ADR-0004-coachiq-is-not-the-safety-system.md`.
 
-### Component Structure
-
-The backend consists of several key components:
+## Top-level layout
 
 ```text
-backend/                  # Main backend application
-├── api/                  # API layer
-│   ├── routers/          # FastAPI route handlers
-│   ├── dependencies.py   # Dependency injection functions
-│   └── router_config.py  # Router configuration
-├── core/                 # Core utilities
-│   ├── config.py         # Application configuration
-│   ├── state.py          # Application state management
-│   ├── logging_config.py # Logging configuration
-│   ├── metrics.py        # Prometheus metrics
-│   └── version.py        # Version information
-├── services/             # Business logic services
-│   ├── feature_manager.py # Feature flag management
-│   ├── config_service.py  # Configuration service
-│   └── entity_service.py  # Entity management service
-├── integrations/         # External integrations
-│   ├── can/              # CAN bus integration
-│   └── rvc/              # RV-C protocol integration
-├── websocket/            # WebSocket handlers
-│   └── handlers.py       # WebSocket endpoint handlers
-├── models/               # Data models
-│   ├── entities.py       # Entity data models
-│   └── responses.py      # API response models
-├── middleware/           # HTTP middleware
-│   └── http.py           # Request/response middleware
-└── main.py               # Application entry point
-src/
-├── common/               # Shared models and utilities
-└── rvc_decoder/          # RV-C protocol decoder
+backend/
+├── main.py               # ASGI app construction + service registration
+├── api/
+│   ├── routers/          # Legacy /api/* endpoints
+│   ├── domains/          # Domain API v2 (/api/v2/*)
+│   └── router_config.py  # Mounts every router on the app
+├── core/
+│   ├── config.py         # Pydantic Settings (COACHIQ_* env vars)
+│   ├── dependencies.py   # FastAPI Depends(get_*) helpers
+│   ├── service_registry.py  # EnhancedServiceRegistry
+│   ├── safety_state_engine.py
+│   ├── service_dependency_resolver.py
+│   ├── exception_handlers.py
+│   └── exceptions.py
+├── services/             # Business logic; constructor-injected
+├── repositories/         # Data access; see repository-pattern.md
+├── integrations/
+│   ├── can/              # CAN bus + multi-network manager
+│   ├── rvc/              # RV-C decoder, Firefly extensions
+│   ├── j1939/            # J1939 decoder, Spartan K2 extensions
+│   ├── analytics/        # PerformanceAnalyticsFeature
+│   └── diagnostics/      # Cross-protocol diagnostics
+├── middleware/           # Auth, CSRF, structured logging, etc.
+├── models/               # Pydantic request/response models
+├── schemas/              # Zod-exportable schemas for the frontend
+├── websocket/            # WebSocket handlers + connection manager
+└── alembic/              # SQLite migrations
 ```
 
-### Component Flow
+## Component flow
 
 ```mermaid
-flowchart TD
-    Client[Client] <--> FastAPI[FastAPI App]
+flowchart LR
+    Client[Client / Browser] <--> FastAPI[FastAPI App]
 
     subgraph Backend
-        FastAPI --> APIRouters[API Routers]
-        FastAPI --> WSHandler[WebSocket Handler]
+        FastAPI --> Routers[Routers /api/* + /api/v2/*]
+        FastAPI --> WS[WebSocket Handlers]
 
-        APIRouters --> Services[Services]
-        WSHandler --> Services
+        Routers -->|Depends| Services[Services]
+        WS -->|Depends| Services
 
-        Services --> AppState[App State]
-        Services --> RVCDecoder[RV-C Decoder]
+        Services --> Repos[Repositories]
+        Services --> CAN[CAN Facade + Integrations]
 
-        RVCDecoder --> CANInterface[CAN Interface]
-        AppState --> EntityManager[Entity Manager]
+        Repos --> DB[(SQLite via DatabaseManager)]
+        Repos -.in-memory.-> Memory[Bounded in-memory state]
     end
 
-    CANInterface <--> CANBus[CAN Bus Hardware]
+    CAN <--> CANBus[CAN Bus]
 
     classDef client fill:#E1F5FE,stroke:#0288D1
     classDef api fill:#E8F5E9,stroke:#4CAF50
-    classDef services fill:#FFF3E0,stroke:#FF9800
-    classDef hardware fill:#FFEBEE,stroke:#F44336
+    classDef logic fill:#FFF3E0,stroke:#FF9800
+    classDef data fill:#F3E5F5,stroke:#7B1FA2
+    classDef hw fill:#FFEBEE,stroke:#F44336
 
     class Client client
-    class FastAPI,APIRouters,WSHandler api
-    class Services,AppState,EntityManager,RVCDecoder services
-    class CANInterface,CANBus hardware
+    class FastAPI,Routers,WS api
+    class Services,CAN logic
+    class Repos,DB,Memory data
+    class CANBus hw
 ```
 
-## API Architecture
+The arrow from Routers to Services goes through FastAPI's `Depends(...)`
+machinery (see [`repository-pattern.md`](repository-pattern.md) for the
+canonical injection pattern). Services never reach back up to routers,
+and they never reach across to other services without the registry
+making the dependency explicit.
 
-### FastAPI Application
+## Service lifecycle
 
-The main FastAPI application is created in `main.py`. It configures:
+1. **Construction** (in `backend/main.py`'s `_init_*` functions):
+   each service is built with its dependencies passed as constructor
+   arguments. This is also where dependency edges get declared
+   (e.g. `EntityService` depends on `entity_state_repository`).
 
-- API metadata and documentation settings
-- Middleware for metrics and logging
-- API routers for different functional areas
-- WebSocket connections for real-time updates
-- Startup and shutdown event handlers
+2. **Registration** (still in `main.py`): each constructed service is
+   handed to `EnhancedServiceRegistry.register_service(name, init_func,
+   dependencies)`.
 
-### API Routers
+3. **Stage planning**: at startup the registry's
+   `ServiceDependencyResolver` builds a topological order of services
+   and groups them into stages that can run concurrently. The startup
+   log prints the stage plan.
 
-API routes are organized by functional area in separate modules:
+4. **Startup**: `service_registry.startup_all()` runs each stage in
+   order, awaiting all services in a stage in parallel.
 
-- `api_routers/entities.py`: Entity management and control
-- `api_routers/can.py`: CAN bus interaction
-- `api_routers/config_and_ws.py`: Configuration and WebSocket endpoints
-- `api_routers/docs.py`: Documentation-related endpoints
+5. **Lifespan**: services live for the duration of the FastAPI
+   lifespan context. `service_registry.shutdown_all()` runs on
+   shutdown in reverse stage order.
 
-Each router file contains route handlers for a specific area of functionality, keeping the codebase modular and maintainable.
+The registry has hardened semantics for missing-dependency detection,
+circular-dependency detection, and a `fallback=` mechanism where a
+service can declare an alternative dependency if the primary isn't
+registered (see PR #135 for the bug fix that made `fallback=` actually
+work in stage planning).
 
-### Data Models
+## API surface
 
-Data models are defined using Pydantic, ensuring:
+Two API namespaces coexist:
 
-- Schema validation for request and response data
-- Automatic documentation generation
-- Type safety throughout the application
+- **`/api/*`** -- legacy routers under `backend/api/routers/`. Most of
+  these are still active (auth, health, CAN tools, schemas, etc.).
+  A few endpoints under this namespace have been retired in favor of
+  v2 (notably `/api/entities` and `/api/missing-dgns`, both removed
+  during the 2026-05 refactor).
 
-Key models include:
+- **`/api/v2/*`** -- domain API under `backend/api/domains/`. Mounted
+  unconditionally by `register_all_domain_routers` in
+  `backend/api/domains/__init__.py`. There are no feature flags around
+  v2 routes; they are always on.
 
-- `Entity`: Represents a device in the RV (light, tank, etc.)
-- `ControlCommand`: Standardized command format for controlling entities
-- `ControlEntityResponse`: Response format for control operations
+The legacy `/api/entities` -> `/api/v2/entities` transition is documented
+in PR #126's docstring (and tested by
+`tests/contract/test_domain_api_spec_validation.py`).
 
-### State Management
+## State and data
 
-The application maintains shared state in `app_state.py`:
+- **SQL state** lives in SQLite via `DatabaseManager`. Migrations are
+  managed by Alembic (`backend/alembic/`) and are applied at startup
+  by `DatabaseUpdateService`.
+- **In-memory state** (e.g. last-known entity values, CAN message
+  history, system-state snapshots) lives in repositories with bounded
+  collections to prevent memory growth. The
+  `SystemStateRepository` is intentionally pure-in-memory.
+- **Configuration** comes from Pydantic `Settings` driven by
+  `COACHIQ_*` env vars. See `backend/core/config.py` and
+  `docs/architecture/configuration-loading.md`.
 
-- Current entity states
-- Entity history
-- Entity mappings (DGN to entity ID)
-- CAN bus configuration
+## Real-time updates
 
-This centralized state management allows different components to access the same data without tight coupling.
+The WebSocket layer (`backend/websocket/`) broadcasts entity-state
+updates to connected clients. Connections are managed by the
+`WebSocketManager` service (registered with the
+`EnhancedServiceRegistry` like everything else); routers in
+`backend/websocket/routes.py` mount the WS endpoints on the FastAPI
+app.
 
-## Real-time Communication
+When a CAN message decodes into an entity-state change:
+1. The decoder writes the new state into `EntityStateRepository`.
+2. `EntityService` (or whichever service owns the change) calls
+   `WebSocketManager.broadcast_entity_change(...)`.
+3. Connected clients see the update in <100ms typical.
 
-The application provides real-time updates through WebSockets:
+## See also
 
-- Entity state changes
-- CAN bus messages
-- System log events
-
-WebSocket connections are managed in `websocket.py`, which handles:
-
-- Client connection management
-- Message broadcasting
-- Connection authentication (when enabled)
-
-## CAN Bus Integration
-
-The application integrates with the RV-C CAN bus through:
-
-- `can_manager.py`: Handles CAN bus connections and message processing
-- `rvc_decoder/`: Decodes raw CAN messages into structured data
-
-When a message is received from the CAN bus:
-
-1. It's decoded using the RV-C specification
-2. The decoded data updates entity state in `app_state.py`
-3. The updated entity is broadcast to WebSocket clients
-4. The entity state history is updated
-
-## Future Architecture
-
-The planned future architecture will reorganize the codebase into:
-
-```
-backend/
-├── api/               # API routes and controllers
-├── integrations/      # External system integrations
-│   └── rvc/           # RV-C specific code
-├── middleware/        # HTTP and WebSocket middleware
-├── models/            # Application data models
-├── services/          # Business logic services
-└── settings/          # Configuration handling
-```
-
-This reorganization will:
-
-- Improve separation of concerns
-- Make the codebase more maintainable
-- Prepare for additional integrations beyond RV-C
+- [Repository Pattern](repository-pattern.md) -- the data-access
+  layer.
+- [Configuration Loading](configuration-loading.md) -- how
+  `rvc.json`, coach mappings, and `COACHIQ_*` env vars resolve.
+- [Overview](overview.md) -- top-level system diagram.
+- `backend/main.py` -- the source of truth for every service
+  registration.
+- `backend/core/service_registry.py` -- the registry implementation.
