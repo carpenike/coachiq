@@ -268,8 +268,23 @@ class TestDatabaseBackupRepository:
 
     @pytest.fixture
     def backup_repository(self):
-        """Create DatabaseBackupRepository with mocked session."""
-        session_factory = AsyncMock()
+        """Create DatabaseBackupRepository with mocked session.
+
+        Updated 2026-05-13: production calls
+        ``self._session_factory()`` synchronously and then ``async with``
+        on the returned object
+        (``backend/repositories/database_update_repository.py:29``). So
+        the factory itself must be a SYNC callable; only the session it
+        produces is async. Using ``AsyncMock`` for the factory makes
+        ``factory()`` return a coroutine, which then crashes with
+        ``'coroutine' object does not support the asynchronous context
+        manager protocol``.
+
+        Fix: ``MagicMock`` for the factory; the session it returns
+        gets ``__aenter__`` / ``__aexit__`` wired explicitly via
+        ``AsyncMock`` so the ``async with`` works.
+        """
+        session_factory = MagicMock()
         repo = DatabaseBackupRepository(session_factory)
         return repo, session_factory
 
@@ -278,9 +293,13 @@ class TestDatabaseBackupRepository:
         """Test creating a backup record."""
         repo, session_factory = backup_repository
 
-        # Setup mock session
+        # Setup mock session: factory() returns a sync object whose
+        # __aenter__ returns the AsyncMock session.
         mock_session = AsyncMock()
-        session_factory.return_value.__aenter__.return_value = mock_session
+        cm = MagicMock()
+        cm.__aenter__ = AsyncMock(return_value=mock_session)
+        cm.__aexit__ = AsyncMock(return_value=None)
+        session_factory.return_value = cm
 
         # Execute
         result = await repo.create_backup_record(

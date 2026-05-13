@@ -39,9 +39,14 @@ from backend.main import app
 from backend.services.database_engine import DatabaseSettings
 from backend.services.database_manager import DatabaseManager
 
-# Import performance test fixtures
-# performance_timer is imported here to make it available as a fixture
-# pylint: disable=unused-import
+# Import performance test fixtures so pytest can discover them via the
+# top-level conftest. Without this, ``performance_timer`` -- defined in
+# ``tests/conftest_performance.py`` -- is invisible to tests outside that
+# file (pytest only auto-discovers fixtures from ``conftest.py`` files).
+# Tests that rely on ``performance_timer``:
+#   - tests/integrations/test_can_integration.py::test_message_throughput
+#   - tests/websocket/test_handlers.py::test_websocket_message_throughput
+from tests.conftest_performance import performance_timer  # noqa: F401
 
 
 def _setup_test_app_state() -> None:

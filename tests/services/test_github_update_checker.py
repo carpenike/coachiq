@@ -296,24 +296,60 @@ class TestServiceIntegration:
             await update_checker.stop()
 
     async def test_service_resilience(self, update_checker):
-        """Test service resilience to various failure modes."""
+        """Test service resilience to various failure modes.
+
+        Updated 2026-05-13: ``check_now()`` is the resilience boundary --
+        production wraps the entire HTTP-fetch body in ``try/except
+        Exception`` (see ``backend/services/github_update_checker.py:79+``)
+        and writes the error to ``self.error`` instead of propagating.
+        ``force_check()`` is a thin wrapper that just calls ``check_now()``
+        and does NOT have its own try/except.
+
+        The previous test mocked ``check_now`` directly to raise, which
+        bypasses the production try/except entirely and forces
+        ``force_check`` to propagate. To exercise the actual resilience
+        contract, we instead mock the underlying ``httpx.AsyncClient``
+        so the production try/except in ``check_now`` fires.
+        """
         # Start service
         await update_checker.start()
 
-        # Simulate various failures
-        with patch.object(update_checker, "check_now") as mock_check:
-            # Network failure
-            mock_check.side_effect = httpx.HTTPStatusError(
+        # Patch the AsyncClient so check_now's internal try/except
+        # actually exercises (vs. mocking check_now itself, which
+        # bypasses the resilience layer).
+        with patch("backend.services.github_update_checker.httpx.AsyncClient") as mock_client_class:
+            mock_client = AsyncMock()
+            mock_client_class.return_value.__aenter__ = AsyncMock(return_value=mock_client)
+            mock_client_class.return_value.__aexit__ = AsyncMock(return_value=None)
+
+            # Network failure: HTTPStatusError from the GET
+            mock_client.get.side_effect = httpx.HTTPStatusError(
                 "Network down", request=Mock(), response=Mock()
             )
             await update_checker.force_check()
+            # Production should record the error rather than propagate.
+            assert update_checker.error is not None, (
+                "check_now should record the network error in self.error"
+            )
 
             # Generic exception
-            mock_check.side_effect = Exception("Unknown error")
+            mock_client.get.side_effect = Exception("Unknown error")
             await update_checker.force_check()
+            assert update_checker.error is not None
 
-            # Recovery
-            mock_check.side_effect = None
+            # Recovery: a well-formed response should clear the error.
+            mock_response = Mock()
+            mock_response.raise_for_status = Mock()
+            mock_response.json.return_value = {
+                "tag_name": "v1.0.0",
+                "name": "Recovery Release",
+                "published_at": "2024-01-01T00:00:00Z",
+                "body": "Recovered",
+                "html_url": "https://example.com",
+                "discussion_url": None,
+            }
+            mock_client.get.side_effect = None
+            mock_client.get.return_value = mock_response
             await update_checker.force_check()
 
         # Service should still be running
