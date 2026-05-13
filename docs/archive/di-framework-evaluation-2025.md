@@ -1,3 +1,13 @@
+> **ARCHIVED 2026-05-13.** This 2025-06 evaluation has been superseded by
+> [ADR-0001](../adr/ADR-0001-fastapi-depends-over-di-framework.md), which
+> compresses the recommendation into a maintainable single-page record.
+> The original evaluation is preserved here for reference -- it cites
+> several artifacts (`dependencies_v2`, `ServiceProxy`, "Migration
+> Adapters") that have since been deleted, but the evaluation's
+> framework comparisons (`dependency-injector`, `punq`, `pinject`,
+> `lagom`) and its recommendation to stay with FastAPI's native
+> `Depends(...)` are still relevant context.
+
 # Dependency Injection Framework Evaluation
 
 **Phase 2P: Dependency Injection Framework Evaluation**
