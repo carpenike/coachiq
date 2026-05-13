@@ -304,10 +304,27 @@ export interface WebSocketHandlers {
 }
 
 // API Error Response
+//
+// The CoachIQ backend follows ADR-0005: every error response carries
+// BOTH a top-level `detail` (FastAPI default) AND a structured
+// `error.{code,message,details?,request_id?}` envelope.
+//
+// Most callers should read `detail` (already wired in `client.ts`'s
+// `handleApiResponse`). Only switch on `error.code` when you need to
+// dispatch on specific failure modes.
 export interface APIError {
   detail: string;
-  status_code: number;
-  timestamp: string;
+  error?: {
+    code: string;
+    message: string;
+    details?: Record<string, unknown>;
+    request_id?: string;
+  };
+  // Legacy fields kept for backward-compat with older response shapes
+  // observed by integration tests; new backend responses do not include
+  // these at the top level.
+  status_code?: number;
+  timestamp?: string;
 }
 
 // Generic API Response Wrapper

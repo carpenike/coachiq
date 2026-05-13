@@ -55,19 +55,35 @@ def create_error_response(
     details: dict[str, Any] | None = None,
     request_id: str | None = None,
 ) -> JSONResponse:
-    """Create standardized error response."""
-    content = {
-        "error": {
-            "code": error_code,
-            "message": message,
-        }
+    """Create standardized error response.
+
+    Wire format follows ADR-0005: every error response carries BOTH the
+    FastAPI-default ``detail`` field (so OpenAPI clients and the React UI
+    that read ``response.detail`` keep working) AND the structured
+    ``error.{code,message,details?,request_id?}`` envelope (so callers
+    that want to dispatch on ``error.code`` keep working). The two
+    fields are kept in sync.
+    """
+    error_payload: dict[str, Any] = {
+        "code": error_code,
+        "message": message,
     }
 
     if details:
-        content["error"]["details"] = details
+        error_payload["details"] = details
 
     if request_id:
-        content["error"]["request_id"] = request_id
+        error_payload["request_id"] = request_id
+
+    content: dict[str, Any] = {
+        # Top-level FastAPI-default field; consumed by the React frontend's
+        # ``handleApiResponse`` (frontend/src/api/client.ts) and any generated
+        # OpenAPI client. See ADR-0005.
+        "detail": message,
+        # Structured envelope; consumed by callers that switch on the
+        # specific error code (e.g. ``HTTP_404`` vs ``DATABASE_INTEGRITY_ERROR``).
+        "error": error_payload,
+    }
 
     return JSONResponse(status_code=status_code, content=content)
 
