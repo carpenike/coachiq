@@ -21,6 +21,7 @@ Roles understood here:
 
 import logging
 import time
+from dataclasses import dataclass
 from typing import Any
 
 from backend.core.config import get_can_settings
@@ -63,6 +64,134 @@ def _require_role(
     if role not in allowed_roles:
         msg = f"Role {role!r} not permitted for {operation}; requires one of {allowed_roles}"
         raise _AuthorizationError(msg)
+
+
+@dataclass(frozen=True, slots=True)
+class _LightCommandDecision:
+    """Pure result of resolving a light ``ControlCommand`` against state.
+
+    Built by :meth:`EntityService._resolve_light_command` and consumed by
+    :meth:`EntityService._apply_light_command_side_effects` +
+    :meth:`EntityService._execute_light_command`. Splitting the decision
+    out as plain data lets the brightness/state branching logic be
+    unit-tested in isolation without mocking the entity repo or the CAN
+    bus -- see ``tests/services/test_control_light_resolver.py``.
+
+    Attributes:
+        new_state: Target ON/OFF state (True = on).
+        new_brightness: Target brightness, clamped to 0..100.
+        action: Human-readable action string surfaced in the response
+            (e.g. ``"Set ON to 75%"``, ``"Toggled OFF"``).
+        persist_last_known: If non-None, the orchestrator should call
+            ``set_last_known_brightness(entity_id, value)``. Used by
+            ``set on``, ``toggle off``, ``brightness_up``, and the
+            >0 branch of ``brightness_down``.
+        persist_state_payload_brightness: If True, the orchestrator
+            should write the *current* brightness into
+            ``entity['last_known_brightness']`` and persist via
+            ``save_entity_state``. Used only by the legacy
+            ``set off`` branch when the light was previously on.
+            (See :meth:`EntityService._apply_light_command_side_effects`
+            for why this dual persistence path exists.)
+    """
+
+    new_state: bool
+    new_brightness: int
+    action: str
+    persist_last_known: int | None = None
+    persist_state_payload_brightness: bool = False
+
+    @staticmethod
+    def _clamp_brightness(value: float, *, fallback_on_state: bool) -> int:
+        """Clamp brightness to 0..100, with a sane fallback on TypeError."""
+        try:
+            rounded = round(value)
+        except Exception:
+            rounded = 100 if fallback_on_state else 0
+        return max(0, min(100, int(rounded)))
+
+    @classmethod
+    def from_set(
+        cls,
+        cmd: "ControlCommand",
+        current_on: bool,
+        last_brightness_ui: int,
+    ) -> "_LightCommandDecision":
+        """Resolve ``command='set'`` (state required: 'on' or 'off')."""
+        if cmd.state == "on":
+            target = int(cmd.brightness) if cmd.brightness is not None else last_brightness_ui
+            new_brightness = cls._clamp_brightness(target, fallback_on_state=True)
+            # Defensive: legacy code remapped 0 -> 100 here so 'on at 0%'
+            # didn't silently turn the light off.
+            if new_brightness <= 0:
+                new_brightness = 100
+            return cls(
+                new_state=True,
+                new_brightness=new_brightness,
+                action=f"Set ON to {target}%",
+                persist_last_known=new_brightness,
+            )
+        if cmd.state == "off":
+            return cls(
+                new_state=False,
+                new_brightness=0,
+                action="Set OFF",
+                # Only persist the previous brightness if the light was
+                # actually ON -- matches pre-refactor branch.
+                persist_state_payload_brightness=current_on,
+            )
+        msg = f"Invalid state for set command: {cmd.state}"
+        raise ValueError(msg)
+
+    @classmethod
+    def from_toggle(
+        cls,
+        current_on: bool,
+        current_brightness_ui: int,
+        last_brightness_ui: int,
+    ) -> "_LightCommandDecision":
+        """Resolve ``command='toggle'``."""
+        new_state = not current_on
+        if new_state:
+            new_brightness = last_brightness_ui if last_brightness_ui > 0 else 100
+            return cls(
+                new_state=True,
+                new_brightness=cls._clamp_brightness(new_brightness, fallback_on_state=True),
+                action=f"Toggled ON to {new_brightness}%",
+            )
+        return cls(
+            new_state=False,
+            new_brightness=0,
+            action="Toggled OFF",
+            persist_last_known=int(current_brightness_ui),
+        )
+
+    @classmethod
+    def from_brightness_step(
+        cls,
+        current_brightness_ui: int,
+        delta: int,
+    ) -> "_LightCommandDecision":
+        """Resolve ``command='brightness_up'`` (delta=+10) or ``'brightness_down'`` (delta=-10).
+
+        Persists the new brightness only when it ends up > 0; that way
+        ``brightness_down`` clear to 0 doesn't overwrite the stored
+        last-known brightness with 0 (matching pre-refactor semantics
+        for both directions: ``brightness_up`` always persists,
+        ``brightness_down`` persists only above 0).
+        """
+        new_brightness = max(0, min(100, current_brightness_ui + delta))
+        new_state = bool(new_brightness)
+        direction = "up" if delta >= 0 else "down"
+        # Match pre-refactor persistence: up always persists; down only
+        # persists when result > 0.
+        persist = new_brightness if (delta > 0 or new_brightness > 0) else None
+        return cls(
+            new_state=new_state,
+            new_brightness=new_brightness,
+            action=f"Brightness {direction} to {new_brightness}%",
+            persist_last_known=persist,
+        )
 
 
 class EntityService:
@@ -427,7 +556,7 @@ class EntityService:
         msg = f"Control not supported for device type '{device_type}'. Supported types: light"
         raise ValueError(msg)
 
-    async def control_light(  # noqa: C901, PLR0912, PLR0915 (legacy complexity; the brightness decision tree predates this PR's auth refactor and deserves its own focused refactor PR — see issue #112)
+    async def control_light(
         self,
         entity_id: str,
         cmd: ControlCommand,
@@ -437,6 +566,14 @@ class EntityService:
         Control a light entity.
 
         Requires an authenticated user (``user`` / ``operator`` / ``admin``).
+
+        This is the orchestration entry point. The brightness/state decision
+        tree lives in the pure helper :meth:`_resolve_light_command`; the
+        side effects (last-known-brightness persistence) live in
+        :meth:`_apply_light_command_side_effects`. Splitting it this way
+        keeps each step under the ruff complexity caps and makes the
+        decision tree unit-testable in isolation (see
+        ``tests/services/test_control_light_resolver.py``).
 
         Args:
             entity_id: The ID of the light entity to control
@@ -463,108 +600,145 @@ class EntityService:
             msg = f"Entity '{entity_id}' is not controllable as a light"
             raise ValueError(msg)
 
-        # Get current state
+        # Snapshot current state into plain values the resolver can reason about.
+        current_on, current_brightness_ui = self._read_light_current_state(entity)
+
+        # Look up last-known brightness for restore-on-toggle semantics.
+        last_brightness_ui = self._read_last_known_brightness(entity_id)
+
+        # Pure decision tree: figure out what should happen, no I/O.
+        decision = self._resolve_light_command(
+            cmd=cmd,
+            current_on=current_on,
+            current_brightness_ui=current_brightness_ui,
+            last_brightness_ui=last_brightness_ui,
+        )
+
+        # Apply the resolver's persistence intents (last-known-brightness
+        # writes), then dispatch the CAN command.
+        await self._apply_light_command_side_effects(
+            entity_id=entity_id,
+            entity=entity,
+            current_brightness_ui=current_brightness_ui,
+            decision=decision,
+        )
+
+        return await self._execute_light_command(
+            entity_id=entity_id,
+            target_brightness_ui=decision.new_brightness,
+            action_description=decision.action,
+        )
+
+    @staticmethod
+    def _read_light_current_state(entity: Any) -> tuple[bool, int]:
+        """Return ``(current_on, current_brightness_ui)`` from an entity.
+
+        Tolerates both real ``Entity`` instances and the dict-shaped
+        legacy form some callers still pass.
+        """
         current_state = entity.get_state() if hasattr(entity, "get_state") else entity
         if hasattr(current_state, "model_dump"):
             current_state_data = current_state.model_dump()
+        elif isinstance(current_state, dict):
+            current_state_data = current_state
         else:
-            current_state_data = (
-                current_state if isinstance(current_state, dict) else {"raw": {}, "state": "off"}
-            )
+            current_state_data = {"raw": {}, "state": "off"}
 
         current_raw_values = current_state_data.get("raw", {})
         current_brightness_raw = current_raw_values.get("operating_status", 0)
+        # RV-C operating_status is 0..200 (half-percent); UI uses 0..100.
         current_brightness_ui = int((current_brightness_raw / 200.0) * 100)
-        current_on_str = current_state_data.get("state", "off")
-        current_on = current_on_str.lower() == "on"
+        current_on = current_state_data.get("state", "off").lower() == "on"
+        return current_on, current_brightness_ui
 
-        # Get last known brightness from repository
+    def _read_last_known_brightness(self, entity_id: str) -> int:
+        """Return the stored last-known brightness, defaulting to 100.
+
+        Defaults to 100 when the repo returns ``None`` / a non-numeric /
+        a non-positive value -- preserves the legacy
+        ``control_light`` semantics where 'unknown last brightness'
+        means 'turn on at full' rather than 'leave off'.
+        """
         last_brightness_ui = self._entity_state_repo.get_last_known_brightness(entity_id)
         if (
             last_brightness_ui is None
             or not isinstance(last_brightness_ui, int | float)
             or last_brightness_ui <= 0
         ):
-            last_brightness_ui = 100
-        last_brightness_ui = int(last_brightness_ui)
+            return 100
+        return int(last_brightness_ui)
 
-        target_brightness_ui = cmd.brightness if cmd.brightness is not None else last_brightness_ui
-        action = ""
-        new_state = current_on
-        new_brightness = current_brightness_ui
+    @staticmethod
+    def _resolve_light_command(
+        cmd: ControlCommand,
+        current_on: bool,
+        current_brightness_ui: int,
+        last_brightness_ui: int,
+    ) -> "_LightCommandDecision":
+        """Pure decision tree: map ``(cmd, current_state, last_state)`` to an action.
 
-        # If 'set' command is sent with brightness but no state, treat as 'on'
+        Returns a :class:`_LightCommandDecision` describing the new
+        state, the action label, and a per-branch persistence intent
+        the orchestrator should apply. No I/O; safe to unit-test.
+
+        IMPORTANT: this function MUTATES ``cmd.state`` in place to
+        normalize the legacy 'set with brightness but no state' case
+        (treat as state='on'). That mutation is preserved verbatim
+        from the pre-#112 implementation to avoid changing observable
+        behavior in this refactor.
+
+        Raises:
+            ValueError: if the command is unknown or a 'set' has an
+                unrecognized ``state`` value.
+        """
+        # Normalize 'set' with brightness but no state -> implicit on.
         if cmd.command == "set" and cmd.state is None and cmd.brightness is not None:
             cmd.state = "on"
 
         if cmd.command == "set":
-            if cmd.state == "on":
-                if cmd.brightness is None:
-                    target_brightness_ui = last_brightness_ui
-                else:
-                    target_brightness_ui = cmd.brightness
-                action = f"Set ON to {target_brightness_ui}%"
-                # Update last known brightness
-                self._entity_state_repo.set_last_known_brightness(
-                    entity_id, int(target_brightness_ui)
-                )
-                new_state = True
-                new_brightness = int(target_brightness_ui)
-                if new_brightness <= 0:
-                    new_brightness = 100
-            elif cmd.state == "off":
-                if current_on:
-                    # Update last known brightness in entity state
-                    entity["last_known_brightness"] = int(current_brightness_ui)
-                    await self._entity_state_repo.save_entity_state(entity_id, entity)
-                target_brightness_ui = 0
-                action = "Set OFF"
-                new_state = False
-                new_brightness = 0
-            else:
-                msg = f"Invalid state for set command: {cmd.state}"
-                raise ValueError(msg)
-        elif cmd.command == "toggle":
-            new_state = not current_on
-            if new_state:
-                new_brightness = last_brightness_ui if last_brightness_ui > 0 else 100
-                action = f"Toggled ON to {new_brightness}%"
-            else:
-                # Update last known brightness
-                self._entity_state_repo.set_last_known_brightness(
-                    entity_id, int(current_brightness_ui)
-                )
-                new_brightness = 0
-                action = "Toggled OFF"
-        elif cmd.command == "brightness_up":
-            new_brightness = min(current_brightness_ui + 10, 100)
-            new_state = bool(new_brightness)
-            action = f"Brightness up to {new_brightness}%"
-            self._entity_state_repo.set_last_known_brightness(entity_id, int(new_brightness))
-        elif cmd.command == "brightness_down":
-            new_brightness = max(current_brightness_ui - 10, 0)
-            new_state = bool(new_brightness)
-            action = f"Brightness down to {new_brightness}%"
-            if new_brightness > 0:
-                self._entity_state_repo.set_last_known_brightness(entity_id, int(new_brightness))
-        else:
-            msg = f"Unknown command: {cmd.command}"
-            raise ValueError(msg)
+            return _LightCommandDecision.from_set(cmd, current_on, last_brightness_ui)
+        if cmd.command == "toggle":
+            return _LightCommandDecision.from_toggle(
+                current_on, current_brightness_ui, last_brightness_ui
+            )
+        if cmd.command == "brightness_up":
+            return _LightCommandDecision.from_brightness_step(current_brightness_ui, delta=10)
+        if cmd.command == "brightness_down":
+            return _LightCommandDecision.from_brightness_step(current_brightness_ui, delta=-10)
 
-        # Ensure new_brightness is always a valid integer between 0 and 100
-        try:
-            new_brightness = round(new_brightness)
-        except Exception:
-            new_brightness = 100 if new_state else 0
-        new_brightness = max(new_brightness, 0)
-        new_brightness = min(new_brightness, 100)
+        msg = f"Unknown command: {cmd.command}"
+        raise ValueError(msg)
 
-        # Execute the command
-        return await self._execute_light_command(
-            entity_id=entity_id,
-            target_brightness_ui=new_brightness,
-            action_description=action,
-        )
+    async def _apply_light_command_side_effects(
+        self,
+        entity_id: str,
+        entity: Any,
+        current_brightness_ui: int,
+        decision: "_LightCommandDecision",
+    ) -> None:
+        """Persist any side effects requested by the resolver.
+
+        Two distinct persistence paths exist (preserved from the
+        pre-refactor code):
+
+        - ``set_last_known_brightness`` -- the repository's dedicated
+          last-known-brightness column; called for ``set on``,
+          ``toggle off``, ``brightness_up``, and ``brightness_down``.
+        - ``entity['last_known_brightness'] + save_entity_state`` --
+          the entity-state-payload form; called only for ``set off``
+          when the light was on. This dual path predates this PR; if
+          the divergence ever causes a real bug, that's a separate
+          cleanup.
+        """
+        if decision.persist_last_known is not None:
+            self._entity_state_repo.set_last_known_brightness(
+                entity_id, int(decision.persist_last_known)
+            )
+        if decision.persist_state_payload_brightness:
+            # Preserve legacy 'set off' branch: stash current brightness
+            # in the entity dict, then save the whole entity.
+            entity["last_known_brightness"] = int(current_brightness_ui)
+            await self._entity_state_repo.save_entity_state(entity_id, entity)
 
     async def _execute_light_command(
         self,
