@@ -18,6 +18,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 from fastapi.testclient import TestClient
 
+from backend.core.dependencies import get_auth_manager
 from backend.main import create_app
 
 
@@ -26,9 +27,27 @@ class TestZodSchemaExport:
 
     @pytest.fixture
     def client(self):
-        """Create test client for schema export testing"""
-        app = create_app()
-        return TestClient(app)
+        """Create test client for schema export testing.
+
+        Updated 2026-05-13: the schema endpoints take an injected
+        ``AuthManager`` (via ``Depends(get_auth_manager)``) but never
+        actually use it -- the dependency is purely a 'must be wired up'
+        gate. In a TestClient that doesn't run lifespan, the
+        ServiceRegistry isn't initialized and ``get_auth_manager``
+        raises ``RuntimeError``, which Starlette converts to 500.
+
+        Override the dependency with a MagicMock so we can actually
+        exercise the schema-export contract. NOTE: if/when the schema
+        router is hardened to actually USE the auth_manager (or
+        switched to ``get_authenticated_user``), this override will
+        need to be revisited.
+        """
+        test_app = create_app()
+        test_app.dependency_overrides[get_auth_manager] = lambda: MagicMock()
+        try:
+            yield TestClient(test_app)
+        finally:
+            test_app.dependency_overrides.clear()
 
     def test_schema_export_availability(self, client):
         """Test that schema export endpoints are available"""
