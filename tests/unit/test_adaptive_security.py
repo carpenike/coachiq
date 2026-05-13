@@ -135,7 +135,24 @@ class TestDeviceProfile:
         assert confidence == 0.9
 
     def test_timing_anomaly_detection(self, device_profile):
-        """Test detection of timing anomalies."""
+        """Test detection of timing anomalies.
+
+        Updated 2026-05-13: ``is_message_anomalous`` does not mutate
+        ``message_history`` -- updates happen in
+        ``update_from_message`` (called separately by
+        ``AdaptiveSecurityManager.validate_frame``). The previous test
+        called ``is_message_anomalous`` twice without inserting a new
+        message between calls, so the 'very fast timing' call still
+        saw ``base_time - 1.0`` as the most recent message and
+        computed an interval of 1.05s -- not anomalous.
+
+        Fix: explicitly insert the intermediate message into
+        ``message_history`` between the 'normal' and 'fast' assertions
+        to simulate a message arriving at ``base_time``, so the
+        follow-up at ``base_time + 0.05`` correctly computes a
+        0.05s interval (well under the
+        ``expected_interval * 0.1 = 0.1s`` anomaly threshold).
+        """
         # Setup learned patterns
         device_profile.learning_phase = False
         device_profile.expected_pgns = {0x1FED1}
@@ -158,11 +175,18 @@ class TestDeviceProfile:
         )
         assert is_anomalous is False
 
-        # Test very fast timing (should be anomalous)
+        # Production's update_from_message would normally append the
+        # message we just validated to message_history; we do it
+        # manually here so the next call sees ``base_time`` as the
+        # most recent send.
+        device_profile.message_history.append((0x1FED1, base_time, 8))
+
+        # Test very fast timing (0.05s after the message at base_time;
+        # well under the 0.1s anomaly threshold).
         is_anomalous, reason, confidence = device_profile.is_message_anomalous(
             0x1FED1,
             base_time + 0.05,
-            test_data,  # Much faster than expected 1s
+            test_data,
         )
         assert is_anomalous is True
         assert "Timing anomaly" in reason
@@ -319,11 +343,23 @@ class TestAdaptiveSecurityManager:
         assert security_manager.total_messages_processed == 1
 
     def test_learning_phase_completion(self, security_manager):
-        """Test learning phase completion."""
+        """Test learning phase completion via message count.
+
+        Updated 2026-05-13: production requires
+        ``profile.message_count >= 100`` to complete the learning
+        phase via the message-count path (see
+        ``backend/integrations/rvc/adaptive_security.py:328``). The
+        previous test sent only 50 messages, which left the profile
+        in learning mode. Bump to 100.
+
+        The constant lives only in ``adaptive_security.py``; if the
+        threshold ever changes, both this test and the prod constant
+        should move together.
+        """
         frame = MockCANFrame(0x1FED1, 0x42, b"\x01\x02\x03\x04")
 
-        # Send messages during learning phase
-        for _ in range(50):
+        # Send messages until production's count threshold is met
+        for _ in range(100):
             assert security_manager.validate_frame(frame) is True
 
         profile = security_manager.device_profiles[0x42]
