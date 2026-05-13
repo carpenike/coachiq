@@ -15,12 +15,12 @@ from typing import Any, Dict, List, Optional, Set
 
 from backend.core.safety_interfaces import SafetyCapable, SafetyClassification, SafetyStatus
 from backend.core.service_dependency_resolver import DependencyType, ServiceDependency
-from backend.core.service_registry import EnhancedServiceRegistry
+from backend.core.service_registry import ServiceRegistry
 
 logger = logging.getLogger(__name__)
 
 
-class SafetyServiceRegistry(EnhancedServiceRegistry):
+class SafetyServiceRegistry(ServiceRegistry):
     """
     ServiceRegistry with safety-specific extensions for vehicle control systems.
 

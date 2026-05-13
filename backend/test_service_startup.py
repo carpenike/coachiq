@@ -7,7 +7,7 @@ import asyncio
 import logging
 
 from backend.core.service_dependency_resolver import DependencyType, ServiceDependency
-from backend.core.service_registry import EnhancedServiceRegistry
+from backend.core.service_registry import ServiceRegistry
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -15,7 +15,7 @@ logger = logging.getLogger(__name__)
 
 async def test_basic_startup():
     """Test basic service startup."""
-    registry = EnhancedServiceRegistry()
+    registry = ServiceRegistry()
 
     # Register a simple service with no dependencies
     def create_simple_service():
@@ -46,7 +46,7 @@ async def test_basic_startup():
 
 async def test_app_state_service():
     """Test registering app_state_service specifically."""
-    registry = EnhancedServiceRegistry()
+    registry = ServiceRegistry()
 
     # Mock dependencies
     def create_mock_repo(name):

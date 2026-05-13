@@ -14,7 +14,7 @@ from pydantic import BaseModel, Field
 from starlette.requests import Request
 
 from backend.core.dependencies import get_service_registry
-from backend.core.service_registry import EnhancedServiceRegistry
+from backend.core.service_registry import ServiceRegistry
 from backend.middleware.startup_monitoring import get_startup_monitor
 
 logger = logging.getLogger(__name__)
@@ -91,7 +91,7 @@ def _calculate_performance_grade(startup_time_ms: float, baseline_ms: float = 50
     description="Get overall startup health validation status and basic metrics.",
 )
 async def get_startup_health(
-    service_registry: Annotated[EnhancedServiceRegistry, Depends(get_service_registry)],
+    service_registry: Annotated[ServiceRegistry, Depends(get_service_registry)],
     request: Request,
 ) -> StartupHealthStatus:
     """
@@ -170,7 +170,7 @@ async def get_startup_health(
     description="Get comprehensive startup performance metrics and analysis.",
 )
 async def get_startup_metrics(
-    service_registry: Annotated[EnhancedServiceRegistry, Depends(get_service_registry)],
+    service_registry: Annotated[ServiceRegistry, Depends(get_service_registry)],
     request: Request,
 ) -> StartupPerformanceReport:
     """
@@ -285,7 +285,7 @@ async def get_startup_metrics(
     description="Get detailed timing information for all services.",
 )
 async def get_service_timings(
-    service_registry: Annotated[EnhancedServiceRegistry, Depends(get_service_registry)],
+    service_registry: Annotated[ServiceRegistry, Depends(get_service_registry)],
     request: Request,
 ) -> list[ServiceTimingInfo]:
     """

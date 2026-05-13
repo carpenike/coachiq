@@ -126,7 +126,7 @@ SERVER_START_TIME = time.time()
 
 async def _configure_service_startup_stages(service_registry):
     """
-    Configure EnhancedServiceRegistry with rich service definitions and dependencies.
+    Configure ServiceRegistry with rich service definitions and dependencies.
 
     This function uses the enhanced service registry features to provide:
     - Automatic dependency resolution and stage calculation
@@ -135,7 +135,7 @@ async def _configure_service_startup_stages(service_registry):
     - Better error messages and circular dependency detection
     """
 
-    # Define services with rich metadata using EnhancedServiceRegistry
+    # Define services with rich metadata using ServiceRegistry
     # The registry will automatically calculate stages based on dependencies
 
     # Core Configuration Services
@@ -1490,9 +1490,9 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     """
     logger.info("Starting coachiq backend application")
 
-    # Initialize EnhancedServiceRegistry for advanced dependency management
-    # Use SafetyServiceRegistry for guardrail-tier classification + emergency stop
-    # ("safety" naming is historical -- see ADR-0004)
+    # Initialize ServiceRegistry for advanced dependency management.
+    # Use SafetyServiceRegistry for guardrail-tier classification + emergency
+    # stop ("safety" naming is historical -- see ADR-0004).
     service_registry = SafetyServiceRegistry()
 
     # Initialize the module-level service registry for dependency injection
@@ -1507,7 +1507,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         # Configure service startup stages with explicit dependencies
         await _configure_service_startup_stages(service_registry)
 
-        # Execute orchestrated startup via EnhancedServiceRegistry
+        # Execute orchestrated startup via ServiceRegistry
         await service_registry.startup_all()
 
         # CRITICAL: Inject service_registry into safety_service after startup to avoid circular dependency
