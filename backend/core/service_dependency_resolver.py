@@ -206,6 +206,18 @@ class ServiceDependencyResolver:
 
         Services can potentially start earlier if all their dependencies
         are satisfied in earlier stages.
+
+        Reads dependencies from ``self._dependency_graph`` (the post-
+        fallback-resolution view) rather than from ``node.dependencies``
+        (the original raw list). This matters when a primary REQUIRED
+        dependency was substituted for its declared ``fallback`` in
+        ``_validate_dependencies``: the original ``node.dependencies``
+        entry still references the missing primary, but the actual
+        startup edge is on the fallback. Iterating the raw list would
+        cause ``dep.name in self._nodes`` to silently skip the missing
+        primary, leaving ``max_dep_stage = -1`` and putting the
+        dependent service in stage 0 — exactly when its real (fallback)
+        dependency must run first.
         """
         # Calculate depth (distance from root) for each node
         self._calculate_depths()
@@ -214,11 +226,12 @@ class ServiceDependencyResolver:
         optimized_stages = defaultdict(list)
 
         for service_name, node in self._nodes.items():
-            # Find the maximum stage of all dependencies
+            # Find the maximum stage of all dependencies. Use the
+            # post-fallback dependency graph (see method docstring).
             max_dep_stage = -1
-            for dep in node.dependencies:
-                if dep.type == DependencyType.REQUIRED and dep.name in self._nodes:
-                    dep_stage = self._nodes[dep.name].stage
+            for dep_name in self._dependency_graph.get(service_name, ()):
+                if dep_name in self._nodes:
+                    dep_stage = self._nodes[dep_name].stage
                     if dep_stage is not None:
                         max_dep_stage = max(max_dep_stage, dep_stage)
 

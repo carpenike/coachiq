@@ -137,13 +137,37 @@ class TestServiceDependencyResolver:
         assert stages[1] == ["A"]
 
     def test_runtime_dependency_validation(self):
-        """Test runtime dependency validation."""
+        """Test runtime dependency validation.
+
+        Updated 2026-05-13: the previous version of this test had two
+        bugs that made it impossible to pass:
+
+        1. ``missing[0]`` and ``missing[1]`` are integer subscripts on a
+           ``dict[str, list[str]]`` -- they would raise ``KeyError``,
+           not check anything.
+        2. It asserted ``"A" in missing`` while passing
+           ``available_services={"A", "B"}``. But A's only runtime dep
+           is B, and B IS available, so production correctly reports A
+           as having no missing deps. Runtime validation does direct-
+           dep checking only; it does NOT do transitive analysis (and
+           shouldn't -- if an upstream dependency goes degraded, that's
+           the upstream's failure to report, not ours).
+
+        Rewrite to match the actual contract:
+        - All declared services start in stage 0 (RUNTIME deps don't
+          gate startup).
+        - validate_runtime_dependencies({"A","B"}) returns
+          {"B": ["C"]} -- only B's runtime dep is missing.
+        - If we drop B from available_services, then A's direct dep is
+          missing too: validate_runtime_dependencies({"A"}) returns
+          {"A": ["B"]}.
+        """
         resolver = ServiceDependencyResolver()
 
         # A has runtime dependency on B
         resolver.add_service("A", [ServiceDependency("B", type=DependencyType.RUNTIME)])
 
-        # B has runtime dependency on C
+        # B has runtime dependency on C (which is never registered)
         resolver.add_service("B", [ServiceDependency("C", type=DependencyType.RUNTIME)])
 
         stages = resolver.resolve_dependencies()
@@ -152,12 +176,19 @@ class TestServiceDependencyResolver:
         assert len(stages) == 1
         assert set(stages[0]) == {"A", "B"}
 
-        # Validate runtime dependencies
+        # Validate runtime dependencies with both services available.
+        # Direct-dep check: A is satisfied (B is up); B is missing C.
         missing = resolver.validate_runtime_dependencies({"A", "B"})
-        assert "A" in missing
-        assert "B" in missing[0]
-        assert "B" in missing
-        assert "C" in missing[1]
+        assert missing == {"B": ["C"]}, (
+            "Runtime validation should only flag B (its dep C is missing); "
+            f"A's direct dep B is available, got: {missing}"
+        )
+
+        # If B is also down, A's direct runtime dep becomes missing too.
+        missing = resolver.validate_runtime_dependencies({"A"})
+        assert missing == {"A": ["B"]}, (
+            f"With only A available, A should be flagged as missing B; got: {missing}"
+        )
 
     def test_dependency_report(self):
         """Test dependency report generation."""
