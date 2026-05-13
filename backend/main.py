@@ -1756,8 +1756,13 @@ def create_app() -> FastAPI:
         RuntimeValidationMiddleware, validate_requests=True, validate_responses=False
     )
 
-    # Add rate limiting middleware
-    # Rate limiter is now accessed via dependency injection
+    # Add rate limiting middleware. SlowAPIMiddleware reads
+    # ``app.state.limiter`` on every request (see slowapi/middleware.py:121),
+    # so the limiter MUST be attached to app.state before any request is
+    # dispatched. We do this here rather than in lifespan startup because
+    # the middleware can fire before lifespan completes for some clients
+    # (notably Starlette's TestClient when used without lifespan).
+    app.state.limiter = limiter
     app.add_middleware(SlowAPIMiddleware)
     app.add_exception_handler(RateLimitExceeded, rate_limit_exceeded_handler)  # type: ignore[attr-defined]
 
