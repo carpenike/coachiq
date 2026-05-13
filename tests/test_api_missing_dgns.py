@@ -1,218 +1,43 @@
 """
-Tests for the missing DGNs API endpoint.
+Tests for the missing DGNs functionality.
 
-This test suite verifies the /api/missing-dgns endpoint functionality
-including proper dependency injection and error handling.
+The legacy ``/api/missing-dgns`` HTTP endpoint that this file used to
+exercise (``TestMissingDGNsAPI``) was retired during the
+service-registry / domain-API refactor. The replacement lives at
+``/api/v2/entities/debug/missing-dgns`` (see
+``backend/api/domains/entities.py``) and is currently a placeholder
+that returns ``{"missing_dgns": {}}`` because
+``EntityService.get_missing_dgns()`` has not been implemented yet.
+The original API tests are therefore skip-stubbed; if/when the v2
+endpoint is wired through to ``backend.integrations.rvc.decode``,
+new tests should be authored against the v2 path with the current
+DI helpers (``get_entity_service``), not the removed
+``get_app_state`` / ``get_feature_manager_from_request`` shims.
+
+The ``TestMissingDGNsIntegration`` class below still exercises the
+underlying tracker module (``backend.integrations.rvc.missing_dgns``)
+which is alive and used by the decoder, so it remains intact.
+
+See: PR #109 (state.py removal), PR #111 (entity service
+disambiguation), issue #105 (test sweep #2).
 """
 
-from unittest.mock import Mock, patch
-
 import pytest
-from fastapi import HTTPException
-from fastapi.testclient import TestClient
-
-from backend.main import app
 
 
+@pytest.mark.skip(
+    reason=(
+        "Legacy /api/missing-dgns endpoint retired; v2 replacement "
+        "(/api/v2/entities/debug/missing-dgns) is a placeholder. "
+        "Mocked dependencies (get_app_state, services.feature_manager) "
+        "no longer exist. See PR #109 / issue #105."
+    )
+)
 class TestMissingDGNsAPI:
-    """Test the missing DGNs API endpoint."""
+    """Skip-stub: legacy API endpoint retired (see module docstring)."""
 
-    @pytest.fixture
-    def mock_feature_manager(self):
-        """Create a mock feature manager with RVC enabled."""
-        mock = Mock()
-        mock.is_feature_enabled.return_value = True
-        return mock
-
-    @pytest.fixture
-    def client_with_mocks(self, mock_feature_manager):
-        """Create a test client with properly mocked dependencies."""
-        # Mock all required services to avoid initialization issues
-        mock_can_service = Mock()
-        mock_entity_service = Mock()
-        mock_config_service = Mock()
-        mock_docs_service = Mock()
-        mock_vector_service = Mock()
-        mock_app_state = Mock()
-
-        with (
-            patch(
-                "backend.services.feature_manager.get_feature_manager",
-                return_value=mock_feature_manager,
-            ),
-            patch("backend.services.can_service.CANService"),
-            patch("backend.services.entity_service.EntityService"),
-            patch("backend.services.config_service.ConfigService"),
-            patch("backend.services.rvc_service.RVCService"),
-            patch("backend.websocket.handlers.WebSocketManager"),
-            # Patch all dependency injection functions
-            patch(
-                "backend.core.dependencies.get_feature_manager_from_request",
-                return_value=mock_feature_manager,
-            ),
-            patch("backend.core.dependencies.get_can_service", return_value=mock_can_service),
-            patch("backend.core.dependencies.get_entity_service", return_value=mock_entity_service),
-            patch("backend.core.dependencies.get_config_service", return_value=mock_config_service),
-            patch("backend.core.dependencies.get_docs_service", return_value=mock_docs_service),
-            patch("backend.core.dependencies.get_vector_service", return_value=mock_vector_service),
-            patch("backend.core.dependencies.get_app_state", return_value=mock_app_state),
-            TestClient(app) as client,
-        ):
-            yield client
-
-    def test_missing_dgns_endpoint_empty_response(self, client_with_mocks):
-        """Test missing DGNs endpoint returns empty response when no missing DGNs."""
-        with patch("backend.integrations.rvc.decode.get_missing_dgns", return_value={}):
-            response = client_with_mocks.get("/api/missing-dgns")
-
-            assert response.status_code == 200
-            assert response.json() == {}
-
-    def test_missing_dgns_endpoint_with_data(self, client_with_mocks):
-        """Test missing DGNs endpoint returns properly formatted data."""
-        # Mock missing DGNs data with sets that need to be serialized
-        mock_missing_dgns = {
-            "65280": {
-                "dgn_id": 65280,
-                "dgn_hex": "0xFF00",
-                "first_seen": "2024-01-01T12:00:00",
-                "encounter_count": 5,
-                "can_ids": {0x1234, 0x5678},
-                "contexts": {"engine", "transmission"},
-            },
-            "65281": {
-                "dgn_id": 65281,
-                "dgn_hex": "0xFF01",
-                "first_seen": "2024-01-01T12:30:00",
-                "encounter_count": 2,
-                "can_ids": {0x9ABC},
-                "contexts": {"hvac"},
-            },
-        }
-
-        with patch(
-            "backend.integrations.rvc.decode.get_missing_dgns", return_value=mock_missing_dgns
-        ):
-            response = client_with_mocks.get("/api/missing-dgns")
-
-            assert response.status_code == 200
-            data = response.json()
-
-            # Verify structure
-            assert "65280" in data
-            assert "65281" in data
-
-            # Verify first DGN data (sets should be converted to lists)
-            dgn_65280 = data["65280"]
-            assert dgn_65280["dgn_id"] == 65280
-            assert dgn_65280["dgn_hex"] == "0xFF00"
-            assert dgn_65280["first_seen"] == "2024-01-01T12:00:00"
-            assert dgn_65280["encounter_count"] == 5
-            assert isinstance(dgn_65280["can_ids"], list)
-            assert set(dgn_65280["can_ids"]) == {0x1234, 0x5678}
-            assert isinstance(dgn_65280["contexts"], list)
-            assert set(dgn_65280["contexts"]) == {"engine", "transmission"}
-
-            # Verify second DGN data
-            dgn_65281 = data["65281"]
-            assert dgn_65281["dgn_id"] == 65281
-            assert dgn_65281["dgn_hex"] == "0xFF01"
-            assert dgn_65281["encounter_count"] == 2
-            assert isinstance(dgn_65281["can_ids"], list)
-            assert dgn_65281["can_ids"] == [0x9ABC]
-            assert isinstance(dgn_65281["contexts"], list)
-            assert dgn_65281["contexts"] == ["hvac"]
-
-    def test_missing_dgns_endpoint_rvc_disabled(self, client_with_mocks):
-        """Test missing DGNs endpoint returns 404 when RVC feature is disabled."""
-        # Patch the feature check function directly to return False
-        with patch(
-            "backend.api.routers.entities._check_rvc_feature_enabled",
-            side_effect=HTTPException(status_code=404, detail="rvc feature is disabled"),
-        ):
-            response = client_with_mocks.get("/api/missing-dgns")
-
-            assert response.status_code == 404
-            assert "rvc feature is disabled" in response.json()["detail"]
-
-    def test_missing_dgns_endpoint_import_error_handling(self, client_with_mocks):
-        """Test missing DGNs endpoint handles import errors gracefully."""
-        # Mock an import error for the RVC decode module
-        with patch(
-            "backend.integrations.rvc.decode.get_missing_dgns",
-            side_effect=ImportError("Module not found"),
-        ):
-            response = client_with_mocks.get("/api/missing-dgns")
-
-            # The endpoint should handle the error and return a 500 status
-            assert response.status_code == 500
-
-    def test_missing_dgns_endpoint_json_serialization(self, client_with_mocks):
-        """Test that complex data structures are properly JSON serialized."""
-        # Test with edge cases in data structures
-        mock_missing_dgns = {
-            "65282": {
-                "dgn_id": 65282,
-                "dgn_hex": "0xFF02",
-                "first_seen": "2024-01-01T13:00:00",
-                "encounter_count": 1,
-                "can_ids": set(),  # Empty set
-                "contexts": {"test_context_with_special_chars_!@#"},
-            }
-        }
-
-        with patch(
-            "backend.integrations.rvc.decode.get_missing_dgns", return_value=mock_missing_dgns
-        ):
-            response = client_with_mocks.get("/api/missing-dgns")
-
-            assert response.status_code == 200
-            data = response.json()
-
-            # Verify empty set is converted to empty list
-            assert data["65282"]["can_ids"] == []
-            assert data["65282"]["contexts"] == ["test_context_with_special_chars_!@#"]
-
-    def test_missing_dgns_api_documentation_compliance(self, client_with_mocks):
-        """Test that the API response matches the documented schema."""
-        mock_missing_dgns = {
-            "65283": {
-                "dgn_id": 65283,
-                "dgn_hex": "0xFF03",
-                "first_seen": "2024-01-01T14:00:00",
-                "encounter_count": 10,
-                "can_ids": {0x1111, 0x2222},
-                "contexts": {"brake", "abs"},
-            }
-        }
-
-        with patch(
-            "backend.integrations.rvc.decode.get_missing_dgns", return_value=mock_missing_dgns
-        ):
-            response = client_with_mocks.get("/api/missing-dgns")
-
-            assert response.status_code == 200
-            data = response.json()
-
-            # Verify all documented fields are present
-            dgn_data = data["65283"]
-            expected_fields = {
-                "dgn_id",
-                "dgn_hex",
-                "first_seen",
-                "encounter_count",
-                "can_ids",
-                "contexts",
-            }
-            assert set(dgn_data.keys()) == expected_fields
-
-            # Verify data types match documentation
-            assert isinstance(dgn_data["dgn_id"], int)
-            assert isinstance(dgn_data["dgn_hex"], str)
-            assert isinstance(dgn_data["first_seen"], str)
-            assert isinstance(dgn_data["encounter_count"], int)
-            assert isinstance(dgn_data["can_ids"], list)
-            assert isinstance(dgn_data["contexts"], list)
+    def test_legacy_api_retired(self) -> None:
+        """Marker so pytest reports a single skip rather than nothing."""
 
 
 class TestMissingDGNsIntegration:
