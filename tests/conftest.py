@@ -564,6 +564,56 @@ def reset_dependency_overrides() -> Generator[None, None, None]:
 
 
 # ================================
+# Pydantic-Settings test fixture
+# ================================
+#
+# CoachIQ's ``backend.core.config.Settings`` has THREE traps for tests:
+#
+#   1. ``MagicMock(spec=Settings)`` doesn't materialize Pydantic
+#      descriptors -- every attribute read raises AttributeError.
+#   2. ``BaseSettings(env_file=".env")`` auto-loads the developer's
+#      local ``.env`` during tests.
+#   3. ``COACHIQ_*`` env-var pollution leaks across tests.
+#
+# ``tests/_helpers/settings.py`` documents the three traps and provides
+# the building blocks ``isolated_env(...)`` and ``make_test_settings(...)``.
+# The ``test_settings`` fixture below combines them for the common
+# "hermetic default Settings instance" case.
+#
+# When you need overrides or env-var assertions, import the helpers
+# directly from ``tests._helpers.settings`` instead of using the fixture.
+
+
+@pytest.fixture
+def test_settings(monkeypatch: pytest.MonkeyPatch):
+    """Hermetic ``Settings`` instance for unit tests.
+
+    Strips every ``COACHIQ_*`` env var for the duration of the test and
+    constructs ``Settings(_env_file=None)`` so the developer's local
+    ``.env`` cannot leak in. See ``tests/_helpers/settings.py`` for the
+    full three-traps explanation.
+
+    For env-var override scenarios use the helpers directly::
+
+        from tests._helpers.settings import isolated_env, make_test_settings
+
+        with patch.dict(
+            os.environ,
+            isolated_env({"COACHIQ_LOGGING__LEVEL": "DEBUG"}),
+            clear=True,
+        ):
+            settings = make_test_settings()
+        assert settings.logging.level == "DEBUG"
+    """
+    from tests._helpers.settings import make_test_settings
+
+    for key in list(os.environ):
+        if key.startswith("COACHIQ_"):
+            monkeypatch.delenv(key, raising=False)
+    return make_test_settings()
+
+
+# ================================
 # Pytest Configuration
 # ================================
 

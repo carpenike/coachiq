@@ -31,37 +31,22 @@ from unittest.mock import patch
 import pytest
 
 from backend.core.config import Settings, get_settings
+from tests._helpers.settings import (
+    isolated_env as _isolated_env,
+)
+from tests._helpers.settings import (
+    make_test_settings as _settings_no_env_file,
+)
 
 # ----------------------------------------------------------------------------
 # Helpers
 # ----------------------------------------------------------------------------
-
-
-def _isolated_env(env: dict[str, str]) -> dict[str, str]:
-    """Build a clean env mapping that strips any pre-existing COACHIQ_* vars.
-
-    pytest may inherit COACHIQ_* settings from the developer's shell or .env
-    file, which would pollute test assertions. We construct a fully-isolated
-    env containing ONLY the variables the test wants set.
-    """
-    base = {k: v for k, v in os.environ.items() if not k.startswith("COACHIQ_")}
-    base.update(env)
-    return base
-
-
-def _settings_no_env_file(**kwargs) -> Settings:
-    """Construct Settings with .env file loading disabled.
-
-    The production Settings class is configured to auto-load values from
-    a ``.env`` file in the current directory. That's correct for runtime
-    but wrong for tests that assert against the documented defaults --
-    a developer's local ``.env`` (e.g. ``COACHIQ_CAN__INTERFACES=virtual0``)
-    would otherwise override what we're trying to test.
-
-    Pydantic-Settings honours the underscore-prefixed ``_env_file=None``
-    keyword to disable the env_file path entirely.
-    """
-    return Settings(_env_file=None, **kwargs)
+#
+# Helpers were hoisted into ``tests/_helpers/settings.py`` in audit cycle
+# 2026-05-13 (PR A4). The aliases above keep the in-file call sites
+# unchanged. The shared module documents the three Pydantic-Settings
+# traps these helpers exist to avoid; new tests should prefer importing
+# the canonical names ``isolated_env`` / ``make_test_settings`` directly.
 
 
 # ----------------------------------------------------------------------------
