@@ -115,6 +115,11 @@ class EnhancedSecurityEventManager:
         self._monitoring_task = None
         self._monitoring_interval = 60  # seconds
 
+        # Tracks listener callable -> listener_id returned by SecurityEventService.
+        # Required because the underlying service's unsubscribe() is id-based but
+        # callers (e.g. backend/websocket/security_handler.py) hand us callables.
+        self._listener_ids: dict[Callable, str] = {}
+
         logger.info("Enhanced SecurityEventManager initialized as orchestration facade")
 
     async def startup(self) -> None:
@@ -527,8 +532,45 @@ class EnhancedSecurityEventManager:
     async def subscribe(
         self, listener: Callable[[SecurityEvent], Any], name: str | None = None
     ) -> None:
-        """Subscribe to security events (backward compatibility)."""
-        await self._event_service.subscribe(listener, name)
+        """Subscribe to security events (backward compatibility).
+
+        Tracks the underlying ``listener_id`` so ``unsubscribe(listener)``
+        can resolve it later -- the SecurityEventService API is id-based,
+        but legacy callers (``SecurityWebSocketHandler``) hand us
+        callables.
+        """
+        listener_id = await self._event_service.subscribe(listener, name)
+        if listener_id:
+            self._listener_ids[listener] = listener_id
+
+    async def unsubscribe(self, listener: Callable[[SecurityEvent], Any]) -> bool:
+        """Unsubscribe a previously-subscribed listener (backward compatibility).
+
+        Resolves the callable to its ``listener_id`` and delegates.
+        Returns ``False`` if the callable was never subscribed (a no-op
+        rather than an error -- matches the previous v1 facade
+        behaviour).
+        """
+        listener_id = self._listener_ids.pop(listener, None)
+        if listener_id is None:
+            logger.debug("unsubscribe(): listener was not registered or already removed")
+            return False
+        return await self._event_service.unsubscribe(listener_id)
+
+    async def get_recent_events(self, limit: int = 100) -> list[SecurityEvent]:
+        """Recent events (backward compatibility -- delegates to service)."""
+        return await self._event_service.get_recent_events(limit)
+
+    async def get_listener_count(self) -> int:
+        """Number of registered listeners (backward compatibility)."""
+        if hasattr(self._event_service, "get_listener_count"):
+            return await self._event_service.get_listener_count()
+        return len(self._listener_ids)
+
+    async def clear_statistics(self) -> None:
+        """Clear event statistics (backward compatibility -- best-effort)."""
+        if hasattr(self._event_service, "clear_statistics"):
+            await self._event_service.clear_statistics()
 
     async def get_statistics(self) -> SecurityEventStats:
         """Get event statistics (backward compatibility)."""
