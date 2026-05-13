@@ -53,6 +53,17 @@ async def test_database_manager_fixture(test_database_manager: DatabaseManager) 
         assert row[0] == 1
 
 
+@pytest.mark.skip(
+    reason=(
+        "test_persistence_feature fixture in tests/conftest.py:127 returns "
+        "None now -- the persistence-feature concept was retired (persistence "
+        "is now default; see commented-out body of the fixture). The "
+        "fixture itself should arguably be removed in a follow-up cleanup, "
+        "along with this test and the client_with_persistence fixture wiring "
+        "below. Skipping rather than rewriting because the feature pattern "
+        "is gone, not just the test contract -- this is Pattern A."
+    )
+)
 @pytest.mark.asyncio
 async def test_persistence_feature_fixture(test_persistence_feature: object) -> None:
     """Test that persistence feature fixture is properly initialized."""
