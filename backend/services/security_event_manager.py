@@ -1,8 +1,8 @@
 """
-Enhanced Security Event Manager - Orchestration Facade
+Security Event Manager - Orchestration Facade
 
-This is the enhanced version of SecurityEventManager that acts as a true
-orchestration facade for all security-related operations, coordinating between:
+True orchestration facade for security-related operations, coordinating:
+
 - SecurityEventService (event publishing/subscription)
 - AttemptTrackerService (centralized attempt tracking)
 - SecurityConfigService (security policies)
@@ -10,6 +10,14 @@ orchestration facade for all security-related operations, coordinating between:
 - AuthManager (authentication operations)
 - PINManager (PIN-based security)
 - SecurityEventRepository (event persistence)
+
+A thin v1 facade (``backend/services/security_event_manager.py`` with class
+``SecurityEventManager``) used to live alongside this richer one (the v2
+module ``security_event_manager_v2.py`` with class
+``EnhancedSecurityEventManager``). The two coexisted as a half-finished
+migration: ``main.py`` registered v2; ``backend/websocket/security_handler.py``
+imported v1. The v1 file was deleted in audit cycle 2026-05-13 PR A6 and v2
+was renamed to drop the suffix/prefix.
 
 Note: "safety-critical" / "safety" naming in this file is historical and
 refers to **API guardrail / command-validation** behavior, NOT vehicle safety.
@@ -54,9 +62,9 @@ class SecurityOrchestrationResult:
         self.timestamp = datetime.now(UTC)
 
 
-class EnhancedSecurityEventManager:
+class SecurityEventManager:
     """
-    Enhanced Security Event Manager that orchestrates all security operations.
+    Security Event Manager that orchestrates all security operations.
 
     This facade coordinates between multiple security services to provide:
     - Unified security event handling
@@ -78,7 +86,7 @@ class EnhancedSecurityEventManager:
         performance_monitor: Any | None = None,
     ):
         """
-        Initialize the enhanced security event manager.
+        Initialize the security event manager.
 
         Args:
             security_event_service: Core event publishing service
@@ -120,11 +128,11 @@ class EnhancedSecurityEventManager:
         # callers (e.g. backend/websocket/security_handler.py) hand us callables.
         self._listener_ids: dict[Callable, str] = {}
 
-        logger.info("Enhanced SecurityEventManager initialized as orchestration facade")
+        logger.info("SecurityEventManager initialized as orchestration facade")
 
     async def startup(self) -> None:
         """Start the security event manager and monitoring."""
-        logger.info("Starting enhanced security event manager")
+        logger.info("Starting security event manager")
 
         # Subscribe to security events for orchestration
         await self._event_service.subscribe(self._handle_security_event, "SecurityOrchestrator")
@@ -136,7 +144,7 @@ class EnhancedSecurityEventManager:
 
     async def shutdown(self) -> None:
         """Shutdown the security event manager."""
-        logger.info("Shutting down enhanced security event manager")
+        logger.info("Shutting down security event manager")
 
         # Cancel monitoring task
         if self._monitoring_task:

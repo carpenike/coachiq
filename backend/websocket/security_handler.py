@@ -19,9 +19,7 @@ from typing import Any, Dict, Set
 from fastapi import WebSocket, WebSocketDisconnect
 
 from backend.models.security_events import SecurityEvent
-from backend.services.security_event_manager_v2 import (
-    EnhancedSecurityEventManager as SecurityEventManager,
-)
+from backend.services.security_event_manager import SecurityEventManager
 
 logger = logging.getLogger(__name__)
 
@@ -400,7 +398,7 @@ def get_security_websocket_handler() -> SecurityWebSocketHandler:
     and fell through to the no-arg constructor. v1 was retired in
     audit cycle 2026-05-13 PR A6; the lookup is now a no-op fallback.
     """
-    global _security_websocket_handler
+    global _security_websocket_handler  # noqa: PLW0603 -- intentional module-level singleton
     if _security_websocket_handler is None:
         # No event manager available -- caller MUST set one before
         # calling startup(), or startup() will raise.
