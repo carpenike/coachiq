@@ -434,16 +434,33 @@ class TestLightEntityMethods:
 
     @pytest.mark.unit
     def test_get_light_entity_ids_with_lights(self, entity_manager):
-        """Test getting light entity IDs when lights exist."""
-        light_config = EntityConfig(
+        """Test getting light entity IDs when lights exist.
+
+        Updated 2026-05-13: production's ``register_entity`` mutates the
+        passed-in config in place (sets ``config['physical_id']`` to the
+        entity_id when missing), and then deduplicates by physical_id
+        (see ``backend/core/entity_manager.py:43``). The previous version
+        of this test passed the SAME ``light_config`` dict for both
+        ``light1`` and ``light2`` -- the second call therefore matched
+        the first call's now-set physical_id and was deduplicated,
+        leaving only one light registered.
+
+        Fix: build a distinct config dict per entity so the test
+        actually exercises 'multiple lights are tracked', not
+        'deduplication path is hit'.
+        """
+        light_config_1 = EntityConfig(
             device_type="light", suggested_area="Kitchen", friendly_name="Kitchen Light"
+        )
+        light_config_2 = EntityConfig(
+            device_type="light", suggested_area="Kitchen", friendly_name="Kitchen Light 2"
         )
         lock_config = EntityConfig(
             device_type="lock", suggested_area="Entry", friendly_name="Entry Lock"
         )
 
-        entity_manager.register_entity("light1", light_config)
-        entity_manager.register_entity("light2", light_config)
+        entity_manager.register_entity("light1", light_config_1)
+        entity_manager.register_entity("light2", light_config_2)
         entity_manager.register_entity("lock1", lock_config)
 
         result = entity_manager.get_light_entity_ids()
@@ -455,18 +472,32 @@ class TestLightEntityMethods:
 
     @pytest.mark.unit
     def test_preseed_light_states(self, entity_manager):
-        """Test pre-seeding light states."""
-        # Setup light entities
-        light_config = EntityConfig(
+        """Test pre-seeding light states.
+
+        Updated 2026-05-13: same shared-config dedup issue as
+        ``test_get_light_entity_ids_with_lights`` -- using the same
+        EntityConfig dict for both lights deduplicates them down to
+        one. Build distinct configs.
+        """
+        # Setup light entities with distinct configs to avoid the
+        # deduplication-by-physical_id path.
+        light_config_1 = EntityConfig(
             device_type="light",
             suggested_area="Kitchen",
             friendly_name="Kitchen Light",
             capabilities=["brightness", "on_off"],
             groups=["kitchen", "lights"],
         )
+        light_config_2 = EntityConfig(
+            device_type="light",
+            suggested_area="Kitchen",
+            friendly_name="Kitchen Light 2",
+            capabilities=["brightness", "on_off"],
+            groups=["kitchen", "lights"],
+        )
 
-        entity_manager.register_entity("light1", light_config)
-        entity_manager.register_entity("light2", light_config)
+        entity_manager.register_entity("light1", light_config_1)
+        entity_manager.register_entity("light2", light_config_2)
 
         # Mock decode function and device mapping
         mock_decode_func = MagicMock()
@@ -550,22 +581,49 @@ class TestEdgeCases:
     """Test edge cases and error conditions."""
 
     @pytest.mark.unit
-    def test_register_entity_overwrites_existing(self, entity_manager, sample_light_config):
-        """Test that registering an entity with existing ID overwrites it."""
+    def test_register_entity_returns_existing_when_physical_id_collides(
+        self, entity_manager, sample_light_config
+    ):
+        """Test that re-registering the same physical_id returns the existing entity.
+
+        Renamed and rewritten 2026-05-13. The previous test
+        (``test_register_entity_overwrites_existing``) asserted that
+        registering with the same entity_id overwrites the existing
+        entity (``assert first_entity is not second_entity``). That
+        contract is incompatible with production: ``register_entity``
+        explicitly documents itself as deduplicating by physical_id
+        and returning the existing instance when there is a collision
+        (see ``backend/core/entity_manager.py:43`` docstring:
+        '*The registered Entity instance (may be existing if
+        physical_id matches)*' and the deduplication branch on lines
+        70-91).
+
+        We rewrite to test the contract production actually provides:
+        a duplicate registration adds the new protocol as a secondary
+        protocol on the existing entity rather than overwriting.
+        """
         entity_id = "test_entity"
 
-        # Register initial entity
-        first_entity = entity_manager.register_entity(entity_id, sample_light_config)
-
-        # Register with same ID but different config
-        new_config = EntityConfig(
-            device_type="lock", suggested_area="Entry", friendly_name="Test Lock"
+        first_entity = entity_manager.register_entity(
+            entity_id, sample_light_config, protocol="rvc"
         )
-        second_entity = entity_manager.register_entity(entity_id, new_config)
 
-        assert first_entity is not second_entity
-        assert entity_manager.get_entity(entity_id) is second_entity
-        assert entity_manager.get_entity(entity_id).config == new_config
+        # Re-register the same entity_id with a different protocol.
+        # Production should return the EXISTING entity (deduplication)
+        # and add the new protocol as a secondary.
+        second_entity = entity_manager.register_entity(
+            entity_id, sample_light_config, protocol="j1939"
+        )
+
+        # Same instance -- production deduplicated by physical_id.
+        assert first_entity is second_entity
+        assert entity_manager.get_entity(entity_id) is first_entity
+
+        # The secondary protocol should now be tracked.
+        secondary_protocols = first_entity.config.get("secondary_protocols", [])
+        assert "j1939" in secondary_protocols, (
+            "Re-registering with a different protocol should add it as a secondary"
+        )
 
     @pytest.mark.unit
     def test_filter_entities_with_none_values_in_config(self, entity_manager):
