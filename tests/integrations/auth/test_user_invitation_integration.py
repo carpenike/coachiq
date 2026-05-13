@@ -52,11 +52,22 @@ class TestUserInvitationService:
 
     @pytest.mark.asyncio
     async def test_create_invitation_success(self, invitation_service):
-        """Test successful invitation creation."""
+        """Test successful invitation creation.
+
+        Updated 2026-05-13: production's ``UserInvitationService.create_invitation``
+        accepts ``_role`` (with leading underscore -- 'reserved for future
+        implementation' per its docstring). The underscore prefix is
+        ergonomically awkward and ideally would be renamed to ``role``
+        when the role is actually wired through, but that's a feature
+        task; here we just match the current signature.
+        See ``backend/services/user_invitation_service.py:80`` and
+        ``backend/api/routers/auth.py:855`` (the router also passes
+        ``_role=request.role or 'user'`` for the same reason).
+        """
         response = await invitation_service.create_invitation(
             email="user@example.com",
             invited_by_admin="admin",
-            role="user",
+            _role="user",
             message="Welcome to CoachIQ!",
         )
 
@@ -305,12 +316,14 @@ class TestUserInvitationEmailIntegration:
 
         invitation_service = UserInvitationService(auth_manager, notification_manager)
 
-        # Create invitation with personal message
+        # Create invitation with personal message. See
+        # ``test_create_invitation_success`` for why ``_role`` is
+        # underscore-prefixed in the production signature.
         await invitation_service.create_invitation(
             email="user@example.com",
             invited_by_admin="admin",
             message="Welcome to our team!",
-            role="user",
+            _role="user",
         )
 
         # Verify email was sent with correct content
