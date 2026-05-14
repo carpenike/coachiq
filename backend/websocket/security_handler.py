@@ -388,21 +388,21 @@ _security_websocket_handler: SecurityWebSocketHandler | None = None
 def get_security_websocket_handler() -> SecurityWebSocketHandler:
     """Get the global security WebSocket handler instance.
 
-    Note: This is a legacy function for backward compatibility.
-    Prefer dependency injection when possible.
-    """
-    global _security_websocket_handler
-    if _security_websocket_handler is None:
-        # For backward compatibility, try to get SecurityEventManager globally
-        # This will be removed once all callers use dependency injection
-        try:
-            from backend.services.security_event_manager import get_security_event_manager
+    Note: This is a legacy function for backward compatibility. Prefer
+    dependency injection (``main.py`` builds the handler with the
+    ServiceRegistry-resolved ``SecurityEventManager`` injected).
 
-            event_manager = get_security_event_manager()
-            _security_websocket_handler = SecurityWebSocketHandler(event_manager)
-        except RuntimeError:
-            # Create without event manager - will fail on startup() if not set later
-            _security_websocket_handler = SecurityWebSocketHandler()
+    The previous implementation tried to import a
+    ``get_security_event_manager`` function from the v1 facade module
+    that never actually existed there -- it always raised RuntimeError
+    and fell through to the no-arg constructor. v1 was retired in
+    audit cycle 2026-05-13 PR A6; the lookup is now a no-op fallback.
+    """
+    global _security_websocket_handler  # noqa: PLW0603 -- intentional module-level singleton
+    if _security_websocket_handler is None:
+        # No event manager available -- caller MUST set one before
+        # calling startup(), or startup() will raise.
+        _security_websocket_handler = SecurityWebSocketHandler()
     return _security_websocket_handler
 
 

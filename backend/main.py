@@ -411,10 +411,10 @@ def _init_security_event_manager(
     performance_monitor=None,
 ):
     """Initialize enhanced security event manager as orchestration facade."""
-    from backend.services.security_event_manager_v2 import EnhancedSecurityEventManager
+    from backend.services.security_event_manager import SecurityEventManager
 
     # Create enhanced orchestration facade
-    manager = EnhancedSecurityEventManager(
+    manager = SecurityEventManager(
         security_event_service=security_event_service,
         attempt_tracker_service=attempt_tracker_service,
         security_config_service=security_config_service,
@@ -424,7 +424,7 @@ def _init_security_event_manager(
         lockout_service=lockout_service,
         performance_monitor=performance_monitor,
     )
-    logger.info("Enhanced SecurityEventManager initialized as orchestration facade")
+    logger.info("SecurityEventManager initialized as orchestration facade")
     return manager
 
 
