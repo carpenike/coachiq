@@ -5,6 +5,11 @@ Provides comprehensive health monitoring endpoints that expose ServiceRegistry
 health information and aggregate service status across the application.
 
 Part of Phase 2D: Health Check System Enhancement
+
+Note: "safety-critical" / "safety" naming in this file is historical and
+refers to **API guardrail / command-validation** behavior, NOT vehicle safety.
+The OEM Firefly MIRA panel owns the actual vehicle safety case. See
+`docs/adr/ADR-0004-coachiq-is-not-the-safety-system.md`.
 """
 
 import time

@@ -4,6 +4,11 @@ CAN Facade Service - Unified Entry Point for CAN Operations
 Provides a single, safety-critical entry point for all CAN operations,
 coordinating multiple underlying services with proper safety validation
 and emergency stop coordination.
+
+Note: "safety-critical" / "safety" naming in this file is historical and
+refers to **API guardrail / command-validation** behavior, NOT vehicle safety.
+The OEM Firefly MIRA panel owns the actual vehicle safety case. See
+`docs/adr/ADR-0004-coachiq-is-not-the-safety-system.md`.
 """
 
 import asyncio

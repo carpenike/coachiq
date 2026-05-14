@@ -3,6 +3,11 @@ CAN Message Injection Tool
 
 Safe and controlled CAN message injection for testing and diagnostics.
 Includes safety checks, validation, and audit logging.
+
+Note: "safety-critical" / "safety" naming in this file is historical and
+refers to **API guardrail / command-validation** behavior, NOT vehicle safety.
+The OEM Firefly MIRA panel owns the actual vehicle safety case. See
+`docs/adr/ADR-0004-coachiq-is-not-the-safety-system.md`.
 """
 
 import asyncio

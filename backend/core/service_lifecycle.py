@@ -75,9 +75,10 @@ class IServiceLifecycleListener(ABC):
         """
         Called when a service fails unexpectedly.
 
-        CRITICAL: This method MUST be synchronous and blocking to ensure
-        safety-critical state transitions complete before proceeding.
-        This is essential for ISO 26262 compliance.
+        IMPORTANT: This method MUST be synchronous and blocking to ensure
+        guardrail state transitions complete before proceeding (see ADR-0004
+        for what "safety" means in this codebase: API guardrails, not
+        vehicle safety).
 
         Args:
             event: Event details including failure reason and error

@@ -4,6 +4,11 @@ PIN Authentication API Router
 Provides PIN-based authorization endpoints for safety-critical operations.
 Designed for RV deployments with internet connectivity requiring additional
 security layers beyond standard authentication.
+
+Note: "safety-critical" / "safety" naming in this file is historical and
+refers to **API guardrail / command-validation** behavior, NOT vehicle safety.
+The OEM Firefly MIRA panel owns the actual vehicle safety case. See
+`docs/adr/ADR-0004-coachiq-is-not-the-safety-system.md`.
 """
 
 import logging

@@ -12,6 +12,11 @@ Routes:
 - POST /can/send: Send raw CAN message
 - GET /can/statistics: Get CAN bus statistics
 - WebSocket /ws/can/scan: Real-time CAN scan results
+
+Note: "safety-critical" / "safety" naming in this file is historical and
+refers to **API guardrail / command-validation** behavior, NOT vehicle safety.
+The OEM Firefly MIRA panel owns the actual vehicle safety case. See
+`docs/adr/ADR-0004-coachiq-is-not-the-safety-system.md`.
 """
 
 import logging

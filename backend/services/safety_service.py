@@ -1,12 +1,17 @@
 """
-Safety service for RV-C vehicle control systems.
+Guardrail service for the API command-validation tier.
 
-Implements ISO 26262-inspired safety patterns including:
-- Safety interlocks for position-critical features
-- Emergency stop capabilities
-- Watchdog monitoring
-- Audit logging for safety-critical operations
+Implements defense-in-depth API guardrail patterns including:
+- Interlocks for position-critical commands (refuse to forward unsafe frames)
+- Emergency stop on the orchestration loop
+- Watchdog monitoring of dependent services
+- Audit logging for command-validation operations
 - Enhanced security audit logging and rate limiting
+
+"Safety" naming is historical; the OEM Firefly MIRA panel owns the actual
+vehicle safety case. CoachIQ refuses to forward bad commands; it does not
+enforce physical-safety interlocks. See
+`docs/adr/ADR-0004-coachiq-is-not-the-safety-system.md`.
 """
 
 import asyncio
@@ -25,9 +30,10 @@ logger = logging.getLogger(__name__)
 
 class SystemOperationalMode(str, Enum):
     """
-    Operational modes for the safety system.
+    Operational modes for the guardrail tier.
 
-    Follows ISO 26262 operational mode patterns:
+    Inspired by classic operational-mode patterns from safety-of-the-intended-
+    function literature, but applied here to API guardrails (see ADR-0004):
     - NORMAL: System functions as intended
     - MAINTENANCE: Service mode with relaxed interlocks
     - DIAGNOSTIC: Test mode for troubleshooting
@@ -256,10 +262,12 @@ class SafetyInterlock:
 
 class SafetyService:
     """
-    Comprehensive safety service for RV-C vehicle control systems.
+    API command-validation guardrail service.
 
-    Implements ISO 26262-inspired safety patterns including interlocks,
-    emergency stop, watchdog monitoring, and audit logging.
+    Implements defense-in-depth API guardrail patterns including interlocks,
+    emergency stop on the orchestration loop, watchdog monitoring, and audit
+    logging. "Safety" naming is historical; the OEM Firefly MIRA panel owns
+    the vehicle safety case (see ADR-0004).
 
     The service initializes with a safe default system state representing
     a parked and stabilized RV with parking brake engaged, leveling jacks
@@ -635,16 +643,16 @@ class SafetyService:
 
     def _get_safety_critical_services(self) -> list[str]:
         """
-        Get list of safety-critical service names from SafetyServiceRegistry.
+        Get list of CRITICAL-classified service names from SafetyServiceRegistry.
 
         Returns:
-            List of service names that are safety-critical and need emergency stop.
+            List of service names classified CRITICAL that need emergency stop.
         """
-        # Use SafetyServiceRegistry if available for accurate safety classification
+        # Use SafetyServiceRegistry if available for accurate classification
         if self.service_registry and hasattr(self.service_registry, "get_safety_critical_services"):
             return self.service_registry.get_safety_critical_services()
 
-        # Fallback: Define known safety-critical services for basic operation
+        # Fallback: Define known CRITICAL services for basic operation
         fallback_critical_services = [
             "can_bus_service",  # Vehicle CAN bus control
             "entity_service",  # Entity state read + control (unified facade)
@@ -1804,7 +1812,7 @@ class SafetyService:
             logger.info("Stopped safety watchdog monitoring")
 
     async def _health_monitoring_loop(self) -> None:
-        """ISO 26262-compliant health monitoring loop with watchdog pattern."""
+        """Health monitoring loop with watchdog pattern (see ADR-0004 for framing)."""
         logger.info("Starting safety health monitoring loop")
 
         while not self._in_safe_state:
@@ -1927,7 +1935,7 @@ class SafetyService:
             system_snapshot = dict(self._system_state)
             logger.info("System state snapshot: %s", system_snapshot)
 
-            # Set all safety-critical features to safe shutdown
+            # Set all CRITICAL-classified features to safe shutdown
             await self._shutdown_safety_critical_features()
 
             # Engage all safety interlocks
@@ -1942,7 +1950,7 @@ class SafetyService:
             await self._audit_log_event("safe_state_error", {"error": str(e), "reason": reason})
 
     async def _shutdown_safety_critical_features(self) -> None:
-        """Shut down safety-critical services in controlled manner."""
+        """Shut down CRITICAL-classified services in controlled manner."""
         safety_critical_services = self._get_safety_critical_services()
 
         for service_name in safety_critical_services:
@@ -1981,7 +1989,7 @@ class SafetyService:
 
     async def _audit_log_event(self, event_type: str, details: dict[str, Any]) -> None:
         """
-        Log safety-critical event to audit trail.
+        Log a guardrail-tier event to the audit trail.
 
         Args:
             event_type: Type of event

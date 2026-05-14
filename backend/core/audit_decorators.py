@@ -3,6 +3,11 @@ Audit Decorators for Automatic Security Logging
 
 Provides decorators that automatically log security-critical operations
 following OWASP ASVS V7 guidelines.
+
+Note: "safety-critical" / "safety" naming in this file is historical and
+refers to **API guardrail / command-validation** behavior, NOT vehicle safety.
+The OEM Firefly MIRA panel owns the actual vehicle safety case. See
+`docs/adr/ADR-0004-coachiq-is-not-the-safety-system.md`.
 """
 
 import asyncio

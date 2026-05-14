@@ -10,6 +10,11 @@ orchestration facade for all security-related operations, coordinating between:
 - AuthManager (authentication operations)
 - PINManager (PIN-based security)
 - SecurityEventRepository (event persistence)
+
+Note: "safety-critical" / "safety" naming in this file is historical and
+refers to **API guardrail / command-validation** behavior, NOT vehicle safety.
+The OEM Firefly MIRA panel owns the actual vehicle safety case. See
+`docs/adr/ADR-0004-coachiq-is-not-the-safety-system.md`.
 """
 
 import asyncio
