@@ -101,7 +101,7 @@ When dealing with import errors even with proper type stubs:
 ```python
 # CORRECT: Use dependency injection for all services
 from backend.core.dependencies import (
-    get_feature_manager, get_entity_manager, get_config_service
+    get_feature_manager, get_entity_manager, get_rvc_config_facade
 )
 
 @router.get("/status")
@@ -140,7 +140,7 @@ class NewFeature(Feature):
 
 - Find service patterns: `@context7 FeatureManager dependency injection`
 - Check entity operations: `@context7 EntityManager usage patterns`
-- Review configuration: `@context7 ConfigService implementation`
+- Review configuration: `@context7 RVCConfigFacade implementation`
 - Find database patterns: `@context7 DatabaseManager session handling`
 - Check coding patterns: `@context7 FastAPI route implementation`
 - Review API models: `@context7 Pydantic model for entities`

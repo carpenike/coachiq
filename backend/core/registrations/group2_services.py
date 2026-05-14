@@ -280,19 +280,19 @@ def register(service_registry: SafetyServiceRegistry) -> None:
 
     service_registry.register_service(
         name="entity_domain_service",
-        init_func=lambda config_service,
+        init_func=lambda rvc_config_facade,
         auth_manager,
         entity_service,
         websocket_manager,
         entity_manager_service: EntityDomainService(
-            config_service=config_service,
+            config_service=rvc_config_facade,
             auth_manager=auth_manager,
             entity_service=entity_service,
             websocket_manager=websocket_manager,
             entity_manager=entity_manager_service,
         ),
         dependencies=[
-            ServiceDependency("config_service", DependencyType.REQUIRED),
+            ServiceDependency("rvc_config_facade", DependencyType.REQUIRED),
             ServiceDependency("auth_manager", DependencyType.REQUIRED),
             ServiceDependency("entity_service", DependencyType.REQUIRED),
             ServiceDependency("websocket_manager", DependencyType.REQUIRED),

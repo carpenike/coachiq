@@ -1,9 +1,9 @@
 """
-Unit Tests for ConfigurationService
+Unit Tests for RVCSpecLoader
 
 Tests TTL caching behavior, thread safety, and hot-reload functionality
 for the centralized configuration service in
-``backend/core/configuration_service.py``.
+``backend/integrations/rvc/spec_loader.py``.
 
 Filesystem layout
 -----------------
@@ -31,9 +31,9 @@ from pathlib import Path
 import pytest
 import yaml
 
-from backend.core.configuration_service import (
-    ConfigurationLoadError,
-    ConfigurationService,
+from backend.integrations.rvc.spec_loader import (
+    RVCSpecLoadError,
+    RVCSpecLoader,
 )
 
 # ----------------------------------------------------------------------------
@@ -51,7 +51,7 @@ def temp_config_dir():
 @pytest.fixture
 def config_service(temp_config_dir):
     """Create a configuration service instance with short TTL for testing."""
-    return ConfigurationService(temp_config_dir, cache_ttl=1, max_cache_size=10)
+    return RVCSpecLoader(temp_config_dir, cache_ttl=1, max_cache_size=10)
 
 
 def _write_rvc_json(config_dir: Path, dgns: dict[str, dict]) -> Path:
@@ -93,7 +93,7 @@ class TestInitialization:
 
     def test_initialization(self, temp_config_dir):
         """Custom cache_ttl + max_cache_size are propagated to the dgn_cache."""
-        service = ConfigurationService(temp_config_dir, cache_ttl=300, max_cache_size=1000)
+        service = RVCSpecLoader(temp_config_dir, cache_ttl=300, max_cache_size=1000)
 
         assert service.config_dir == temp_config_dir
         # Only the dgn_cache uses the user-supplied max_cache_size; the other
@@ -107,8 +107,8 @@ class TestInitialization:
     def test_missing_config_dir_raises(self, tmp_path):
         """Pointing the service at a nonexistent directory must error fast."""
         nonexistent = tmp_path / "does_not_exist"
-        with pytest.raises(ConfigurationLoadError):
-            ConfigurationService(nonexistent)
+        with pytest.raises(RVCSpecLoadError):
+            RVCSpecLoader(nonexistent)
 
 
 # ----------------------------------------------------------------------------
@@ -165,7 +165,7 @@ class TestDgnSpec:
 
     def test_dgn_spec_cache_size_limit(self, temp_config_dir):
         """``max_cache_size`` is enforced by the underlying TTLCache."""
-        service = ConfigurationService(temp_config_dir, cache_ttl=300, max_cache_size=2)
+        service = RVCSpecLoader(temp_config_dir, cache_ttl=300, max_cache_size=2)
 
         # Populate rvc.json with several DGNs so all lookups hit the cache.
         _write_rvc_json(
@@ -182,7 +182,7 @@ class TestDgnSpec:
         """Cached DGN is reloaded after TTL expires."""
         # Use very short TTL; cachetools' TTLCache uses time.monotonic() and
         # a >TTL sleep is enough to evict the entry on the next access.
-        service = ConfigurationService(temp_config_dir, cache_ttl=1, max_cache_size=10)
+        service = RVCSpecLoader(temp_config_dir, cache_ttl=1, max_cache_size=10)
 
         _write_rvc_json(temp_config_dir, {"1FED1": {"name": "Cached"}})
         service.get_dgn_spec(0x1FED1)

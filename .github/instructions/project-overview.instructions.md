@@ -69,8 +69,9 @@ All settings use the `COACHIQ_` prefix with hierarchical naming:
 - **`.env`**: Active configuration (not in version control)
 - **`backend/core/config.py`**: Pydantic Settings with type validation
 
-### Management Services for Configuration
-- **ConfigService**: ALWAYS use for configuration access
+### Configuration Access
+- **Settings** is the canonical app-config object (`backend.core.config.get_settings()`). Read it directly.
+- **RVCConfigFacade**: ONLY for RV-C metadata (PGN names, coach info), not general app config. See ADR-0008.
 - **Environment variable priority**: Overrides .env file values
 - **Persistence modes**: Memory-only, development, or production
 - **Feature flags**: Enable/disable features via `COACHIQ_FEATURES__*`

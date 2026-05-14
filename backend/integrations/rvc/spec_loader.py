@@ -1,8 +1,12 @@
-"""
-Configuration Service for RV-C decoder with TTL caching and hot-reload capabilities.
+"""RV-C spec/mapping file loader (renamed from ConfigurationService in audit A10).
 
-This module provides centralized configuration management for DGN specifications,
-device mappings, and protocol settings with caching for optimal performance.
+Provides TTL-cached loading of RV-C DGN specifications, coach mappings, and
+protocol settings from disk with hot-reload support.
+
+Renamed from ``ConfigurationService`` -> ``RVCSpecLoader`` in audit cycle
+2026-05-13 PR A10 to clarify that this is a *spec-file loader*, not the
+application configuration object (which is Pydantic ``Settings``). See
+ADR-0008 for the three-tier config layering rationale.
 """
 
 import json
@@ -18,11 +22,11 @@ from cachetools import TTLCache
 logger = logging.getLogger(__name__)
 
 
-class ConfigurationLoadError(Exception):
+class RVCSpecLoadError(Exception):
     """Raised when configuration loading fails."""
 
 
-class ConfigurationService:
+class RVCSpecLoader:
     """
     Centralized configuration service with TTL caching and hot-reload support.
 
@@ -65,7 +69,7 @@ class ConfigurationService:
         # Validate configuration directory exists
         if not self.config_dir.exists():
             msg = f"Configuration directory does not exist: {self.config_dir}"
-            raise ConfigurationLoadError(msg)
+            raise RVCSpecLoadError(msg)
 
     def get_dgn_spec(self, dgn: int) -> dict[str, Any] | None:
         """

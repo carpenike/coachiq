@@ -31,9 +31,9 @@ from backend.core.config import get_settings
 from backend.core.performance import PerformanceMonitor
 from backend.core.safety_registry import SafetyServiceRegistry
 from backend.core.service_dependency_resolver import DependencyType, ServiceDependency
-from backend.services.config_service import ConfigService
 from backend.services.edge_proxy_monitor_service import EdgeProxyMonitorService
 from backend.services.pin_manager import PINConfig, PINManager
+from backend.services.rvc_config_facade import RVCConfigFacade
 from backend.services.security_audit_service import RateLimitConfig, SecurityAuditService
 from backend.services.security_config_service import SecurityConfigService
 
@@ -235,18 +235,18 @@ async def configure(service_registry: SafetyServiceRegistry) -> None:
     register_repositories_with_service_registry(service_registry)
     logger.info("Repositories registered with ServiceRegistry")
 
-    # Register ConfigService after repositories are available
-    def _init_config_service(rvc_config_repository):
-        """Initialize ConfigService with RVCConfigRepository dependency."""
-        return ConfigService(rvc_config_repository)
+    # Register RVCConfigFacade after repositories are available
+    def _init_rvc_config_facade(rvc_config_repository):
+        """Initialize RVCConfigFacade with RVCConfigRepository dependency."""
+        return RVCConfigFacade(rvc_config_repository)
 
     service_registry.register_service(
-        name="config_service",
-        init_func=_init_config_service,
+        name="rvc_config_facade",
+        init_func=_init_rvc_config_facade,
         dependencies=[
             ServiceDependency("rvc_config_repository", DependencyType.REQUIRED),
         ],
-        description="Configuration service for RV-C and coach info management",
+        description="RV-C config facade for PGN/coach metadata lookups",
         tags={"service", "configuration", "rvc"},
         health_check=lambda cs: cs.get_health_status()
         if hasattr(cs, "get_health_status")

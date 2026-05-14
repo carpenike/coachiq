@@ -25,7 +25,7 @@ from pydantic import BaseModel, Field
 from backend.core.entity_manager import EntityManager
 from backend.models.entity import ControlCommand
 from backend.services.auth.manager import AuthManager
-from backend.services.config_service import ConfigService
+from backend.services.rvc_config_facade import RVCConfigFacade
 from backend.services.entity_service import EntityService
 from backend.websocket.handlers import WebSocketManager
 
@@ -111,7 +111,7 @@ class EntityDomainService:
 
     def __init__(
         self,
-        config_service: ConfigService,
+        config_service: RVCConfigFacade,
         auth_manager: AuthManager,
         entity_service: EntityService,
         websocket_manager: WebSocketManager,

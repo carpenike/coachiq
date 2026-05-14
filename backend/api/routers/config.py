@@ -27,14 +27,14 @@ from fastapi.responses import PlainTextResponse
 from backend.core.config import get_settings
 from backend.core.dependencies import (
     create_service_dependency,
-    get_config_service,
     get_entity_state_repository,
+    get_rvc_config_facade,
 )
 from backend.models.github_update import GitHubUpdateStatus
 from backend.repositories.can_tracking_repository import CANTrackingRepository
 from backend.repositories.entity_state_repository import EntityStateRepository
-from backend.services.config_service import ConfigService
 from backend.services.github_update_checker import GitHubUpdateChecker
+from backend.services.rvc_config_facade import RVCConfigFacade
 
 # Create missing dependencies
 get_can_interface_service = create_service_dependency("can_interface_service")
@@ -57,7 +57,7 @@ SERVER_START_TIME = time.time()
     description="Returns the current device mapping configuration file content.",
 )
 async def get_device_mapping_config(
-    config_service: Annotated[ConfigService, Depends(get_config_service)],
+    config_service: Annotated[RVCConfigFacade, Depends(get_rvc_config_facade)],
 ) -> PlainTextResponse:
     """Get device mapping configuration content."""
     logger.info("GET /config/device_mapping - Retrieving device mapping configuration")
@@ -84,7 +84,7 @@ async def get_device_mapping_config(
     description="Returns the current RV-C specification file content.",
 )
 async def get_spec_config(
-    config_service: Annotated[ConfigService, Depends(get_config_service)],
+    config_service: Annotated[RVCConfigFacade, Depends(get_rvc_config_facade)],
 ) -> PlainTextResponse:
     """Get RV-C specification configuration content."""
     logger.info("GET /config/spec - Retrieving RV-C specification configuration")
@@ -140,7 +140,7 @@ async def get_server_status() -> dict[str, Any]:
     description="Returns application-specific status information including configuration and entity counts.",
 )
 async def get_application_status(
-    config_service: Annotated[ConfigService, Depends(get_config_service)],
+    config_service: Annotated[RVCConfigFacade, Depends(get_rvc_config_facade)],
     entity_state_repo: Annotated[EntityStateRepository, Depends(get_entity_state_repository)],
     can_tracking_repo: Annotated[CANTrackingRepository, Depends(get_can_tracking_repository)],
 ) -> dict[str, Any]:
@@ -568,7 +568,7 @@ async def get_coach_interface_requirements():
 
 @router.get("/config/coach/metadata")
 async def get_coach_mapping_metadata(
-    config_service: Annotated[ConfigService, Depends(get_config_service)],
+    config_service: Annotated[RVCConfigFacade, Depends(get_rvc_config_facade)],
 ):
     """Get complete coach mapping metadata including interface analysis."""
     # This endpoint provides backwards compatibility

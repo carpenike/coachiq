@@ -85,7 +85,7 @@ from backend.services.predictive_maintenance_service import (
 # ``backend.websocket.handlers`` -> ``backend.websocket.routes`` ->
 # ``backend.core.dependencies.WebSocketManager``. Tracked separately;
 # fix likely requires making entity_service's websocket import lazy.
-from backend.services.config_service import ConfigService as _ConfigService
+from backend.services.rvc_config_facade import RVCConfigFacade as _RVCConfigFacade
 from backend.services.rvc_service import RVCService as _RVCService
 from backend.services.safety_service import SafetyService as _SafetyService
 
@@ -205,14 +205,13 @@ def get_entity_service() -> Any:
     return create_service_dependency("entity_service")()
 
 
-def get_config_service() -> _ConfigService:
-    """
-    Get the config service from ServiceRegistry.
+def get_rvc_config_facade() -> _RVCConfigFacade:
+    """Get the RV-C config facade from ServiceRegistry.
 
     Returns:
-        The config service instance
+        The RVCConfigFacade instance
     """
-    return create_service_dependency("config_service")()
+    return create_service_dependency("rvc_config_facade")()
 
 
 def get_can_facade() -> _CANFacade | None:
@@ -462,7 +461,7 @@ def get_predictive_maintenance_service() -> _PredictiveMaintenanceService:
 # Modern typed dependencies using Annotated
 WebSocketManager = Annotated[Any, Depends(get_websocket_manager)]
 EntityService = Annotated[Any, Depends(get_entity_service)]
-ConfigService = Annotated[_ConfigService, Depends(get_config_service)]
+RVCConfigFacade = Annotated[_RVCConfigFacade, Depends(get_rvc_config_facade)]
 
 CANMessageInjector = Annotated[_CANMessageInjector, Depends(get_can_message_injector)]
 CANMessageFilter = Annotated[_MessageFilter, Depends(get_can_message_filter)]

@@ -29,7 +29,7 @@ from httpx import AsyncClient
 
 from backend.core.dependencies import (
     get_can_facade,
-    get_config_service,
+    get_rvc_config_facade,
     get_entity_service,
 )
 
@@ -385,7 +385,7 @@ def override_config_service(mock_config_service: Mock) -> Generator[Mock, None, 
     Override the config_service dependency with a mock.
     Use this when testing endpoints that depend on configuration.
     """
-    app.dependency_overrides[get_config_service] = lambda: mock_config_service  # type: ignore[attr-defined]
+    app.dependency_overrides[get_rvc_config_facade] = lambda: mock_config_service  # type: ignore[attr-defined]
     yield mock_config_service
     app.dependency_overrides.clear()  # type: ignore[attr-defined]
 
@@ -417,7 +417,7 @@ def override_all_services(
         {
             get_entity_service: lambda: mock_entity_service,
             get_can_facade: lambda: mock_can_service,
-            get_config_service: lambda: mock_config_service,
+            get_rvc_config_facade: lambda: mock_config_service,
         }
     )  # type: ignore[attr-defined]
     app.state.service_registry = mock_service_registry

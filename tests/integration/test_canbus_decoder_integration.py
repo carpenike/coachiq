@@ -21,7 +21,7 @@ from unittest.mock import Mock
 
 import pytest
 
-from backend.core.configuration_service import ConfigurationService
+from backend.integrations.rvc.spec_loader import RVCSpecLoader
 from backend.core.safety_state_engine import SafetyEvent, SafetyStateEngine
 from backend.integrations.can.performance_monitor import ComponentType, PerformanceMonitor
 from backend.integrations.can.protocol_router import (
@@ -71,7 +71,7 @@ class IntegratedCANDecoder:
 
     def __init__(self, config_dir: Path):
         # Initialize all components
-        self.config_service = ConfigurationService(config_dir, cache_ttl=60, max_cache_size=100)
+        self.config_service = RVCSpecLoader(config_dir, cache_ttl=60, max_cache_size=100)
         self.safety_engine = SafetyStateEngine()
         # Use basic security manager for protocol router
         self.basic_security_manager = SecurityManager()
@@ -278,10 +278,10 @@ _MOVING_SPEED_THRESHOLD_MPH = 0.5
 def temp_config_dir(tmp_path: Path) -> Path:
     """Create a temporary RV-C configuration directory.
 
-    ``ConfigurationService._load_full_spec`` reads ``rvc.json`` at the
+    ``RVCSpecLoader._load_full_spec`` reads ``rvc.json`` at the
     config-dir root and looks up DGN entries via ``full_spec["dgns"][hex]``
     (uppercase hex, no ``0x`` prefix). The previous fixture wrote a
-    ``dgn_specs/<dgn>.yaml`` file that ConfigurationService never reads,
+    ``dgn_specs/<dgn>.yaml`` file that RVCSpecLoader never reads,
     so ``get_dgn_spec`` always returned None and the cache stayed empty,
     breaking ``test_configuration_service_integration``.
     """

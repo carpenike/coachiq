@@ -1,7 +1,7 @@
 """
-Tests for the ConfigService.
+Tests for the RVCConfigFacade.
 
-ConfigService is a thin facade over RVCConfigRepository that exposes
+RVCConfigFacade is a thin facade over RVCConfigRepository that exposes
 sync queries for coach info / PGN names / DGN command-status pairs and
 a few async wrappers for raw config content. Tests fully mock the
 repository.
@@ -13,7 +13,7 @@ import pytest
 
 from backend.models.common import CoachInfo
 from backend.repositories import RVCConfigRepository
-from backend.services.config_service import ConfigService
+from backend.services.rvc_config_facade import RVCConfigFacade
 
 
 @pytest.fixture
@@ -38,14 +38,14 @@ def mock_repository() -> MagicMock:
 
 
 @pytest.fixture
-def config_service(mock_repository) -> ConfigService:
-    """Create ConfigService instance for testing."""
-    return ConfigService(rvc_config_repository=mock_repository)
+def config_service(mock_repository) -> RVCConfigFacade:
+    """Create RVCConfigFacade instance for testing."""
+    return RVCConfigFacade(rvc_config_repository=mock_repository)
 
 
 class TestConfigServiceConstruction:
     def test_init_stores_repository(self, mock_repository):
-        service = ConfigService(rvc_config_repository=mock_repository)
+        service = RVCConfigFacade(rvc_config_repository=mock_repository)
         assert service._rvc_config_repo is mock_repository
 
 
@@ -118,7 +118,7 @@ class TestConfigServiceHealth:
 
         health = config_service.get_health_status()
 
-        assert health["service"] == "ConfigService"
+        assert health["service"] == "RVCConfigFacade"
         assert health["healthy"] is True
         assert health["configuration_loaded"] is True
         assert health["repository_health"] == {"healthy": True, "items": 100}
@@ -132,7 +132,7 @@ class TestConfigServiceHealth:
 
         health = config_service.get_health_status()
 
-        assert health["service"] == "ConfigService"
+        assert health["service"] == "RVCConfigFacade"
         assert health["healthy"] is False
         assert health["configuration_loaded"] is False
         assert health["repository_health"]["reason"] == "config file missing"
@@ -178,7 +178,7 @@ class TestConfigServiceAsyncContent:
 
         assert status["loaded"] is True
         assert status["summary"]["pgn_count"] == 50
-        assert status["health"]["service"] == "ConfigService"
+        assert status["health"]["service"] == "RVCConfigFacade"
         assert status["health"]["healthy"] is True
 
 
@@ -186,7 +186,7 @@ class TestCreateConfigServiceFactory:
     """The factory function is documented as not-yet-wired."""
 
     def test_factory_raises_until_wired_to_service_registry(self):
-        from backend.services.config_service import create_config_service
+        from backend.services.rvc_config_facade import create_rvc_config_facade
 
         with pytest.raises(NotImplementedError, match="ServiceRegistry"):
-            create_config_service()
+            create_rvc_config_facade()

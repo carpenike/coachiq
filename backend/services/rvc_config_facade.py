@@ -1,12 +1,17 @@
-"""
-Config Service - Repository Pattern Implementation
+"""RV-C configuration facade (renamed from ConfigService in audit A10).
 
-Service for configuration management using clean repository pattern
-with no legacy AppState dependencies.
+Thin wrapper over :class:`backend.repositories.RVCConfigRepository`
+exposing PGN/coach metadata lookups to the rest of the application.
+
+Renamed from ``ConfigService`` -> ``RVCConfigFacade`` in audit cycle
+2026-05-13 PR A10 to disambiguate from Pydantic ``Settings`` (the
+canonical app-config object) and from the spec-file loader, now called
+``RVCSpecLoader`` (see ``backend/integrations/rvc/spec_loader.py``).
+See ADR-0008 for the three-tier config layering rationale.
 """
 
 import logging
-from typing import Any, Dict, Optional
+from typing import Any
 
 from backend.models.common import CoachInfo
 from backend.repositories import RVCConfigRepository
@@ -14,12 +19,13 @@ from backend.repositories import RVCConfigRepository
 logger = logging.getLogger(__name__)
 
 
-class ConfigService:
-    """
-    Configuration service that uses RVCConfigRepository directly.
+class RVCConfigFacade:
+    """RV-C configuration facade backed by :class:`RVCConfigRepository`.
 
-    This is an example of the target architecture where services
-    depend on specific repositories rather than the monolithic AppState.
+    This is the request-time read API for RV-C metadata (PGN names,
+    coach info, command/status DGN pairs). It is *not* the canonical
+    app-configuration source -- that role belongs to Pydantic
+    ``Settings`` (``backend.core.config.get_settings``).
     """
 
     def __init__(self, rvc_config_repository: RVCConfigRepository):
@@ -30,7 +36,7 @@ class ConfigService:
             rvc_config_repository: The RVC configuration repository
         """
         self._rvc_config_repo = rvc_config_repository
-        logger.info("ConfigService initialized with RVCConfigRepository")
+        logger.info("RVCConfigFacade initialized with RVCConfigRepository")
 
     def get_coach_info(self) -> CoachInfo | None:
         """Get coach information."""
@@ -57,7 +63,7 @@ class ConfigService:
         repo_health = self._rvc_config_repo.get_health_status()
 
         return {
-            "service": "ConfigService",
+            "service": "RVCConfigFacade",
             "healthy": repo_health.get("healthy", False),
             "repository_health": repo_health,
             "configuration_loaded": self.is_configuration_loaded(),
@@ -85,15 +91,12 @@ class ConfigService:
 
 
 # Example factory function for ServiceRegistry registration
-def create_config_service() -> ConfigService:
-    """
-    Factory function for creating ConfigService with dependencies.
+def create_rvc_config_facade() -> RVCConfigFacade:
+    """Factory function for creating RVCConfigFacade with dependencies.
 
     This would be registered with ServiceRegistry and automatically
     get the RVCConfigRepository injected.
     """
-    # In real usage, this would get the repository from ServiceRegistry
-    # For now, we'll document the pattern
     raise NotImplementedError(
         "This factory should be registered with ServiceRegistry "
         "to get automatic dependency injection of RVCConfigRepository"
