@@ -46,6 +46,34 @@ from backend.integrations.can.message_injector import CANMessageInjector as _CAN
 from backend.integrations.can.protocol_analyzer import ProtocolAnalyzer as _ProtocolAnalyzer
 from backend.services.can_facade import CANFacade as _CANFacade
 
+# Real service classes for typed DI aliases (ADR-0006).
+# Imported under underscore-prefixed names so the public alias name
+# matches what the rest of the codebase already uses. The runtime
+# ServiceRegistry lookup remains string-keyed; these imports exist
+# purely so pyright + IDEs see real return types.
+from backend.services.analytics_dashboard_service import (
+    AnalyticsDashboardService as _AnalyticsDashboardService,
+)
+from backend.services.edge_proxy_monitor_service import (
+    EdgeProxyMonitorService as _EdgeProxyMonitorService,
+)
+from backend.services.notification_analytics_service import (
+    NotificationAnalyticsService as _NotificationAnalyticsService,
+)
+from backend.services.notification_manager import NotificationManager as _NotificationManager
+from backend.services.notification_reporting_service import (
+    NotificationReportingService as _NotificationReportingService,
+)
+from backend.services.predictive_maintenance_service import (
+    PredictiveMaintenanceService as _PredictiveMaintenanceService,
+)
+
+# NOTE: ``AnalyticsService`` alias points at ``NotificationAnalyticsService``
+# to match what the router annotations already promise. The registry
+# key ``"analytics_service"`` is NOT currently registered anywhere --
+# every endpoint in ``backend/api/routers/notification_analytics.py``
+# raises ``RuntimeError`` at request time. Tracked as #169.
+
 logger = logging.getLogger(__name__)
 
 # Type variables for better type safety
@@ -330,7 +358,7 @@ def get_system_state_repository() -> _SystemStateRepository:
     return create_service_dependency("system_state_repository")()
 
 
-def get_analytics_dashboard_service() -> Any:
+def get_analytics_dashboard_service() -> _AnalyticsDashboardService:
     """
     Get the analytics dashboard service from ServiceRegistry.
 
@@ -344,7 +372,7 @@ def get_analytics_dashboard_service() -> Any:
     return create_service_dependency("analytics_dashboard_service")()
 
 
-def get_edge_proxy_monitor_service() -> Any:
+def get_edge_proxy_monitor_service() -> _EdgeProxyMonitorService:
     """
     Get the edge proxy monitor service from ServiceRegistry.
 
@@ -392,7 +420,7 @@ def get_migration_safety_validator() -> Any:
     return create_service_dependency("migration_safety_validator")()
 
 
-def get_reporting_service() -> Any:
+def get_reporting_service() -> _NotificationReportingService:
     """
     Get NotificationReportingService instance.
 
@@ -402,7 +430,7 @@ def get_reporting_service() -> Any:
     return create_service_dependency("notification_reporting_service")()
 
 
-def get_predictive_maintenance_service() -> Any:
+def get_predictive_maintenance_service() -> _PredictiveMaintenanceService:
     """
     Get PredictiveMaintenanceService instance.
 
@@ -433,18 +461,30 @@ RVCConfigRepository = Annotated[_RVCConfigRepository, Depends(get_rvc_config_rep
 SystemStateRepository = Annotated[_SystemStateRepository, Depends(get_system_state_repository)]
 
 # Analytics dependencies
-AnalyticsDashboardService = Annotated[Any, Depends(get_analytics_dashboard_service)]
+AnalyticsDashboardService = Annotated[
+    _AnalyticsDashboardService, Depends(get_analytics_dashboard_service)
+]
 
 # Edge proxy monitor dependency
-EdgeProxyMonitorService = Annotated[Any, Depends(get_edge_proxy_monitor_service)]
+EdgeProxyMonitorService = Annotated[
+    _EdgeProxyMonitorService, Depends(get_edge_proxy_monitor_service)
+]
 
 
-def get_analytics_service() -> Any:
-    """Get the analytics service from ServiceRegistry."""
+def get_analytics_service() -> _NotificationAnalyticsService:
+    """Get the analytics service from ServiceRegistry.
+
+    See #169 -- the registry key ``"analytics_service"`` is currently
+    NOT registered anywhere; this accessor will raise ``RuntimeError``
+    at request time. The typed annotation matches what the router
+    consumers in ``backend/api/routers/notification_analytics.py``
+    already promise, so the contract is explicit until the registration
+    is fixed in main.py.
+    """
     return create_service_dependency("analytics_service")()
 
 
-AnalyticsService = Annotated[Any, Depends(get_analytics_service)]
+AnalyticsService = Annotated[_NotificationAnalyticsService, Depends(get_analytics_service)]
 
 
 # Database update dependencies
@@ -452,7 +492,9 @@ DatabaseUpdateService = Annotated[Any, Depends(get_database_update_service)]
 MigrationSafetyValidator = Annotated[Any, Depends(get_migration_safety_validator)]
 
 # Predictive maintenance
-PredictiveMaintenanceService = Annotated[Any, Depends(get_predictive_maintenance_service)]
+PredictiveMaintenanceService = Annotated[
+    _PredictiveMaintenanceService, Depends(get_predictive_maintenance_service)
+]
 
 ServiceRegistry = Annotated[_ServiceRegistryClass, Depends(get_service_registry)]
 
@@ -495,7 +537,7 @@ def get_security_audit_service() -> Any:
     return create_service_dependency("security_audit_service")()
 
 
-def get_notification_manager() -> Any:
+def get_notification_manager() -> _NotificationManager:
     """Get the notification manager from ServiceRegistry."""
     return create_service_dependency("notification_manager")()
 
@@ -597,6 +639,6 @@ PINManager = Annotated[Any, Depends(get_pin_manager)]
 SecurityAuditService = Annotated[Any, Depends(get_security_audit_service)]
 SecurityConfigService = Annotated[Any, Depends(get_security_config_service)]
 SecurityEventManager = Annotated[Any, Depends(get_security_event_manager)]
-NotificationManager = Annotated[Any, Depends(get_notification_manager)]
+NotificationManager = Annotated[_NotificationManager, Depends(get_notification_manager)]
 AuthenticatedUser = Annotated[dict, Depends(get_authenticated_user)]
 AuthenticatedAdmin = Annotated[dict, Depends(get_authenticated_admin)]

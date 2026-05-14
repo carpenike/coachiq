@@ -10,7 +10,8 @@ service classes. Doing so used to trigger `backend.services.entity_service`
 `backend.websocket.routes`) to load whenever ANY service was imported,
 which produced a hard-to-diagnose circular import when
 `backend.core.dependencies` started importing service classes directly
-for the typed-DI pattern in ADR-0006 (audit cycle 2026-05-13 PR A7.0).
+for the typed-DI pattern in ADR-0006 (audit cycle 2026-05-13 PRs
+A7.0--A7.3).
 
 Use the fully-qualified module path instead:
     from backend.services.entity_service import EntityService
