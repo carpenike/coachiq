@@ -5,6 +5,10 @@ audit cycle 2026-05-13 PR A9. The :class:`LockoutService` body is moved
 verbatim; only the surrounding imports and module docstring are new.
 """
 
+# ruff: noqa: G004, PLR0913, SIM102
+# Pre-existing patterns from the moved code (lifted from auth_services.py
+# in audit cycle 2026-05-13 PR A9). Cleanup is intentionally out of scope.
+
 import logging
 from datetime import UTC, datetime, timedelta
 from typing import Any

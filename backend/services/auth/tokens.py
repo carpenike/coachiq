@@ -5,6 +5,10 @@ audit cycle 2026-05-13 PR A9. The :class:`TokenService` body is moved
 verbatim; only the surrounding imports and module docstring are new.
 """
 
+# ruff: noqa: G004, RET504
+# Pre-existing patterns from the moved code (lifted from auth_services.py
+# in audit cycle 2026-05-13 PR A9). Cleanup is intentionally out of scope.
+
 import logging
 import secrets
 from datetime import UTC, datetime, timedelta
