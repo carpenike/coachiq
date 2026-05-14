@@ -12,6 +12,29 @@ from fastapi import Depends, Header, HTTPException, status
 
 from backend.core.service_registry import ServiceRegistry as _ServiceRegistryClass
 
+# Real repository classes for typed DI aliases (ADR-0006).
+# Imported under underscore-prefixed names so the public alias name
+# matches what the rest of the codebase already uses. The runtime
+# ServiceRegistry lookup remains string-keyed; these imports exist
+# purely so pyright + IDEs see real return types.
+#
+# NOTE: ``EntityStateRepository`` exists in TWO files under the same
+# class name -- the canonical one (re-exported by
+# ``backend/repositories/__init__.py`` and registered by
+# ``backend/repositories/service_registration.py``) AND a competing
+# subclass in ``backend/repositories/entity_repository.py`` that
+# main.py registers later (overriding the first registration with a
+# different constructor signature). Tracked as #167. The typed alias
+# here points at the canonical one; if #167 picks the other class,
+# this single import is the one-line update.
+from backend.repositories.entity_state_repository import (
+    EntityStateRepository as _EntityStateRepository,
+)
+from backend.repositories.rvc_config_repository import RVCConfigRepository as _RVCConfigRepository
+from backend.repositories.system_state_repository import (
+    SystemStateRepository as _SystemStateRepository,
+)
+
 logger = logging.getLogger(__name__)
 
 # Type variables for better type safety
@@ -260,7 +283,7 @@ def get_rvc_service() -> Any:
 # ==================================================================================
 
 
-def get_entity_state_repository() -> Any:
+def get_entity_state_repository() -> _EntityStateRepository:
     """
     Get the entity state repository from ServiceRegistry.
 
@@ -270,7 +293,7 @@ def get_entity_state_repository() -> Any:
     return create_service_dependency("entity_state_repository")()
 
 
-def get_rvc_config_repository() -> Any:
+def get_rvc_config_repository() -> _RVCConfigRepository:
     """
     Get the RVC config repository from ServiceRegistry.
 
@@ -280,7 +303,7 @@ def get_rvc_config_repository() -> Any:
     return create_service_dependency("rvc_config_repository")()
 
 
-def get_system_state_repository() -> Any:
+def get_system_state_repository() -> _SystemStateRepository:
     """
     Get the system state repository from ServiceRegistry.
 
@@ -388,9 +411,9 @@ CANProtocolAnalyzer = Annotated[Any, Depends(get_can_protocol_analyzer)]
 RVCService = Annotated[Any, Depends(get_rvc_service)]
 
 # Repository dependencies
-EntityStateRepository = Annotated[Any, Depends(get_entity_state_repository)]
-RVCConfigRepository = Annotated[Any, Depends(get_rvc_config_repository)]
-SystemStateRepository = Annotated[Any, Depends(get_system_state_repository)]
+EntityStateRepository = Annotated[_EntityStateRepository, Depends(get_entity_state_repository)]
+RVCConfigRepository = Annotated[_RVCConfigRepository, Depends(get_rvc_config_repository)]
+SystemStateRepository = Annotated[_SystemStateRepository, Depends(get_system_state_repository)]
 
 # Analytics dependencies
 AnalyticsDashboardService = Annotated[Any, Depends(get_analytics_dashboard_service)]
