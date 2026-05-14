@@ -30,7 +30,7 @@ from backend.core.service_dependency_resolver import DependencyType, ServiceDepe
 # in `audit-2026-05-12.md`.
 from backend.integrations.can.message_injector import CANMessageInjector, SafetyLevel
 from backend.services.analytics_dashboard_service import AnalyticsDashboardService
-from backend.services.auth_service import AuthService
+from backend.services.auth.service import AuthService
 from backend.services.can_bus_service import CANBusService
 from backend.services.can_interface_service import CANInterfaceService
 from backend.services.entity_manager_service import EntityManagerService
@@ -162,7 +162,7 @@ def register(service_registry: SafetyServiceRegistry) -> None:
         notification_service=None,
     ):
         # Create legacy AuthRepository for backward compatibility
-        from backend.services.auth_repository import AuthRepository
+        from backend.services.auth.repository import AuthRepository
 
         auth_repository = AuthRepository(database_manager) if database_manager else None
 

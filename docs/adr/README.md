@@ -63,6 +63,11 @@ Keep ADRs short -- 50-150 lines is typical. If you find yourself writing
   FastAPI dependency-injection aliases in `backend/core/dependencies.py`
   with concrete service classes; keep the string-keyed runtime
   registry. Migration is incremental, one service cluster per sub-PR.
+- [ADR-0007](ADR-0007-auth-service-namespace.md) -- Consolidate the
+  four `backend/services/auth_*.py` files into a single
+  `backend/services/auth/` package, split `auth_services.py` per
+  class, and keep `AuthManager` (policy engine) and `AuthService`
+  (request-time facade) intentionally separate.
 
 ## Status
 

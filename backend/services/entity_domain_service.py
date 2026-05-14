@@ -24,7 +24,7 @@ from pydantic import BaseModel, Field
 
 from backend.core.entity_manager import EntityManager
 from backend.models.entity import ControlCommand
-from backend.services.auth_manager import AuthManager
+from backend.services.auth.manager import AuthManager
 from backend.services.config_service import ConfigService
 from backend.services.entity_service import EntityService
 from backend.websocket.handlers import WebSocketManager

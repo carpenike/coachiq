@@ -15,7 +15,7 @@ from unittest.mock import MagicMock
 import pytest
 
 from backend.core.config import AuthenticationSettings
-from backend.services.auth_manager import AuthManager
+from backend.services.auth.manager import AuthManager
 from backend.services.user_invitation_service import UserInvitationService
 
 

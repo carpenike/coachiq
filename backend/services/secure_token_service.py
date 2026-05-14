@@ -21,7 +21,7 @@ from starlette.responses import Response
 from backend.core.config import get_settings
 from backend.core.performance import PerformanceMonitor
 from backend.repositories.secure_token_repository import SecureTokenRepository
-from backend.services.auth_manager import AuthManager, InvalidTokenError
+from backend.services.auth.manager import AuthManager, InvalidTokenError
 
 logger = logging.getLogger(__name__)
 

@@ -306,7 +306,7 @@ def conditional_auth_rate_limit():
         """Apply rate limiting only if authentication is enabled."""
         # Import here to avoid circular imports
         from backend.core.dependencies import get_auth_manager
-        from backend.services.auth_manager import AuthMode
+        from backend.services.auth.manager import AuthMode
 
         # Get the auth manager
         auth_manager = get_auth_manager()
