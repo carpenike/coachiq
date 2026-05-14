@@ -4,12 +4,12 @@ import logging
 from typing import Any
 
 from backend.core.service_dependency_resolver import DependencyType, ServiceDependency
-from backend.core.service_registry import EnhancedServiceRegistry
+from backend.core.service_registry import ServiceRegistry
 
 logger = logging.getLogger(__name__)
 
 
-def register_database_update_services(service_registry: EnhancedServiceRegistry) -> None:
+def register_database_update_services(service_registry: ServiceRegistry) -> None:
     """
     Register database update services - TARGET PATTERN ONLY.
 

@@ -13,7 +13,7 @@ from unittest.mock import AsyncMock, Mock, patch
 import pytest
 
 from backend.core.config import get_settings
-from backend.core.service_registry import EnhancedServiceRegistry
+from backend.core.service_registry import ServiceRegistry
 from backend.middleware.validation import RuntimeValidationMiddleware, SchemaValidationMixin
 from backend.schemas import BulkOperationSchemaV2, ControlCommandSchemaV2, EntitySchemaV2
 from backend.schemas.schema_exporter import ZodSchemaExporter
@@ -32,7 +32,7 @@ class TestSafetySystemValidation:
 
         os.environ["COACHIQ_FEATURES__DOMAIN_API_V2"] = "true"
 
-        service_registry = EnhancedServiceRegistry()
+        service_registry = ServiceRegistry()
         # For testing, we'll mock the services
         return service_registry
 

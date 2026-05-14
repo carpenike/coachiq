@@ -16,7 +16,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from backend.core.service_registry import EnhancedServiceRegistry, ServiceStatus
+from backend.core.service_registry import ServiceRegistry, ServiceStatus
 from backend.services.safety_service import SafetyInterlock, SafetyService
 
 
@@ -235,7 +235,7 @@ def rv_system_config():
 def integrated_system(rv_system_config):
     """Create integrated RV system for testing.
 
-    NOTE: ``EnhancedServiceRegistry.register_service`` takes
+    NOTE: ``ServiceRegistry.register_service`` takes
     ``init_func`` (callable that returns the service) and ``tags``
     (set of strings), NOT the legacy ``service`` / ``is_critical``
     kwargs the previous fixture passed. Pre-instantiate each
@@ -246,7 +246,7 @@ def integrated_system(rv_system_config):
     late-binding closure trap (otherwise every lambda would
     capture the loop variable and return the *last* service).
     """
-    service_registry = EnhancedServiceRegistry()
+    service_registry = ServiceRegistry()
 
     services: dict[str, RealWorldService] = {}
     for name, config in rv_system_config.items():
@@ -312,7 +312,7 @@ class TestSystemStartupShutdown:
     async def test_startup_with_failure_recovery(self, integrated_system):
         """Test startup with service failure and recovery.
 
-        ``EnhancedServiceRegistry.startup_all`` aborts the whole startup
+        ``ServiceRegistry.startup_all`` aborts the whole startup
         sweep on any service failure (the registry can't reason about
         whether a downstream consumer of a failed service can cope).
         That's the right behaviour for a multiplex orchestration layer:
@@ -351,7 +351,7 @@ class TestSystemStartupShutdown:
             )
 
         # Verify failed service was actually attempted (its startup() raised
-        # the exception we expected). Note: ``EnhancedServiceRegistry``'s
+        # the exception we expected). Note: ``ServiceRegistry``'s
         # ``_emergency_cleanup`` walks every instantiated service after the
         # abort, calling ``_shutdown_service`` which overwrites the FAILED
         # status on the failed entry to STOPPED. The failure signal is

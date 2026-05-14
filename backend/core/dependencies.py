@@ -10,7 +10,7 @@ from typing import Annotated, Any, TypeVar
 
 from fastapi import Depends, Header, HTTPException, status
 
-from backend.core.service_registry import EnhancedServiceRegistry
+from backend.core.service_registry import ServiceRegistry as _ServiceRegistryClass
 
 logger = logging.getLogger(__name__)
 
@@ -18,10 +18,10 @@ logger = logging.getLogger(__name__)
 T = TypeVar("T")
 
 # Module-level service registry instance
-_service_registry: EnhancedServiceRegistry | None = None
+_service_registry: _ServiceRegistryClass | None = None
 
 
-def initialize_service_registry(registry: EnhancedServiceRegistry) -> None:
+def initialize_service_registry(registry: _ServiceRegistryClass) -> None:
     """
     Initialize the module-level service registry.
 
@@ -35,7 +35,7 @@ def initialize_service_registry(registry: EnhancedServiceRegistry) -> None:
     logger.info("Service registry initialized for dependency injection")
 
 
-def get_service_registry() -> EnhancedServiceRegistry:
+def get_service_registry() -> _ServiceRegistryClass:
     """
     Get the service registry instance.
 
@@ -414,7 +414,7 @@ MigrationSafetyValidator = Annotated[Any, Depends(get_migration_safety_validator
 # Predictive maintenance
 PredictiveMaintenanceService = Annotated[Any, Depends(get_predictive_maintenance_service)]
 
-ServiceRegistry = Annotated[EnhancedServiceRegistry, Depends(get_service_registry)]
+ServiceRegistry = Annotated[_ServiceRegistryClass, Depends(get_service_registry)]
 
 
 # ==================================================================================

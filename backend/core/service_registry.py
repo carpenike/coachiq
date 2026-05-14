@@ -58,164 +58,98 @@ class ServiceStatus(Enum):
     STOPPED = "STOPPED"
 
 
+logger = logging.getLogger(__name__)
+
+
+class ServiceDefinition:
+    """Enhanced service definition with dependency metadata."""
+
+    def __init__(  # noqa: PLR0913 -- intentional rich-metadata constructor
+        self,
+        name: str,
+        init_func: Callable[[], Any],
+        dependencies: list[str | ServiceDependency] | None = None,
+        tags: set[str] | None = None,
+        description: str | None = None,
+        health_check: Callable[[], bool] | None = None,
+    ):
+        self.name = name
+        self.init_func = init_func
+        self.tags = tags or set()
+        self.description = description
+        self.health_check = health_check
+
+        # Convert simple string dependencies to ServiceDependency objects
+        self.dependencies: list[ServiceDependency] = []
+        if dependencies:
+            for dep in dependencies:
+                if isinstance(dep, str):
+                    self.dependencies.append(ServiceDependency(name=dep))
+                else:
+                    self.dependencies.append(dep)
+
+
 class ServiceRegistry:
     """
-    Centralized service registry with dependency management and lifecycle orchestration.
+    Centralized service registry with dependency management and lifecycle
+    orchestration.
 
-    Replaces the service locator pattern with explicit dependency injection
-    and provides structured startup/shutdown for safety-critical systems.
+    Resolves a directed-acyclic dependency graph between services, brings
+    them up in topologically-correct stages with parallel execution within
+    each stage, monitors health, and orchestrates ordered shutdown.
+
+    Improvements over the bare service-locator pattern:
+    - Advanced dependency resolver with circular detection
+    - Better error messages with available services
+    - Dependency visualization and reporting
+    - Runtime dependency validation
+    - Service tagging and categorization
+
+    Used to be split into a base ``ServiceRegistry`` (legacy
+    ``register_startup_stage`` API) and a subclass
+    ``EnhancedServiceRegistry``. The base had no remaining callers and
+    its startup methods were silently inert when the subclass was used,
+    so the two were collapsed (audit cycle 2026-05-13, PR A3).
     """
 
     def __init__(self):
+        # Inlined from the former base ``ServiceRegistry`` class.
         self._services: dict[str, Any] = {}
         self._service_status: dict[str, ServiceStatus] = {}
         self._background_tasks: set[asyncio.Task] = set()
-        self._startup_stages: list[list[tuple[str, Callable[[], Any], list[str]]]] = []
         self._startup_time: float | None = None
         self._shutdown_complete: bool = False
 
-    def register_startup_stage(self, services: list[tuple[str, Callable[[], Any], list[str]]]):
-        """
-        Register a startup stage with services and their dependencies.
+        # Enhanced-specific state.
+        self._resolver = ServiceDependencyResolver()
+        self._service_definitions: dict[str, ServiceDefinition] = {}
+        self._startup_errors: dict[str, Exception] = {}
+        self._dependency_report: str | None = None
+        self._lifecycle_manager = ServiceLifecycleManager()
+        self._service_timings: dict[str, float] = {}  # Track individual service startup times
 
-        Args:
-            services: List of (service_name, init_function, dependencies) tuples
-        """
-        self._startup_stages.append(services)
+    # ------------------------------------------------------------------ #
+    # Service-instance accessors (inlined from the former base class).
+    # ------------------------------------------------------------------ #
 
-    async def startup(self):
-        """
-        Execute orchestrated startup with dependency resolution and parallel execution.
+    def has_service(self, service_name: str) -> bool:
+        """Check if a service is registered and healthy."""
+        return (
+            service_name in self._services
+            and self._service_status.get(service_name) == ServiceStatus.HEALTHY
+        )
 
-        Raises:
-            RuntimeError: If any service fails to initialize
-        """
-        start_time = time.perf_counter()
+    def get_service(self, service_name: str) -> Any:
+        """Get a service by name. Raises if not registered + healthy."""
+        if not self.has_service(service_name):
+            msg = f"Service '{service_name}' not available"
+            raise RuntimeError(msg)
+        return self._services[service_name]
 
-        try:
-            total_services = sum(len(stage) for stage in self._startup_stages)
-
-            for stage_num, services_in_stage in enumerate(self._startup_stages):
-                await self._execute_startup_stage(stage_num, services_in_stage)
-
-            self._startup_time = time.perf_counter() - start_time
-
-        except Exception as e:
-            # Attempt cleanup of partially initialized services
-            await self._emergency_cleanup()
-            raise
-
-    async def _execute_startup_stage(
-        self, stage_num: int, services_in_stage: list[tuple[str, Callable, list[str]]]
-    ):
-        """Execute a single startup stage with dependency resolution."""
-        if not services_in_stage:
-            return
-
-        # Build dependency graph for this stage
-        sorter = TopologicalSorter()
-        stage_services = {}
-
-        for name, init_func, deps in services_in_stage:
-            # Validate dependencies are available
-            for dep in deps:
-                if (
-                    dep not in self._services
-                    or self._service_status.get(dep) != ServiceStatus.HEALTHY
-                ):
-                    raise RuntimeError(
-                        f"Service '{name}' dependency '{dep}' not available or not healthy"
-                    )
-
-            sorter.add(name, *deps)
-            stage_services[name] = init_func
-            self._service_status[name] = ServiceStatus.PENDING
-
-        # Execute in dependency order with parallelization
-        sorter.prepare()
-        while sorter.is_active():
-            ready_services = sorter.get_ready()
-            if ready_services:
-                # Start ready services in parallel
-                tasks = [self._start_service(name, stage_services[name]) for name in ready_services]
-                await asyncio.gather(*tasks)
-                sorter.done(*ready_services)
-
-    async def _start_service(self, name: str, init_func: Callable[[], Any]):
-        """
-        Start individual service with proper error handling and background task management.
-
-        Args:
-            name: Service name
-            init_func: Service initialization function
-
-        Raises:
-            Exception: Re-raises any initialization errors for fail-fast behavior
-        """
-        try:
-            self._service_status[name] = ServiceStatus.STARTING
-
-            # Initialize the service
-            if asyncio.iscoroutinefunction(init_func):
-                service = await init_func()
-            else:
-                service = init_func()
-
-            self._services[name] = service
-
-            # Start background tasks if service supports them
-            if hasattr(service, "start_background_tasks"):
-                task = asyncio.create_task(
-                    service.start_background_tasks(), name=f"{name}_background_tasks"
-                )
-                self._background_tasks.add(task)
-                task.add_done_callback(self._background_tasks.discard)
-
-            self._service_status[name] = ServiceStatus.HEALTHY
-
-        except Exception as e:
-            self._service_status[name] = ServiceStatus.FAILED
-            raise  # Fail-fast for startup errors
-
-    async def shutdown(self):
-        """
-        Graceful shutdown in reverse order of startup.
-
-        Cancels background tasks first, then shuts down services in reverse order.
-        """
-        if self._shutdown_complete:
-            return
-
-        shutdown_start = time.perf_counter()
-
-        try:
-            # Cancel background tasks first
-            if self._background_tasks:
-                for task in self._background_tasks:
-                    if not task.done():
-                        task.cancel()
-
-                # Wait for tasks to complete/cancel with timeout
-                try:
-                    await asyncio.wait_for(
-                        asyncio.gather(*self._background_tasks, return_exceptions=True), timeout=5.0
-                    )
-                except TimeoutError:
-                    pass
-
-            # Shutdown services in reverse order of startup
-            for stage in reversed(self._startup_stages):
-                await self._shutdown_stage(stage)
-
-            self._shutdown_complete = True
-
-        except Exception as e:
-            pass
-
-    async def _shutdown_stage(self, services_in_stage: list[tuple[str, Callable, list[str]]]):
-        """Shutdown services in a stage."""
-        for service_name, _, _ in reversed(services_in_stage):
-            await self._shutdown_service(service_name)
+    # ------------------------------------------------------------------ #
+    # Per-service shutdown helpers used by ``shutdown_all`` and
+    # ``stop_service`` below. Inlined from the former base class.
+    # ------------------------------------------------------------------ #
 
     async def _shutdown_service(self, name: str):
         """Shutdown individual service.
@@ -252,71 +186,9 @@ class ServiceRegistry:
             except Exception:
                 pass
 
-    def has_service(self, service_name: str) -> bool:
-        """Check if a service is registered and healthy."""
-        return (
-            service_name in self._services
-            and self._service_status.get(service_name) == ServiceStatus.HEALTHY
-        )
-
-    def get_service(self, service_name: str) -> Any:
-        """Get a service by name."""
-        if not self.has_service(service_name):
-            raise RuntimeError(f"Service '{service_name}' not available")
-        return self._services[service_name]
-
-
-logger = logging.getLogger(__name__)
-
-
-class ServiceDefinition:
-    """Enhanced service definition with dependency metadata."""
-
-    def __init__(
-        self,
-        name: str,
-        init_func: Callable[[], Any],
-        dependencies: list[str | ServiceDependency] | None = None,
-        tags: set[str] | None = None,
-        description: str | None = None,
-        health_check: Callable[[], bool] | None = None,
-    ):
-        self.name = name
-        self.init_func = init_func
-        self.tags = tags or set()
-        self.description = description
-        self.health_check = health_check
-
-        # Convert simple string dependencies to ServiceDependency objects
-        self.dependencies: list[ServiceDependency] = []
-        if dependencies:
-            for dep in dependencies:
-                if isinstance(dep, str):
-                    self.dependencies.append(ServiceDependency(name=dep))
-                else:
-                    self.dependencies.append(dep)
-
-
-class EnhancedServiceRegistry(ServiceRegistry):
-    """
-    ServiceRegistry with enhanced dependency resolution capabilities.
-
-    Improvements:
-    - Advanced dependency resolver with circular detection
-    - Better error messages with available services
-    - Dependency visualization and reporting
-    - Runtime dependency validation
-    - Service tagging and categorization
-    """
-
-    def __init__(self):
-        super().__init__()
-        self._resolver = ServiceDependencyResolver()
-        self._service_definitions: dict[str, ServiceDefinition] = {}
-        self._startup_errors: dict[str, Exception] = {}
-        self._dependency_report: str | None = None
-        self._lifecycle_manager = ServiceLifecycleManager()
-        self._service_timings: dict[str, float] = {}  # Track individual service startup times
+    # ------------------------------------------------------------------ #
+    # Enhanced registration + startup surface.
+    # ------------------------------------------------------------------ #
 
     def register_service(
         self,
@@ -909,26 +781,13 @@ class EnhancedServiceRegistry(ServiceRegistry):
             raise
 
     # ------------------------------------------------------------------ #
-    # Lifecycle + health surface for ESR-registered services.
-    #
-    # The base ``ServiceRegistry`` operates on the legacy
-    # ``register_startup_stage`` model and stores services in
-    # ``_startup_stages``. ``EnhancedServiceRegistry`` registers via
-    # ``register_service`` into ``_service_definitions`` and resolves
-    # stages on demand inside ``startup_all`` -- so the inherited
-    # ``shutdown()`` (which iterates ``_startup_stages``) is a silent
-    # no-op for ESR users. Likewise ``SafetyService._health_monitoring_loop``
-    # calls ``service_registry.get_health_summary()`` which previously
-    # only existed on ``backend/monitoring/health_probe_metrics.py`` --
-    # the safety monitor would crash on its first iteration in any
-    # ESR-based deployment.
-    #
-    # The four methods below close those gaps. Names match what the rest
-    # of the codebase (and the integration tests) already expect.
+    # Lifecycle + health surface used by SafetyService and external
+    # health-probe consumers (``SafetyService._health_monitoring_loop``
+    # calls ``service_registry.get_health_summary()`` on every tick).
     # ------------------------------------------------------------------ #
 
     async def shutdown_all(self) -> None:
-        """Graceful shutdown of all ESR-registered services in reverse stage order.
+        """Graceful shutdown of all registered services in reverse stage order.
 
         Cancels background tasks first, then walks the resolved
         dependency stages back-to-front (latest started, first stopped).
@@ -939,7 +798,7 @@ class EnhancedServiceRegistry(ServiceRegistry):
         if self._shutdown_complete:
             return
 
-        # Cancel background tasks first (mirror the base class behaviour).
+        # Cancel background tasks first.
         if self._background_tasks:
             for task in self._background_tasks:
                 if not task.done():

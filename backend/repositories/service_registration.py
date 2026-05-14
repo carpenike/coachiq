@@ -3,7 +3,7 @@ Repository Service Registration
 
 Factory functions and registration helpers that register the
 repositories (which replaced the removed ``AppState`` monolith) with
-the ``EnhancedServiceRegistry``.
+the ``ServiceRegistry``.
 """
 
 import logging
@@ -158,7 +158,7 @@ def register_repositories_with_service_registry(service_registry: Any) -> None:
     ``AppState`` class.
 
     Args:
-        service_registry: The EnhancedServiceRegistry instance
+        service_registry: The ServiceRegistry instance
     """
 
     # Register EntityStateRepository
