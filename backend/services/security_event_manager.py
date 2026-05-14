@@ -28,6 +28,7 @@ The OEM Firefly MIRA panel owns the actual vehicle safety case. See
 import asyncio
 import logging
 from collections.abc import Callable
+from contextlib import suppress
 from datetime import UTC, datetime
 from typing import Any
 
@@ -41,6 +42,10 @@ from backend.services.attempt_tracker_service import (
 )
 
 logger = logging.getLogger(__name__)
+
+# After this many rate-limit violations in the rolling window, consider
+# the source for IP blocking (see _handle_rate_limit_violation).
+RATE_LIMIT_VIOLATION_THRESHOLD = 10
 
 
 class SecurityOrchestrationResult:
@@ -74,7 +79,7 @@ class SecurityEventManager:
     - Compliance and audit orchestration
     """
 
-    def __init__(
+    def __init__(  # noqa: PLR0913 -- intentional rich-orchestration constructor
         self,
         security_event_service: Any,
         attempt_tracker_service: Any,
@@ -149,10 +154,8 @@ class SecurityEventManager:
         # Cancel monitoring task
         if self._monitoring_task:
             self._monitoring_task.cancel()
-            try:
+            with suppress(asyncio.CancelledError):
                 await self._monitoring_task
-            except asyncio.CancelledError:
-                pass
 
         logger.info("Security orchestration stopped")
 
@@ -238,7 +241,7 @@ class SecurityEventManager:
             result.actions_taken.append("Logged to audit trail")
 
         except Exception as e:
-            logger.error(f"Error orchestrating login attempt: {e}")
+            logger.error("Error orchestrating login attempt: %s", e)
             result.success = False
             result.details["error"] = str(e)
 
@@ -325,7 +328,7 @@ class SecurityEventManager:
                         result.actions_taken.append("Flagged user for re-authentication")
 
         except Exception as e:
-            logger.error(f"Error orchestrating safety operation: {e}")
+            logger.error("Error orchestrating safety operation: %s", e)
             result.success = False
             result.details["error"] = str(e)
 
@@ -365,7 +368,7 @@ class SecurityEventManager:
                 time_window_minutes=60,
             )
 
-            if summary.rate_limited_attempts > 10:
+            if summary.rate_limited_attempts > RATE_LIMIT_VIOLATION_THRESHOLD:
                 # Consider IP blocking
                 result.alerts.append(f"Repeated rate limit violations from {ip_address}")
 
@@ -378,7 +381,7 @@ class SecurityEventManager:
                 result.actions_taken.append(f"Temporarily blocked IP {ip_address}")
 
         except Exception as e:
-            logger.error(f"Error orchestrating rate limit violation: {e}")
+            logger.error("Error orchestrating rate limit violation: %s", e)
             result.success = False
             result.details["error"] = str(e)
 
@@ -407,8 +410,9 @@ class SecurityEventManager:
                         config.network, "connection_limit_per_ip"
                     ):
                         block_duration = config.network.connection_limit_per_ip * 60
-                except Exception:
-                    pass
+                except Exception as e:
+                    # Best-effort config read; fall back to default block_duration above.
+                    logger.debug("Could not read connection_limit_per_ip: %s", e)
 
                 await self._audit_service.block_ip(
                     ip_to_block,
@@ -444,7 +448,7 @@ class SecurityEventManager:
                 actions.append("Administrator alert sent")
 
         except Exception as e:
-            logger.error(f"Error executing threat response: {e}")
+            logger.error("Error executing threat response: %s", e)
             actions.append(f"Error in threat response: {e!s}")
 
         return actions
@@ -460,7 +464,7 @@ class SecurityEventManager:
             except asyncio.CancelledError:
                 break
             except Exception as e:
-                logger.error(f"Error in security monitoring loop: {e}")
+                logger.error("Error in security monitoring loop: %s", e)
 
     async def _perform_security_checks(self) -> None:
         """Perform periodic security checks."""
@@ -483,7 +487,7 @@ class SecurityEventManager:
                 # Execute automated responses
                 for threat in threat_assessment["top_threats"]:
                     if threat["severity"] in ["high", "critical"]:
-                        logger.warning(f"Security threat detected: {threat['description']}")
+                        logger.warning("Security threat detected: %s", threat["description"])
 
             # Check for stale security sessions
             if self._pin_manager:
@@ -491,7 +495,7 @@ class SecurityEventManager:
                 logger.debug("Checking PIN session expiration")
 
         except Exception as e:
-            logger.error(f"Error in security checks: {e}")
+            logger.error("Error in security checks: %s", e)
 
     # Event Handling
 
@@ -513,19 +517,19 @@ class SecurityEventManager:
                     await rule.execute(event, self)
 
         except Exception as e:
-            logger.error(f"Error handling security event: {e}")
+            logger.error("Error handling security event: %s", e)
 
     # Configuration Methods
 
     def add_automation_rule(self, rule: Any) -> None:
         """Add a security automation rule."""
         self._automation_rules.append(rule)
-        logger.info(f"Added security automation rule: {rule}")
+        logger.info("Added security automation rule: %s", rule)
 
     def register_event_handler(self, event_type: str, handler: Callable) -> None:
         """Register a handler for specific event types."""
         self._response_handlers[event_type] = handler
-        logger.info(f"Registered handler for event type: {event_type}")
+        logger.info("Registered handler for event type: %s", event_type)
 
     # Backward Compatibility Methods (Facade Pattern)
 
