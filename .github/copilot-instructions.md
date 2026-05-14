@@ -131,10 +131,12 @@ All backend code MUST access services via FastAPI dependency injection from `bac
 
 - **ServiceRegistry** (`backend/core/service_registry.py`): Central service lifecycle and dependency resolution.
 - **FeatureManager** (`backend/services/feature_manager.py`): YAML-driven feature flag system.
-- **ConfigService** (`backend/services/config_service.py`): Configuration access (use this rather than reading `Settings` directly).
+- **Settings** (`backend/core/config.py::get_settings`): Pydantic-validated app configuration -- this IS the canonical app config object. Most code should consume `Settings` directly via `get_settings()`.
+- **RVCConfigFacade** (`backend/services/rvc_config_facade.py`): Thin facade over `RVCConfigRepository` for PGN/coach metadata lookups. Use only for RV-C metadata, not general app config. Renamed from `ConfigService` in audit A10 (see ADR-0008).
+- **RVCSpecLoader** (`backend/integrations/rvc/spec_loader.py`): TTL-cached loader for RV-C spec/mapping files on disk. Used internally by the RV-C decoder; not a public service. Renamed from `ConfigurationService` in audit A10.
 - **DatabaseManager** (`backend/services/database_manager.py`): Async SQLAlchemy session management.
 - **PersistenceService** (`backend/services/persistence_service.py`): Backups and durable storage.
-- **AuthManager** / **AuthService** (`backend/services/auth_*.py`): Authentication, tokens, PIN/MFA.
+- **AuthManager** / **AuthService** (`backend/services/auth/`): Authentication, tokens, PIN/MFA (consolidated into a single package in audit A9, see ADR-0007).
 
 #### Domain Services (access via DI)
 
@@ -219,7 +221,7 @@ async def list_entities(
 - **Feature Registration**: ALL features must extend Feature base class and register with FeatureManager
 - **WebSockets**: Use WebSocketManager feature for client connections and broadcasting
 - **State management**: Use repositories and services via DI; do **not** reach for `app.state` or any global `AppState` (both removed).
-- **Configuration**: Use ConfigService for all configuration access
+- **Configuration**: Read Pydantic `Settings` directly via `backend.core.config.get_settings()`. `RVCConfigFacade` is only for RV-C *metadata* (PGN names, coach info), not for general app config (see ADR-0008).
 - **Database**: Use DatabaseManager and PersistenceService for data operations
 - **Error handling**: Structured exceptions with proper logging
 - **Testing**: pytest with mocked CANbus interfaces
@@ -252,11 +254,17 @@ All configuration uses the `COACHIQ_` prefix with hierarchical naming:
 ### Configuration Access
 
 ```python
-# ALWAYS use ConfigService for configuration
-from backend.core.dependencies import get_config_service
+# For general app configuration: read Pydantic Settings directly
+from backend.core.config import get_settings
 
-config_service: ConfigService = Depends(get_config_service)
-settings = await config_service.get_config_summary()
+settings = get_settings()
+port = settings.server.port
+
+# For RV-C metadata (PGN names, coach info): use RVCConfigFacade via DI
+from backend.core.dependencies import get_rvc_config_facade
+
+rvc_config: RVCConfigFacade = Depends(get_rvc_config_facade)
+coach = rvc_config.get_coach_info()
 ```
 
 ### Persistence Modes

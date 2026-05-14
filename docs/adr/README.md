@@ -68,6 +68,11 @@ Keep ADRs short -- 50-150 lines is typical. If you find yourself writing
   `backend/services/auth/` package, split `auth_services.py` per
   class, and keep `AuthManager` (policy engine) and `AuthService`
   (request-time facade) intentionally separate.
+- [ADR-0008](ADR-0008-rvc-config-facade-naming.md) -- Rename
+  `ConfigService` -> `RVCConfigFacade` and `ConfigurationService` ->
+  `RVCSpecLoader` so the three "configuration" tiers (Pydantic
+  `Settings`, RV-C metadata facade, RV-C spec-file loader) have
+  distinct names.
 
 ## Status
 
