@@ -35,6 +35,17 @@ from backend.repositories.system_state_repository import (
     SystemStateRepository as _SystemStateRepository,
 )
 
+# Real service classes for typed DI aliases (ADR-0006).
+# Imported under underscore-prefixed names so the public alias name
+# (e.g. ``CANFacade``) matches what the rest of the codebase already
+# uses. The runtime ServiceRegistry lookup remains string-keyed; these
+# imports exist purely so pyright + IDEs see real return types.
+from backend.integrations.can.can_bus_recorder import CANBusRecorder as _CANBusRecorder
+from backend.integrations.can.message_filter import MessageFilter as _MessageFilter
+from backend.integrations.can.message_injector import CANMessageInjector as _CANMessageInjector
+from backend.integrations.can.protocol_analyzer import ProtocolAnalyzer as _ProtocolAnalyzer
+from backend.services.can_facade import CANFacade as _CANFacade
+
 logger = logging.getLogger(__name__)
 
 # Type variables for better type safety
@@ -161,7 +172,7 @@ def get_config_service() -> Any:
     return create_service_dependency("config_service")()
 
 
-def get_can_facade() -> Any | None:
+def get_can_facade() -> _CANFacade | None:
     """
     Get the CAN facade from ServiceRegistry.
 
@@ -175,8 +186,8 @@ def get_can_facade() -> Any | None:
 
 
 async def get_verified_can_facade(
-    can_facade: Annotated[Any | None, Depends(get_can_facade)],
-) -> Any:
+    can_facade: Annotated[_CANFacade | None, Depends(get_can_facade)],
+) -> _CANFacade:
     """
     FastAPI dependency that provides the CAN facade, raising a 503
     if the service is not available.
@@ -192,12 +203,13 @@ async def get_verified_can_facade(
     return can_facade
 
 
-# Type aliases
-CANFacade = Annotated[Any, Depends(get_can_facade)]
-VerifiedCANFacade = Annotated[Any, Depends(get_verified_can_facade)]
+# Type aliases (ADR-0006: typed DI). The public alias names match what
+# routers already import; only the underlying type narrows from Any.
+CANFacade = Annotated[_CANFacade, Depends(get_can_facade)]
+VerifiedCANFacade = Annotated[_CANFacade, Depends(get_verified_can_facade)]
 
 
-def get_can_message_injector() -> Any:
+def get_can_message_injector() -> _CANMessageInjector:
     """
     Get the CAN message injector service from ServiceRegistry.
 
@@ -210,12 +222,17 @@ def get_can_message_injector() -> Any:
     return create_service_dependency("can_message_injector")()
 
 
-def get_can_message_filter() -> Any:
+def get_can_message_filter() -> _MessageFilter:
     """
     Get the CAN message filter service from ServiceRegistry.
 
     This service provides CAN message filtering with real-time monitoring
     and alerting capabilities for traffic analysis and security.
+
+    Note: the underlying class is named ``MessageFilter``; the public
+    typed alias is ``CANMessageFilter`` to match the existing
+    ``Pydantic`` ``CANMessageFilter`` model only by spelling. They are
+    distinct types.
 
     Returns:
         The CAN message filter service instance
@@ -223,7 +240,7 @@ def get_can_message_filter() -> Any:
     return create_service_dependency("can_message_filter")()
 
 
-def get_can_bus_recorder() -> Any:
+def get_can_bus_recorder() -> _CANBusRecorder:
     """
     Get the CAN bus recorder service from ServiceRegistry.
 
@@ -236,7 +253,7 @@ def get_can_bus_recorder() -> Any:
     return create_service_dependency("can_bus_recorder")()
 
 
-def get_can_protocol_analyzer() -> Any:
+def get_can_protocol_analyzer() -> _ProtocolAnalyzer:
     """
     Get the CAN protocol analyzer service from ServiceRegistry.
 
@@ -404,10 +421,10 @@ WebSocketManager = Annotated[Any, Depends(get_websocket_manager)]
 EntityService = Annotated[Any, Depends(get_entity_service)]
 ConfigService = Annotated[Any, Depends(get_config_service)]
 
-CANMessageInjector = Annotated[Any, Depends(get_can_message_injector)]
-CANMessageFilter = Annotated[Any, Depends(get_can_message_filter)]
-CANBusRecorder = Annotated[Any, Depends(get_can_bus_recorder)]
-CANProtocolAnalyzer = Annotated[Any, Depends(get_can_protocol_analyzer)]
+CANMessageInjector = Annotated[_CANMessageInjector, Depends(get_can_message_injector)]
+CANMessageFilter = Annotated[_MessageFilter, Depends(get_can_message_filter)]
+CANBusRecorder = Annotated[_CANBusRecorder, Depends(get_can_bus_recorder)]
+CANProtocolAnalyzer = Annotated[_ProtocolAnalyzer, Depends(get_can_protocol_analyzer)]
 RVCService = Annotated[Any, Depends(get_rvc_service)]
 
 # Repository dependencies

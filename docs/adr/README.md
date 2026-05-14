@@ -59,6 +59,10 @@ Keep ADRs short -- 50-150 lines is typical. If you find yourself writing
 - [ADR-0005](ADR-0005-http-error-response-envelope.md) -- HTTP error
   responses include both `detail` (FastAPI-default) and `error.{code,
   message}` (structured) for backward-compatibility with both contracts.
+- [ADR-0006](ADR-0006-typed-dependency-injection.md) -- Type the
+  FastAPI dependency-injection aliases in `backend/core/dependencies.py`
+  with concrete service classes; keep the string-keyed runtime
+  registry. Migration is incremental, one service cluster per sub-PR.
 
 ## Status
 

@@ -19,7 +19,7 @@ RESET="\033[0m"
 # gate's job is to stop the count from going UP (a ratchet); fixing actual
 # pyright errors lower the count and the script will print a green message
 # nudging you to update the baseline downward.
-EXPECTED_PYRIGHT_ERRORS=1444  # Ratcheted 2026-05-14 (PR A6 on top of A1+A2+A3, audit cycle 2026-05-13). v1->v2 SecurityEventManager cutover + lint debt cleanup on renamed file sheds 2 errors on top of main's 1446. Hardened ratchet (#117) catches the drop -- working as designed.
+EXPECTED_PYRIGHT_ERRORS=1443  # Ratcheted 2026-05-14 (PR A7.0 on top of A1+A2+A3+A6, audit cycle 2026-05-13). Typing the CAN-cluster DI aliases + dead-code cleanup of services/__init__.py re-exports sheds 1 error on top of main's 1444. Hardened ratchet (#117) catches the drop -- working as designed.
 EXPECTED_FRONTEND_TS_ERRORS=0  # Ratcheted 2026-05-12 to 0 by PR #110 (DatabaseManagementTab + can-sniffer + useCANScanWebSocket generic). Any new TS error is a hard fail.
 EXPECTED_FRONTEND_ESLINT_ERRORS=648  # Captured 2026-05-12 by PR #117. Whole-project ESLint baseline; the diff-aware gate (eslint_diff_check.py in Stage 1) catches NEW issues per-line, this baseline is the project-wide ratchet.
 
