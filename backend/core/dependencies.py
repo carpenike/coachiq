@@ -74,6 +74,21 @@ from backend.services.predictive_maintenance_service import (
 # every endpoint in ``backend/api/routers/notification_analytics.py``
 # raises ``RuntimeError`` at request time. Tracked as #169.
 
+# Real service classes for typed DI aliases (ADR-0006).
+# Imported under underscore-prefixed names so the public alias name
+# matches what the rest of the codebase already uses. The runtime
+# ServiceRegistry lookup remains string-keyed; these imports exist
+# purely so pyright + IDEs see real return types.
+#
+# NOTE: ``EntityService`` is intentionally NOT typed here -- importing
+# ``backend.services.entity_service`` triggers a circular import via
+# ``backend.websocket.handlers`` -> ``backend.websocket.routes`` ->
+# ``backend.core.dependencies.WebSocketManager``. Tracked separately;
+# fix likely requires making entity_service's websocket import lazy.
+from backend.services.config_service import ConfigService as _ConfigService
+from backend.services.rvc_service import RVCService as _RVCService
+from backend.services.safety_service import SafetyService as _SafetyService
+
 logger = logging.getLogger(__name__)
 
 # Type variables for better type safety
@@ -190,7 +205,7 @@ def get_entity_service() -> Any:
     return create_service_dependency("entity_service")()
 
 
-def get_config_service() -> Any:
+def get_config_service() -> _ConfigService:
     """
     Get the config service from ServiceRegistry.
 
@@ -294,7 +309,7 @@ def get_can_protocol_analyzer() -> _ProtocolAnalyzer:
     return create_service_dependency("can_protocol_analyzer")()
 
 
-def get_safety_service() -> Any:
+def get_safety_service() -> _SafetyService:
     """
     Get the API guardrail service from ServiceRegistry.
 
@@ -313,7 +328,7 @@ def get_safety_service() -> Any:
     return create_service_dependency("safety_service")()
 
 
-def get_rvc_service() -> Any:
+def get_rvc_service() -> _RVCService:
     """
     Get the RVC service from ServiceRegistry.
 
@@ -447,13 +462,13 @@ def get_predictive_maintenance_service() -> _PredictiveMaintenanceService:
 # Modern typed dependencies using Annotated
 WebSocketManager = Annotated[Any, Depends(get_websocket_manager)]
 EntityService = Annotated[Any, Depends(get_entity_service)]
-ConfigService = Annotated[Any, Depends(get_config_service)]
+ConfigService = Annotated[_ConfigService, Depends(get_config_service)]
 
 CANMessageInjector = Annotated[_CANMessageInjector, Depends(get_can_message_injector)]
 CANMessageFilter = Annotated[_MessageFilter, Depends(get_can_message_filter)]
 CANBusRecorder = Annotated[_CANBusRecorder, Depends(get_can_bus_recorder)]
 CANProtocolAnalyzer = Annotated[_ProtocolAnalyzer, Depends(get_can_protocol_analyzer)]
-RVCService = Annotated[Any, Depends(get_rvc_service)]
+RVCService = Annotated[_RVCService, Depends(get_rvc_service)]
 
 # Repository dependencies
 EntityStateRepository = Annotated[_EntityStateRepository, Depends(get_entity_state_repository)]
