@@ -12,6 +12,7 @@ Behavior is bit-identical to the original.
 import logging
 from typing import Any
 
+from backend.core.config import get_settings
 from backend.core.safety_registry import SafetyServiceRegistry
 from backend.core.service_dependency_resolver import DependencyType, ServiceDependency
 from backend.services.attempt_tracker_service import AttemptTrackerService
@@ -23,15 +24,27 @@ from backend.services.auth_services import (
     SessionService,
     TokenService,
 )
+from backend.services.database_engine import DatabaseEngine
 from backend.services.database_services import (
     DatabaseConnectionService,
     DatabaseMigrationService,
     DatabaseSessionService,
 )
+from backend.services.entity_service import EntityService
 from backend.services.security_config_service import SecurityConfigService
 from backend.services.security_event_service import SecurityEventService
 
 logger = logging.getLogger(__name__)
+
+
+def _create_database_engine() -> DatabaseEngine:
+    """Create a database engine instance.
+
+    Local helper kept here so the module is self-contained. Identical
+    to the original `_create_database_engine` in main.py.
+    """
+    settings = get_settings()
+    return DatabaseEngine(settings)
 
 
 def register(service_registry: SafetyServiceRegistry) -> None:
