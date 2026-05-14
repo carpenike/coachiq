@@ -19,13 +19,12 @@ from backend.core.config import get_settings
 from backend.core.safety_registry import SafetyServiceRegistry
 from backend.core.service_dependency_resolver import DependencyType, ServiceDependency
 
-# Auth services (token, session, MFA, lockout) -- from auth_services.py.
-from backend.services.auth_services import (
-    LockoutService,
-    MfaService,
-    SessionService,
-    TokenService,
-)
+# Auth services (token, session, MFA, lockout) -- split into per-file modules
+# under backend/services/auth/ in audit cycle 2026-05-13 PR A9.
+from backend.services.auth.lockout import LockoutService
+from backend.services.auth.mfa import MfaService
+from backend.services.auth.sessions import SessionService
+from backend.services.auth.tokens import TokenService
 from backend.services.database_engine import DatabaseEngine
 from backend.services.database_services import (
     DatabaseConnectionService,

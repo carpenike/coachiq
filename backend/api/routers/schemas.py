@@ -17,7 +17,7 @@ from fastapi.responses import JSONResponse
 
 from backend.core.dependencies import get_auth_manager
 from backend.schemas.schema_exporter import ZodSchemaExporter
-from backend.services.auth_manager import AuthManager
+from backend.services.auth.manager import AuthManager
 
 router = APIRouter(prefix="/api/schemas", tags=["schemas"])
 

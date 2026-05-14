@@ -80,7 +80,7 @@ class WebSocketAuthHandler:
             }
 
         # Skip authentication if mode is NONE (same as middleware pattern)
-        from backend.services.auth_manager import AuthMode
+        from backend.services.auth.manager import AuthMode
 
         if self.auth_manager.auth_mode == AuthMode.NONE:
             logger.debug("Authentication mode is NONE, allowing WebSocket connection")

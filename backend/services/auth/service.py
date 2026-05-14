@@ -14,13 +14,11 @@ from backend.repositories.auth_repository import (
     MfaRepository,
     SessionRepository,
 )
-from backend.services.auth_manager import AuthManager
-from backend.services.auth_services import (
-    LockoutService,
-    MfaService,
-    SessionService,
-    TokenService,
-)
+from backend.services.auth.lockout import LockoutService
+from backend.services.auth.manager import AuthManager
+from backend.services.auth.mfa import MfaService
+from backend.services.auth.sessions import SessionService
+from backend.services.auth.tokens import TokenService
 
 logger = get_logger(__name__, "AuthService")
 

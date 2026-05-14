@@ -28,7 +28,7 @@ from backend.middleware.rate_limiting import (
     conditional_auth_rate_limit,
     magic_link_rate_limit,
 )
-from backend.services.auth_manager import (
+from backend.services.auth.manager import (
     AccountLockedError,
     AuthenticationError,
     AuthManager,

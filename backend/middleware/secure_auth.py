@@ -18,7 +18,7 @@ from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request
 from starlette.responses import JSONResponse, Response
 
-from backend.services.auth_manager import AuthManager, InvalidTokenError
+from backend.services.auth.manager import AuthManager, InvalidTokenError
 from backend.services.secure_token_service import SecureTokenService
 
 logger = logging.getLogger(__name__)

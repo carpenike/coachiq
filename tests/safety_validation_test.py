@@ -17,7 +17,7 @@ from backend.core.service_registry import ServiceRegistry
 from backend.middleware.validation import RuntimeValidationMiddleware, SchemaValidationMixin
 from backend.schemas import BulkOperationSchemaV2, ControlCommandSchemaV2, EntitySchemaV2
 from backend.schemas.schema_exporter import ZodSchemaExporter
-from backend.services.auth_manager import AuthManager
+from backend.services.auth.manager import AuthManager
 from backend.services.secure_token_service import SecureTokenService, TokenPair
 
 

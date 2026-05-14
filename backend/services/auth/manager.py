@@ -45,7 +45,7 @@ except ImportError as e:
 from backend.core.config import AuthenticationSettings
 
 if TYPE_CHECKING:
-    from backend.services.auth_repository import AuthRepository
+    from backend.services.auth.repository import AuthRepository
 
 
 class AuthMode(str, Enum):

@@ -13,7 +13,7 @@ from fastapi import Depends, HTTPException, Request, Response, status
 from fastapi.security.utils import get_authorization_scheme_param
 from starlette.middleware.base import BaseHTTPMiddleware
 
-from backend.services.auth_manager import AuthManager, AuthMode, InvalidTokenError
+from backend.services.auth.manager import AuthManager, AuthMode, InvalidTokenError
 
 logger = logging.getLogger(__name__)
 
