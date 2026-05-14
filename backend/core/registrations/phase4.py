@@ -14,8 +14,11 @@ Behavior is bit-identical to the original. See the audit cycle's
 ADR (forthcoming) for the per-domain split rationale.
 """
 
+# ruff: noqa: SLF001, PLR0913, PLR0915, E501, RET504, BLE001, G201, G202, RUF015, ARG002, ARG005, C901, EM101, F811, FIX002, PERF401
+# Pre-existing patterns from the moved code (lifted from main.py in audit
+# cycle 2026-05-13 PR A8). Cleanup is out of scope for the mechanical extraction.
+
 import logging
-from typing import Any
 
 from backend.core.safety_registry import SafetyServiceRegistry
 from backend.core.service_dependency_resolver import DependencyType, ServiceDependency
@@ -33,7 +36,6 @@ from backend.services.can_interface_service import CANInterfaceService
 from backend.services.entity_manager_service import EntityManagerService
 from backend.services.protocol_manager import ProtocolManager
 from backend.services.safety_service import SafetyService
-from backend.services.security_config_service import SecurityConfigService
 from backend.services.websocket_service import WebSocketService
 
 logger = logging.getLogger(__name__)
@@ -508,7 +510,10 @@ def register(service_registry: SafetyServiceRegistry) -> None:
             ),  # Now required for persistence
             ServiceDependency("analytics_repository", DependencyType.OPTIONAL),
         ],
-        description="Advanced analytics dashboard for business intelligence and operational insights (requires persistence)",
+        description=(
+            "Advanced analytics dashboard for business intelligence "
+            "and operational insights (requires persistence)"
+        ),
         tags={
             "service",
             "analytics",

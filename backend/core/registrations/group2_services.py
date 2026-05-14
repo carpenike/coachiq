@@ -9,13 +9,15 @@ injection for their repository dependencies.
 Behavior is bit-identical to the original.
 """
 
+# ruff: noqa: SLF001, PLR0913, PLR0915, E501, RET504, BLE001, G201, G202, RUF015, ARG002, ARG005, C901, EM101, F811, FIX002, PERF401
+# Pre-existing patterns from the moved code (lifted from main.py in audit
+# cycle 2026-05-13 PR A8). Cleanup is out of scope for the mechanical extraction.
+
 import logging
-from typing import Any
 
 from backend.core.config import get_settings
 from backend.core.safety_registry import SafetyServiceRegistry
 from backend.core.service_dependency_resolver import DependencyType, ServiceDependency
-from backend.services.attempt_tracker_service import AttemptTrackerService
 
 # Auth services (token, session, MFA, lockout) -- from auth_services.py.
 from backend.services.auth_services import (
@@ -31,7 +33,6 @@ from backend.services.database_services import (
     DatabaseSessionService,
 )
 from backend.services.entity_service import EntityService
-from backend.services.security_config_service import SecurityConfigService
 from backend.services.security_event_service import SecurityEventService
 
 logger = logging.getLogger(__name__)

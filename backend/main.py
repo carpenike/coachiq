@@ -30,15 +30,12 @@ from backend.core.config import get_settings
 from backend.core.dependencies import ServiceRegistry
 from backend.core.logging_config import configure_unified_logging, setup_early_logging
 from backend.core.metrics import initialize_backend_metrics
-from backend.core.performance import PerformanceMonitor
 from backend.core.safety_registry import SafetyServiceRegistry
 from backend.core.security_config_validator import validate_security_config
 from backend.core.security_hardening import configure_security_hardening
-from backend.core.service_dependency_resolver import DependencyType, ServiceDependency
 from backend.core.service_registry import ServiceStatus
 
 # CAN Tools Services
-from backend.integrations.can.message_injector import CANMessageInjector, SafetyLevel
 
 # from backend.integrations.registration import register_custom_features  # No longer needed - all services in ServiceRegistry
 from backend.middleware.auth import AuthenticationMiddleware
@@ -51,69 +48,20 @@ from backend.middleware.validation import RuntimeValidationMiddleware
 from backend.monitoring import get_health_monitoring_summary, record_health_probe
 
 # Group 2 repository imports
-from backend.repositories.auth_repository import (
-    AuthEventRepository,
-    CredentialRepository,
-    MfaRepository,
-    SessionRepository,
-)
-from backend.repositories.database_repository import (
-    DatabaseConnectionRepository,
-    DatabaseSessionRepository,
-    MigrationRepository,
-)
-from backend.repositories.entity_repository import (
-    CanCommandRepository,
-    EntityConfigRepository,
-    EntityHistoryRepository,
-    EntityStateRepository,
-)
-from backend.repositories.security_audit_repository import SecurityAuditRepository
-from backend.repositories.security_event_repository import (
-    SecurityEventRepository,
-    SecurityListenerRepository,
-)
-from backend.services.analytics_dashboard_service import AnalyticsDashboardService
 
 # Phase 4 service imports
-from backend.services.auth_service import AuthService
 
 # Group 2 service imports
-from backend.services.auth_services import (
-    LockoutService,
-    MfaService,
-    SessionService,
-    TokenService,
-)
-from backend.services.can_bus_service import CANBusService
-from backend.services.can_interface_service import CANInterfaceService
 
 # CANService import removed - not used in this file
-from backend.services.config_service import ConfigService
-from backend.services.database_services import (
-    DatabaseConnectionService,
-    DatabaseMigrationService,
-    DatabaseSessionService,
-)
-from backend.services.edge_proxy_monitor_service import EdgeProxyMonitorService
-from backend.services.entity_initialization_service import EntityInitializationService
 
 # from backend.services.docs_service import DocsService  # Not used
-from backend.services.entity_manager_service import EntityManagerService
-from backend.services.entity_service import EntityService
-from backend.services.pin_manager import PINConfig, PINManager
-from backend.services.protocol_manager import ProtocolManager
 
 # EntityService import removed - not used in this file
 # from backend.services.predictive_maintenance_service import PredictiveMaintenanceService  # Not migrated yet
 # RVCService import removed - not used in this file
-from backend.services.safety_service import SafetyService
-from backend.services.security_audit_service import RateLimitConfig, SecurityAuditService
-from backend.services.security_config_service import SecurityConfigService
-from backend.services.security_event_service import SecurityEventService
 
 # from backend.services.vector_service import VectorService  # Not used
-from backend.services.websocket_service import WebSocketService
 
 # Set up early logging before anything else
 setup_early_logging()

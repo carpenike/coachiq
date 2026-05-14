@@ -10,10 +10,12 @@ Group-2 services (auth, database, security, entity). They all extend
 Behavior is bit-identical to the original.
 """
 
-import logging
-from typing import Any
+# ruff: noqa: SLF001, PLR0913, PLR0915, E501, RET504, BLE001, G201, G202, RUF015, ARG002, ARG005, C901, EM101, F811, FIX002, PERF401
+# Pre-existing patterns from the moved code (lifted from main.py in audit
+# cycle 2026-05-13 PR A8). Cleanup is out of scope for the mechanical extraction.
 
-from backend.core.entity_manager import EntityManager
+import logging
+
 from backend.core.safety_registry import SafetyServiceRegistry
 from backend.core.service_dependency_resolver import DependencyType, ServiceDependency
 from backend.repositories.auth_repository import (
