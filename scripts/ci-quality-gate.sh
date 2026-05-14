@@ -19,7 +19,7 @@ RESET="\033[0m"
 # gate's job is to stop the count from going UP (a ratchet); fixing actual
 # pyright errors lower the count and the script will print a green message
 # nudging you to update the baseline downward.
-EXPECTED_PYRIGHT_ERRORS=1452  # Ratcheted 2026-05-13 (PR #139). Dead-code removal of backend/core/services.py + core_services_removal.py (-664 LOC) shed 2 pyright errors. Hardened ratchet (#117) caught the drop and required this baseline update — working as designed.
+EXPECTED_PYRIGHT_ERRORS=1447  # Ratcheted 2026-05-13 (PR A2, audit cycle 2026-05-13). Dead-code removal of backend/services/brake_safety_monitor.py (-311 LOC) shed 5 pyright errors. Hardened ratchet (#117) caught the drop -- working as designed.
 EXPECTED_FRONTEND_TS_ERRORS=0  # Ratcheted 2026-05-12 to 0 by PR #110 (DatabaseManagementTab + can-sniffer + useCANScanWebSocket generic). Any new TS error is a hard fail.
 EXPECTED_FRONTEND_ESLINT_ERRORS=648  # Captured 2026-05-12 by PR #117. Whole-project ESLint baseline; the diff-aware gate (eslint_diff_check.py in Stage 1) catches NEW issues per-line, this baseline is the project-wide ratchet.
 

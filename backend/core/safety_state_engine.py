@@ -1,9 +1,20 @@
 """
-Centralized Safety State Engine for RV-C vehicle control system.
+Vehicle-state engine for the API command-validation guardrail tier.
 
-This module provides a centralized safety state management system that tracks
-vehicle state transitions and enforces safety rules for all control operations.
-Critical for preventing dangerous operations like slideout extension while moving.
+Tracks vehicle state (parked / running / driving) inferred from incoming
+RV-C / J1939 traffic via `backend/integrations/can/protocol_router.py` and
+exposes interlock predicates the API layer queries before forwarding
+position-critical commands (e.g. "slideout extend while driving").
+
+LIVE in production: consumed by `protocol_router.py` and exercised by
+`tests/test_canbus_decoder_safety.py` +
+`tests/integration/test_canbus_decoder_integration.py`.
+
+"Safety" naming is historical -- this is API guardrails, not vehicle safety.
+The OEM Firefly MIRA panel owns the actual vehicle safety case (see
+`docs/adr/ADR-0004-coachiq-is-not-the-safety-system.md`). This engine
+exists so that CoachIQ refuses to forward bad commands upstream of Firefly,
+not because it enforces physical safety on its own.
 """
 
 import logging
