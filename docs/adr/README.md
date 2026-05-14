@@ -56,6 +56,9 @@ Keep ADRs short -- 50-150 lines is typical. If you find yourself writing
 - [ADR-0004](ADR-0004-coachiq-is-not-the-safety-system.md) -- CoachIQ
   is API guardrails for an OEM controller, not the vehicle safety
   system itself. **Read this first.**
+- [ADR-0005](ADR-0005-http-error-response-envelope.md) -- HTTP error
+  responses include both `detail` (FastAPI-default) and `error.{code,
+  message}` (structured) for backward-compatibility with both contracts.
 
 ## Status
 
