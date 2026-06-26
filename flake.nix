@@ -66,8 +66,15 @@
     flake-utils.lib.eachDefaultSystem (system:
       let
         pkgs = import nixpkgs { inherit system; };
-        python = pkgs.python312;
-        pythonPackages = pkgs.python312Packages;
+        python = pkgs.python312.override {
+          packageOverrides = pyFinal: pyPrev: {
+            "paho-mqtt" = pyPrev."paho-mqtt".overridePythonAttrs (oldAttrs: {
+              doCheck = false;
+            });
+          };
+        };
+        pythonPackages = python.pkgs;
+        nodejs = pkgs.nodejs_22;
 
         # Create Python environment with all dependencies for scripts
         pythonWithDeps = python.withPackages (ps: [
@@ -77,7 +84,7 @@
           ps.httpx
           ps.langchain-community
           ps.langchain-core
-          ps.prometheus_client
+          ps."prometheus-client"
           ps.psutil
           ps.pydantic
           ps.pyroute2
@@ -129,7 +136,7 @@
             pythonPackages.httpx
             pythonPackages.langchain-community
             pythonPackages.langchain-core
-            pythonPackages.prometheus_client
+            pythonPackages."prometheus-client"
             pythonPackages.psutil
             pythonPackages.pydantic
             pythonPackages.pyroute2
@@ -231,7 +238,7 @@
             pythonPackages.python-can
             pythonPackages.pydantic
             pythonPackages.pyyaml
-            pythonPackages.prometheus_client
+            pythonPackages."prometheus-client"
             pythonPackages.coloredlogs
             pythonPackages.jinja2
             pythonPackages.pyjwt
@@ -273,7 +280,7 @@
 
             # --- Frontend dependencies ---
             # Only include Node.js runtime, npm will manage package dependencies
-            pkgs.nodejs_20
+            nodejs
 
             # --- Development tools ---
             pkgs.pyright  # For Python type checking
@@ -382,7 +389,7 @@ EOF
             pythonPackages.pandas
             pythonPackages.cryptography
             pythonPackages.networkx
-            pkgs.nodejs_20
+            nodejs
           ] ++ pkgs.lib.optionals (pkgs.stdenv.isLinux || pkgs.stdenv.isDarwin) [
             pythonPackages.uvloop
           ] ++ pkgs.lib.optionals pkgs.stdenv.isLinux [
@@ -407,9 +414,10 @@ EOF
           precommit = (flake-utils.lib.mkApp {
             drv = pkgs.writeShellApplication {
               name = "precommit";
-              runtimeInputs = [ pkgs.poetry ];
+              runtimeInputs = [ pkgs.poetry python ];
               text = ''
                 export SKIP=djlint
+                poetry env use ${python}/bin/python
                 poetry install --no-root --with dev
                 poetry run pre-commit run
               '';
@@ -425,8 +433,9 @@ EOF
           test = (flake-utils.lib.mkApp {
             drv = pkgs.writeShellApplication {
               name = "test";
-              runtimeInputs = [ pkgs.poetry ];
+              runtimeInputs = [ pkgs.poetry python ];
               text = ''
+                poetry env use ${python}/bin/python
                 poetry install --no-root
                 poetry run pytest
               '';
@@ -442,10 +451,11 @@ EOF
           lint = (flake-utils.lib.mkApp {
             drv = pkgs.writeShellApplication {
               name = "lint";
-              runtimeInputs = [ pkgs.poetry ];
+              runtimeInputs = [ pkgs.poetry python ];
               text = ''
                 # Run all checks on all files (like CI but local)
                 export SKIP=djlint
+                poetry env use ${python}/bin/python
                 poetry install --no-root --with dev
                 poetry run pre-commit run --all-files
               '';
@@ -461,9 +471,10 @@ EOF
           format = (flake-utils.lib.mkApp {
             drv = pkgs.writeShellApplication {
               name = "format";
-              runtimeInputs = [ pkgs.poetry ];
+              runtimeInputs = [ pkgs.poetry python ];
               text = ''
                 # Backend formatting
+                poetry env use ${python}/bin/python
                 poetry install --no-root
                 poetry run ruff format backend
 
@@ -485,7 +496,7 @@ EOF
           build-frontend = (flake-utils.lib.mkApp {
             drv = pkgs.writeShellApplication {
               name = "build-frontend";
-              runtimeInputs = [ pkgs.nodejs_20 ];
+              runtimeInputs = [ nodejs ];
               text = ''
                 if [ ! -d "frontend" ]; then
                   echo "Error: frontend directory not found"
@@ -513,11 +524,12 @@ EOF
           ci = (flake-utils.lib.mkApp {
             drv = pkgs.writeShellApplication {
               name = "ci";
-              runtimeInputs = [ pkgs.poetry pkgs.nodejs_20 pkgs.jq pkgs.git ];
+              runtimeInputs = [ pkgs.poetry python nodejs pkgs.jq pkgs.git ];
               text = ''
                 set -e
 
                 # Install dependencies
+                poetry env use ${python}/bin/python
                 poetry install --no-root --with dev
                 poetry check --lock --no-interaction
 
@@ -568,7 +580,7 @@ EOF
             npmFlags = [ "--legacy-peer-deps" ];
 
             nativeBuildInputs = [
-              pkgs.nodejs_20
+              nodejs
               pkgs.python3
               pkgs.pkg-config
             ] ++ pkgs.lib.optionals pkgs.stdenv.isDarwin [
