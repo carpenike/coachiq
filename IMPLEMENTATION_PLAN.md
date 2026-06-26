@@ -34,6 +34,23 @@ coordinate, see the `handoff/README` note in the `coachiq` basic-memory project.
 
 ## Build Log
 
+### HOF-006 — Bump GitHub Actions To Node24 Runtimes
+- [shipped] same commit as this entry · 2026-06-26
+- [component] both
+
+**What changed.** GitHub workflow actions that were still on Node20-based
+majors were bumped to current Node24-based majors: `actions/checkout` to v7,
+`cachix/cachix-action` to v17, `actions/setup-python` to v6, and
+`googleapis/release-please-action` to v5.
+
+**Why.** HOF-006 clears GitHub Actions Node20 deprecation warnings at the
+workflow layer only. The Release Please action bump is runtime-only; diagnosing
+any remaining Release Please functional failure is explicitly deferred to
+HOF-010.
+
+**Files.** .github/workflows/nix-ci.yml, .github/workflows/release-please.yml,
+.github/workflows/test-docs.yml
+
 ### HOF-009 — Canonical Database Management DI Providers
 - [shipped] same commit as this entry · 2026-06-26
 - [component] backend
