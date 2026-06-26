@@ -34,6 +34,26 @@ coordinate, see the `handoff/README` note in the `coachiq` basic-memory project.
 
 ## Build Log
 
+### HOF-003 — Typed Auth/Security Dependency Aliases
+- [shipped] same commit as this entry · 2026-06-26
+- [component] backend
+- [adr] docs/adr/ADR-0006-typed-dependency-injection.md
+
+**What changed.** The auth/security dependency providers and public aliases in
+`backend/core/dependencies.py` now expose concrete classes instead of `Any`:
+`AuthManager`, `PINManager`, `SecurityAuditService`, `SecurityConfigService`,
+and `SecurityEventManager`. The in-file `get_authenticated_user` dependency edge
+now also receives a concrete `AuthManager`, and the defensive auth-manager
+fallback raises rather than returning an `AuthService` through an
+`AuthManager`-typed provider.
+
+**Why.** ADR-0006 requires FastAPI DI aliases to reflect the real service
+classes so pyright and IDEs can catch misuse at the call site. HOF-003 keeps the
+change scoped to `dependencies.py`, avoids the known `EntityService` /
+WebSocket cycle, and leaves consumer call-site cleanup for separate work.
+
+**Files.** backend/core/dependencies.py
+
 ### HOF-007 — Explicit Greenlet Dependency For Async SQLAlchemy
 - [shipped] same commit as this entry · 2026-06-26
 - [component] backend

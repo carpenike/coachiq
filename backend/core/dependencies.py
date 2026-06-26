@@ -12,6 +12,16 @@ from fastapi import Depends, Header, HTTPException, status
 
 from backend.core.service_registry import ServiceRegistry as _ServiceRegistryClass
 
+# Real service classes for typed DI aliases (ADR-0006).
+# Imported under underscore-prefixed names so the public alias name
+# (e.g. ``CANFacade``) matches what the rest of the codebase already
+# uses. The runtime ServiceRegistry lookup remains string-keyed; these
+# imports exist purely so pyright + IDEs see real return types.
+from backend.integrations.can.can_bus_recorder import CANBusRecorder as _CANBusRecorder
+from backend.integrations.can.message_filter import MessageFilter as _MessageFilter
+from backend.integrations.can.message_injector import CANMessageInjector as _CANMessageInjector
+from backend.integrations.can.protocol_analyzer import ProtocolAnalyzer as _ProtocolAnalyzer
+
 # Real repository classes for typed DI aliases (ADR-0006).
 # Imported under underscore-prefixed names so the public alias name
 # matches what the rest of the codebase already uses. The runtime
@@ -37,35 +47,11 @@ from backend.repositories.system_state_repository import (
 
 # Real service classes for typed DI aliases (ADR-0006).
 # Imported under underscore-prefixed names so the public alias name
-# (e.g. ``CANFacade``) matches what the rest of the codebase already
-# uses. The runtime ServiceRegistry lookup remains string-keyed; these
-# imports exist purely so pyright + IDEs see real return types.
-from backend.integrations.can.can_bus_recorder import CANBusRecorder as _CANBusRecorder
-from backend.integrations.can.message_filter import MessageFilter as _MessageFilter
-from backend.integrations.can.message_injector import CANMessageInjector as _CANMessageInjector
-from backend.integrations.can.protocol_analyzer import ProtocolAnalyzer as _ProtocolAnalyzer
-from backend.services.can_facade import CANFacade as _CANFacade
-
-# Real service classes for typed DI aliases (ADR-0006).
-# Imported under underscore-prefixed names so the public alias name
 # matches what the rest of the codebase already uses. The runtime
 # ServiceRegistry lookup remains string-keyed; these imports exist
 # purely so pyright + IDEs see real return types.
 from backend.services.analytics_dashboard_service import (
     AnalyticsDashboardService as _AnalyticsDashboardService,
-)
-from backend.services.edge_proxy_monitor_service import (
-    EdgeProxyMonitorService as _EdgeProxyMonitorService,
-)
-from backend.services.notification_analytics_service import (
-    NotificationAnalyticsService as _NotificationAnalyticsService,
-)
-from backend.services.notification_manager import NotificationManager as _NotificationManager
-from backend.services.notification_reporting_service import (
-    NotificationReportingService as _NotificationReportingService,
-)
-from backend.services.predictive_maintenance_service import (
-    PredictiveMaintenanceService as _PredictiveMaintenanceService,
 )
 
 # NOTE: ``AnalyticsService`` alias points at ``NotificationAnalyticsService``
@@ -73,7 +59,6 @@ from backend.services.predictive_maintenance_service import (
 # key ``"analytics_service"`` is NOT currently registered anywhere --
 # every endpoint in ``backend/api/routers/notification_analytics.py``
 # raises ``RuntimeError`` at request time. Tracked as #169.
-
 # Real service classes for typed DI aliases (ADR-0006).
 # Imported under underscore-prefixed names so the public alias name
 # matches what the rest of the codebase already uses. The runtime
@@ -85,9 +70,30 @@ from backend.services.predictive_maintenance_service import (
 # ``backend.websocket.handlers`` -> ``backend.websocket.routes`` ->
 # ``backend.core.dependencies.WebSocketManager``. Tracked separately;
 # fix likely requires making entity_service's websocket import lazy.
+from backend.services.auth.manager import AuthManager as _AuthManager
+from backend.services.can_facade import CANFacade as _CANFacade
+from backend.services.edge_proxy_monitor_service import (
+    EdgeProxyMonitorService as _EdgeProxyMonitorService,
+)
+from backend.services.notification_analytics_service import (
+    NotificationAnalyticsService as _NotificationAnalyticsService,
+)
+from backend.services.notification_manager import NotificationManager as _NotificationManager
+from backend.services.notification_reporting_service import (
+    NotificationReportingService as _NotificationReportingService,
+)
+from backend.services.pin_manager import PINManager as _PINManager
+from backend.services.predictive_maintenance_service import (
+    PredictiveMaintenanceService as _PredictiveMaintenanceService,
+)
 from backend.services.rvc_config_facade import RVCConfigFacade as _RVCConfigFacade
 from backend.services.rvc_service import RVCService as _RVCService
 from backend.services.safety_service import SafetyService as _SafetyService
+from backend.services.security_audit_service import SecurityAuditService as _SecurityAuditService
+from backend.services.security_config_service import (
+    SecurityConfigService as _SecurityConfigService,
+)
+from backend.services.security_event_manager import SecurityEventManager as _SecurityEventManager
 
 logger = logging.getLogger(__name__)
 
@@ -518,7 +524,7 @@ ServiceRegistry = Annotated[_ServiceRegistryClass, Depends(get_service_registry)
 # ==================================================================================
 
 
-def get_auth_manager() -> Any:
+def get_auth_manager() -> _AuthManager:
     """
     Get the auth manager from ServiceRegistry.
 
@@ -538,15 +544,16 @@ def get_auth_manager() -> Any:
             )
             raise RuntimeError(msg)
         return manager
-    return auth_service
+    msg = "Registered auth_manager service does not provide an AuthManager instance."
+    raise RuntimeError(msg)
 
 
-def get_pin_manager() -> Any:
+def get_pin_manager() -> _PINManager:
     """Get the PIN manager from ServiceRegistry."""
     return create_service_dependency("pin_manager")()
 
 
-def get_security_audit_service() -> Any:
+async def get_security_audit_service() -> _SecurityAuditService:
     """Get the security audit service from ServiceRegistry."""
     return create_service_dependency("security_audit_service")()
 
@@ -556,19 +563,19 @@ def get_notification_manager() -> _NotificationManager:
     return create_service_dependency("notification_manager")()
 
 
-def get_security_config_service() -> Any:
+def get_security_config_service() -> _SecurityConfigService:
     """Get the security config service from ServiceRegistry."""
     return create_service_dependency("security_config_service")()
 
 
-def get_security_event_manager() -> Any:
+def get_security_event_manager() -> _SecurityEventManager:
     """Get the security event manager from ServiceRegistry."""
     return create_service_dependency("security_event_manager")()
 
 
 # Authentication dependencies with proper JWT validation
 async def get_authenticated_user(
-    auth_manager: Annotated[Any, Depends(get_auth_manager)],
+    auth_manager: Annotated[_AuthManager, Depends(get_auth_manager)],
     authorization: str | None = Header(None),
 ) -> dict:
     """
@@ -602,7 +609,7 @@ async def get_authenticated_user(
 
     try:
         # Validate token and get user data
-        user_data = await auth_manager.validate_token(token)
+        user_data = auth_manager.validate_token(token)
         if not user_data:
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
@@ -648,11 +655,11 @@ async def get_authenticated_admin(
 
 
 # Type aliases for authentication dependencies
-AuthManager = Annotated[Any, Depends(get_auth_manager)]
-PINManager = Annotated[Any, Depends(get_pin_manager)]
-SecurityAuditService = Annotated[Any, Depends(get_security_audit_service)]
-SecurityConfigService = Annotated[Any, Depends(get_security_config_service)]
-SecurityEventManager = Annotated[Any, Depends(get_security_event_manager)]
+AuthManager = Annotated[_AuthManager, Depends(get_auth_manager)]
+PINManager = Annotated[_PINManager, Depends(get_pin_manager)]
+SecurityAuditService = Annotated[_SecurityAuditService, Depends(get_security_audit_service)]
+SecurityConfigService = Annotated[_SecurityConfigService, Depends(get_security_config_service)]
+SecurityEventManager = Annotated[_SecurityEventManager, Depends(get_security_event_manager)]
 NotificationManager = Annotated[_NotificationManager, Depends(get_notification_manager)]
 AuthenticatedUser = Annotated[dict, Depends(get_authenticated_user)]
 AuthenticatedAdmin = Annotated[dict, Depends(get_authenticated_admin)]

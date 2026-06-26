@@ -167,9 +167,7 @@ class SecurityPersistenceService:
         # Register with SecurityEventManager
         try:
             event_manager = get_security_event_manager()
-            event_manager.register_listener(
-                self._handle_security_event, name="security_persistence"
-            )
+            await event_manager.subscribe(self._handle_security_event, name="security_persistence")
             logger.info("Registered as security event listener")
         except Exception as e:
             logger.error("Failed to register with SecurityEventManager: %s", e)
@@ -469,7 +467,6 @@ def get_security_persistence_service() -> SecurityPersistenceService:
     Raises:
         RuntimeError: If service has not been initialized
     """
-    global _security_persistence_service
     if _security_persistence_service is None:
         msg = (
             "SecurityPersistenceService has not been initialized. "
@@ -489,7 +486,7 @@ def initialize_security_persistence_service(**kwargs) -> SecurityPersistenceServ
     Returns:
         The initialized SecurityPersistenceService instance
     """
-    global _security_persistence_service
+    global _security_persistence_service  # noqa: PLW0603 - intentional module-level service cache
     if _security_persistence_service is None:
         _security_persistence_service = SecurityPersistenceService(**kwargs)
     return _security_persistence_service
