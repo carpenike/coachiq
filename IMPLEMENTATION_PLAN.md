@@ -34,6 +34,24 @@ coordinate, see the `handoff/README` note in the `coachiq` basic-memory project.
 
 ## Build Log
 
+### HOF-009 — Canonical Database Management DI Providers
+- [shipped] same commit as this entry · 2026-06-26
+- [component] backend
+- [adr] docs/adr/ADR-0006-typed-dependency-injection.md
+
+**What changed.** `backend/api/routers/database_management.py` now imports the
+canonical typed `get_database_update_service` and
+`get_migration_safety_validator` providers from `backend.core.dependencies`
+instead of minting local `create_service_dependency(...)` shadows. The router's
+existing concrete service annotations remain unchanged.
+
+**Why.** HOF-009 removes the last local duplicate providers that shadowed the
+central typed DI layer closed by HOF-004. The registry keys and runtime behavior
+are unchanged, but `dependencies.py` is now the single source of truth for these
+database-management providers.
+
+**Files.** backend/api/routers/database_management.py
+
 ### HOF-005 — Remove Residual Frontend App Directory
 - [shipped] same commit as this entry · 2026-06-26
 - [component] frontend

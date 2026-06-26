@@ -5,14 +5,11 @@ from typing import Annotated, Any
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 
-from backend.core.dependencies import create_service_dependency
-
-# Create service dependencies
-get_database_update_service = create_service_dependency("database_update_service")
-get_migration_safety_validator = create_service_dependency("migration_safety_validator")
-
-# Import auth dependency
-from backend.core.dependencies import get_authenticated_admin
+from backend.core.dependencies import (
+    get_authenticated_admin,
+    get_database_update_service,
+    get_migration_safety_validator,
+)
 from backend.services.database_update_service import DatabaseUpdateService
 from backend.services.migration_safety_validator import MigrationSafetyValidator
 
