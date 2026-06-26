@@ -34,6 +34,25 @@ coordinate, see the `handoff/README` note in the `coachiq` basic-memory project.
 
 ## Build Log
 
+### HOF-005 — Remove Residual Frontend App Directory
+- [shipped] same commit as this entry · 2026-06-26
+- [component] frontend
+
+**What changed.** The last file under `frontend/src/app/` was moved to the
+pages idiom: `frontend/src/app/dashboard/data.json` became
+`frontend/src/pages/demo-dashboard-data.json`, and `demo-dashboard.tsx` now
+imports it from the colocated page directory. The now-empty `frontend/src/app/`
+directory was removed while preserving the `/demo-dashboard` route and sidebar
+link.
+
+**Why.** HOF-005 / A12 confirmed this Vite SPA already uses React Router with a
+`pages/` structure; the leftover `app/` tree was App-Router residue with one
+live data artifact. Moving the artifact beside its only consumer consolidates
+the frontend to a single pages-based idiom without deleting the demo dashboard.
+
+**Files.** frontend/src/pages/demo-dashboard.tsx,
+frontend/src/pages/demo-dashboard-data.json
+
 ### HOF-004 — Close Typed Dependency Injection Layer
 - [shipped] same commit as this entry · 2026-06-26
 - [component] backend
