@@ -95,6 +95,7 @@
           ps.watchfiles
           ps.websockets
           ps.sqlalchemy
+          ps.greenlet
           ps.aiosqlite
           ps.asyncpg
           ps.alembic
@@ -148,6 +149,7 @@
             pythonPackages.websockets
             # Database dependencies
             pythonPackages.sqlalchemy
+            pythonPackages.greenlet
             pythonPackages.aiosqlite
             pythonPackages.aiofiles
             pythonPackages.asyncpg
@@ -252,6 +254,7 @@
             pythonPackages.cachetools
             # Database dependencies for dev
             pythonPackages.sqlalchemy
+            pythonPackages.greenlet
             pythonPackages.aiosqlite
             pythonPackages.asyncpg
             pythonPackages.alembic
@@ -375,6 +378,11 @@ EOF
             pythonPackages.python-multipart
             pythonPackages.email-validator
             pythonPackages.pytest-asyncio
+            pythonPackages.sqlalchemy
+            pythonPackages.greenlet
+            pythonPackages.aiosqlite
+            pythonPackages.asyncpg
+            pythonPackages.alembic
             pkgs.pyright
 
             # --- Dev Tools dependencies for CI ---

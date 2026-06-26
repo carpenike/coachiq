@@ -34,6 +34,25 @@ coordinate, see the `handoff/README` note in the `coachiq` basic-memory project.
 
 ## Build Log
 
+### HOF-007 — Explicit Greenlet Dependency For Async SQLAlchemy
+- [shipped] same commit as this entry · 2026-06-26
+- [component] backend
+
+**What changed.** `greenlet` is now an explicit main Poetry dependency and is
+mirrored into the Nix Python dependency sets used by the package, default dev
+shell, and CI shell. The Poetry lock was regenerated so `greenlet 3.2.3`
+installs on macOS `arm64` instead of being skipped by the transitive lock marker
+from `sqlalchemy[asyncio]`.
+
+**Why.** HOF-007 review traced the two WebSocket `database_manager` startup
+errors to SQLAlchemy async SQLite requiring `greenlet` during real FastAPI
+lifespan startup. The active dev `.venv` was missing `greenlet` on macOS
+`arm64`, while the Pi `aarch64` marker path was unaffected. The fix stays at the
+dependency/environment layer: no WebSocket skips, no xfails, and no database
+startup try/except masking.
+
+**Files.** pyproject.toml, poetry.lock, flake.nix
+
 ### HOF-001 — Truthful v2 Networks Data
 - [shipped] same commit as this entry · 2026-06-26
 - [component] backend
