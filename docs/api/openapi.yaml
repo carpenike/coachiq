@@ -1157,6 +1157,13 @@ paths:
       description: 'Inject CAN message(s) for testing and diagnostics.
 
 
+        Admin-only: this bypasses normal entity-control validation and emits raw
+
+        frames onto the bus. Audited via the request `user` field which is
+
+        populated from the authenticated session, NOT a hardcoded value.
+
+
         Safety levels:
 
         - STRICT: Blocks dangerous messages
@@ -1165,12 +1172,21 @@ paths:
 
         - PERMISSIVE: Allows all messages (use with caution)'
       operationId: inject_message_api_can_tools_inject_post
+      parameters:
+      - name: authorization
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
       requestBody:
+        required: true
         content:
           application/json:
             schema:
               $ref: '#/components/schemas/MessageInjectionRequest'
-        required: true
       responses:
         '200':
           description: Successful Response
@@ -1192,16 +1208,28 @@ paths:
       description: 'Inject J1939 message with automatic CAN ID generation.
 
 
+        Admin-only. See /inject for the same security rationale.
+
+
         This endpoint simplifies J1939 message injection by automatically
 
         constructing the proper 29-bit CAN identifier from PGN and addresses.'
       operationId: inject_j1939_message_api_can_tools_inject_j1939_post
+      parameters:
+      - name: authorization
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
       requestBody:
+        required: true
         content:
           application/json:
             schema:
               $ref: '#/components/schemas/J1939MessageRequest'
-        required: true
       responses:
         '200':
           description: Successful Response
@@ -2472,6 +2500,15 @@ paths:
       summary: Get Database Status
       description: Get current database schema status.
       operationId: get_database_status_api_database_status_get
+      parameters:
+      - name: authorization
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
       responses:
         '200':
           description: Successful Response
@@ -2479,6 +2516,12 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/DatabaseStatusResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
   /api/database/migrate:
     post:
       tags:
@@ -2487,12 +2530,21 @@ paths:
       summary: Start Migration
       description: Start database migration process.
       operationId: start_migration_api_database_migrate_post
+      parameters:
+      - name: authorization
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
       requestBody:
+        required: true
         content:
           application/json:
             schema:
               $ref: '#/components/schemas/MigrationRequest'
-        required: true
       responses:
         '200':
           description: Successful Response
@@ -2521,6 +2573,14 @@ paths:
         schema:
           type: string
           title: Job Id
+      - name: authorization
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
       responses:
         '200':
           description: Successful Response
@@ -2553,6 +2613,14 @@ paths:
           type: integer
           default: 10
           title: Limit
+      - name: authorization
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
       responses:
         '200':
           description: Successful Response
@@ -2578,6 +2646,15 @@ paths:
       summary: Check Migration Safety
       description: Get detailed safety check for migration.
       operationId: check_migration_safety_api_database_safety_check_get
+      parameters:
+      - name: authorization
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
       responses:
         '200':
           description: Successful Response
@@ -2585,6 +2662,12 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/SafetyReportResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
   /api/dbc/upload:
     post:
       tags:
@@ -4431,15 +4514,30 @@ paths:
 
         - Audit log entry count'
       operationId: get_safety_status_api_safety_status_get
+      parameters:
+      - name: authorization
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
       responses:
         '200':
           description: Successful Response
           content:
             application/json:
               schema:
-                additionalProperties: true
                 type: object
+                additionalProperties: true
                 title: Response Get Safety Status Api Safety Status Get
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
   /api/safety/update-state:
     post:
       tags:
@@ -4452,20 +4550,29 @@ paths:
 
         safety interlocks use to determine if operations are safe.'
       operationId: update_system_state_api_safety_update_state_post
+      parameters:
+      - name: authorization
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
       requestBody:
+        required: true
         content:
           application/json:
             schema:
               $ref: '#/components/schemas/SystemStateUpdate'
-        required: true
       responses:
         '200':
           description: Successful Response
           content:
             application/json:
               schema:
-                additionalProperties: true
                 type: object
+                additionalProperties: true
                 title: Response Update System State Api Safety Update State Post
         '422':
           description: Validation Error
@@ -4491,15 +4598,30 @@ paths:
 
         - Engagement time and reason'
       operationId: get_interlock_status_api_safety_interlocks_get
+      parameters:
+      - name: authorization
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
       responses:
         '200':
           description: Successful Response
           content:
             application/json:
               schema:
-                additionalProperties: true
                 type: object
+                additionalProperties: true
                 title: Response Get Interlock Status Api Safety Interlocks Get
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
   /api/safety/interlocks/check:
     post:
       tags:
@@ -4512,15 +4634,30 @@ paths:
 
         the results. Interlocks will be engaged/disengaged as needed.'
       operationId: check_interlocks_api_safety_interlocks_check_post
+      parameters:
+      - name: authorization
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
       responses:
         '200':
           description: Successful Response
           content:
             application/json:
               schema:
-                additionalProperties: true
                 type: object
+                additionalProperties: true
                 title: Response Check Interlocks Api Safety Interlocks Check Post
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
   /api/safety/emergency-stop:
     post:
       tags:
@@ -4544,21 +4681,30 @@ paths:
 
         manual reset with authorization.'
       operationId: trigger_emergency_stop_api_safety_emergency_stop_post
+      parameters:
+      - name: authorization
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
       requestBody:
+        required: true
         content:
           application/json:
             schema:
               $ref: '#/components/schemas/EmergencyStopRequest'
-        required: true
       responses:
         '200':
           description: Successful Response
           content:
             application/json:
               schema:
+                type: object
                 additionalProperties:
                   type: string
-                type: object
                 title: Response Trigger Emergency Stop Api Safety Emergency Stop Post
         '422':
           description: Validation Error
@@ -4578,21 +4724,30 @@ paths:
 
         features and interlocks must be manually re-enabled.'
       operationId: reset_emergency_stop_api_safety_emergency_stop_reset_post
+      parameters:
+      - name: authorization
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
       requestBody:
+        required: true
         content:
           application/json:
             schema:
               $ref: '#/components/schemas/EmergencyStopResetRequest'
-        required: true
       responses:
         '200':
           description: Successful Response
           content:
             application/json:
               schema:
+                type: object
                 additionalProperties:
                   type: string
-                type: object
                 title: Response Reset Emergency Stop Api Safety Emergency Stop Reset
                   Post
         '422':
@@ -4619,6 +4774,14 @@ paths:
           type: integer
           default: 100
           title: Max Entries
+      - name: authorization
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
       responses:
         '200':
           description: Successful Response
@@ -4650,15 +4813,30 @@ paths:
 
         - Last check timestamps'
       operationId: get_safety_health_api_safety_health_get
+      parameters:
+      - name: authorization
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
       responses:
         '200':
           description: Successful Response
           content:
             application/json:
               schema:
-                additionalProperties: true
                 type: object
+                additionalProperties: true
                 title: Response Get Safety Health Api Safety Health Get
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
   /api/safety/pin/emergency-stop:
     post:
       tags:
@@ -4671,20 +4849,29 @@ paths:
 
         Provides enhanced security for safety-critical operations.'
       operationId: pin_emergency_stop_api_safety_pin_emergency_stop_post
+      parameters:
+      - name: authorization
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
       requestBody:
+        required: true
         content:
           application/json:
             schema:
               $ref: '#/components/schemas/PINEmergencyStopRequest'
-        required: true
       responses:
         '200':
           description: Successful Response
           content:
             application/json:
               schema:
-                additionalProperties: true
                 type: object
+                additionalProperties: true
                 title: Response Pin Emergency Stop Api Safety Pin Emergency Stop Post
         '422':
           description: Validation Error
@@ -4704,20 +4891,29 @@ paths:
 
         Provides enhanced security for safety-critical operations.'
       operationId: pin_emergency_reset_api_safety_pin_emergency_stop_reset_post
+      parameters:
+      - name: authorization
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
       requestBody:
+        required: true
         content:
           application/json:
             schema:
               $ref: '#/components/schemas/PINEmergencyResetRequest'
-        required: true
       responses:
         '200':
           description: Successful Response
           content:
             application/json:
               schema:
-                additionalProperties: true
                 type: object
+                additionalProperties: true
                 title: Response Pin Emergency Reset Api Safety Pin Emergency Stop
                   Reset Post
         '422':
@@ -4740,20 +4936,29 @@ paths:
 
         Override will automatically expire after the specified duration.'
       operationId: pin_override_interlock_api_safety_pin_interlocks_override_post
+      parameters:
+      - name: authorization
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
       requestBody:
+        required: true
         content:
           application/json:
             schema:
               $ref: '#/components/schemas/PINInterlockOverrideRequest'
-        required: true
       responses:
         '200':
           description: Successful Response
           content:
             application/json:
               schema:
-                additionalProperties: true
                 type: object
+                additionalProperties: true
                 title: Response Pin Override Interlock Api Safety Pin Interlocks Override
                   Post
         '422':
@@ -4774,20 +4979,29 @@ paths:
 
         returning it to normal operation.'
       operationId: clear_interlock_override_api_safety_interlocks_clear_override_post
+      parameters:
+      - name: authorization
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
       requestBody:
+        required: true
         content:
           application/json:
             schema:
               $ref: '#/components/schemas/InterlockOverrideClearRequest'
-        required: true
       responses:
         '200':
           description: Successful Response
           content:
             application/json:
               schema:
-                additionalProperties: true
                 type: object
+                additionalProperties: true
                 title: Response Clear Interlock Override Api Safety Interlocks Clear
                   Override Post
         '422':
@@ -4808,16 +5022,31 @@ paths:
 
         who authorized them, when they expire, and the reason for override.'
       operationId: get_active_overrides_api_safety_interlocks_overrides_get
+      parameters:
+      - name: authorization
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
       responses:
         '200':
           description: Successful Response
           content:
             application/json:
               schema:
-                additionalProperties: true
                 type: object
+                additionalProperties: true
                 title: Response Get Active Overrides Api Safety Interlocks Overrides
                   Get
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
   /api/safety/pin/maintenance-mode/enter:
     post:
       tags:
@@ -4839,20 +5068,29 @@ paths:
 
         Requires valid PIN session with maintenance permissions.'
       operationId: pin_enter_maintenance_mode_api_safety_pin_maintenance_mode_enter_post
+      parameters:
+      - name: authorization
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
       requestBody:
+        required: true
         content:
           application/json:
             schema:
               $ref: '#/components/schemas/PINMaintenanceModeRequest'
-        required: true
       responses:
         '200':
           description: Successful Response
           content:
             application/json:
               schema:
-                additionalProperties: true
                 type: object
+                additionalProperties: true
                 title: Response Pin Enter Maintenance Mode Api Safety Pin Maintenance
                   Mode Enter Post
         '422':
@@ -4880,20 +5118,29 @@ paths:
 
         Requires valid PIN session.'
       operationId: pin_exit_maintenance_mode_api_safety_pin_maintenance_mode_exit_post
+      parameters:
+      - name: authorization
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
       requestBody:
+        required: true
         content:
           application/json:
             schema:
               $ref: '#/components/schemas/PINMaintenanceModeExitRequest'
-        required: true
       responses:
         '200':
           description: Successful Response
           content:
             application/json:
               schema:
-                additionalProperties: true
                 type: object
+                additionalProperties: true
                 title: Response Pin Exit Maintenance Mode Api Safety Pin Maintenance
                   Mode Exit Post
         '422':
@@ -4920,15 +5167,30 @@ paths:
 
         - Active overrides count'
       operationId: get_operational_mode_api_safety_operational_mode_get
+      parameters:
+      - name: authorization
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
       responses:
         '200':
           description: Successful Response
           content:
             application/json:
               schema:
-                additionalProperties: true
                 type: object
+                additionalProperties: true
                 title: Response Get Operational Mode Api Safety Operational Mode Get
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
   /api/safety/pin/diagnostic-mode/enter:
     post:
       tags:
@@ -4955,20 +5217,29 @@ paths:
 
         Requires valid PIN session with diagnostic permissions.'
       operationId: pin_enter_diagnostic_mode_api_safety_pin_diagnostic_mode_enter_post
+      parameters:
+      - name: authorization
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
       requestBody:
+        required: true
         content:
           application/json:
             schema:
               $ref: '#/components/schemas/PINDiagnosticModeRequest'
-        required: true
       responses:
         '200':
           description: Successful Response
           content:
             application/json:
               schema:
-                additionalProperties: true
                 type: object
+                additionalProperties: true
                 title: Response Pin Enter Diagnostic Mode Api Safety Pin Diagnostic
                   Mode Enter Post
         '422':
@@ -4996,20 +5267,29 @@ paths:
 
         Requires valid PIN session.'
       operationId: pin_exit_diagnostic_mode_api_safety_pin_diagnostic_mode_exit_post
+      parameters:
+      - name: authorization
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
       requestBody:
+        required: true
         content:
           application/json:
             schema:
               $ref: '#/components/schemas/PINDiagnosticModeExitRequest'
-        required: true
       responses:
         '200':
           description: Successful Response
           content:
             application/json:
               schema:
-                additionalProperties: true
                 type: object
+                additionalProperties: true
                 title: Response Pin Exit Diagnostic Mode Api Safety Pin Diagnostic
                   Mode Exit Post
         '422':
@@ -5032,12 +5312,21 @@ paths:
 
         operations and multi-use for maintenance operations.'
       operationId: validate_pin_api_pin_auth_validate_post
+      parameters:
+      - name: authorization
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
       requestBody:
+        required: true
         content:
           application/json:
             schema:
               $ref: '#/components/schemas/PINValidationRequest'
-        required: true
       responses:
         '200':
           description: Successful Response
@@ -5065,12 +5354,21 @@ paths:
 
         operations (maintenance).'
       operationId: authorize_operation_api_pin_auth_authorize_post
+      parameters:
+      - name: authorization
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
       requestBody:
+        required: true
         content:
           application/json:
             schema:
               $ref: '#/components/schemas/OperationAuthorizationRequest'
-        required: true
       responses:
         '200':
           description: Successful Response
@@ -5101,6 +5399,14 @@ paths:
         schema:
           type: string
           title: Session Id
+      - name: authorization
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
       responses:
         '200':
           description: Successful Response
@@ -5127,15 +5433,30 @@ paths:
 
         Useful for security cleanup or when leaving the RV.'
       operationId: revoke_all_user_sessions_api_pin_auth_sessions_delete
+      parameters:
+      - name: authorization
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
       responses:
         '200':
           description: Successful Response
           content:
             application/json:
               schema:
-                additionalProperties: true
                 type: object
+                additionalProperties: true
                 title: Response Revoke All User Sessions Api Pin Auth Sessions Delete
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
   /api/pin-auth/status:
     get:
       tags:
@@ -5146,6 +5467,15 @@ paths:
 
         Shows lockout status, active sessions, and PIN availability.'
       operationId: get_pin_status_api_pin_auth_status_get
+      parameters:
+      - name: authorization
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
       responses:
         '200':
           description: Successful Response
@@ -5153,6 +5483,12 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/PINStatusResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
   /api/pin-auth/admin/system-status:
     get:
       tags:
@@ -5163,6 +5499,15 @@ paths:
 
         Provides system-wide statistics and health information.'
       operationId: get_system_status_api_pin_auth_admin_system_status_get
+      parameters:
+      - name: authorization
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
       responses:
         '200':
           description: Successful Response
@@ -5170,6 +5515,12 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/SystemStatusResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
   /api/pin-auth/admin/rotate-pins:
     post:
       tags:
@@ -5182,6 +5533,15 @@ paths:
 
         and generates new PINs. Use with caution.'
       operationId: rotate_pins_api_pin_auth_admin_rotate_pins_post
+      parameters:
+      - name: authorization
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
       responses:
         '200':
           description: Successful Response
@@ -5189,6 +5549,12 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/PINRotationResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
   /api/pin-auth/admin/user-status/{user_id}:
     get:
       tags:
@@ -5206,6 +5572,14 @@ paths:
         schema:
           type: string
           title: User Id
+      - name: authorization
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
       responses:
         '200':
           description: Successful Response
@@ -5239,6 +5613,14 @@ paths:
         schema:
           type: string
           title: User Id
+      - name: authorization
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
       responses:
         '200':
           description: Successful Response
@@ -5265,6 +5647,15 @@ paths:
 
         Maps to the system status endpoint for consistency.'
       operationId: get_security_status_compat_api_pin_auth_security_status_get
+      parameters:
+      - name: authorization
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
       responses:
         '200':
           description: Successful Response
@@ -5272,6 +5663,12 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/SystemStatusResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
   /api/pin-auth/pins:
     get:
       tags:
@@ -5282,6 +5679,15 @@ paths:
 
         Returns information about available PIN types without revealing actual PINs.'
       operationId: get_user_pins_api_pin_auth_pins_get
+      parameters:
+      - name: authorization
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
       responses:
         '200':
           description: Successful Response
@@ -5289,6 +5695,12 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/PINListResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
   /api/security/config/:
     get:
       tags:
@@ -5301,15 +5713,30 @@ paths:
 
         and current settings.'
       operationId: get_security_config_api_security_config__get
+      parameters:
+      - name: authorization
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
       responses:
         '200':
           description: Successful Response
           content:
             application/json:
               schema:
-                additionalProperties: true
                 type: object
+                additionalProperties: true
                 title: Response Get Security Config Api Security Config  Get
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
     put:
       tags:
       - security-configuration
@@ -5321,20 +5748,29 @@ paths:
 
         Use with caution as this affects all security policies.'
       operationId: update_security_config_api_security_config__put
+      parameters:
+      - name: authorization
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
       requestBody:
+        required: true
         content:
           application/json:
             schema:
               $ref: '#/components/schemas/SecurityConfiguration'
-        required: true
       responses:
         '200':
           description: Successful Response
           content:
             application/json:
               schema:
-                additionalProperties: true
                 type: object
+                additionalProperties: true
                 title: Response Update Security Config Api Security Config  Put
         '422':
           description: Validation Error
@@ -5352,15 +5788,30 @@ paths:
 
         Returns a condensed view of security settings and validation status.'
       operationId: get_security_summary_api_security_config_summary_get
+      parameters:
+      - name: authorization
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
       responses:
         '200':
           description: Successful Response
           content:
             application/json:
               schema:
-                additionalProperties: true
                 type: object
+                additionalProperties: true
                 title: Response Get Security Summary Api Security Config Summary Get
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
   /api/security/config/mode:
     post:
       tags:
@@ -5373,12 +5824,21 @@ paths:
 
         Available modes: minimal, standard, strict, paranoid.'
       operationId: update_security_mode_api_security_config_mode_post
+      parameters:
+      - name: authorization
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
       requestBody:
+        required: true
         content:
           application/json:
             schema:
               $ref: '#/components/schemas/SecurityModeUpdateRequest'
-        required: true
       responses:
         '200':
           description: Successful Response
@@ -5411,6 +5871,14 @@ paths:
         schema:
           type: string
           title: Policy Type
+      - name: authorization
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
       requestBody:
         required: true
         content:
@@ -5443,6 +5911,15 @@ paths:
 
         Checks the current configuration for issues and provides recommendations.'
       operationId: validate_config_api_security_config_validate_get
+      parameters:
+      - name: authorization
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
       responses:
         '200':
           description: Successful Response
@@ -5450,6 +5927,12 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ValidationResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
   /api/security/config/reload:
     post:
       tags:
@@ -5460,15 +5943,30 @@ paths:
 
         Forces a reload of the configuration file, useful after manual edits.'
       operationId: reload_config_api_security_config_reload_post
+      parameters:
+      - name: authorization
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
       responses:
         '200':
           description: Successful Response
           content:
             application/json:
               schema:
-                additionalProperties: true
                 type: object
+                additionalProperties: true
                 title: Response Reload Config Api Security Config Reload Post
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
   /api/security/config/policies/pin:
     get:
       tags:
@@ -5476,15 +5974,30 @@ paths:
       summary: Get Pin Policy
       description: Get PIN security policy configuration (Admin only).
       operationId: get_pin_policy_api_security_config_policies_pin_get
+      parameters:
+      - name: authorization
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
       responses:
         '200':
           description: Successful Response
           content:
             application/json:
               schema:
-                additionalProperties: true
                 type: object
+                additionalProperties: true
                 title: Response Get Pin Policy Api Security Config Policies Pin Get
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
   /api/security/config/policies/rate-limiting:
     get:
       tags:
@@ -5492,16 +6005,31 @@ paths:
       summary: Get Rate Limiting Policy
       description: Get rate limiting policy configuration (Admin only).
       operationId: get_rate_limiting_policy_api_security_config_policies_rate_limiting_get
+      parameters:
+      - name: authorization
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
       responses:
         '200':
           description: Successful Response
           content:
             application/json:
               schema:
-                additionalProperties: true
                 type: object
+                additionalProperties: true
                 title: Response Get Rate Limiting Policy Api Security Config Policies
                   Rate Limiting Get
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
   /api/security/config/policies/authentication:
     get:
       tags:
@@ -5509,16 +6037,31 @@ paths:
       summary: Get Authentication Policy
       description: Get authentication policy configuration (Admin only).
       operationId: get_authentication_policy_api_security_config_policies_authentication_get
+      parameters:
+      - name: authorization
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
       responses:
         '200':
           description: Successful Response
           content:
             application/json:
               schema:
-                additionalProperties: true
                 type: object
+                additionalProperties: true
                 title: Response Get Authentication Policy Api Security Config Policies
                   Authentication Get
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
   /api/security/config/caddy/rate-limits:
     get:
       tags:
@@ -5531,16 +6074,31 @@ paths:
 
         This is separate from the user-aware rate limits handled in FastAPI.'
       operationId: get_caddy_rate_limits_api_security_config_caddy_rate_limits_get
+      parameters:
+      - name: authorization
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
       responses:
         '200':
           description: Successful Response
           content:
             application/json:
               schema:
-                additionalProperties: true
                 type: object
+                additionalProperties: true
                 title: Response Get Caddy Rate Limits Api Security Config Caddy Rate
                   Limits Get
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
   /api/security/dashboard/data:
     get:
       tags:
@@ -7594,24 +8152,40 @@ paths:
       tags:
       - entities-v2
       summary: Create Entity Mapping
-      description: Create new entity mapping from unmapped entry
+      description: 'Create new entity mapping from unmapped entry (admin only).
+
+
+        Configuration ops that change which hardware our API can address
+
+        require admin role; the service layer also re-validates as
+
+        defense in depth.'
       operationId: create_entity_mapping_api_v2_entities_mappings_post
+      parameters:
+      - name: authorization
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
       requestBody:
+        required: true
         content:
           application/json:
             schema:
-              additionalProperties: true
               type: object
+              additionalProperties: true
               title: Mapping Request
-        required: true
       responses:
         '200':
           description: Successful Response
           content:
             application/json:
               schema:
-                additionalProperties: true
                 type: object
+                additionalProperties: true
                 title: Response Create Entity Mapping Api V2 Entities Mappings Post
         '422':
           description: Validation Error
@@ -7660,6 +8234,14 @@ paths:
         schema:
           type: string
           title: Entity Id
+      - name: authorization
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
       requestBody:
         required: true
         content:
@@ -7690,20 +8272,29 @@ paths:
       description: Execute bulk control operations with safety validation (v2) - Pi
         optimized
       operationId: bulk_control_entities_api_v2_entities_bulk_control_post
+      parameters:
+      - name: authorization
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
       requestBody:
+        required: true
         content:
           application/json:
             schema:
               $ref: '#/components/schemas/BulkControlRequestV2'
-        required: true
       responses:
         '200':
           description: Successful Response
           content:
             application/json:
               schema:
-                additionalProperties: true
                 type: object
+                additionalProperties: true
                 title: Response Bulk Control Entities Api V2 Entities Bulk Control
                   Post
         '422':
@@ -7720,15 +8311,30 @@ paths:
       description: Emergency stop - immediately halt all entity operations (Admin
         Only)
       operationId: emergency_stop_api_v2_entities_emergency_stop_post
+      parameters:
+      - name: authorization
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
       responses:
         '200':
           description: Successful Response
           content:
             application/json:
               schema:
-                additionalProperties: true
                 type: object
+                additionalProperties: true
                 title: Response Emergency Stop Api V2 Entities Emergency Stop Post
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
   /api/v2/entities/clear-emergency-stop:
     post:
       tags:
@@ -7736,16 +8342,31 @@ paths:
       summary: Clear Emergency Stop
       description: Clear emergency stop condition (Admin Only)
       operationId: clear_emergency_stop_api_v2_entities_clear_emergency_stop_post
+      parameters:
+      - name: authorization
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
       responses:
         '200':
           description: Successful Response
           content:
             application/json:
               schema:
-                additionalProperties: true
                 type: object
+                additionalProperties: true
                 title: Response Clear Emergency Stop Api V2 Entities Clear Emergency
                   Stop Post
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
   /api/v2/entities/reconcile-state:
     post:
       tags:
@@ -7848,12 +8469,14 @@ paths:
     get:
       tags:
       - networks-v2
-      summary: Get Network Status
-      description: Get overall network status and statistics
+      summary: Get network status
+      description: Return configured CAN interface mappings, service-level CAN health,
+        and facade-reported queue status without fabricated per-interface telemetry.
       operationId: get_network_status_api_v2_networks_status_get
       responses:
         '200':
-          description: Successful Response
+          description: Truthful network summary from currently available CAN facade
+            data
           content:
             application/json:
               schema:
@@ -7862,12 +8485,12 @@ paths:
     get:
       tags:
       - networks-v2
-      summary: Get Network Interfaces
-      description: Get detailed information about network interfaces
+      summary: Get configured network interfaces
+      description: Return configured logical-to-physical CAN interface mappings.
       operationId: get_network_interfaces_api_v2_networks_interfaces_get
       responses:
         '200':
-          description: Successful Response
+          description: List of configured CAN interface mappings
           content:
             application/json:
               schema:
@@ -7875,6 +8498,24 @@ paths:
                   $ref: '#/components/schemas/NetworkStatus'
                 type: array
                 title: Response Get Network Interfaces Api V2 Networks Interfaces
+                  Get
+  /api/v2/networks/statistics:
+    get:
+      tags:
+      - networks-v2
+      summary: Get facade-reported queue status
+      description: Return CANFacade.get_queue_status() only. This is facade-reported
+        queue status and not real TX queue telemetry.
+      operationId: get_network_statistics_api_v2_networks_statistics_get
+      responses:
+        '200':
+          description: Facade-reported CAN queue status
+          content:
+            application/json:
+              schema:
+                additionalProperties: true
+                type: object
+                title: Response Get Network Statistics Api V2 Networks Statistics
                   Get
   /api/v2/system/health:
     get:
@@ -11312,78 +11953,55 @@ components:
       description: Network security policy configuration.
     NetworkStatus:
       properties:
-        interface_name:
+        logical_name:
           type: string
-          title: Interface Name
-          description: Network interface name
-        protocol:
+          title: Logical Name
+          description: Logical interface name
+        physical_interface:
           type: string
-          title: Protocol
-          description: Protocol type (CAN, J1939, etc.)
-        status:
-          type: string
-          title: Status
-          description: 'Interface status: active/inactive/error'
-        message_count:
-          type: integer
-          title: Message Count
-          description: Total messages processed
-        error_count:
-          type: integer
-          title: Error Count
-          description: Error count
-        last_activity:
-          type: number
-          title: Last Activity
-          description: Last activity timestamp
+          title: Physical Interface
+          description: Configured physical interface name
       type: object
       required:
-      - interface_name
-      - protocol
-      - status
-      - message_count
-      - error_count
-      - last_activity
+      - logical_name
+      - physical_interface
       title: NetworkStatus
-      description: Network interface status
+      description: Configured logical-to-physical network interface mapping.
     NetworkSummary:
       properties:
         total_interfaces:
           type: integer
           title: Total Interfaces
-          description: Total network interfaces
-        active_interfaces:
-          type: integer
-          title: Active Interfaces
-          description: Active interfaces
-        total_messages:
-          type: integer
-          title: Total Messages
-          description: Total messages across all interfaces
-        total_errors:
-          type: integer
-          title: Total Errors
-          description: Total errors across all interfaces
-        networks:
+          description: Total configured logical interfaces
+        interfaces:
           items:
             $ref: '#/components/schemas/NetworkStatus'
           type: array
-          title: Networks
-          description: Individual network status
+          title: Interfaces
+          description: Configured interface mappings
+        can_service_health:
+          additionalProperties: true
+          type: object
+          title: Can Service Health
+          description: Service-level CAN health reported by CANFacade
+        queue_status:
+          additionalProperties: true
+          type: object
+          title: Queue Status
+          description: Facade-reported CAN queue status, not real TX queue telemetry
         timestamp:
-          type: number
+          type: string
           title: Timestamp
-          description: Summary timestamp
+          description: Summary timestamp in ISO 8601 format
       type: object
       required:
       - total_interfaces
-      - active_interfaces
-      - total_messages
-      - total_errors
-      - networks
+      - interfaces
+      - can_service_health
+      - queue_status
       - timestamp
       title: NetworkSummary
-      description: Overall network summary
+      description: Truthful network summary from currently available CAN facade data.
     NotificationChannel:
       type: string
       enum:
@@ -12923,8 +13541,16 @@ components:
       - HEALTHY
       - DEGRADED
       - FAILED
+      - STOPPED
       title: ServiceStatus
-      description: Service lifecycle status.
+      description: "Service lifecycle status.\n\nLifecycle order during a normal run:\n\
+        \    PENDING -> STARTING -> HEALTHY (-> DEGRADED) -> STOPPED\nFailure paths\
+        \ transition to FAILED at any step.\n\nSTOPPED is used both pre-startup (initial\
+        \ state for services that\nhave been registered but not yet brought up) and\
+        \ post-shutdown\n(after _shutdown_service successfully tears a service down).\
+        \ The\nenum's previous omission of STOPPED meant services kept their last\n\
+        runtime status forever after shutdown, which broke any caller that\nneeded\
+        \ to distinguish 'still running' from 'cleanly stopped'."
     ServiceTimingInfo:
       properties:
         name:
@@ -13792,8 +14418,16 @@ components:
       - HEALTHY
       - DEGRADED
       - FAILED
+      - STOPPED
       title: ServiceStatus
-      description: Service lifecycle status.
+      description: "Service lifecycle status.\n\nLifecycle order during a normal run:\n\
+        \    PENDING -> STARTING -> HEALTHY (-> DEGRADED) -> STOPPED\nFailure paths\
+        \ transition to FAILED at any step.\n\nSTOPPED is used both pre-startup (initial\
+        \ state for services that\nhave been registered but not yet brought up) and\
+        \ post-shutdown\n(after _shutdown_service successfully tears a service down).\
+        \ The\nenum's previous omission of STOPPED meant services kept their last\n\
+        runtime status forever after shutdown, which broke any caller that\nneeded\
+        \ to distinguish 'still running' from 'cleanly stopped'."
     backend__models__dashboard__SystemMetrics:
       properties:
         uptime_seconds:

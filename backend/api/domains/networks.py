@@ -11,38 +11,52 @@ This router integrates with existing network services.
 """
 
 import logging
-import time
-from typing import Any
+from datetime import UTC, datetime
+from typing import Annotated, Any
 
-from fastapi import APIRouter, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 
 from backend.api.domains import register_domain_router
+from backend.api.routers.can import verify_can_interface_enabled
+from backend.core.dependencies import VerifiedCANFacade
 
 logger = logging.getLogger(__name__)
 
 
 # Domain-specific schemas for v2 API
 class NetworkStatus(BaseModel):
-    """Network interface status"""
+    """Configured logical-to-physical network interface mapping."""
 
-    interface_name: str = Field(..., description="Network interface name")
-    protocol: str = Field(..., description="Protocol type (CAN, J1939, etc.)")
-    status: str = Field(..., description="Interface status: active/inactive/error")
-    message_count: int = Field(..., description="Total messages processed")
-    error_count: int = Field(..., description="Error count")
-    last_activity: float = Field(..., description="Last activity timestamp")
+    logical_name: str = Field(..., description="Logical interface name")
+    physical_interface: str = Field(..., description="Configured physical interface name")
 
 
 class NetworkSummary(BaseModel):
-    """Overall network summary"""
+    """Truthful network summary from currently available CAN facade data."""
 
-    total_interfaces: int = Field(..., description="Total network interfaces")
-    active_interfaces: int = Field(..., description="Active interfaces")
-    total_messages: int = Field(..., description="Total messages across all interfaces")
-    total_errors: int = Field(..., description="Total errors across all interfaces")
-    networks: list[NetworkStatus] = Field(..., description="Individual network status")
-    timestamp: float = Field(..., description="Summary timestamp")
+    total_interfaces: int = Field(..., description="Total configured logical interfaces")
+    interfaces: list[NetworkStatus] = Field(..., description="Configured interface mappings")
+    can_service_health: dict[str, Any] = Field(
+        ..., description="Service-level CAN health reported by CANFacade"
+    )
+    queue_status: dict[str, Any] = Field(
+        ..., description="Facade-reported CAN queue status, not real TX queue telemetry"
+    )
+    timestamp: str = Field(..., description="Summary timestamp in ISO 8601 format")
+
+
+def _utc_timestamp() -> str:
+    """Return the current UTC timestamp in ISO 8601 format."""
+    return datetime.now(UTC).isoformat()
+
+
+def _network_statuses(interface_mappings: dict[str, str]) -> list[NetworkStatus]:
+    """Build response models from configured interface mappings."""
+    return [
+        NetworkStatus(logical_name=logical_name, physical_interface=physical_interface)
+        for logical_name, physical_interface in sorted(interface_mappings.items())
+    ]
 
 
 def create_networks_router() -> APIRouter:
@@ -50,7 +64,7 @@ def create_networks_router() -> APIRouter:
     router = APIRouter(tags=["networks-v2"])
 
     @router.get("/health")
-    async def health_check(request: Request) -> dict[str, Any]:
+    async def health_check() -> dict[str, Any]:
         """Health check endpoint for networks domain API"""
 
         return {
@@ -62,85 +76,94 @@ def create_networks_router() -> APIRouter:
                 "multi_protocol": True,
                 "real_time_stats": True,
             },
-            "timestamp": "2025-01-11T00:00:00Z",
+            "timestamp": _utc_timestamp(),
         }
 
     @router.get("/schemas")
-    async def get_schemas(request: Request) -> dict[str, Any]:
+    async def get_schemas() -> dict[str, Any]:
         """Export schemas for networks domain"""
 
         return {
             "message": "Networks domain schemas available",
-            "available_endpoints": ["/health", "/schemas", "/status", "/interfaces"],
+            "available_endpoints": ["/health", "/schemas", "/status", "/interfaces", "/statistics"],
         }
 
-    @router.get("/status", response_model=NetworkSummary)
-    async def get_network_status(request: Request) -> NetworkSummary:
-        """Get overall network status and statistics"""
+    @router.get(
+        "/status",
+        response_model=NetworkSummary,
+        summary="Get network status",
+        description=(
+            "Return configured CAN interface mappings, service-level CAN health, and "
+            "facade-reported queue status without fabricated per-interface telemetry."
+        ),
+        response_description="Truthful network summary from currently available CAN facade data",
+    )
+    async def get_network_status(
+        can_facade: VerifiedCANFacade,
+        _: Annotated[None, Depends(verify_can_interface_enabled)],
+    ) -> NetworkSummary:
+        """Get truthful network status from currently implemented CAN facade sources."""
 
         try:
-            # Mock network interfaces for demonstration
-            # In production, this would query actual CAN interfaces
-            networks = [
-                NetworkStatus(
-                    interface_name="can0",
-                    protocol="RV-C",
-                    status="active",
-                    message_count=12500,
-                    error_count=0,
-                    last_activity=time.time(),
-                ),
-                NetworkStatus(
-                    interface_name="virtual0",
-                    protocol="Virtual",
-                    status="active",
-                    message_count=8300,
-                    error_count=2,
-                    last_activity=time.time() - 30,
-                ),
-            ]
+            interface_mappings = await can_facade.get_interface_mappings()
+            interfaces = _network_statuses(interface_mappings)
 
             return NetworkSummary(
-                total_interfaces=len(networks),
-                active_interfaces=len([n for n in networks if n.status == "active"]),
-                total_messages=sum(n.message_count for n in networks),
-                total_errors=sum(n.error_count for n in networks),
-                networks=networks,
-                timestamp=time.time(),
+                total_interfaces=len(interfaces),
+                interfaces=interfaces,
+                can_service_health=await can_facade.get_interface_status(),
+                queue_status=await can_facade.get_queue_status(),
+                timestamp=_utc_timestamp(),
             )
 
         except Exception as e:
-            logger.error(f"Error getting network status: {e}")
-            raise HTTPException(status_code=500, detail=f"Failed to get network status: {e!s}")
+            logger.error("Error getting network status: %s", e)
+            raise HTTPException(
+                status_code=500, detail=f"Failed to get network status: {e!s}"
+            ) from e
 
-    @router.get("/interfaces")
-    async def get_network_interfaces(request: Request) -> list[NetworkStatus]:
-        """Get detailed information about network interfaces"""
+    @router.get(
+        "/interfaces",
+        response_model=list[NetworkStatus],
+        summary="Get configured network interfaces",
+        description="Return configured logical-to-physical CAN interface mappings.",
+        response_description="List of configured CAN interface mappings",
+    )
+    async def get_network_interfaces(
+        can_facade: VerifiedCANFacade,
+        _: Annotated[None, Depends(verify_can_interface_enabled)],
+    ) -> list[NetworkStatus]:
+        """Get configured logical-to-physical network interface mappings."""
 
         try:
-            # This would integrate with actual CAN interface discovery
-            return [
-                NetworkStatus(
-                    interface_name="can0",
-                    protocol="RV-C",
-                    status="active",
-                    message_count=12500,
-                    error_count=0,
-                    last_activity=time.time(),
-                ),
-                NetworkStatus(
-                    interface_name="virtual0",
-                    protocol="Virtual",
-                    status="active",
-                    message_count=8300,
-                    error_count=2,
-                    last_activity=time.time() - 30,
-                ),
-            ]
+            return _network_statuses(await can_facade.get_interface_mappings())
 
         except Exception as e:
-            logger.error(f"Error getting network interfaces: {e}")
-            raise HTTPException(status_code=500, detail=f"Failed to get interfaces: {e!s}")
+            logger.error("Error getting network interfaces: %s", e)
+            raise HTTPException(status_code=500, detail=f"Failed to get interfaces: {e!s}") from e
+
+    @router.get(
+        "/statistics",
+        response_model=dict[str, Any],
+        summary="Get facade-reported queue status",
+        description=(
+            "Return CANFacade.get_queue_status() only. This is facade-reported queue status "
+            "and not real TX queue telemetry."
+        ),
+        response_description="Facade-reported CAN queue status",
+    )
+    async def get_network_statistics(
+        can_facade: VerifiedCANFacade,
+        _: Annotated[None, Depends(verify_can_interface_enabled)],
+    ) -> dict[str, Any]:
+        """Get facade-reported CAN queue status without bus statistics telemetry."""
+
+        try:
+            return await can_facade.get_queue_status()
+
+        except Exception as e:
+            logger.error("Error getting network statistics: %s", e)
+            raise HTTPException(status_code=500, detail=f"Failed to get statistics: {e!s}") from e
 
     return router
 

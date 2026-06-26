@@ -72,7 +72,7 @@ class CANFacade(SafetyAware):
     CAN services and ensures safety-critical operations.
     """
 
-    def __init__(
+    def __init__(  # noqa: PLR0913 - facade coordinates several CAN services by design
         self,
         bus_service: Any,
         injector: Any,
@@ -136,6 +136,14 @@ class CANFacade(SafetyAware):
         self.get_interface_details = self._monitor(
             service_name="CANFacade", method_name="get_interface_details", alert_threshold_ms=200
         )(self.get_interface_details)
+
+        self.get_interface_mappings = self._monitor(
+            service_name="CANFacade", method_name="get_interface_mappings", alert_threshold_ms=100
+        )(self.get_interface_mappings)
+
+        self.get_interface_status = self._monitor(
+            service_name="CANFacade", method_name="get_interface_status", alert_threshold_ms=100
+        )(self.get_interface_status)
 
         self.send_raw_message = self._monitor(
             service_name="CANFacade",
@@ -206,8 +214,11 @@ class CANFacade(SafetyAware):
         logger.critical("CANFacade emergency stop completed")
 
     async def get_interface_status(self) -> dict[str, Any]:
-        """Get CAN interface status from all services."""
-        return await self._bus_service.get_health_status()
+        """Get CAN bus service health/status information."""
+        status = self._bus_service.get_health_status()
+        if asyncio.iscoroutine(status):
+            return await status
+        return status
 
     async def send_message(
         self, logical_interface: str, can_id: int, data: bytes
@@ -396,6 +407,10 @@ class CANFacade(SafetyAware):
     async def get_interface_details(self) -> dict[str, dict[str, Any]]:
         """Get detailed information about all CAN interfaces."""
         return await self._interface_service.get_interface_details()
+
+    async def get_interface_mappings(self) -> dict[str, str]:
+        """Get configured logical-to-physical CAN interface mappings."""
+        return self._interface_service.get_all_mappings()
 
     async def send_raw_message(
         self, arbitration_id: int, data: bytes, interface: str
