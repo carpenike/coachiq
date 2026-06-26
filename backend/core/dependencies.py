@@ -72,8 +72,12 @@ from backend.services.analytics_dashboard_service import (
 # fix likely requires making entity_service's websocket import lazy.
 from backend.services.auth.manager import AuthManager as _AuthManager
 from backend.services.can_facade import CANFacade as _CANFacade
+from backend.services.database_update_service import DatabaseUpdateService as _DatabaseUpdateService
 from backend.services.edge_proxy_monitor_service import (
     EdgeProxyMonitorService as _EdgeProxyMonitorService,
+)
+from backend.services.migration_safety_validator import (
+    MigrationSafetyValidator as _MigrationSafetyValidator,
 )
 from backend.services.notification_analytics_service import (
     NotificationAnalyticsService as _NotificationAnalyticsService,
@@ -410,7 +414,7 @@ def get_edge_proxy_monitor_service() -> _EdgeProxyMonitorService:
 # ==================================================================================
 
 
-def get_database_update_service() -> Any:
+def get_database_update_service() -> _DatabaseUpdateService:
     """
     Get DatabaseUpdateService instance.
 
@@ -425,7 +429,7 @@ def get_database_update_service() -> Any:
     return create_service_dependency("database_update_service")()
 
 
-def get_migration_safety_validator() -> Any:
+def get_migration_safety_validator() -> _MigrationSafetyValidator:
     """
     Get MigrationSafetyValidator instance.
 
@@ -508,8 +512,10 @@ AnalyticsService = Annotated[_NotificationAnalyticsService, Depends(get_analytic
 
 
 # Database update dependencies
-DatabaseUpdateService = Annotated[Any, Depends(get_database_update_service)]
-MigrationSafetyValidator = Annotated[Any, Depends(get_migration_safety_validator)]
+DatabaseUpdateService = Annotated[_DatabaseUpdateService, Depends(get_database_update_service)]
+MigrationSafetyValidator = Annotated[
+    _MigrationSafetyValidator, Depends(get_migration_safety_validator)
+]
 
 # Predictive maintenance
 PredictiveMaintenanceService = Annotated[

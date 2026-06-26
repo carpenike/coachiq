@@ -34,6 +34,25 @@ coordinate, see the `handoff/README` note in the `coachiq` basic-memory project.
 
 ## Build Log
 
+### HOF-004 — Close Typed Dependency Injection Layer
+- [shipped] same commit as this entry · 2026-06-26
+- [component] backend
+- [adr] docs/adr/ADR-0006-typed-dependency-injection.md
+
+**What changed.** The final non-cycle `Any` providers in
+`backend/core/dependencies.py` now expose concrete classes:
+`get_database_update_service()` returns `DatabaseUpdateService`,
+`get_migration_safety_validator()` returns `MigrationSafetyValidator`, and their
+public `Annotated[...]` aliases use those concrete types.
+
+**Why.** This closes the A7.x typed-DI layer under ADR-0006. After this pass,
+the only intentionally untyped providers/aliases left in `dependencies.py` are
+`get_websocket_manager` / `WebSocketManager` and `get_entity_service` /
+`EntityService`, which remain `Any` because of the known EntityService ↔
+WebSocket import cycle documented in `PROJECT_CONTEXT.md`.
+
+**Files.** backend/core/dependencies.py
+
 ### HOF-003 — Typed Auth/Security Dependency Aliases
 - [shipped] same commit as this entry · 2026-06-26
 - [component] backend
