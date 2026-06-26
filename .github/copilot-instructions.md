@@ -1,10 +1,32 @@
 # GitHub Copilot Instructions for CoachIQ
 
+## Cross-Agent Comms (basic-memory) — read this first
+
+You (Copilot) are the **implementer**. Claude (Claude Desktop / Cowork) is the **spec/planning author** ("HQ"). You coordinate asynchronously through a shared **basic-memory** MCP project — the same local server you both connect to. This is how build objectives are synchronized between Claude's planning conversation and your edits in VS Code.
+
+- **Project name:** `coachiq` · **Project ID:** `123da13d-09b8-4297-83ed-a580c3e0401b` — pass this as `project_id` on **every** basic-memory call. The default `main` project is unrelated; never write CoachIQ state there.
+- **One channel, one repo with two halves.** Every hand-off carries a `[component]` observation (`backend` | `frontend` | `both`).
+
+**At session start**, before touching code: call `recent_activity` (project_id above, 7-day window), then read the `handoff/README` note in that project, and read **`PROJECT_CONTEXT.md`** at the repo root. The README codifies the directory layout, the observation/relation vocabulary, the review lifecycle, and the write protocol. `PROJECT_CONTEXT.md` is the curated architecture orientation (the ADR set, load-bearing patterns, gotchas). Don't write your first note without reading the README.
+
+**You are expected to challenge the spec.** Every spec hand-off carries `[review-mandate]`. When you pick one up:
+
+1. Flip its `[status]` from `needs-review` to `under-review`.
+2. Read the linked plan doc AND the actual source files in the `[references-file]` relations. Verify every claim against the real code.
+3. Post findings to a paired `handoff/HOF-NNN DISCUSSION` note as `[challenge]` / `[finding]` / `[verified]` / `[proposed-revision]` observations. If a revision is warranted, **edit the plan doc directly** (`IMPLEMENTATION_PLAN.md`, `PROJECT_CONTEXT.md`, or the relevant `docs/*_PLAN.md`) — your edits show up in the VS Code working-tree diff for host review — and summarize the edit in the discussion note.
+4. **Pause after review.** Even if the spec is clean, post `[review-clean]`, flip `[status]` to `review-complete`, and stop. Do NOT implement until Claude flips `[status]` to `approved`. Human gate every time.
+5. After implementing an approved hand-off, post an ack note and flip `[status]` to `done`.
+
+Opt-out: a hand-off marked `[skip-review] true` is trivial (rename, typo, doc-only) and may be implemented directly.
+
+basic-memory carries operational state only. Durable artifacts (this file, `PROJECT_CONTEXT.md`, `IMPLEMENTATION_PLAN.md`, the ADRs under `docs/adr/`, the `.github/instructions/*` set) live in git. See `handoff/README` for the graduation rule: bake durable content into the repo doc **in the same commit** as the implementation, then archive the note. HQ (Claude) verifies the graduation actually landed (greps the repo) before archiving — so make sure your `done` commit includes it.
+
 ## CRITICAL CODE QUALITY REQUIREMENTS
 
 **MANDATORY**: ALL code changes must pass linting, type checking, and build verification BEFORE proceeding to the next task. Run quality checks incrementally throughout development, not just at the end.
 
 **Quality Gates (NON-NEGOTIABLE):**
+
 ```bash
 # Frontend (run after ANY code change)
 cd frontend
@@ -16,7 +38,7 @@ poetry run pyright backend && poetry run ruff check . && poetry run ruff format 
 
 ## Core Requirements
 
-- All build, cache, and output files (e.g., dist, dist-ssr, .vite, .vite-temp, node_modules, _.tsbuildinfo, .cache, _.log) are excluded from linting and type checking in both root and frontend ESLint configs.
+- All build, cache, and output files (e.g., dist, dist-ssr, .vite, .vite-temp, node*modules, *.tsbuildinfo, .cache, \_.log) are excluded from linting and type checking in both root and frontend ESLint configs.
 - All API calls are made via /api/entities endpoints, not /api/lights, /api/locks, etc. to ensure a unified and extensible API design.
 - All API endpoints require comprehensive documentation with examples, descriptions, and response schemas to maintain the OpenAPI specification.
 - **All Python scripts must be run using Poetry.** Use `poetry run python <script>.py` or `poetry run <command>`, never `python <script>.py` directly.
@@ -81,6 +103,7 @@ Implications for code generation in this repo:
 ## Linting & Code Quality Requirements
 
 **INCREMENTAL QUALITY WORKFLOW**:
+
 1. Make code changes
 2. Run quality checks immediately (see commands above)
 3. Fix all issues before proceeding to next task
@@ -221,7 +244,7 @@ async def list_entities(
 - **Feature Registration**: ALL features must extend Feature base class and register with FeatureManager
 - **WebSockets**: Use WebSocketManager feature for client connections and broadcasting
 - **State management**: Use repositories and services via DI; do **not** reach for `app.state` or any global `AppState` (both removed).
-- **Configuration**: Read Pydantic `Settings` directly via `backend.core.config.get_settings()`. `RVCConfigFacade` is only for RV-C *metadata* (PGN names, coach info), not for general app config (see ADR-0008).
+- **Configuration**: Read Pydantic `Settings` directly via `backend.core.config.get_settings()`. `RVCConfigFacade` is only for RV-C _metadata_ (PGN names, coach info), not for general app config (see ADR-0008).
 - **Database**: Use DatabaseManager and PersistenceService for data operations
 - **Error handling**: Structured exceptions with proper logging
 - **Testing**: pytest with mocked CANbus interfaces
