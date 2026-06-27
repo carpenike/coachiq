@@ -16,7 +16,7 @@ jobs:
 
     steps:
       - name: "Checkout repository"
-        uses: actions/checkout@v7
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
         with:
           # Diff-aware quality gates (scripts/ruff_diff_check.py,
           # scripts/eslint_diff_check.py) need access to the merge-base
@@ -30,13 +30,13 @@ jobs:
           fetch-depth: 0
 
       - name: "Install Nix (with flakes enabled)"
-        uses: cachix/install-nix-action@v31
+        uses: cachix/install-nix-action@8aa03977d8d733052d78f4e008a241fd1dbf36b3 # v31
         with:
           extra_nix_config: |
             experimental-features = nix-command flakes
 
       - name: "Setup Nix cache"
-        uses: cachix/cachix-action@v17
+        uses: cachix/cachix-action@5f2d7c5294214f71b873db4b969586b980625e71 # v17
         # Cachix is a soft dependency — a cache miss / revoked token should
         # NOT fail the entire CI run. The build will just be slower.
         continue-on-error: true
@@ -61,16 +61,16 @@ jobs:
 
     steps:
       - name: "Checkout repository"
-        uses: actions/checkout@v7
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
 
       - name: "Install Nix (with flakes enabled)"
-        uses: cachix/install-nix-action@v31
+        uses: cachix/install-nix-action@8aa03977d8d733052d78f4e008a241fd1dbf36b3 # v31
         with:
           extra_nix_config: |
             experimental-features = nix-command flakes
 
       - name: "Setup Nix cache"
-        uses: cachix/cachix-action@v17
+        uses: cachix/cachix-action@5f2d7c5294214f71b873db4b969586b980625e71 # v17
         # Cachix is a soft dependency — a cache miss / revoked token should
         # NOT fail the entire CI run. The build will just be slower.
         continue-on-error: true

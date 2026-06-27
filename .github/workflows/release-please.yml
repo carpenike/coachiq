@@ -13,10 +13,10 @@ jobs:
   bump-and-draft:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
 
       - name: Bump & draft release
-        uses: googleapis/release-please-action@v5
+        uses: googleapis/release-please-action@45996ed1f6d02564a971a2fa1b5860e934307cf7 # v5
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
           config-file: release-please-config.json
