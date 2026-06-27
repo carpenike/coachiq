@@ -34,6 +34,34 @@ coordinate, see the `handoff/README` note in the `coachiq` basic-memory project.
 
 ## Build Log
 
+### HOF-017 — Remove Fake Entity Domain Fallback
+- [shipped] same commit as this entry · 2026-06-27
+- [component] frontend
+- [adr] docs/adr/ADR-0003-api-v2-only-no-legacy.md
+
+**What changed.** The frontend entity v2 client no longer uses
+`withDomainAPIFallback`; entity control and bulk-control call the v2 endpoints
+directly and surface v2 errors instead of routing through a fake fallback path.
+`frontend/src/api/types/domains.ts` now aliases entity control result types to
+the generated HOF-021 `SafetyOperationResultV2` and
+`BulkSafetyOperationResultV2` schemas. `frontend/src/hooks/useEntities.ts`
+remains as a legacy-shaped UI adapter for existing callers, but the `useV2`
+switch and silent fallback behavior were removed. The bridge `as any` casts in
+`frontend/src/api` were eliminated.
+
+**Why.** HOF-017 review proved the fallback was not a real v1 safety net: the
+"legacy" fallback path also POSTed to `/api/v2/entities/{id}/control`, then
+converted through untyped casts. Removing it makes entity failures visible and
+keeps the frontend on the finalized v2 contract from HOF-021 while deferring
+full `useEntities.ts` removal until each UI caller migrates.
+
+**Files.** frontend/src/api/domains/entities.ts,
+frontend/src/api/domains/index.ts, frontend/src/api/types/domains.ts,
+frontend/src/hooks/useEntities.ts,
+frontend/src/hooks/domains/__tests__/useEntitiesV2.test.tsx,
+frontend/src/hooks/domains/__tests__/useEntitiesV2Validation.test.tsx,
+PROJECT_CONTEXT.md
+
 ### HOF-021 — Typed v2 Response Models For Generated Frontend Contracts
 - [shipped] same commit as this entry · 2026-06-27
 - [component] both

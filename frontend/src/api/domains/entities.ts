@@ -7,8 +7,6 @@
  */
 
 import { apiGet, apiPost, buildQueryString, logApiRequest, logApiResponse } from "../client";
-import { withDomainAPIFallback } from "./index";
-import { controlEntity as legacyControlEntity } from "../endpoints";
 import type { Entity as LegacyEntity } from "../types";
 import type {
   BulkControlRequestSchema,
@@ -82,8 +80,6 @@ export async function fetchEntityV2(entityId: string): Promise<EntitySchema> {
 
 /**
  * Control a single entity using the new domain API
- * Falls back to legacy API if v2 is not available
- *
  * @param entityId - The entity ID to control
  * @param command - The control command to execute
  * @returns Promise resolving to the operation result
@@ -92,59 +88,17 @@ export async function controlEntityV2(
   entityId: string,
   command: ControlCommandSchema
 ): Promise<OperationResultSchema> {
-  return withDomainAPIFallback(
-    // Domain API v2 function
-    async () => {
-      const url = `/api/v2/entities/${entityId}/control`;
+  const url = `/api/v2/entities/${entityId}/control`;
 
-      logApiRequest('POST', url, command);
-      const result = await apiPost<OperationResultSchema>(url, command);
-      logApiResponse(url, result);
+  logApiRequest('POST', url, command);
+  const result = await apiPost<OperationResultSchema>(url, command);
+  logApiResponse(url, result);
 
-      return result;
-    },
-    // Legacy API fallback
-    async () => {
-      logApiRequest('POST (LEGACY)', `/api/entities/${entityId}/control`, command);
-
-      // Convert v2 command to legacy format
-      const legacyCommand: any = {
-        command: command.command,
-        ...(command.parameters || {})
-      };
-
-      if (command.state !== undefined && command.state !== null) {
-        legacyCommand.state = command.state;
-      }
-
-      if (command.brightness !== undefined && command.brightness !== null) {
-        legacyCommand.brightness = command.brightness;
-      }
-
-      const legacyResult = await legacyControlEntity(entityId, legacyCommand);
-      logApiResponse(`/api/entities/${entityId}/control (LEGACY)`, legacyResult);
-
-      // Convert legacy response to v2 format
-      return {
-        entity_id: entityId,
-        status: (legacyResult as any).success ? 'success' : 'failed',
-        error_message: (legacyResult as any).error || null,
-        error_code: (legacyResult as any).error_code || null,
-        execution_time_ms: null
-      };
-    },
-    {
-      preferDomainAPI: true,
-      fallbackToLegacy: true,
-      logMigration: true
-    }
-  );
+  return result;
 }
 
 /**
  * Execute bulk control operations on multiple entities
- * Falls back to individual legacy operations if v2 is not available
- *
  * This is the primary enhancement of the domain API, supporting:
  * - Concurrent entity control with proper timeout handling
  * - Detailed per-entity operation results
@@ -157,88 +111,13 @@ export async function controlEntityV2(
 export async function bulkControlEntitiesV2(
   request: BulkControlRequestSchema
 ): Promise<BulkOperationResultSchema> {
-  return withDomainAPIFallback(
-    // Domain API v2 function
-    async () => {
-      const url = '/api/v2/entities/bulk-control';
+  const url = '/api/v2/entities/bulk-control';
 
-      logApiRequest('POST', url, request);
-      const result = await apiPost<BulkOperationResultSchema>(url, request);
-      logApiResponse(url, result);
+  logApiRequest('POST', url, request);
+  const result = await apiPost<BulkOperationResultSchema>(url, request);
+  logApiResponse(url, result);
 
-      return result;
-    },
-    // Legacy API fallback - simulate bulk operation with individual calls
-    async () => {
-      logApiRequest('POST (LEGACY BULK)', '/api/entities/*/control', request);
-
-      const startTime = Date.now();
-      const results: OperationResultSchema[] = [];
-
-      // Execute individual control operations
-      for (const entityId of request.entity_ids) {
-        try {
-          const legacyCommand: any = {
-            command: request.command.command,
-            ...(request.command.parameters || {})
-          };
-
-          if (request.command.state !== undefined && request.command.state !== null) {
-            legacyCommand.state = request.command.state;
-          }
-
-          if (request.command.brightness !== undefined && request.command.brightness !== null) {
-            legacyCommand.brightness = request.command.brightness;
-          }
-
-          const operationStart = Date.now();
-          const legacyResult = await legacyControlEntity(entityId, legacyCommand);
-          const operationTime = Date.now() - operationStart;
-
-          results.push({
-            entity_id: entityId,
-            status: (legacyResult as any).success ? 'success' : 'failed',
-            error_message: (legacyResult as any).error || null,
-            error_code: (legacyResult as any).error_code || null,
-            execution_time_ms: operationTime
-          });
-        } catch (error) {
-          results.push({
-            entity_id: entityId,
-            status: 'failed',
-            error_message: error instanceof Error ? error.message : 'Unknown error',
-            error_code: 'LEGACY_CONTROL_ERROR',
-            execution_time_ms: null
-          });
-
-          // If ignore_errors is false, stop on first failure
-          if (!request.ignore_errors) {
-            break;
-          }
-        }
-      }
-
-      const totalTime = Date.now() - startTime;
-      const successCount = results.filter(r => r.status === 'success').length;
-
-      const bulkResult: BulkOperationResultSchema = {
-        operation_id: `legacy-bulk-${Date.now()}`,
-        total_count: request.entity_ids.length,
-        success_count: successCount,
-        failed_count: results.length - successCount,
-        results: results,
-        total_execution_time_ms: totalTime
-      };
-
-      logApiResponse('/api/entities/*/control (LEGACY BULK)', bulkResult);
-      return bulkResult;
-    },
-    {
-      preferDomainAPI: true,
-      fallbackToLegacy: true,
-      logMigration: true
-    }
-  );
+  return result;
 }
 
 /**
@@ -371,7 +250,7 @@ export async function bulkToggleEntities(
  * @returns New EntitySchema format
  */
 export function convertEntityLegacyToV2(legacyEntity: LegacyEntity): EntitySchema {
-  const entity = legacyEntity as any; // Type assertion for legacy compatibility
+  const entity = legacyEntity as LegacyEntity & { available?: boolean; protocol?: string };
   return {
     entity_id: entity.entity_id || entity.id || '',
     name: entity.friendly_name || entity.name || '',

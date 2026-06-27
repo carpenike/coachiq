@@ -84,13 +84,17 @@ const mockBulkOperationResult: BulkOperationResultSchema = {
   total_count: 2,
   success_count: 2,
   failed_count: 0,
+  timeout_count: 0,
+  safety_abort_count: 0,
   results: [
     {
+      operation_id: 'op_light_001',
       entity_id: 'light_001',
       status: 'success',
       execution_time_ms: 120,
     },
     {
+      operation_id: 'op_light_002',
       entity_id: 'light_002',
       status: 'success',
       execution_time_ms: 135,
@@ -233,6 +237,7 @@ describe('useEntityV2', () => {
 describe('useControlEntityV2', () => {
   beforeEach(() => {
     const mockResult: OperationResultSchema = {
+      operation_id: 'op_light_001',
       entity_id: 'light_001',
       status: 'success',
       execution_time_ms: 150,

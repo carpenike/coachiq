@@ -5,7 +5,7 @@
  * of the enhanced domain hooks for entity management.
  */
 
-import { renderHook } from '@testing-library/react';
+import { act, renderHook } from '@testing-library/react';
 import { waitFor } from '@testing-library/dom';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { vi, describe, it, expect, beforeEach } from 'vitest';
@@ -147,10 +147,8 @@ describe('useEntityV2WithValidation', () => {
     expect(fetchEntityV2WithValidation).toHaveBeenCalledWith('light1');
   });
 
-  it('should not fetch when entity ID is empty', () => {
-    const { fetchEntityV2WithValidation } = vi.mocked(
-      require('../../../api/domains/entities')
-    );
+  it('should not fetch when entity ID is empty', async () => {
+    const { fetchEntityV2WithValidation } = await import('../../../api/domains/entities');
 
     renderHook(() => useEntityV2WithValidation(''), {
       wrapper: createWrapper(),
@@ -159,10 +157,8 @@ describe('useEntityV2WithValidation', () => {
     expect(fetchEntityV2WithValidation).not.toHaveBeenCalled();
   });
 
-  it('should not fetch when disabled', () => {
-    const { fetchEntityV2WithValidation } = vi.mocked(
-      require('../../../api/domains/entities')
-    );
+  it('should not fetch when disabled', async () => {
+    const { fetchEntityV2WithValidation } = await import('../../../api/domains/entities');
 
     renderHook(() => useEntityV2WithValidation('light1', false), {
       wrapper: createWrapper(),
@@ -179,6 +175,7 @@ describe('useControlEntityV2WithValidation', () => {
 
   it('should control entity with validation', async () => {
     const mockResult = {
+      operation_id: 'op_light1',
       entity_id: 'light1',
       status: 'success' as const,
       execution_time_ms: 150,
@@ -313,7 +310,9 @@ describe('useEntitySelectionWithValidation', () => {
     const manyEntityIds = Array.from({ length: 150 }, (_, i) => `light${i}`);
 
     // Should enforce safety limit
-    result.current.selectAll(manyEntityIds);
+    act(() => {
+      result.current.selectAll(manyEntityIds);
+    });
 
     expect(result.current.selectedCount).toBe(100);
     expect(result.current.selectedEntityIds).toHaveLength(100);
@@ -326,7 +325,9 @@ describe('useEntitySelectionWithValidation', () => {
 
     // Select more than 50 entities
     const manyEntityIds = Array.from({ length: 75 }, (_, i) => `light${i}`);
-    result.current.selectAll(manyEntityIds);
+    act(() => {
+      result.current.selectAll(manyEntityIds);
+    });
 
     // Should throw error for bulk operation exceeding safety limit
     const command = { command: 'set' as const, state: true };

@@ -20,8 +20,8 @@ export type EntityCommand = "set" | "toggle" | "brightness_up" | "brightness_dow
 /** Entity state values */
 export type EntityState = "on" | "off" | "unknown";
 
-/** Operation result status */
-export type OperationStatus = "success" | "failed" | "timeout" | "unauthorized";
+/** Operation result status values currently surfaced by entity control UI. */
+export type OperationStatus = "success" | "failed" | "timeout" | "unauthorized" | "safety_abort";
 
 /** Server-side entity schema from the OpenAPI contract */
 export type EntitySchema = GeneratedSchemas["EntitySchemaV2"];
@@ -37,41 +37,11 @@ export type BulkControlRequestSchema = Omit<GeneratedSchemas["BulkControlRequest
   command: ControlCommandSchema;
 };
 
-/**
- * Individual operation result schema.
- * Manual until HOF-021 tightens `/api/v2/entities/{entity_id}/control` in OpenAPI.
- */
-export interface OperationResultSchema {
-  /** Entity ID that was operated on */
-  entity_id: string;
-  /** Operation result status */
-  status: OperationStatus;
-  /** Error message if operation failed */
-  error_message?: string | null;
-  /** Error code for programmatic handling */
-  error_code?: string | null;
-  /** Operation execution time in milliseconds */
-  execution_time_ms?: number | null;
-}
+/** Entity control result schema from the OpenAPI contract */
+export type OperationResultSchema = GeneratedSchemas["SafetyOperationResultV2"];
 
-/**
- * Bulk operation result schema.
- * Manual until HOF-021 tightens `/api/v2/entities/bulk-control` in OpenAPI.
- */
-export interface BulkOperationResultSchema {
-  /** Unique operation identifier */
-  operation_id: string;
-  /** Total number of entities in the operation */
-  total_count: number;
-  /** Number of successful operations */
-  success_count: number;
-  /** Number of failed operations */
-  failed_count: number;
-  /** Individual operation results */
-  results: OperationResultSchema[];
-  /** Total operation execution time */
-  total_execution_time_ms: number;
-}
+/** Bulk entity control result schema from the OpenAPI contract */
+export type BulkOperationResultSchema = GeneratedSchemas["BulkSafetyOperationResultV2"];
 
 /** Entity collection with pagination and filtering from the OpenAPI contract */
 export type EntityCollectionSchema = GeneratedSchemas["EntityCollectionV2"];

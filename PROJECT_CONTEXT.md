@@ -94,9 +94,11 @@ One repo, two halves. A single feature commonly spans both.
 - `src/` is organized by `pages/`, `components/` (with `ui/` for shadcn),
   `hooks/`, `contexts/`, `api/`, `types/`. OpenAPI-strong frontend REST
   types are generated into `src/api/generated/openapi-types.ts`; WebSocket
-  envelopes, runtime validators, legacy adapters, analytics responses, and
-  loose-response endpoints remain manual until their backend schemas are
-  tightened.
+  envelopes, runtime validators, legacy-shaped UI adapters, and analytics
+  responses remain manual where they are not direct OpenAPI REST contracts.
+  Entity control/bulk-control uses the generated HOF-021 safety result schemas;
+  `frontend/src/hooks/useEntities.ts` is only a legacy-shape adapter for current
+  UI callers, not a v1/v2 fallback switch.
 - Talks to the backend over REST (`/api/v2/*`) + WebSocket (`/ws*`). Vite dev
   server proxies both to the backend.
 
@@ -269,11 +271,12 @@ bandit, ESLint-staged). `dev_start.sh` sets up a virtual-CAN dev environment.
   REST types with `cd frontend && npm run gen:api`; verify freshness with
   `npm run check:api-types`. `frontend/src/api/types/domains.ts` aliases the
   generated components for strong v2 schemas and explicitly keeps manual types
-  for WebSocket envelopes, Zod/runtime validation helpers, legacy adapters,
-  analytics responses, and loose OpenAPI responses such as entity control and
-  bulk-control until HOF-021 tightens those backend response models. If you
-  change a v2 payload, regenerate/export and update the generated types in the
-  same change — don't infer the shape by hand (see comms lesson L-02).
+  for WebSocket envelopes, Zod/runtime validation helpers, legacy-shaped UI
+  adapters, and analytics responses. Entity control and bulk-control result
+  types are generated from the HOF-021 safety response models; do not recreate a
+  silent fallback bridge for them. If you change a v2 payload, regenerate/export
+  and update the generated types in the same change — don't infer the shape by
+  hand (see comms lesson L-02).
 - **Real bus vs virtual CAN.** Dev/tests use `vcan`/mocked CAN; production is a
   real bus talking to a real Firefly panel. What the coach actually _does_ with
   a frame is knowable only from the live bus, never from CoachIQ's source (see
