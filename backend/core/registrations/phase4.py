@@ -33,6 +33,7 @@ from backend.services.analytics_dashboard_service import AnalyticsDashboardServi
 from backend.services.auth.service import AuthService
 from backend.services.can_bus_service import CANBusService
 from backend.services.can_interface_service import CANInterfaceService
+from backend.services.can_network_telemetry_service import CANNetworkTelemetryService
 from backend.services.entity_manager_service import EntityManagerService
 from backend.services.protocol_manager import ProtocolManager
 from backend.services.safety_service import SafetyService
@@ -441,6 +442,26 @@ def register(service_registry: SafetyServiceRegistry) -> None:
         description="CAN interface mapping and resolution service",
         tags={"service", "can", "interface", "mapping"},
         health_check=lambda s: {"healthy": s is not None},
+    )
+
+    # Register rolling CAN network telemetry sampler
+    def _init_can_network_telemetry_service() -> CANNetworkTelemetryService:
+        """Initialize rolling CAN telemetry sampler from cumulative provider counters."""
+        can_interface_service = service_registry.get_service("can_interface_service")
+        return CANNetworkTelemetryService(can_interface_service=can_interface_service)
+
+    def _can_network_telemetry_health_check() -> bool:
+        """Check rolling CAN telemetry sampler health without service-argument injection."""
+        service = service_registry.get_service("can_network_telemetry_service")
+        return bool(service.get_health_status().get("healthy", False))
+
+    service_registry.register_service(
+        name="can_network_telemetry_service",
+        init_func=_init_can_network_telemetry_service,
+        dependencies=[ServiceDependency("can_interface_service", DependencyType.REQUIRED)],
+        description="Rolling CAN network telemetry sampler for v2 networks",
+        tags={"service", "can", "network", "telemetry"},
+        health_check=_can_network_telemetry_health_check,
     )
 
     # CANFacade - Unified facade for all CAN operations

@@ -72,6 +72,9 @@ from backend.services.analytics_dashboard_service import (
 # fix likely requires making entity_service's websocket import lazy.
 from backend.services.auth.manager import AuthManager as _AuthManager
 from backend.services.can_facade import CANFacade as _CANFacade
+from backend.services.can_network_telemetry_service import (
+    CANNetworkTelemetryService as _CANNetworkTelemetryService,
+)
 from backend.services.database_update_service import DatabaseUpdateService as _DatabaseUpdateService
 from backend.services.edge_proxy_monitor_service import (
     EdgeProxyMonitorService as _EdgeProxyMonitorService,
@@ -259,6 +262,16 @@ async def get_verified_can_facade(
 # routers already import; only the underlying type narrows from Any.
 CANFacade = Annotated[_CANFacade, Depends(get_can_facade)]
 VerifiedCANFacade = Annotated[_CANFacade, Depends(get_verified_can_facade)]
+
+
+def get_can_network_telemetry_service() -> _CANNetworkTelemetryService:
+    """Get the rolling CAN network telemetry service from ServiceRegistry."""
+    return create_service_dependency("can_network_telemetry_service")()
+
+
+CANNetworkTelemetryService = Annotated[
+    _CANNetworkTelemetryService, Depends(get_can_network_telemetry_service)
+]
 
 
 def get_can_message_injector() -> _CANMessageInjector:

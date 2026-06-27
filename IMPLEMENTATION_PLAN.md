@@ -34,6 +34,33 @@ coordinate, see the `handoff/README` note in the `coachiq` basic-memory project.
 
 ## Build Log
 
+### HOF-011 — Rolling CAN Network Telemetry Sampler
+- [shipped] same commit as this entry · 2026-06-26
+- [component] backend
+- [adr] docs/adr/ADR-0002-can-facade-pattern.md
+
+**What changed.** A registry-managed `CANNetworkTelemetryService` now samples
+the HOF-002 cumulative CAN interface counters over time and derives nullable
+rolling `message_rate`, approximate `bus_load_percent`, and `last_activity`
+values. The sampler uses `startup()` / `shutdown()` hooks that the
+`ServiceRegistry` actually invokes, depends on `can_interface_service`, and is
+exposed through typed DI. `/api/v2/networks` merges the sampler's rolling state
+into `NetworkStatus`, and OpenAPI artifacts were regenerated.
+
+**Why.** HOF-011 completes the networks telemetry story that HOF-002
+deliberately deferred: derived-over-time values are now stateful and nullable
+rather than fabricated from one cumulative snapshot. Bus load is documented as
+approximate and uses the Pi-calibrated classic-CAN estimate
+`(delta_bytes * 8 + delta_frames * 96) / (bitrate * delta_seconds) * 100`.
+Cold start, non-Linux/empty provider, unknown bitrate, missing counters, and
+counter resets serialize `null`; no real TX queue depth field is introduced.
+
+**Files.** backend/api/domains/networks.py, backend/core/dependencies.py,
+backend/core/registrations/phase4.py,
+backend/services/can_network_telemetry_service.py, docs/api/openapi.json,
+docs/api/openapi.yaml, tests/api/test_networks_domain.py,
+tests/services/test_can_network_telemetry_service.py
+
 ### HOF-002 — Networks v2 Real Per-Interface CAN Telemetry
 - [shipped] same commit as this entry · 2026-06-26
 - [component] backend

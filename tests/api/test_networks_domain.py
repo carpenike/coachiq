@@ -10,7 +10,7 @@ from fastapi.testclient import TestClient
 
 from backend.api.domains.networks import create_networks_router
 from backend.api.routers.can import verify_can_interface_enabled
-from backend.core.dependencies import get_verified_can_facade
+from backend.core.dependencies import get_can_network_telemetry_service, get_verified_can_facade
 
 pytestmark = pytest.mark.api
 
@@ -106,14 +106,35 @@ class FakeCANFacade:
         }
 
 
+class FakeTelemetryService:
+    """Minimal rolling telemetry test double for the networks router."""
+
+    def get_rolling_telemetry(self) -> dict[str, dict[str, Any]]:
+        """Return nullable rolling telemetry keyed by physical interface."""
+        return {
+            "can0": {
+                "message_rate": 83.0,
+                "bus_load_percent": 10.0,
+                "last_activity": "2026-06-26T12:00:02+00:00",
+            },
+            "can1": {
+                "message_rate": None,
+                "bus_load_percent": None,
+                "last_activity": None,
+            },
+        }
+
+
 @pytest.fixture
 def networks_client() -> Generator[tuple[TestClient, FakeCANFacade], None, None]:
     """TestClient with the networks router wired to a fake CAN facade."""
     app = FastAPI()
     fake_can_facade = FakeCANFacade()
+    fake_telemetry_service = FakeTelemetryService()
 
     app.include_router(create_networks_router(), prefix="/api/v2/networks")
     app.dependency_overrides[get_verified_can_facade] = lambda: fake_can_facade  # type: ignore[attr-defined]
+    app.dependency_overrides[get_can_network_telemetry_service] = lambda: fake_telemetry_service  # type: ignore[attr-defined]
     app.dependency_overrides[verify_can_interface_enabled] = lambda: None  # type: ignore[attr-defined]
 
     with TestClient(app=app) as client:  # type: ignore[arg-type]
@@ -136,6 +157,9 @@ def test_interfaces_return_configured_mappings(
     assert payload[0]["rx_packets"] == 50
     assert payload[0]["tx_dropped"] == 1
     assert payload[0]["bus_errors"] is None
+    assert payload[0]["message_rate"] is None
+    assert payload[0]["bus_load_percent"] is None
+    assert payload[0]["last_activity"] is None
     assert payload[1]["logical_name"] == "house"
     assert payload[1]["physical_interface"] == "can0"
     assert payload[1]["state"] == "ERROR-ACTIVE"
@@ -146,8 +170,9 @@ def test_interfaces_return_configured_mappings(
     assert payload[1]["bus_errors"] == 4
     assert payload[1]["arbitration_lost"] == 5
     assert payload[1]["bus_off"] == 8
-    assert "message_rate" not in payload[1]
-    assert "last_activity" not in payload[1]
+    assert payload[1]["message_rate"] == 83.0
+    assert payload[1]["bus_load_percent"] == 10.0
+    assert payload[1]["last_activity"] == "2026-06-26T12:00:02+00:00"
     assert fake_can_facade.interface_details_called is True
     assert fake_can_facade.bus_statistics_called is False
 
@@ -163,8 +188,10 @@ def test_status_uses_truthful_sources(networks_client: tuple[TestClient, FakeCAN
     assert payload["total_interfaces"] == 2
     assert payload["interfaces"][0]["logical_name"] == "chassis"
     assert payload["interfaces"][0]["rx_packets"] == 50
+    assert payload["interfaces"][0]["message_rate"] is None
     assert payload["interfaces"][1]["logical_name"] == "house"
     assert payload["interfaces"][1]["rx_packets"] == 100
+    assert payload["interfaces"][1]["message_rate"] == 83.0
     assert payload["can_service_health"]["service"] == "CANBusService"
     assert payload["can_service_health"]["healthy"] is True
     assert payload["queue_status"]["status"] == "operational"

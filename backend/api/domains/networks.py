@@ -19,7 +19,7 @@ from pydantic import BaseModel, Field
 
 from backend.api.domains import register_domain_router
 from backend.api.routers.can import verify_can_interface_enabled
-from backend.core.dependencies import VerifiedCANFacade
+from backend.core.dependencies import CANNetworkTelemetryService, VerifiedCANFacade
 
 logger = logging.getLogger(__name__)
 
@@ -57,6 +57,15 @@ class NetworkStatus(BaseModel):
     )
     bus_off: int | None = Field(
         default=None, description="Best-effort CAN controller bus-off count"
+    )
+    message_rate: float | None = Field(
+        default=None, description="Rolling CAN frame rate in frames/second"
+    )
+    bus_load_percent: float | None = Field(
+        default=None, description="Approximate rolling CAN bus load percentage"
+    )
+    last_activity: str | None = Field(
+        default=None, description="ISO 8601 timestamp of last observed packet activity"
     )
 
 
@@ -108,19 +117,28 @@ NETWORK_TELEMETRY_FIELDS = (
     "error_warning",
     "error_passive",
     "bus_off",
+    "message_rate",
+    "bus_load_percent",
+    "last_activity",
 )
 
 
 def _network_statuses(
-    interface_mappings: dict[str, str], interface_details: dict[str, dict[str, Any]] | None = None
+    interface_mappings: dict[str, str],
+    interface_details: dict[str, dict[str, Any]] | None = None,
+    rolling_telemetry: dict[str, dict[str, Any]] | None = None,
 ) -> list[NetworkStatus]:
     """Build response models from configured interface mappings."""
     details = interface_details or {}
+    rolling = rolling_telemetry or {}
     statuses = []
     for logical_name, physical_interface in sorted(interface_mappings.items()):
+        merged_details = {
+            **details.get(physical_interface, {}),
+            **rolling.get(physical_interface, {}),
+        }
         telemetry = {
-            field_name: details.get(physical_interface, {}).get(field_name)
-            for field_name in NETWORK_TELEMETRY_FIELDS
+            field_name: merged_details.get(field_name) for field_name in NETWORK_TELEMETRY_FIELDS
         }
         statuses.append(
             NetworkStatus(
@@ -173,6 +191,7 @@ def create_networks_router() -> APIRouter:
     )
     async def get_network_status(
         can_facade: VerifiedCANFacade,
+        telemetry_service: CANNetworkTelemetryService,
         _: Annotated[None, Depends(verify_can_interface_enabled)],
     ) -> NetworkSummary:
         """Get truthful network status from currently implemented CAN facade sources."""
@@ -180,7 +199,11 @@ def create_networks_router() -> APIRouter:
         try:
             interface_mappings = await can_facade.get_interface_mappings()
             interface_details = await can_facade.get_interface_details()
-            interfaces = _network_statuses(interface_mappings, interface_details)
+            interfaces = _network_statuses(
+                interface_mappings,
+                interface_details,
+                telemetry_service.get_rolling_telemetry(),
+            )
 
             return NetworkSummary(
                 total_interfaces=len(interfaces),
@@ -205,6 +228,7 @@ def create_networks_router() -> APIRouter:
     )
     async def get_network_interfaces(
         can_facade: VerifiedCANFacade,
+        telemetry_service: CANNetworkTelemetryService,
         _: Annotated[None, Depends(verify_can_interface_enabled)],
     ) -> list[NetworkStatus]:
         """Get configured logical-to-physical network interface mappings."""
@@ -212,7 +236,11 @@ def create_networks_router() -> APIRouter:
         try:
             interface_mappings = await can_facade.get_interface_mappings()
             interface_details = await can_facade.get_interface_details()
-            return _network_statuses(interface_mappings, interface_details)
+            return _network_statuses(
+                interface_mappings,
+                interface_details,
+                telemetry_service.get_rolling_telemetry(),
+            )
 
         except Exception as e:
             logger.error("Error getting network interfaces: %s", e)

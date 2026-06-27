@@ -12093,6 +12093,24 @@ components:
           - type: 'null'
           title: Bus Off
           description: Best-effort CAN controller bus-off count
+        message_rate:
+          anyOf:
+          - type: number
+          - type: 'null'
+          title: Message Rate
+          description: Rolling CAN frame rate in frames/second
+        bus_load_percent:
+          anyOf:
+          - type: number
+          - type: 'null'
+          title: Bus Load Percent
+          description: Approximate rolling CAN bus load percentage
+        last_activity:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Last Activity
+          description: ISO 8601 timestamp of last observed packet activity
       type: object
       required:
       - logical_name
