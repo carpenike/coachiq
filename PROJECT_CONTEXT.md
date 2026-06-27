@@ -222,11 +222,24 @@ spec's `[success-criteria]` should cite.
 ```bash
 poetry install
 poetry run python run_server.py --reload --debug   # dev server (Swagger at /docs)
-poetry run pytest                                   # tests; markers: unit, integration, api, can, websocket, rvc, auth, smoke, performance
+poetry run pytest                                   # tests; markers: unit, integration, api, can, safety, websocket, rvc, auth, smoke, performance
+poetry run python scripts/check_module_coverage.py  # per-module guardrail coverage ratchet after coverage.xml exists
 poetry run ruff check .                             # lint (zero warnings)
 poetry run ruff format backend                      # format (line length 100)
 poetry run pyright backend                          # type-check (basic mode; ratcheting toward strict)
 ```
+
+**Guardrail coverage ratchet (HOF-015).** Focused marker runs must not fail on
+whole-repo coverage, so `pytest.ini` does not set a global `--cov-fail-under`.
+Instead, `scripts/check_module_coverage.py` reads fresh `coverage.xml` after
+guardrail tests and enforces only the current high-value module floors:
+`backend/services/can_facade.py >= 45%`, `backend/services/safety_service.py >= 32%`,
+`backend/services/auth/service.py >= 60%`, `backend/services/auth/manager.py >= 22%`,
+`backend/middleware/secure_auth.py >= 30%`, and
+`backend/websocket/auth_handler.py >= 35%`. Run the ratchet locally with
+`nix run .#guardrail-coverage`, which executes `pytest -m "can or auth or safety or websocket"`
+then checks those floors. Raise these numbers when coverage improves; never
+lower them without a reviewed handoff.
 
 **Frontend (from `frontend/`):**
 
@@ -239,7 +252,8 @@ npm run build        # must succeed
 npm run test         # Vitest
 ```
 
-**Nix shortcuts:** `nix run .#test` / `.#lint` / `.#format` / `.#ci`.
+**Nix shortcuts:** `nix run .#test` / `.#guardrail-coverage` / `.#lint` /
+`.#format` / `.#ci`.
 **Pre-commit:** `pre-commit run --all-files` (ruff `--fix`, ruff-format,
 bandit, ESLint-staged). `dev_start.sh` sets up a virtual-CAN dev environment.
 

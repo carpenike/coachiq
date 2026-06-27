@@ -69,6 +69,33 @@ risk; retirement addresses cleanliness.
 
 ## Build Log
 
+### HOF-015 — Guardrail Coverage Ratchet
+- [shipped] same commit as this entry · 2026-06-27
+- [component] backend
+- [adr] docs/adr/ADR-0004-coachiq-is-not-the-safety-system.md
+
+**What changed.** Focused behavior tests now cover the approved guardrail
+modules: CANFacade delegation/e-stop paths, SafetyService interlocks/PIN/e-stop
+decisions, AuthManager/AuthService token/MFA/lockout decisions, secure auth
+middleware happy/deny paths, and WebSocket auth happy/deny/permission paths.
+The global pytest `--cov-fail-under` floor was removed and replaced with
+`scripts/check_module_coverage.py`, a per-module ratchet over fresh
+`coverage.xml`. `nix run .#guardrail-coverage` runs the guardrail marker suite
+and enforces the ratchet; CI runs that app after the diff-aware quality gate.
+
+**Why.** HOF-015 moves coverage onto the realistic API-side risk paths from
+ADR-0004 without making narrow marker runs fail on unrelated long-tail modules.
+The ratchet floors are intentionally modest first milestones and should only
+move upward: CANFacade 45%, SafetyService 32%, AuthService 60%, AuthManager
+22%, SecureAuthenticationMiddleware 30%, and WebSocketAuthHandler 35%.
+
+**Files.** .github/workflows/nix-ci.yml, flake.nix, pytest.ini,
+scripts/check_module_coverage.py, PROJECT_CONTEXT.md,
+tests/services/test_can_facade_guardrails.py,
+tests/services/test_safety_service_guardrails.py,
+tests/services/test_auth_guardrails.py, tests/middleware/test_secure_auth.py,
+tests/websocket/test_auth_handler_guardrails.py
+
 ### HOF-017 — Remove Fake Entity Domain Fallback
 - [shipped] same commit as this entry · 2026-06-27
 - [component] frontend

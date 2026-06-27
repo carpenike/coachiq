@@ -48,8 +48,8 @@ jobs:
       - name: "Perform Nix flake ci"
         run: nix run .#ci
 
-      # - name: "Run tests separately for better caching"
-      #   run: nix run .#test
+      - name: "Run guardrail coverage ratchet"
+        run: nix run .#guardrail-coverage
 
       - name: "Build CoachIQ package (for Cachix caching)"
         run: nix build .#coachiq

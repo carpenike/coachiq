@@ -360,6 +360,25 @@ EOF
             };
           };
 
+          guardrail-coverage = (flake-utils.lib.mkApp {
+            drv = pkgs.writeShellApplication {
+              name = "guardrail-coverage";
+              runtimeInputs = [ pkgs.poetry python ];
+              text = ''
+                poetry env use ${python}/bin/python
+                poetry install --no-root
+                poetry run pytest -m "can or auth or safety or websocket"
+                poetry run python scripts/check_module_coverage.py
+              '';
+            };
+          }) // {
+            meta = {
+              description = "Run guardrail tests and per-module coverage ratchet";
+              maintainers = [ "carpenike" ];
+              license = pkgs.lib.licenses.asl20;
+            };
+          };
+
           lint = (flake-utils.lib.mkApp {
             drv = pkgs.writeShellApplication {
               name = "lint";
