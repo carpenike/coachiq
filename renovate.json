@@ -3,7 +3,8 @@
   "extends": [
     "config:recommended",
     "config:best-practices",
-    "group:monorepos"
+    "group:monorepos",
+    ":preserveSemverRanges"
   ],
   "commitMessagePrefix": "chore(deps): ",
   "commitMessageAction": "update",
@@ -49,11 +50,11 @@
   "prConcurrentLimit": 5,
   "packageRules": [
     {
-      "description": "Pin all dependencies",
+      "description": "Keep semver ranges instead of opening broad duplicate pin PRs",
       "matchUpdateTypes": [
         "pin"
       ],
-      "groupName": "Pin all dependencies"
+      "enabled": false
     },
     {
       "description": "GitHub Actions - automerge and group",
@@ -61,10 +62,21 @@
         "github-actions"
       ],
       "groupName": "GitHub Actions",
+      "commitMessageTopic": "GitHub Actions",
       "automerge": true,
       "addLabels": [
         "github-actions"
       ]
+    },
+    {
+      "description": "Keep GitHub Actions Python on the project runtime",
+      "matchManagers": [
+        "github-actions"
+      ],
+      "matchPackageNames": [
+        "python"
+      ],
+      "enabled": false
     },
     {
       "description": "Security updates - high priority, no automerge",
