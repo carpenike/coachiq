@@ -53,7 +53,7 @@ def mock_settings():
 
 
 @pytest.fixture
-def diagnostic_handler(mock_settings):
+def diagnostic_handler(mock_settings: Settings) -> DiagnosticHandler:
     """Create diagnostic handler for testing."""
     return DiagnosticHandler(mock_settings)
 
@@ -320,7 +320,7 @@ class TestPredictiveMaintenanceEngine:
         assert prediction.system_type == SystemType.ENGINE
         assert prediction.component_name == "coolant_pump"
         assert prediction.confidence >= 0.0
-        assert prediction.urgency in [e.value for e in MaintenanceUrgency]
+        assert prediction.urgency in list(MaintenanceUrgency)
 
     def test_maintenance_schedule_generation(self, predictive_engine):
         """Test maintenance schedule generation."""
@@ -483,7 +483,7 @@ class TestAdvancedDiagnosticsFeature:
 
         status = advanced_diagnostics_feature.get_status()
 
-        assert status["enabled"] is False  # Default in mock settings
+        assert status["enabled"] is True
         assert status["healthy"] is True
         assert status["components"]["diagnostic_handler"] is True
         assert status["components"]["predictive_engine"] is True

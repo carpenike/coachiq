@@ -8,7 +8,7 @@ Uses repository injection pattern for all dependencies.
 import asyncio
 import contextlib
 import time
-from typing import Any
+from typing import Any, override
 
 from backend.core.config import get_settings
 from backend.core.safety_interfaces import (
@@ -18,11 +18,23 @@ from backend.core.safety_interfaces import (
     SafetyStatus,
 )
 from backend.core.structured_logging import get_logger, log_execution_time, log_safety_critical
+from backend.integrations.diagnostics.handler import DiagnosticHandler
+from backend.integrations.diagnostics.models import DTCSeverity, ProtocolType, SystemType
 from backend.integrations.rvc import BAMHandler, decode_payload, decode_product_id
+from backend.integrations.rvc.decoder_core import DecodedValue
 from backend.repositories.can_tracking_repository import CANTrackingRepository
 from backend.repositories.system_state_repository import SystemStateRepository
 
 logger = get_logger(__name__, "CANBusService")
+
+DM_RV_PGN = 0xFECA
+DM_RV_CLEAR_SPN = 0x7FFFF
+DM_RV_CLEAR_FMI = 31
+DM_RV_CLEAR_OCCURRENCE_COUNT = 127
+PRODUCT_IDENTIFICATION_PGN = 0x1FEF2
+PENDING_COMMAND_WINDOW_SECONDS = 5.0
+LIGHT_STATUS_SIMULATION_TYPE = 2
+SIMULATION_ERROR_SLEEP_SECONDS = 5
 
 
 class CANBusService(SafetyAware):
@@ -38,6 +50,7 @@ class CANBusService(SafetyAware):
         can_tracking_repository: CANTrackingRepository,
         system_state_repository: SystemStateRepository,
         can_anomaly_detector: Any | None = None,
+        diagnostic_handler: DiagnosticHandler | None = None,
     ):
         """
         Initialize the CAN bus service with repository dependencies.
@@ -46,6 +59,7 @@ class CANBusService(SafetyAware):
             can_tracking_repository: Repository for CAN message tracking
             system_state_repository: Repository for system state management
             can_anomaly_detector: Optional CAN anomaly detector for security monitoring
+            diagnostic_handler: Optional diagnostic DTC handler for DM_RV ingestion
         """
         super().__init__(
             safety_classification=SafetyClassification.CRITICAL,
@@ -58,27 +72,28 @@ class CANBusService(SafetyAware):
         self._running = False
 
         # Configuration - use settings from environment
-        self.config = {
+        self.config: dict[str, Any] = {
             "interfaces": self.settings.can.all_interfaces,
             "bustype": self.settings.can.bustype,
             "bitrate": self.settings.can.bitrate,
             "poll_interval": 0.1,  # seconds
-            "simulate": False,  # TODO: This could also be a setting
+            "simulate": False,  # Could also become a setting.
         }
 
         # CAN bus related attributes
         self._listeners: list[Any] = []  # Will store CAN listeners or notifiers
-        self._task: asyncio.Task | None = None
-        self._simulation_task: asyncio.Task | None = None
+        self._task: asyncio.Task[None] | None = None
+        self._simulation_task: asyncio.Task[None] | None = None
         self._deduplicator = None  # Will be initialized in startup
 
         # RVC decoder data - will be loaded on startup
-        self.decoder_map: dict[int, dict] = {}
-        self.device_lookup: dict[tuple[str, str], dict] = {}
-        self.status_lookup: dict[tuple[str, str], dict] = {}
+        self.decoder_map: dict[int, dict[str, Any]] = {}
+        self.decoder_pgn_map: dict[int, dict[str, Any]] = {}
+        self.device_lookup: dict[tuple[str, str], Any] = {}
+        self.status_lookup: dict[tuple[str, str], dict[str, Any]] = {}
         self.pgn_hex_to_name_map: dict[str, str] = {}
-        self.raw_device_mapping: dict = {}
-        self.entity_id_lookup: dict[str, dict] = {}
+        self.raw_device_mapping: dict[Any, Any] = {}
+        self.entity_id_lookup: dict[str, dict[str, Any]] = {}
 
         # BAM handler for multi-packet messages
         self.bam_handler: BAMHandler | None = None
@@ -89,12 +104,16 @@ class CANBusService(SafetyAware):
         # Anomaly detector for security monitoring (injected)
         self.anomaly_detector = can_anomaly_detector
 
+        # Diagnostic handler for DTC ingestion (injected)
+        self._diagnostic_handler = diagnostic_handler
+
         logger.info(
             "CANBusService initialized",
             interfaces=self.config["interfaces"],
             bustype=self.config["bustype"],
             bitrate=self.config["bitrate"],
             has_anomaly_detector=bool(can_anomaly_detector),
+            has_diagnostic_handler=bool(diagnostic_handler),
         )
 
     async def start(self) -> None:
@@ -191,6 +210,7 @@ class CANBusService(SafetyAware):
         logger.info("CAN bus service stopped")
 
     @log_safety_critical(safety_level="CRITICAL")
+    @override
     async def emergency_stop(self, reason: str) -> None:
         """Emergency stop implementation."""
         logger.critical("CANBusService emergency stop triggered", reason=reason)
@@ -209,6 +229,7 @@ class CANBusService(SafetyAware):
         if self.anomaly_detector:
             await self.anomaly_detector.stop()
 
+    @override
     async def get_safety_status(self) -> SafetyStatus:
         """Get current safety status."""
         if self._emergency_stop_active:
@@ -301,6 +322,7 @@ class CANBusService(SafetyAware):
 
             # Extract values from structured config
             self.decoder_map = rvc_config.dgn_dict
+            self.decoder_pgn_map = self._build_decoder_pgn_map(self.decoder_map)
             self.entity_id_lookup = rvc_config.inst_map  # entity ID to config lookup
             self.pgn_hex_to_name_map = rvc_config.pgn_hex_to_name_map  # PGN hex to name mapping
 
@@ -332,6 +354,30 @@ class CANBusService(SafetyAware):
             logger.error("Failed to load RVC decoder configuration", error=str(e))
             logger.warning("CAN bus service will run without RVC decoding capabilities")
 
+    @staticmethod
+    def _build_decoder_pgn_map(decoder_map: dict[int, dict[str, Any]]) -> dict[int, dict[str, Any]]:
+        """Build a PGN lookup table for source-address-specific received frames."""
+        pgn_map: dict[int, dict[str, Any]] = {}
+        for entry in decoder_map.values():
+            pgn_value = entry.get("pgn") if isinstance(entry, dict) else None
+            if not isinstance(pgn_value, str):
+                continue
+            try:
+                pgn = int(pgn_value, 16)
+            except ValueError:
+                continue
+            current = pgn_map.get(pgn)
+            if current is None or str(current.get("name", "")).startswith("UNKNOWN"):
+                pgn_map[pgn] = entry
+        return pgn_map
+
+    def _get_decoder_entry(self, arbitration_id: int, pgn: int) -> dict[str, Any] | None:
+        """Get a decoder entry by exact ID or PGN fallback."""
+        entry = self.decoder_map.get(arbitration_id)
+        if entry is not None:
+            return entry
+        return self.decoder_pgn_map.get(pgn)
+
     async def _start_can_listeners(self) -> None:
         """Start real CAN bus listeners."""
         try:
@@ -357,10 +403,10 @@ class CANBusService(SafetyAware):
                 try:
                     # Create the bus directly
                     bus = can.interface.Bus(channel=interface, bustype=bustype, bitrate=bitrate)
-                    buses[interface] = bus
-                    logger.info(f"Initialized CAN interface: {interface}")
+                    buses[interface] = bus  # type: ignore[assignment]
+                    logger.info("Initialized CAN interface: %s", interface)
                 except Exception as e:
-                    logger.error(f"Failed to initialize interface {interface}: {e}")
+                    logger.error("Failed to initialize interface %s: %s", interface, e)
                     failed_interfaces.append(interface)
 
             initialized_count = len(buses)
@@ -382,15 +428,16 @@ class CANBusService(SafetyAware):
             await self._setup_can_listeners()
 
         except ImportError:
-            logger.warning(
+            missing_can_message = (
                 "python-can package not available. CAN bus service will not start. "
-                "Install with 'poetry add python-can'."
+                + "Install with 'poetry add python-can'."
             )
+            logger.warning("%s", missing_can_message)
             # Fall back to simulation mode
             logger.info("Falling back to CAN bus simulation mode")
             self._simulation_task = asyncio.create_task(self._simulate_can_messages())
-        except Exception as e:
-            logger.error("Failed to start CAN bus listeners", exc_info=True)
+        except Exception:
+            logger.exception("Failed to start CAN bus listeners")
             raise
 
     async def _setup_can_listeners(self) -> None:
@@ -416,11 +463,11 @@ class CANBusService(SafetyAware):
                 try:
                     # Create AsyncBufferedReader for non-blocking message reception
                     # Limit buffer to prevent memory buildup (1000 messages max)
-                    reader = can.AsyncBufferedReader()  # type: ignore
+                    reader = can.AsyncBufferedReader()  # type: ignore[attr-defined]
 
                     # Create Notifier with asyncio event loop integration
                     loop = asyncio.get_running_loop()
-                    notifier = can.Notifier(bus, [reader], loop=loop)  # type: ignore
+                    notifier = can.Notifier(bus, [reader], loop=loop)  # type: ignore[attr-defined]
 
                     # Create a listener task for this interface
                     listener_task = asyncio.create_task(
@@ -445,8 +492,8 @@ class CANBusService(SafetyAware):
                         "Failed to start CAN listener", interface_name=interface_name, error=str(e)
                     )
 
-        except Exception as e:
-            logger.error("Failed to set up CAN listeners", exc_info=True)
+        except Exception:
+            logger.exception("Failed to set up CAN listeners")
 
     async def _cleanup_can_listeners(self) -> None:
         """Cleanup CAN bus listeners."""
@@ -481,7 +528,7 @@ class CANBusService(SafetyAware):
 
         self._listeners = []
 
-    async def _can_listener_task(self, interface_name: str, reader) -> None:
+    async def _can_listener_task(self, interface_name: str, reader: Any) -> None:
         """
         Async task to continuously listen for CAN messages using AsyncBufferedReader.
 
@@ -515,12 +562,12 @@ class CANBusService(SafetyAware):
         except asyncio.CancelledError:
             logger.info("CAN listener cancelled", interface=interface_name)
             raise
-        except Exception as e:
-            logger.error("CAN listener failed", interface=interface_name, exc_info=True)
+        except Exception:
+            logger.exception("CAN listener failed", interface=interface_name)
         finally:
             logger.info("CAN listener stopped", interface=interface_name)
 
-    async def _send_to_can_tools(self, message, interface_name: str) -> bool:
+    async def _send_to_can_tools(self, message: Any, interface_name: str) -> bool:  # noqa: C901
         """
         Send CAN message to optional analysis tools through ServiceRegistry.
 
@@ -599,7 +646,7 @@ class CANBusService(SafetyAware):
             logger.debug("Error sending to CAN tools: %s", e)
             return True  # Don't block message processing on tool errors
 
-    async def _process_received_message(self, message, interface_name: str) -> None:
+    async def _process_received_message(self, message: Any, interface_name: str) -> None:
         """
         Process a received CAN message.
 
@@ -667,10 +714,10 @@ class CANBusService(SafetyAware):
             # Process the message through the RV-C decoder
             await self._process_message(msg_dict)
 
-        except Exception as e:
-            logger.error("Error processing received CAN message", exc_info=True)
+        except Exception:
+            logger.exception("Error processing received CAN message")
 
-    async def _add_sniffer_entry(self, message, interface_name: str, direction: str) -> None:
+    async def _add_sniffer_entry(self, message: Any, interface_name: str, direction: str) -> None:
         """Add a CAN message to the sniffer entries for monitoring."""
         try:
             sniffer_entry = {
@@ -690,7 +737,7 @@ class CANBusService(SafetyAware):
         except Exception as e:
             logger.error("Error adding sniffer entry: %s", e)
 
-    async def _process_message(self, msg: dict[str, Any]) -> None:
+    async def _process_message(self, msg: dict[str, Any]) -> None:  # noqa: C901, PLR0912, PLR0915
         """
         Process an incoming CAN message.
 
@@ -735,10 +782,10 @@ class CANBusService(SafetyAware):
                     target_pgn, reassembled_data = result
 
                     # Handle specific multi-packet PGNs
-                    if target_pgn == 0x1FEF2:  # Product Identification
+                    if target_pgn == PRODUCT_IDENTIFICATION_PGN:
                         decoded = decode_product_id(reassembled_data)
                         logger.info("Decoded Product ID: %s", decoded)
-                        # TODO: Update entity with product information
+                        # Future work: update entity with product information.
                     else:
                         logger.debug("Reassembled multi-packet message for PGN %05X", target_pgn)
 
@@ -746,10 +793,11 @@ class CANBusService(SafetyAware):
                 return
 
             # Try to decode the message using RVC decoder
-            if self.decoder_map and arbitration_id in self.decoder_map:
+            entry = self._get_decoder_entry(arbitration_id, pgn) if self.decoder_map else None
+            if entry is not None:
                 try:
-                    entry = self.decoder_map[arbitration_id]
-                    decoded_data, raw_data = decode_payload(entry, data)
+                    decoded_results, _decode_errors = decode_payload(entry, data)
+                    decoded_data, raw_data = self._split_decoded_payload(decoded_results)
 
                     # Extract DGN and instance for device lookup
                     dgn_hex = entry.get("dgn_hex")
@@ -762,6 +810,8 @@ class CANBusService(SafetyAware):
                         decoded_data,
                         raw_data,
                     )
+
+                    self._process_diagnostic_frame(arbitration_id, data, decoded_results, msg)
 
                     # Check if this maps to a known device/entity
                     if dgn_hex and instance is not None:
@@ -813,6 +863,98 @@ class CANBusService(SafetyAware):
 
         except Exception as e:
             logger.error("Error processing CAN message: %s", e)
+
+    @staticmethod
+    def _split_decoded_payload(
+        decoded_results: dict[str, Any],
+    ) -> tuple[dict[str, Any], dict[str, int]]:
+        """Split decoder-core results into value and raw-value dictionaries."""
+        decoded_data: dict[str, Any] = {}
+        raw_data: dict[str, int] = {}
+        for signal_name, result in decoded_results.items():
+            if not isinstance(result, DecodedValue):
+                decoded_data[signal_name] = str(result)
+                continue
+            decoded_data[signal_name] = None if result.unavailable else result.value
+            if result.raw_value is not None:
+                raw_data[signal_name] = result.raw_value
+        return decoded_data, raw_data
+
+    @staticmethod
+    def _decoded_raw_value(decoded_data: dict[str, Any], signal_name: str) -> int | None:
+        """Extract a raw integer signal value from decoder-core results."""
+        value = decoded_data.get(signal_name)
+        if isinstance(value, DecodedValue):
+            return value.raw_value
+        return None
+
+    def _process_diagnostic_frame(
+        self,
+        arbitration_id: int,
+        data: bytes,
+        decoded_results: dict[str, Any],
+        msg: dict[str, Any],
+    ) -> None:
+        """Ingest decoded DM_RV/J1939 DM1 frames into the diagnostic handler."""
+        if self._diagnostic_handler is None:
+            return
+
+        pgn = (arbitration_id >> 8) & 0x3FFFF
+        if pgn != DM_RV_PGN:
+            return
+
+        source_address = arbitration_id & 0xFF
+        spn_msb = self._decoded_raw_value(decoded_results, "SPN_MSB")
+        spn_isb = self._decoded_raw_value(decoded_results, "SPN_ISB")
+        spn_lsb = self._decoded_raw_value(decoded_results, "SPN_LSB")
+        fmi = self._decoded_raw_value(decoded_results, "FMI")
+        occurrence_count = self._decoded_raw_value(decoded_results, "occurrence_count")
+        yellow_lamp_status = self._decoded_raw_value(decoded_results, "yellow_lamp_status")
+        red_lamp_status = self._decoded_raw_value(decoded_results, "red_lamp_status")
+
+        if spn_msb is None or spn_isb is None or spn_lsb is None or fmi is None:
+            logger.debug("Skipping DM_RV frame with incomplete DTC decode: %08X", arbitration_id)
+            return
+
+        spn = (spn_lsb << 16) | (spn_isb << 8) | spn_msb
+        is_clear_heartbeat = (
+            spn == DM_RV_CLEAR_SPN
+            and fmi == DM_RV_CLEAR_FMI
+            and occurrence_count == DM_RV_CLEAR_OCCURRENCE_COUNT
+            and yellow_lamp_status == 0
+            and red_lamp_status == 0
+        )
+        if is_clear_heartbeat:
+            logger.debug("Ignoring clean DM_RV heartbeat from source 0x%02X", source_address)
+            return
+
+        if red_lamp_status:
+            severity = DTCSeverity.CRITICAL
+        elif yellow_lamp_status:
+            severity = DTCSeverity.HIGH
+        else:
+            severity = DTCSeverity.MEDIUM
+
+        code = (spn << 5) | fmi
+        self._diagnostic_handler.process_dtc(
+            code=code,
+            protocol=ProtocolType.J1939,
+            system_type=SystemType.CHASSIS,
+            source_address=source_address,
+            pgn=pgn,
+            dgn=pgn,
+            raw_data=data,
+            severity=severity,
+            description=f"DM_RV active DTC SPN {spn} FMI {fmi}",
+            metadata={
+                "spn": spn,
+                "fmi": fmi,
+                "occurrence_count": occurrence_count,
+                "yellow_lamp_status": yellow_lamp_status,
+                "red_lamp_status": red_lamp_status,
+                "interface": msg.get("interface"),
+            },
+        )
 
     async def _update_entity_from_can_message(
         self,
@@ -901,11 +1043,11 @@ class CANBusService(SafetyAware):
             else:
                 logger.warning("Failed to update entity %s state", entity_id)
 
-        except Exception as e:
-            logger.error("Error updating entity %s from CAN message", entity_id, exc_info=True)
+        except Exception:
+            logger.exception("Error updating entity %s from CAN message", entity_id)
 
     async def _update_light_state(
-        self, payload: dict[str, Any], decoded_data: dict[str, Any], raw_data: dict[str, Any]
+        self, payload: dict[str, Any], _decoded_data: dict[str, Any], raw_data: dict[str, Any]
     ) -> None:
         """
         Update light-specific state fields based on decoded CAN data.
@@ -971,11 +1113,12 @@ class CANBusService(SafetyAware):
 
             # Check if there are any pending commands for this entity
             # This will help correlate commands with responses for UI feedback
+            pending_command_source = getattr(self._can_tracking_repository, "_pending_commands", [])
             pending_commands = [
                 cmd
-                for cmd in self._can_tracking_repository._pending_commands
+                for cmd in pending_command_source
                 if cmd.get("entity_id") == entity_id
-                and (update_timestamp - cmd.get("timestamp", 0)) < 5.0  # Within 5 seconds
+                and (update_timestamp - cmd.get("timestamp", 0)) < PENDING_COMMAND_WINDOW_SECONDS
             ]
 
             if pending_commands:
@@ -989,13 +1132,13 @@ class CANBusService(SafetyAware):
                 # The actual command correlation is handled by the try_group_response method
                 for _cmd in pending_commands:
                     # Need to get known pairs from somewhere - for now just log
-                    # TODO: This needs access to RVC config repository for known pairs
+                    # Future work: use RVC config repository for known pairs.
                     logger.debug("Would try to group response for command: %s", _cmd)
 
         except Exception as e:
             logger.error("Error checking pending command completion: %s", e)
 
-    async def _simulate_can_messages(self) -> None:
+    async def _simulate_can_messages(self) -> None:  # noqa: C901, PLR0912, PLR0915
         """
         Simulate CAN messages for testing purposes.
 
@@ -1075,7 +1218,7 @@ class CANBusService(SafetyAware):
                         arbitration_id = 0x1FFFD
                         # Battery at 80% charge
                         data = bytes([0x01, 0x50, 0x00, 0x00, 0x00, 0x00, 0xFF, 0xFF])
-                    elif msg_type == 2:
+                    elif msg_type == LIGHT_STATUS_SIMULATION_TYPE:
                         # Simulate a light status message (DGN 1FEED / 130797)
                         arbitration_id = 0x1FEED
                         # Light is on
@@ -1103,7 +1246,7 @@ class CANBusService(SafetyAware):
                 break
             except Exception as e:
                 logger.error("Error in CAN message simulation: %s", e)
-                await asyncio.sleep(5)  # Longer sleep on error
+                await asyncio.sleep(SIMULATION_ERROR_SLEEP_SECONDS)  # Longer sleep on error
 
 
 def create_can_bus_service() -> CANBusService:

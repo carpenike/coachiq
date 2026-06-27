@@ -12,22 +12,185 @@ This router integrates with existing diagnostic services.
 
 import logging
 import time
-from typing import Any, cast
+from typing import Annotated, Any, cast
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
 
 from backend.api.domains import register_domain_router
+from backend.core.dependencies import get_service_registry
+from backend.core.service_registry import ServiceRegistry, ServiceStatus
+from backend.integrations.diagnostics.handler import DiagnosticHandler
+from backend.integrations.diagnostics.models import ProtocolType
 from backend.schemas.domain_api import (
     DiagnosticAccuracySummary,
     DiagnosticHealthTrend,
     DiagnosticsHealthResponse,
+    DiagnosticsServiceFeatures,
     DiagnosticStatisticsMetrics,
     DiagnosticStatisticsResponse,
     DiagnosticTroubleCodeCollection,
 )
 
 logger = logging.getLogger(__name__)
+
+EXCELLENT_HEALTH_THRESHOLD = 90.0
+GOOD_HEALTH_THRESHOLD = 75.0
+FAIR_HEALTH_THRESHOLD = 60.0
+POOR_HEALTH_THRESHOLD = 40.0
+DEGRADED_HEALTH_THRESHOLD = 75.0
+
+
+def _get_optional_registry() -> ServiceRegistry | None:
+    """Return the ServiceRegistry when available for request-time diagnostics."""
+    try:
+        return get_service_registry()
+    except RuntimeError:
+        return None
+
+
+def _get_optional_service(service_name: str) -> Any | None:
+    """Return an optional ServiceRegistry service without failing the endpoint."""
+    service_registry = _get_optional_registry()
+    if service_registry is None or not service_registry.has_service(service_name):
+        return None
+    return service_registry.get_service(service_name)
+
+
+def get_diagnostics_handler() -> DiagnosticHandler | None:
+    """Get the registered diagnostics handler for v2 diagnostics endpoints."""
+    return cast("DiagnosticHandler | None", _get_optional_service("diagnostic_handler"))
+
+
+def get_optional_can_facade() -> Any | None:
+    """Get the CAN facade for computed diagnostics health when available."""
+    return _get_optional_service("can_facade")
+
+
+def _overall_health_from_score(health_score: float) -> str:
+    """Map a numeric score to the v2 diagnostics health enum."""
+    if health_score >= EXCELLENT_HEALTH_THRESHOLD:
+        return "excellent"
+    if health_score >= GOOD_HEALTH_THRESHOLD:
+        return "good"
+    if health_score >= FAIR_HEALTH_THRESHOLD:
+        return "fair"
+    if health_score >= POOR_HEALTH_THRESHOLD:
+        return "poor"
+    return "critical"
+
+
+def _dtc_dicts(handler: DiagnosticHandler | None) -> list[dict[str, Any]]:
+    """Return active DTCs from the diagnostics handler as dictionaries."""
+    if handler is None:
+        return []
+    return [dtc.to_dict() for dtc in handler.get_active_dtcs()]
+
+
+def _filter_dtcs(
+    dtcs: list[dict[str, Any]],
+    system_type: str | None = None,
+    severity: str | None = None,
+    protocol: str | None = None,
+) -> list[dict[str, Any]]:
+    """Filter DTC dictionaries by common query parameters."""
+    filtered_dtcs = dtcs
+    if system_type:
+        filtered_dtcs = [dtc for dtc in filtered_dtcs if dtc.get("system_type") == system_type]
+    if severity:
+        filtered_dtcs = [dtc for dtc in filtered_dtcs if dtc.get("severity") == severity]
+    if protocol:
+        filtered_dtcs = [dtc for dtc in filtered_dtcs if dtc.get("protocol") == protocol]
+    return filtered_dtcs
+
+
+def _count_by(dtcs: list[dict[str, Any]], field_name: str) -> dict[str, int]:
+    """Count DTC dictionaries by a string field."""
+    counts: dict[str, int] = {}
+    for dtc in dtcs:
+        key = str(dtc.get(field_name, "unknown"))
+        counts[key] = counts.get(key, 0) + 1
+    return counts
+
+
+async def _service_score(service_registry: ServiceRegistry, service_name: str) -> float | None:
+    """Return a health score for a registered service, or None when absent."""
+    if not service_registry.has_service(service_name):
+        return None
+    status = await service_registry.check_service_health(service_name)
+    if status == ServiceStatus.HEALTHY:
+        return 100.0
+    if status == ServiceStatus.DEGRADED:
+        return 65.0
+    if status == ServiceStatus.FAILED:
+        return 0.0
+    return 40.0
+
+
+def _can_health_score(can_facade: Any | None) -> tuple[float | None, bool]:
+    """Return CAN health score and degraded flag from CANFacade health."""
+    if can_facade is None or not hasattr(can_facade, "get_health_status"):
+        return None, True
+    status = can_facade.get_health_status()
+    if status.get("emergency_stop_active"):
+        return 20.0, True
+    if not status.get("healthy", False):
+        return 40.0, True
+    if str(status.get("safety_status", "")).lower() == "degraded":
+        return 75.0, True
+    return 100.0, False
+
+
+async def _compute_system_status(
+    diagnostics_handler: DiagnosticHandler | None, can_facade: Any | None
+) -> "SystemStatus":
+    """Compute v2 diagnostics system status from registered services and DTCs."""
+    service_registry = _get_optional_registry()
+    active_systems: list[str] = []
+    degraded_systems: list[str] = []
+    scores: list[float] = []
+
+    can_score, can_degraded = _can_health_score(can_facade)
+    if can_score is not None:
+        active_systems.append("can_bus")
+        scores.append(can_score)
+        if can_degraded:
+            degraded_systems.append("can_bus")
+
+    if diagnostics_handler is not None:
+        active_systems.append("diagnostics")
+        active_dtcs = len(diagnostics_handler.get_active_dtcs())
+        diagnostics_score = max(0.0, 100.0 - (active_dtcs * 10.0))
+        scores.append(diagnostics_score)
+        if active_dtcs:
+            degraded_systems.append("diagnostics")
+
+    if service_registry is not None:
+        for service_name, system_name in [
+            ("entity_service", "entities"),
+            ("websocket_manager", "websocket"),
+            ("persistence_service", "persistence"),
+        ]:
+            score = await _service_score(service_registry, service_name)
+            if score is None:
+                continue
+            active_systems.append(system_name)
+            scores.append(score)
+            if score < DEGRADED_HEALTH_THRESHOLD:
+                degraded_systems.append(system_name)
+
+    if not scores:
+        degraded_systems.append("service_registry")
+        scores.append(0.0)
+
+    health_score = sum(scores) / len(scores)
+    return SystemStatus(
+        overall_health=_overall_health_from_score(health_score),
+        health_score=health_score,
+        active_systems=active_systems,
+        degraded_systems=degraded_systems,
+        last_assessment=time.time(),
+    )
 
 
 # Domain-specific schemas for v2 API
@@ -66,15 +229,20 @@ class SystemStatus(BaseModel):
     last_assessment: float = Field(..., description="Last health assessment timestamp")
 
 
-def create_diagnostics_router() -> APIRouter:
+DiagnosticsHandlerDependency = Annotated[DiagnosticHandler | None, Depends(get_diagnostics_handler)]
+CANFacadeDependency = Annotated[Any | None, Depends(get_optional_can_facade)]
+SystemTypeFilter = Annotated[str | None, Query(description="Filter by system type")]
+SeverityFilter = Annotated[str | None, Query(description="Filter by severity")]
+ProtocolFilter = Annotated[str | None, Query(description="Filter by protocol")]
+CorrelationWindow = Annotated[
+    float | None, Query(description="Time window for correlation analysis")
+]
+PredictionHorizon = Annotated[int, Query(description="Time horizon for predictions in days")]
+
+
+def create_diagnostics_router() -> APIRouter:  # noqa: C901, PLR0915
     """Create the diagnostics domain router with all endpoints"""
     router = APIRouter(tags=["diagnostics-v2"])
-
-    async def get_diagnostics_service(request: Request):
-        """Get diagnostics service for domain API v2"""
-        # Since diagnostics diagnostics_service is being removed, we'll return a mock service
-        # In a real implementation, this would get a diagnostics service from ServiceRegistry
-        return  # Placeholder - actual diagnostics service would be injected here
 
     @router.get("/health", response_model=DiagnosticsHealthResponse)
     async def health_check() -> DiagnosticsHealthResponse:
@@ -84,16 +252,16 @@ def create_diagnostics_router() -> APIRouter:
             status="healthy",
             domain="diagnostics",
             version="v2",
-            diagnostics_services={
-                "real_time_monitoring": True,
-                "predictive_alerts": True,
-                "cross_protocol_analysis": True,
-            },
+            diagnostics_services=DiagnosticsServiceFeatures(
+                real_time_monitoring=True,
+                predictive_alerts=True,
+                cross_protocol_analysis=True,
+            ),
             timestamp="2025-01-11T00:00:00Z",
         )
 
     @router.get("/schemas")
-    async def get_schemas(request: Request) -> dict[str, Any]:
+    async def get_schemas() -> dict[str, Any]:
         """Export schemas for diagnostics domain"""
 
         return {
@@ -102,235 +270,117 @@ def create_diagnostics_router() -> APIRouter:
         }
 
     @router.get("/metrics", response_model=SystemMetrics)
-    async def get_system_metrics(
-        request: Request, diagnostics_service=Depends(get_diagnostics_service)
-    ) -> SystemMetrics:
+    async def get_system_metrics(can_facade: CANFacadeDependency = None) -> SystemMetrics:
         """Get real-time system performance metrics"""
         try:
-            # Since diagnostics service is being removed, return default metrics
-            # In a real implementation, this would get data from actual diagnostics service
+            can_status = can_facade.get_health_status() if can_facade is not None else {}
 
             return SystemMetrics(
                 cpu_usage=0.0,  # Would be implemented via psutil in production
                 memory_usage=0.0,  # Would be implemented via psutil in production
                 can_bus_load=0.0,
                 message_rate=0.0,
-                error_rate=0.0,
+                error_rate=0.0 if can_status.get("healthy", False) else 100.0,
                 uptime_seconds=time.time(),
                 timestamp=time.time(),
             )
         except Exception as e:
-            logger.error(f"Error getting system metrics: {e}")
-            raise HTTPException(status_code=500, detail=f"Failed to get metrics: {e!s}")
+            logger.error("Error getting system metrics: %s", e)
+            raise HTTPException(status_code=500, detail=f"Failed to get metrics: {e!s}") from e
 
     @router.get("/faults", response_model=FaultSummary)
     async def get_fault_summary(
-        request: Request,
-        system_type: str | None = Query(None, description="Filter by system type"),
-        severity: str | None = Query(None, description="Filter by severity"),
-        diagnostics_service=Depends(get_diagnostics_service),
+        system_type: SystemTypeFilter = None,
+        severity: SeverityFilter = None,
+        diagnostics_handler: DiagnosticsHandlerDependency = None,
     ) -> FaultSummary:
         """Get fault summary with domain-specific aggregations"""
         try:
-            # Check if we have a real diagnostics service
-            if diagnostics_service is None:
-                # Return empty fault summary when service is not available
-                return FaultSummary(
-                    active_faults=0,
-                    total_faults=0,
-                    critical_faults=0,
-                    by_system={},
-                    by_protocol={},
-                    last_updated=time.time(),
-                )
-
-            # Use existing DTC functionality
-            dtc_dicts = []
-            if hasattr(diagnostics_service, "handler") and diagnostics_service.handler:
-                dtcs = diagnostics_service.handler.get_active_dtcs()
-                dtc_dicts = [dtc.to_dict() for dtc in dtcs]
-
-            # Apply filters
-            filtered_dtcs = dtc_dicts
-            if system_type:
-                filtered_dtcs = [
-                    dtc for dtc in filtered_dtcs if dtc.get("system_type") == system_type
-                ]
-            if severity:
-                filtered_dtcs = [dtc for dtc in filtered_dtcs if dtc.get("severity") == severity]
-
-            # Compute aggregations
+            filtered_dtcs = _filter_dtcs(_dtc_dicts(diagnostics_handler), system_type, severity)
             active_faults = len([dtc for dtc in filtered_dtcs if not dtc.get("resolved", False)])
             critical_faults = len(
                 [dtc for dtc in filtered_dtcs if dtc.get("severity") == "critical"]
             )
 
-            by_system = {}
-            by_protocol = {}
-            for dtc in filtered_dtcs:
-                system = dtc.get("system_type", "unknown")
-                protocol = dtc.get("protocol", "unknown")
-                by_system[system] = by_system.get(system, 0) + 1
-                by_protocol[protocol] = by_protocol.get(protocol, 0) + 1
-
             return FaultSummary(
                 active_faults=active_faults,
                 total_faults=len(filtered_dtcs),
                 critical_faults=critical_faults,
-                by_system=by_system,
-                by_protocol=by_protocol,
+                by_system=_count_by(filtered_dtcs, "system_type"),
+                by_protocol=_count_by(filtered_dtcs, "protocol"),
                 last_updated=time.time(),
             )
         except Exception as e:
-            logger.error(f"Error getting fault summary: {e}")
-            raise HTTPException(status_code=500, detail=f"Failed to get faults: {e!s}")
+            logger.error("Error getting fault summary: %s", e)
+            raise HTTPException(status_code=500, detail=f"Failed to get faults: {e!s}") from e
 
     @router.get("/system-status", response_model=SystemStatus)
     async def get_system_status(
-        request: Request, diagnostics_service=Depends(get_diagnostics_service)
+        diagnostics_handler: DiagnosticsHandlerDependency = None,
+        can_facade: CANFacadeDependency = None,
     ) -> SystemStatus:
         """Get overall system health status"""
         try:
-            # Check if we have a real diagnostics service
-            if diagnostics_service is None:
-                # Return mock healthy status when service is not available
-                return SystemStatus(
-                    overall_health="good",
-                    health_score=85.0,
-                    active_systems=["rvc", "entity_manager", "can_bus"],
-                    degraded_systems=[],
-                    last_assessment=time.time(),
-                )
-
-            health_data = diagnostics_service.get_system_health()
-
-            # Compute overall health assessment
-            health_score = 100.0  # Default healthy
-            degraded_systems = []
-            active_systems = list(health_data.keys()) if health_data else ["rvc", "entity_manager"]
-
-            # Calculate health score based on system statuses
-            if health_data:
-                system_scores = []
-                for system, data in health_data.items():
-                    score = data.get("health_score", 100.0)
-                    system_scores.append(score)
-                    if score < 80.0:
-                        degraded_systems.append(system)
-
-                health_score = sum(system_scores) / len(system_scores) if system_scores else 100.0
-
-            # Determine overall health status
-            if health_score >= 90:
-                overall_health = "excellent"
-            elif health_score >= 75:
-                overall_health = "good"
-            elif health_score >= 60:
-                overall_health = "fair"
-            elif health_score >= 40:
-                overall_health = "poor"
-            else:
-                overall_health = "critical"
-
-            return SystemStatus(
-                overall_health=overall_health,
-                health_score=health_score,
-                active_systems=active_systems,
-                degraded_systems=degraded_systems,
-                last_assessment=time.time(),
-            )
+            return await _compute_system_status(diagnostics_handler, can_facade)
         except Exception as e:
-            logger.error(f"Error getting system status: {e}")
-            raise HTTPException(status_code=500, detail=f"Failed to get system status: {e!s}")
+            logger.error("Error getting system status: %s", e)
+            raise HTTPException(
+                status_code=500, detail=f"Failed to get system status: {e!s}"
+            ) from e
 
     @router.get("/dtcs", response_model=DiagnosticTroubleCodeCollection)
     async def get_dtcs(
-        request: Request,
-        system_type: str | None = Query(None, description="Filter by system type"),
-        severity: str | None = Query(None, description="Filter by severity"),
-        protocol: str | None = Query(None, description="Filter by protocol"),
-        diagnostics_service=Depends(get_diagnostics_service),
+        system_type: SystemTypeFilter = None,
+        severity: SeverityFilter = None,
+        protocol: ProtocolFilter = None,
+        diagnostics_handler: DiagnosticsHandlerDependency = None,
     ) -> DiagnosticTroubleCodeCollection:
         """Get diagnostic trouble codes"""
         try:
-            # Check if we have a real diagnostics service
-            if diagnostics_service is None:
-                # Return empty DTC collection when service is not available
-                return DiagnosticTroubleCodeCollection(
-                    dtcs=[],
-                    total_count=0,
-                    active_count=0,
-                    by_severity={},
-                    by_protocol={},
-                )
-
-            # Get DTCs from diagnostics diagnostics_service
-            dtc_dicts = []
-            if hasattr(diagnostics_service, "handler") and diagnostics_service.handler:
-                dtcs = diagnostics_service.handler.get_active_dtcs()
-                dtc_dicts = [dtc.to_dict() for dtc in dtcs]
-
-            # Apply filters
-            filtered_dtcs = dtc_dicts
-            if system_type:
-                filtered_dtcs = [
-                    dtc for dtc in filtered_dtcs if dtc.get("system_type") == system_type
-                ]
-            if severity:
-                filtered_dtcs = [dtc for dtc in filtered_dtcs if dtc.get("severity") == severity]
-            if protocol:
-                filtered_dtcs = [dtc for dtc in filtered_dtcs if dtc.get("protocol") == protocol]
-
-            # Return DTCCollection format expected by frontend
+            filtered_dtcs = _filter_dtcs(
+                _dtc_dicts(diagnostics_handler), system_type, severity, protocol
+            )
             active_count = len([dtc for dtc in filtered_dtcs if not dtc.get("resolved", False)])
-
-            by_severity = {}
-            by_protocol = {}
-            for dtc in filtered_dtcs:
-                sev = dtc.get("severity", "unknown")
-                proto = dtc.get("protocol", "unknown")
-                by_severity[sev] = by_severity.get(sev, 0) + 1
-                by_protocol[proto] = by_protocol.get(proto, 0) + 1
 
             return DiagnosticTroubleCodeCollection(
                 dtcs=filtered_dtcs,
                 total_count=len(filtered_dtcs),
                 active_count=active_count,
-                by_severity=by_severity,
-                by_protocol=by_protocol,
+                by_severity=_count_by(filtered_dtcs, "severity"),
+                by_protocol=_count_by(filtered_dtcs, "protocol"),
             )
         except Exception as e:
-            logger.error(f"Error getting DTCs: {e}")
-            raise HTTPException(status_code=500, detail=f"Failed to get DTCs: {e!s}")
+            logger.error("Error getting DTCs: %s", e)
+            raise HTTPException(status_code=500, detail=f"Failed to get DTCs: {e!s}") from e
 
     @router.post("/dtcs/resolve")
     async def resolve_dtc(
-        request: Request, body: dict[str, Any], diagnostics_service=Depends(get_diagnostics_service)
+        body: dict[str, Any],
+        diagnostics_handler: DiagnosticsHandlerDependency = None,
     ) -> dict[str, bool]:
         """Resolve a diagnostic trouble code"""
         try:
-            # Check if we have a real diagnostics service
-            if diagnostics_service is None:
-                # Return success when service is not available (mock resolution)
-                return {"resolved": True}
+            if diagnostics_handler is None:
+                return {"resolved": False}
 
             protocol = body.get("protocol")
             code = body.get("code")
             source_address = body.get("source_address", 0)
+            if protocol is None or code is None:
+                return {"resolved": False}
 
-            # Resolve via diagnostics diagnostics_service
-            resolved = False
-            if hasattr(diagnostics_service, "handler") and diagnostics_service.handler:
-                resolved = diagnostics_service.handler.resolve_dtc(protocol, code, source_address)
+            resolved = diagnostics_handler.resolve_dtc(
+                int(code), ProtocolType(str(protocol)), int(source_address)
+            )
 
             return {"resolved": resolved}
         except Exception as e:
-            logger.error(f"Error resolving DTC: {e}")
-            raise HTTPException(status_code=500, detail=f"Failed to resolve DTC: {e!s}")
+            logger.error("Error resolving DTC: %s", e)
+            raise HTTPException(status_code=500, detail=f"Failed to resolve DTC: {e!s}") from e
 
     @router.get("/statistics", response_model=DiagnosticStatisticsResponse)
     async def get_statistics(
-        request: Request, diagnostics_service=Depends(get_diagnostics_service)
+        diagnostics_handler: DiagnosticsHandlerDependency = None,
     ) -> DiagnosticStatisticsResponse:
         """Get diagnostic statistics"""
 
@@ -341,99 +391,54 @@ def create_diagnostics_router() -> APIRouter:
             return "stable"
 
         try:
-            # Check if we have a real diagnostics service
-            if diagnostics_service is None:
-                # Return mock data when service is not available
-                return DiagnosticStatisticsResponse(
-                    metrics=DiagnosticStatisticsMetrics(
-                        total_dtcs=0,
-                        active_dtcs=0,
-                        resolved_dtcs=0,
-                        processing_rate=0.0,
-                        system_health_trend="stable",
-                    ),
-                    correlation=DiagnosticAccuracySummary(accuracy=0.85),
-                    prediction=DiagnosticAccuracySummary(accuracy=0.75),
-                )
+            stats = diagnostics_handler.get_diagnostic_statistics() if diagnostics_handler else {}
+            processing_stats = stats.get("processing_stats", {})
+            active_dtcs = int(stats.get("active_dtcs", 0))
+            resolved_dtcs = int(stats.get("historical_dtcs", 0))
 
-            status = diagnostics_service.get_status()
-            stats = status.get("statistics", {})
-
-            # Return in v2 format expected by frontend
             return DiagnosticStatisticsResponse(
                 metrics=DiagnosticStatisticsMetrics(
-                    total_dtcs=stats.get("total_dtcs", 0),
-                    active_dtcs=stats.get("active_dtcs", 0),
-                    resolved_dtcs=stats.get("resolved_dtcs", 0),
-                    processing_rate=stats.get("processing_rate", 0.0),
+                    total_dtcs=active_dtcs + resolved_dtcs,
+                    active_dtcs=active_dtcs,
+                    resolved_dtcs=resolved_dtcs,
+                    processing_rate=float(processing_stats.get("dtcs_processed", 0)),
                     system_health_trend=normalize_health_trend(
                         stats.get("system_health_trend", "stable")
                     ),
                 ),
-                correlation=DiagnosticAccuracySummary(
-                    accuracy=stats.get("correlation_accuracy", 0.0)
-                ),
-                prediction=DiagnosticAccuracySummary(
-                    accuracy=stats.get("prediction_accuracy", 0.0)
-                ),
+                correlation=DiagnosticAccuracySummary(accuracy=0.0),
+                prediction=DiagnosticAccuracySummary(accuracy=0.0),
             )
         except Exception as e:
-            logger.error(f"Error getting statistics: {e}")
-            raise HTTPException(status_code=500, detail=f"Failed to get statistics: {e!s}")
+            logger.error("Error getting statistics: %s", e)
+            raise HTTPException(status_code=500, detail=f"Failed to get statistics: {e!s}") from e
 
     @router.get("/correlations")
     async def get_correlations(
-        request: Request,
-        time_window_seconds: float | None = Query(
-            60.0, description="Time window for correlation analysis"
-        ),
-        diagnostics_service=Depends(get_diagnostics_service),
+        time_window_seconds: CorrelationWindow = 60.0,
+        diagnostics_handler: DiagnosticsHandlerDependency = None,
     ) -> list[dict[str, Any]]:
         """Get fault correlations"""
         try:
-            # Check if we have a real diagnostics service
-            if diagnostics_service is None:
-                # Return empty correlations when service is not available
+            if diagnostics_handler is None:
                 return []
-
-            # Get correlations from diagnostics diagnostics_service
-            correlations = []
-            if hasattr(diagnostics_service, "handler") and diagnostics_service.handler:
-                raw_correlations = diagnostics_service.handler.get_fault_correlations(
-                    time_window_seconds
-                )
-                correlations = [corr.to_dict() for corr in raw_correlations]
-
-            return correlations
+            raw_correlations = diagnostics_handler.get_fault_correlations(time_window_seconds)
+            return [corr.to_dict() for corr in raw_correlations]
         except Exception as e:
-            logger.error(f"Error getting correlations: {e}")
-            raise HTTPException(status_code=500, detail=f"Failed to get correlations: {e!s}")
+            logger.error("Error getting correlations: %s", e)
+            raise HTTPException(status_code=500, detail=f"Failed to get correlations: {e!s}") from e
 
     @router.get("/predictions")
     async def get_predictions(
-        request: Request,
-        time_horizon_days: int = Query(90, description="Time horizon for predictions in days"),
-        diagnostics_service=Depends(get_diagnostics_service),
+        time_horizon_days: PredictionHorizon = 90,
     ) -> list[dict[str, Any]]:
         """Get maintenance predictions"""
         try:
-            # Check if we have a real diagnostics service
-            if diagnostics_service is None:
-                # Return empty predictions when service is not available
-                return []
-
-            # Get predictions from diagnostics diagnostics_service
-            predictions = []
-            if hasattr(diagnostics_service, "handler") and diagnostics_service.handler:
-                raw_predictions = diagnostics_service.handler.get_maintenance_predictions(
-                    time_horizon_days
-                )
-                predictions = [pred.to_dict() for pred in raw_predictions]
-
-            return predictions
+            _ = time_horizon_days
+            return []
         except Exception as e:
-            logger.error(f"Error getting predictions: {e}")
-            raise HTTPException(status_code=500, detail=f"Failed to get predictions: {e!s}")
+            logger.error("Error getting predictions: %s", e)
+            raise HTTPException(status_code=500, detail=f"Failed to get predictions: {e!s}") from e
 
     return router
 

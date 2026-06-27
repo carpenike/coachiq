@@ -69,6 +69,32 @@ risk; retirement addresses cleanliness.
 
 ## Build Log
 
+### HOF-022 — Real v2 Diagnostics Backend
+
+- [shipped] same commit as this entry · 2026-06-27
+- [component] backend
+
+**What changed.** The dormant advanced diagnostics handler is now available as a
+registered `diagnostic_handler` service and is injected into `CANBusService`.
+The CAN receive path can decode live source-address-specific DM_RV/J1939 DM1
+frames by PGN fallback, ignores the RECON-003 clean heartbeat sentinel
+(`SPN=0x7FFFF`, `FMI=31`, lamps clear, occurrence count `127`), and ingests
+active DM_RV DTCs into the handler keyed by source address, SPN, and FMI. The
+v2 diagnostics `/faults`, `/dtcs`, `/statistics`, and `/system-status` endpoints
+now read registered handler/CAN health data instead of the previous `None`
+service fallback.
+
+**Why.** HOF-022 unblocks the frontend diagnostics rebuild by making the v2
+backend source real first. The nixpi bridge means mirrored `can0`/`can1` DM_RV
+frames are expected, so DTC counting must dedupe by diagnostic identity rather
+than interface.
+
+**Files.** backend/api/domains/diagnostics.py,
+backend/services/can_bus_service.py, backend/core/registrations/phase4.py,
+backend/integrations/diagnostics/feature.py,
+backend/integrations/diagnostics/tests/test_advanced_diagnostics.py,
+tests/api/test_diagnostics_v2_real.py
+
 ### HOF-028 — RV-C Decode Quality Harness
 
 - [shipped] same commit as this entry · 2026-06-27

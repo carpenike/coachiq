@@ -236,14 +236,36 @@ def register(service_registry: SafetyServiceRegistry) -> None:
         health_check=lambda d: {"healthy": d is not None, "monitoring_active": True},
     )
 
+    async def _init_diagnostic_handler():
+        """Initialize the diagnostics DTC handler service."""
+        from backend.core.config import get_settings
+        from backend.integrations.diagnostics.handler import DiagnosticHandler
+
+        handler = DiagnosticHandler(get_settings())
+        await handler.startup()
+        return handler
+
+    service_registry.register_service(
+        name="diagnostic_handler",
+        init_func=_init_diagnostic_handler,
+        dependencies=[],
+        description="Diagnostic trouble-code handler fed by decoded CAN messages",
+        tags={"service", "diagnostics", "dtc", "can"},
+        health_check=lambda h: {"healthy": h is not None},
+    )
+
     # CANBusService - Direct service registration without Feature inheritance
     async def _init_can_bus_service(
-        can_tracking_repository, system_state_repository, can_anomaly_detector=None
+        can_tracking_repository,
+        system_state_repository,
+        can_anomaly_detector=None,
+        diagnostic_handler=None,
     ):
         service = CANBusService(
             can_tracking_repository=can_tracking_repository,
             system_state_repository=system_state_repository,
             can_anomaly_detector=can_anomaly_detector,
+            diagnostic_handler=diagnostic_handler,
         )
         await service.start()
         return service
@@ -259,6 +281,7 @@ def register(service_registry: SafetyServiceRegistry) -> None:
             ServiceDependency(
                 "can_anomaly_detector", DependencyType.OPTIONAL
             ),  # Security monitoring
+            ServiceDependency("diagnostic_handler", DependencyType.OPTIONAL),
         ],
         description="CAN bus integration service for message processing",
         tags={"service", "can", "hardware", "realtime"},
