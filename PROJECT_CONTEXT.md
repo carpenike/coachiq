@@ -108,7 +108,11 @@ One repo, two halves. A single feature commonly spans both.
 - **`.github/`** — `copilot-instructions.md` + the modular
   `.github/instructions/*.instructions.md` set + `.github/prompts/` (audit /
   feature prompts) + CI workflows.
-- **`nix/`, `flake.nix`** — Nix dev shells and the NixOS deployment module.
+- **`nix/`, `flake.nix`** — Nix package/module support. `flake.nix` stays a thin
+  output shell; `nix/package.nix` owns the CoachIQ/backend + frontend package
+  derivations, `nix/module.nix` owns the preserved `coachiq.*` NixOS module, and
+  `nix/test-module.nix` is wired into Linux flake checks for module eval
+  coverage.
 - **`dev_tools/`, `scripts/`** — dev utilities; `scripts/export_openapi.py`
   exports the OpenAPI schema; `scripts/ci-quality-gate.sh` is the CI gate.
 
