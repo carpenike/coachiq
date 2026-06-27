@@ -810,7 +810,13 @@ EOF
               secretKey = lib.mkOption {
                 type = lib.types.nullOr lib.types.str;
                 default = null;
-                description = "Secret key for JWT tokens";
+                description = "Direct security secret key. Prefer secretKeyFile for production to avoid putting secrets in the Nix store or systemd environment.";
+              };
+
+              secretKeyFile = lib.mkOption {
+                type = lib.types.nullOr lib.types.str;
+                default = null;
+                description = "Path to a file containing the security secret key, for example /run/secrets/coachiq-security-secret.";
               };
 
               jwtAlgorithm = lib.mkOption {
@@ -1718,7 +1724,13 @@ EOF
               secretKey = lib.mkOption {
                 type = lib.types.str;
                 default = "";
-                description = "Secret key for JWT tokens";
+                description = "Direct secret key for JWT tokens. Prefer secretKeyFile for production to avoid putting secrets in the Nix store or systemd environment.";
+              };
+
+              secretKeyFile = lib.mkOption {
+                type = lib.types.nullOr lib.types.str;
+                default = null;
+                description = "Path to a file containing the JWT secret key, for example /run/secrets/coachiq-auth-secret.";
               };
 
               jwtAlgorithm = lib.mkOption {
@@ -2563,6 +2575,7 @@ EOF
 
               # Security - only if provided
               COACHIQ_SECURITY__SECRET_KEY = lib.mkIf (config.coachiq.settings.security.secretKey != null) config.coachiq.settings.security.secretKey;
+              COACHIQ_SECURITY__SECRET_KEY_FILE = lib.mkIf (config.coachiq.settings.security.secretKeyFile != null) config.coachiq.settings.security.secretKeyFile;
               COACHIQ_SECURITY__TLS_TERMINATION_IS_EXTERNAL = lib.mkIf config.coachiq.settings.security.tlsTerminationIsExternal "true";
 
               # Logging - only if explicitly set
@@ -2739,6 +2752,7 @@ EOF
               # Authentication settings - only if enabled
               COACHIQ_AUTH__ENABLED = lib.mkIf config.coachiq.settings.authentication.enabled "true";
               COACHIQ_AUTH__SECRET_KEY = lib.mkIf (config.coachiq.settings.authentication.enabled && config.coachiq.settings.authentication.secretKey != "") config.coachiq.settings.authentication.secretKey;
+              COACHIQ_AUTH__SECRET_KEY_FILE = lib.mkIf (config.coachiq.settings.authentication.enabled && config.coachiq.settings.authentication.secretKeyFile != null) config.coachiq.settings.authentication.secretKeyFile;
               COACHIQ_AUTH__JWT_ALGORITHM = lib.mkIf (config.coachiq.settings.authentication.enabled && config.coachiq.settings.authentication.jwtAlgorithm != "HS256") config.coachiq.settings.authentication.jwtAlgorithm;
               COACHIQ_AUTH__JWT_EXPIRE_MINUTES = lib.mkIf (config.coachiq.settings.authentication.enabled && config.coachiq.settings.authentication.jwtExpireMinutes != 30) (toString config.coachiq.settings.authentication.jwtExpireMinutes);
               COACHIQ_AUTH__BASE_URL = lib.mkIf (config.coachiq.settings.authentication.enabled && config.coachiq.settings.authentication.baseUrl != "http://localhost:8000") config.coachiq.settings.authentication.baseUrl;

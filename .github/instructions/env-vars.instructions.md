@@ -36,6 +36,7 @@ applyTo: "**/*.py"
 ## Security Secrets
 
 - In non-development environments, CSRF middleware must fail closed unless `COACHIQ_AUTH__SECRET_KEY` or a real `COACHIQ_SECURITY__SECRET_KEY` is configured. Never add hardcoded production fallbacks for signing secrets; development-only placeholders must stay explicitly labeled and rejected outside development.
+- Production and staging settings must reject missing secrets, `development-only-secret-key-do-not-use-in-production`, and copied example placeholders such as `your-secret-key-change-in-production`. Prefer `COACHIQ_SECURITY__SECRET_KEY_FILE` and `COACHIQ_AUTH__SECRET_KEY_FILE` for deployments so secrets come from `/run/secrets` or systemd credentials rather than Nix config, the Nix store, or a checked-in env file.
 
 ## Misc
 

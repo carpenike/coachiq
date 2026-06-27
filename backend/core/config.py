@@ -29,6 +29,45 @@ from typing import Any
 from pydantic import Field, SecretStr, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+DEVELOPMENT_SECURITY_SECRET = "development-only-secret-key-do-not-use-in-production"  # noqa: S105
+PLACEHOLDER_SECRET_MARKERS = ("do-not-use-in-production", "change-in-production")
+
+
+def get_secret_value(secret: SecretStr | str | None) -> str:
+    """Return a plain secret value for validation without exposing it in reprs."""
+    if secret is None:
+        return ""
+    if isinstance(secret, SecretStr):
+        return secret.get_secret_value()
+    return secret
+
+
+def is_real_secret(secret: SecretStr | str | None) -> bool:
+    """Return true when a configured secret is not empty or a known placeholder."""
+    candidate = get_secret_value(secret).strip()
+    if not candidate:
+        return False
+
+    lowered = candidate.lower()
+    return not any(marker in lowered for marker in PLACEHOLDER_SECRET_MARKERS)
+
+
+def read_secret_file(secret_key_file: Path) -> SecretStr:
+    """Read a file-backed secret and reject empty files."""
+    secret = secret_key_file.read_text(encoding="utf-8").strip()
+    if not secret:
+        msg = f"Secret file is empty: {secret_key_file}"
+        raise ValueError(msg)
+    return SecretStr(secret)
+
+
+def parse_optional_path(value: Any) -> Path | None:
+    """Parse optional path settings, treating blank strings as unset."""
+    if isinstance(value, str):
+        stripped = value.strip()
+        return Path(stripped) if stripped else None
+    return value
+
 
 class ServerSettings(BaseSettings):
     """
@@ -106,6 +145,10 @@ class SecuritySettings(BaseSettings):
         default=None,
         description="Secret key for session management (required in production, set via COACHIQ_SECURITY__SECRET_KEY)",
     )
+    secret_key_file: Path | None = Field(
+        default=None,
+        description="Path to a file containing the security secret key",
+    )
     api_key: SecretStr | None = Field(default=None, description="API key for authentication")
     allowed_ips: list[str] = Field(default=[], description="Allowed IP addresses")
     rate_limit_enabled: bool = Field(default=True, description="Enable rate limiting")
@@ -129,25 +172,20 @@ class SecuritySettings(BaseSettings):
             return [ip.strip() for ip in v.split(",") if ip.strip()]
         return v
 
+    @field_validator("secret_key_file", mode="before")
+    @classmethod
+    def parse_secret_key_file(cls, v):
+        """Parse optional secret key file path from environment variables."""
+        return parse_optional_path(v)
+
     @model_validator(mode="after")
-    def validate_secret_key(self) -> "SecuritySettings":
-        """Ensure secret key is provided in production environments."""
-        # Check if we're in a production-like environment
-        import os
+    def resolve_secret_key(self) -> "SecuritySettings":
+        """Resolve direct or file-backed security secrets."""
+        if not get_secret_value(self.secret_key) and self.secret_key_file:
+            self.secret_key = read_secret_file(self.secret_key_file)
 
-        env = os.environ.get("COACHIQ_ENV", "development").lower()
-
-        if env in ["production", "prod", "staging"] and not self.secret_key:
-            msg = (
-                "Security secret key is required in production environments. "
-                "Please set COACHIQ_SECURITY__SECRET_KEY environment variable with a secure random value. "
-                "Generate one with: openssl rand -hex 32"
-            )
-            raise ValueError(msg)
-
-        # Provide a development default if not in production
-        if not self.secret_key:
-            self.secret_key = SecretStr("development-only-secret-key-do-not-use-in-production")
+        if not get_secret_value(self.secret_key):
+            self.secret_key = SecretStr(DEVELOPMENT_SECURITY_SECRET)
 
         return self
 
@@ -770,6 +808,10 @@ class AuthenticationSettings(BaseSettings):
         default="",
         description="Secret key for JWT tokens - MUST be set via COACHIQ_AUTH__SECRET_KEY env var",
     )
+    secret_key_file: Path | None = Field(
+        default=None,
+        description="Path to a file containing the JWT secret key",
+    )
     jwt_algorithm: str = Field(default="HS256", description="JWT algorithm")
     jwt_expire_minutes: int = Field(
         default=15, description="JWT access token expiration in minutes"
@@ -862,6 +904,9 @@ class AuthenticationSettings(BaseSettings):
     @model_validator(mode="after")
     def validate_jwt_secret(self) -> "AuthenticationSettings":
         """Ensure JWT secret is provided when authentication is enabled."""
+        if not self.secret_key and self.secret_key_file:
+            self.secret_key = read_secret_file(self.secret_key_file).get_secret_value()
+
         if self.enabled and not self.secret_key:
             msg = (
                 "JWT secret key is required when authentication is enabled. "
@@ -875,6 +920,12 @@ class AuthenticationSettings(BaseSettings):
             self.refresh_token_secret = self.secret_key
 
         return self
+
+    @field_validator("secret_key_file", mode="before")
+    @classmethod
+    def parse_secret_key_file(cls, v):
+        """Parse optional JWT secret key file path from environment variables."""
+        return parse_optional_path(v)
 
     require_mfa_for_admin: bool = Field(default=False, description="Require MFA for admin users")
     allow_mfa_bypass: bool = Field(default=True, description="Allow MFA bypass during grace period")
@@ -1708,6 +1759,22 @@ class Settings(BaseSettings):
         if isinstance(v, str) and v.strip():
             return Path(v.strip())
         return v
+
+    @model_validator(mode="after")
+    def validate_non_development_security_secret(self) -> "Settings":
+        """Require a real security secret outside development and testing."""
+        if self.is_development() or self.is_testing():
+            return self
+
+        if not is_real_secret(self.security.secret_key):
+            msg = (
+                "Security secret key is required in production and staging environments. "
+                "Set COACHIQ_SECURITY__SECRET_KEY or COACHIQ_SECURITY__SECRET_KEY_FILE "
+                "to a secure random value. Generate one with: openssl rand -hex 32"
+            )
+            raise ValueError(msg)
+
+        return self
 
     def get_config_dict(self, hide_secrets: bool = True) -> dict[str, Any]:
         """
