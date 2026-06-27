@@ -83,7 +83,7 @@ export type NetworkStatusSchema = GeneratedSchemas["NetworkStatus"];
 export type NetworkSummarySchema = GeneratedSchemas["NetworkSummary"];
 
 /** System health status schema from the OpenAPI contract */
-export type SystemStatusSchema = GeneratedSchemas["SystemStatus"];
+export type SystemStatusSchema = GeneratedSchemas["backend__api__domains__diagnostics__SystemStatus"];
 
 /** PIN system status response schema from the OpenAPI contract */
 export type SystemStatusResponseSchema = GeneratedSchemas["SystemStatusResponse"];

@@ -16,12 +16,13 @@ import platform
 import time
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any
+from typing import Annotated, Any
 
-from fastapi import APIRouter, HTTPException, Request
+from fastapi import APIRouter, HTTPException, Query, Request
 from pydantic import BaseModel, Field
 
 from backend.api.domains import register_domain_router
+from backend.schemas.domain_api import IETFHealthStatusResponse, SystemHealthResponse
 
 logger = logging.getLogger(__name__)
 
@@ -141,21 +142,21 @@ def create_system_router() -> APIRouter:
     """Create the system domain router with all endpoints"""
     router = APIRouter(tags=["system-v2"])
 
-    @router.get("/health")
-    async def health_check(request: Request) -> dict[str, Any]:
+    @router.get("/health", response_model=SystemHealthResponse)
+    async def health_check() -> SystemHealthResponse:
         """Health check endpoint for system domain API"""
 
-        return {
-            "status": "healthy",
-            "domain": "system",
-            "version": "v2",
-            "features": {
+        return SystemHealthResponse(
+            status="healthy",
+            domain="system",
+            version="v2",
+            features={
                 "system_monitoring": True,
                 "service_management": True,
                 "configuration_api": True,
             },
-            "timestamp": "2025-01-11T00:00:00Z",
-        }
+            timestamp="2025-01-11T00:00:00Z",
+        )
 
     @router.get("/schemas")
     async def get_schemas(request: Request) -> dict[str, Any]:
@@ -192,8 +193,10 @@ def create_system_router() -> APIRouter:
             logger.error(f"Error getting system info: {e}")
             raise HTTPException(status_code=500, detail=f"Failed to get system info: {e!s}")
 
-    @router.get("/status")
-    async def get_system_status(request: Request, format: str = "default") -> dict[str, Any]:
+    @router.get("/status", response_model=SystemStatus | IETFHealthStatusResponse)
+    async def get_system_status(
+        response_format: Annotated[str, Query(alias="format")] = "default",
+    ) -> SystemStatus | IETFHealthStatusResponse:
         """Get overall system status with enhanced metadata
 
         Supports multiple formats:
@@ -232,24 +235,18 @@ def create_system_router() -> APIRouter:
             description = "All services operational"
 
             # Return format based on request
-            if format.lower() == "ietf":
+            if response_format.lower() == "ietf":
                 # IETF health+json format
-                return {
-                    "status": ietf_status,
-                    "version": "1",  # Health check format version
-                    "releaseId": version,
-                    "serviceId": "coachiq-system",
-                    "description": description,
-                    "timestamp": datetime.now(UTC).isoformat(),
-                    "service": {
-                        "name": service_metadata.name,
-                        "version": service_metadata.version,
-                        "environment": service_metadata.environment,
-                        "hostname": service_metadata.hostname,
-                        "platform": service_metadata.platform,
-                    },
-                    "response_time_ms": response_time_ms,
-                }
+                return IETFHealthStatusResponse(
+                    status=ietf_status,
+                    version="1",
+                    release_id=version,
+                    service_id="coachiq-system",
+                    description=description,
+                    timestamp=datetime.now(UTC).isoformat(),
+                    service=service_metadata.model_dump(),
+                    response_time_ms=response_time_ms,
+                )
 
             # Default SystemStatus format
             return SystemStatus(
@@ -261,7 +258,7 @@ def create_system_router() -> APIRouter:
                 response_time_ms=response_time_ms,
                 service=service_metadata,
                 description=description,
-            ).model_dump()
+            )
 
         except Exception as e:
             logger.error(f"Error getting system status: {e}")

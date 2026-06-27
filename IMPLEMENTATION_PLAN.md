@@ -34,6 +34,33 @@ coordinate, see the `handoff/README` note in the `coachiq` basic-memory project.
 
 ## Build Log
 
+### HOF-021 — Typed v2 Response Models For Generated Frontend Contracts
+- [shipped] same commit as this entry · 2026-06-27
+- [component] both
+- [adr] docs/adr/ADR-0003-api-v2-only-no-legacy.md
+
+**What changed.** The remaining loose top-level response schemas identified by
+HOF-014 now have concrete v2 response models: entity control and bulk-control
+reuse the existing service-layer safety result models, diagnostics health/DTC
+collection/statistics use typed Pydantic envelopes with documented dynamic DTC
+item details, system health is typed, and system status documents both default
+and IETF health+json response shapes. OpenAPI artifacts and generated frontend
+types were regenerated, with contract tests covering component refs, the system
+status `anyOf`, and representative sample responses.
+
+**Why.** HOF-021 closes the root OpenAPI weakness behind the HOF-014 manual
+type remainder without changing endpoint semantics or adding legacy routes.
+The diagnostics v2 health endpoint remains a service-health contract, not a
+replacement for legacy `/api/diagnostics/health`; retiring that legacy route
+still requires a separate v2 home for `SystemHealthResponse` or frontend
+migration.
+
+**Files.** backend/api/domains/entities.py,
+backend/api/domains/diagnostics.py, backend/api/domains/system.py,
+backend/schemas/domain_api.py, docs/api/openapi.json, docs/api/openapi.yaml,
+frontend/src/api/generated/openapi-types.ts,
+frontend/src/api/types/domains.ts, tests/api/test_domain_response_models.py
+
 ### HOF-016 — ADR-0003 Legacy Router Retirement Inventory
 - [shipped] same commit as this entry · 2026-06-27
 - [component] backend

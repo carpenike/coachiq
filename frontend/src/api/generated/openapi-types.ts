@@ -7731,6 +7731,57 @@ export interface components {
             error?: string | null;
         };
         /**
+         * BulkSafetyOperationResultV2
+         * @description Bulk operation result with safety tracking
+         */
+        BulkSafetyOperationResultV2: {
+            /**
+             * Operation Id
+             * @description Unique bulk operation identifier
+             */
+            operation_id: string;
+            /**
+             * Total Count
+             * @description Total number of operations attempted
+             */
+            total_count: number;
+            /**
+             * Success Count
+             * @description Number of successful operations
+             */
+            success_count: number;
+            /**
+             * Failed Count
+             * @description Number of failed operations
+             */
+            failed_count: number;
+            /**
+             * Timeout Count
+             * @description Number of timed out operations
+             */
+            timeout_count: number;
+            /**
+             * Safety Abort Count
+             * @description Number of operations aborted for safety
+             */
+            safety_abort_count: number;
+            /**
+             * Results
+             * @description Per-entity operation results
+             */
+            results: components["schemas"]["SafetyOperationResultV2"][];
+            /**
+             * Total Execution Time Ms
+             * @description Total execution time
+             */
+            total_execution_time_ms: number;
+            /**
+             * Safety Summary
+             * @description Safety operation summary
+             */
+            safety_summary?: Record<string, unknown>;
+        };
+        /**
          * CANBusSummary
          * @description CAN bus status summary.
          */
@@ -8284,6 +8335,141 @@ export interface components {
             configuration?: Record<string, unknown>;
         };
         /**
+         * DiagnosticAccuracySummary
+         * @description Accuracy summary for diagnostics analysis features.
+         */
+        DiagnosticAccuracySummary: {
+            /**
+             * Accuracy
+             * @description Accuracy score
+             */
+            accuracy: number;
+        };
+        /**
+         * DiagnosticStatisticsMetrics
+         * @description Core diagnostic processing metrics.
+         */
+        DiagnosticStatisticsMetrics: {
+            /**
+             * Total Dtcs
+             * @description Total DTCs observed
+             */
+            total_dtcs: number;
+            /**
+             * Active Dtcs
+             * @description Currently active DTCs
+             */
+            active_dtcs: number;
+            /**
+             * Resolved Dtcs
+             * @description Resolved DTCs
+             */
+            resolved_dtcs: number;
+            /**
+             * Processing Rate
+             * @description Diagnostic processing rate
+             */
+            processing_rate: number;
+            /**
+             * System Health Trend
+             * @description System health trend
+             * @enum {string}
+             */
+            system_health_trend: "improving" | "stable" | "degrading";
+        };
+        /**
+         * DiagnosticStatisticsResponse
+         * @description Diagnostic statistics response grouped by metrics and model quality.
+         */
+        DiagnosticStatisticsResponse: {
+            /** @description Diagnostic metrics */
+            metrics: components["schemas"]["DiagnosticStatisticsMetrics"];
+            /** @description Correlation accuracy */
+            correlation: components["schemas"]["DiagnosticAccuracySummary"];
+            /** @description Prediction accuracy */
+            prediction: components["schemas"]["DiagnosticAccuracySummary"];
+        };
+        /**
+         * DiagnosticTroubleCodeCollection
+         * @description Diagnostic trouble-code collection with dynamic item details.
+         */
+        DiagnosticTroubleCodeCollection: {
+            /**
+             * Dtcs
+             * @description DTC detail objects from the diagnostics handler; keys vary by protocol
+             */
+            dtcs?: Record<string, unknown>[];
+            /**
+             * Total Count
+             * @description Total DTC count after filters
+             */
+            total_count: number;
+            /**
+             * Active Count
+             * @description Unresolved active DTC count after filters
+             */
+            active_count: number;
+            /**
+             * By Severity
+             * @description Counts by severity
+             */
+            by_severity?: Record<string, number>;
+            /**
+             * By Protocol
+             * @description Counts by protocol
+             */
+            by_protocol?: Record<string, number>;
+        };
+        /**
+         * DiagnosticsHealthResponse
+         * @description Service-health response for the diagnostics v2 domain.
+         */
+        DiagnosticsHealthResponse: {
+            /**
+             * Status
+             * @description Diagnostics domain health status
+             */
+            status: string;
+            /**
+             * Domain
+             * @description Domain name
+             */
+            domain: string;
+            /**
+             * Version
+             * @description Domain API version
+             */
+            version: string;
+            /** @description Diagnostics feature availability */
+            diagnostics_services: components["schemas"]["DiagnosticsServiceFeatures"];
+            /**
+             * Timestamp
+             * @description Health timestamp
+             */
+            timestamp: string;
+        };
+        /**
+         * DiagnosticsServiceFeatures
+         * @description Feature flags reported by the diagnostics service-health endpoint.
+         */
+        DiagnosticsServiceFeatures: {
+            /**
+             * Real Time Monitoring
+             * @description Real-time diagnostics enabled
+             */
+            real_time_monitoring: boolean;
+            /**
+             * Predictive Alerts
+             * @description Predictive diagnostics alerts enabled
+             */
+            predictive_alerts: boolean;
+            /**
+             * Cross Protocol Analysis
+             * @description Cross-protocol analysis enabled
+             */
+            cross_protocol_analysis: boolean;
+        };
+        /**
          * DiscoverDevicesRequest
          * @description Request model for device discovery.
          */
@@ -8764,11 +8950,85 @@ export interface components {
             detail?: components["schemas"]["ValidationError"][];
         };
         /**
+         * HealthServiceMetadata
+         * @description Service metadata used by system status responses.
+         */
+        HealthServiceMetadata: {
+            /**
+             * Name
+             * @description Service name
+             */
+            name: string;
+            /**
+             * Version
+             * @description Service version
+             */
+            version: string;
+            /**
+             * Environment
+             * @description Runtime environment
+             */
+            environment: string;
+            /**
+             * Hostname
+             * @description System hostname
+             */
+            hostname: string;
+            /**
+             * Platform
+             * @description Operating system platform
+             */
+            platform: string;
+        };
+        /**
          * HealthStatus
          * @description Overall health status following IETF health+json standard.
          * @enum {string}
          */
         HealthStatus: "pass" | "warn" | "fail";
+        /**
+         * IETFHealthStatusResponse
+         * @description IETF health+json response emitted by system status with format=ietf.
+         */
+        IETFHealthStatusResponse: {
+            /**
+             * Status
+             * @description IETF health status: pass/warn/fail
+             */
+            status: string;
+            /**
+             * Version
+             * @description Health check format version
+             */
+            version: string;
+            /**
+             * Releaseid
+             * @description Application release identifier
+             */
+            releaseId: string;
+            /**
+             * Serviceid
+             * @description Service identifier
+             */
+            serviceId: string;
+            /**
+             * Description
+             * @description Human-readable health description
+             */
+            description: string;
+            /**
+             * Timestamp
+             * @description Health timestamp
+             */
+            timestamp: string;
+            /** @description Service metadata */
+            service: components["schemas"]["HealthServiceMetadata"];
+            /**
+             * Response Time Ms
+             * @description Response time in milliseconds
+             */
+            response_time_ms: number;
+        };
         /**
          * InjectionMode
          * @description Message injection modes.
@@ -10508,6 +10768,58 @@ export interface components {
          */
         SafetyLevel: "strict" | "moderate" | "permissive";
         /**
+         * SafetyOperationResultV2
+         * @description Safety-critical operation result with acknowledgment tracking
+         */
+        SafetyOperationResultV2: {
+            /**
+             * Operation Id
+             * @description Unique operation identifier
+             */
+            operation_id: string;
+            /**
+             * Entity Id
+             * @description Entity ID that was operated on
+             */
+            entity_id: string;
+            /**
+             * Status
+             * @description Operation status: success, failed, timeout, unauthorized, safety_abort
+             */
+            status: string;
+            /**
+             * Acknowledged
+             * @description Whether operation was acknowledged by physical system
+             * @default false
+             */
+            acknowledged?: boolean;
+            /**
+             * Acknowledgment Time Ms
+             * @description Time to receive acknowledgment
+             */
+            acknowledgment_time_ms?: number | null;
+            /**
+             * Error Message
+             * @description Error details if failed
+             */
+            error_message?: string | null;
+            /**
+             * Error Code
+             * @description Machine-readable error code
+             */
+            error_code?: string | null;
+            /**
+             * Execution Time Ms
+             * @description Operation execution time
+             */
+            execution_time_ms?: number | null;
+            /**
+             * Safety Validation
+             * @description Safety validation results
+             */
+            safety_validation?: Record<string, unknown>;
+        };
+        /**
          * SafetyReportResponse
          * @description Safety validation report.
          */
@@ -10685,6 +10997,37 @@ export interface components {
             last_check?: string | null;
             /** Metadata */
             metadata?: Record<string, unknown> | null;
+        };
+        /**
+         * ServiceMetadata
+         * @description Service metadata information
+         */
+        ServiceMetadata: {
+            /**
+             * Name
+             * @description Service name
+             */
+            name: string;
+            /**
+             * Version
+             * @description Service version
+             */
+            version: string;
+            /**
+             * Environment
+             * @description Environment (development, staging, production)
+             */
+            environment: string;
+            /**
+             * Hostname
+             * @description System hostname
+             */
+            hostname: string;
+            /**
+             * Platform
+             * @description Operating system platform
+             */
+            platform: string;
         };
         /**
          * ServiceStatus
@@ -10900,6 +11243,27 @@ export interface components {
             recommendations: string[];
         };
         /**
+         * SystemDomainFeatures
+         * @description Feature flags reported by the system service-health endpoint.
+         */
+        SystemDomainFeatures: {
+            /**
+             * System Monitoring
+             * @description System monitoring enabled
+             */
+            system_monitoring: boolean;
+            /**
+             * Service Management
+             * @description Service management enabled
+             */
+            service_management: boolean;
+            /**
+             * Configuration Api
+             * @description Configuration API enabled
+             */
+            configuration_api: boolean;
+        };
+        /**
          * SystemInfo
          * @description System information
          */
@@ -10970,37 +11334,6 @@ export interface components {
              * @description All slides retracted status
              */
             all_slides_retracted?: boolean | null;
-        };
-        /**
-         * SystemStatus
-         * @description Overall system health status
-         */
-        SystemStatus: {
-            /**
-             * Overall Health
-             * @description Overall system health: excellent/good/fair/poor/critical
-             */
-            overall_health: string;
-            /**
-             * Health Score
-             * @description Health score 0-100
-             */
-            health_score: number;
-            /**
-             * Active Systems
-             * @description List of active systems
-             */
-            active_systems: string[];
-            /**
-             * Degraded Systems
-             * @description Systems with issues
-             */
-            degraded_systems: string[];
-            /**
-             * Last Assessment
-             * @description Last health assessment timestamp
-             */
-            last_assessment: number;
         };
         /**
          * SystemStatusResponse
@@ -11266,6 +11599,37 @@ export interface components {
             timestamp: number;
         };
         /**
+         * SystemStatus
+         * @description Overall system health status
+         */
+        backend__api__domains__diagnostics__SystemStatus: {
+            /**
+             * Overall Health
+             * @description Overall system health: excellent/good/fair/poor/critical
+             */
+            overall_health: string;
+            /**
+             * Health Score
+             * @description Health score 0-100
+             */
+            health_score: number;
+            /**
+             * Active Systems
+             * @description List of active systems
+             */
+            active_systems: string[];
+            /**
+             * Degraded Systems
+             * @description Systems with issues
+             */
+            degraded_systems: string[];
+            /**
+             * Last Assessment
+             * @description Last health assessment timestamp
+             */
+            last_assessment: number;
+        };
+        /**
          * ServiceStatus
          * @description Service status information
          */
@@ -11290,6 +11654,49 @@ export interface components {
              * @description Last health check timestamp
              */
             last_check: number;
+        };
+        /**
+         * SystemStatus
+         * @description Overall system status with enhanced metadata
+         */
+        backend__api__domains__system__SystemStatus: {
+            /**
+             * Overall Status
+             * @description Overall system status
+             */
+            overall_status: string;
+            /**
+             * Services
+             * @description Individual service statuses
+             */
+            services: components["schemas"]["backend__api__domains__system__ServiceStatus"][];
+            /**
+             * Total Services
+             * @description Total number of services
+             */
+            total_services: number;
+            /**
+             * Healthy Services
+             * @description Number of healthy services
+             */
+            healthy_services: number;
+            /**
+             * Timestamp
+             * @description Status timestamp
+             */
+            timestamp: number;
+            /**
+             * Response Time Ms
+             * @description Response time in milliseconds
+             */
+            response_time_ms?: number | null;
+            /** @description Service metadata */
+            service?: components["schemas"]["ServiceMetadata"] | null;
+            /**
+             * Description
+             * @description Human-readable status description
+             */
+            description?: string | null;
         };
         /**
          * SystemHealthResponse
@@ -11485,6 +11892,34 @@ export interface components {
              * @description Active WebSocket connections
              */
             websocket_connections: number;
+        };
+        /**
+         * SystemHealthResponse
+         * @description Service-health response for the system v2 domain.
+         */
+        backend__schemas__domain_api__SystemHealthResponse: {
+            /**
+             * Status
+             * @description System domain health status
+             */
+            status: string;
+            /**
+             * Domain
+             * @description Domain name
+             */
+            domain: string;
+            /**
+             * Version
+             * @description Domain API version
+             */
+            version: string;
+            /** @description System feature availability */
+            features: components["schemas"]["SystemDomainFeatures"];
+            /**
+             * Timestamp
+             * @description Health timestamp
+             */
+            timestamp: string;
         };
     };
     responses: never;
@@ -17935,7 +18370,7 @@ export interface operations {
             200: {
                 headers: Record<string, unknown>;
                 content: {
-                    "application/json": Record<string, unknown>;
+                    "application/json": components["schemas"]["DiagnosticsHealthResponse"];
                 };
             };
         };
@@ -18019,7 +18454,7 @@ export interface operations {
             200: {
                 headers: Record<string, unknown>;
                 content: {
-                    "application/json": components["schemas"]["SystemStatus"];
+                    "application/json": components["schemas"]["backend__api__domains__diagnostics__SystemStatus"];
                 };
             };
         };
@@ -18044,7 +18479,7 @@ export interface operations {
             200: {
                 headers: Record<string, unknown>;
                 content: {
-                    "application/json": Record<string, unknown>;
+                    "application/json": components["schemas"]["DiagnosticTroubleCodeCollection"];
                 };
             };
             /** @description Validation Error */
@@ -18098,7 +18533,7 @@ export interface operations {
             200: {
                 headers: Record<string, unknown>;
                 content: {
-                    "application/json": Record<string, unknown>;
+                    "application/json": components["schemas"]["DiagnosticStatisticsResponse"];
                 };
             };
         };
@@ -18436,7 +18871,7 @@ export interface operations {
             200: {
                 headers: Record<string, unknown>;
                 content: {
-                    "application/json": Record<string, unknown>;
+                    "application/json": components["schemas"]["SafetyOperationResultV2"];
                 };
             };
             /** @description Validation Error */
@@ -18467,7 +18902,7 @@ export interface operations {
             200: {
                 headers: Record<string, unknown>;
                 content: {
-                    "application/json": Record<string, unknown>;
+                    "application/json": components["schemas"]["BulkSafetyOperationResultV2"];
                 };
             };
             /** @description Validation Error */
@@ -18686,7 +19121,7 @@ export interface operations {
             200: {
                 headers: Record<string, unknown>;
                 content: {
-                    "application/json": Record<string, unknown>;
+                    "application/json": components["schemas"]["backend__schemas__domain_api__SystemHealthResponse"];
                 };
             };
         };
@@ -18742,7 +19177,7 @@ export interface operations {
             200: {
                 headers: Record<string, unknown>;
                 content: {
-                    "application/json": Record<string, unknown>;
+                    "application/json": components["schemas"]["backend__api__domains__system__SystemStatus"] | components["schemas"]["IETFHealthStatusResponse"];
                 };
             };
             /** @description Validation Error */

@@ -29,6 +29,12 @@ from backend.core.dependencies import (
     get_authenticated_user,
     get_entity_service,
 )
+from backend.services.entity_domain_service import (
+    BulkSafetyOperationRequestV2,
+    BulkSafetyOperationResultV2,
+    SafetyControlCommandV2,
+    SafetyOperationResultV2,
+)
 
 # Create missing dependencies
 get_entity_domain_service = create_service_dependency("entity_domain_service")
@@ -514,20 +520,17 @@ def create_entities_router() -> APIRouter:
             logger.error(f"Failed to get entity {entity_id}: {e}")
             raise HTTPException(status_code=500, detail=f"Failed to retrieve entity: {e!s}")
 
-    @router.post("/{entity_id}/control", response_model=dict)
+    @router.post("/{entity_id}/control", response_model=SafetyOperationResultV2)
     async def control_entity(
         request: Request,
         entity_id: str,
         command: ControlCommandV2,
         domain_service: Annotated[Any, Depends(get_entity_domain_service)],
         user: dict = Depends(get_authenticated_user),
-    ) -> dict:
+    ) -> SafetyOperationResultV2:
         """Control a single entity with safety validation (v2) - Pi optimized"""
         try:
             # For Pi deployment, always use the safe domain service
-            # Import safety models
-            from backend.services.entity_domain_service import SafetyControlCommandV2
-
             # Convert to safety command with reasonable Pi defaults
             safety_command = SafetyControlCommandV2(
                 command=command.command,
@@ -540,30 +543,24 @@ def create_entities_router() -> APIRouter:
 
             # Execute safety-critical control with the authenticated user
             # context so the service layer can audit + enforce RBAC.
-            result = await domain_service.control_entity_safe(
+            return await domain_service.control_entity_safe(
                 entity_id, safety_command, user_context=user
             )
-            return result.dict()
 
         except Exception as e:
             logger.error(f"Entity control failed: {e}")
             raise HTTPException(status_code=500, detail=f"Control failed: {e!s}")
 
-    @router.post("/bulk-control", response_model=dict)
+    @router.post("/bulk-control", response_model=BulkSafetyOperationResultV2)
     async def bulk_control_entities(
         request: Request,
         bulk_request: BulkControlRequestV2,
         domain_service: Annotated[Any, Depends(get_entity_domain_service)],
         user: dict = Depends(get_authenticated_user),
-    ) -> dict:
+    ) -> BulkSafetyOperationResultV2:
         """Execute bulk control operations with safety validation (v2) - Pi optimized"""
         try:
             # For Pi deployment, always use the safe domain service
-            from backend.services.entity_domain_service import (
-                BulkSafetyOperationRequestV2,
-                SafetyControlCommandV2,
-            )
-
             # Convert to safety bulk request with Pi defaults
             safety_command = SafetyControlCommandV2(
                 command=bulk_request.command.command,
@@ -584,10 +581,9 @@ def create_entities_router() -> APIRouter:
 
             # Execute safety-critical bulk control with the authenticated
             # user context so the service layer can audit + enforce RBAC.
-            result = await domain_service.bulk_control_entities_safe(
+            return await domain_service.bulk_control_entities_safe(
                 safety_bulk_request, user_context=user
             )
-            return result.dict()
 
         except Exception as e:
             logger.error(f"Bulk operation failed: {e}")

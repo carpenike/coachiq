@@ -11099,9 +11099,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "additionalProperties": true,
-                  "type": "object",
-                  "title": "Response Health Check Api V2 Diagnostics Health Get"
+                  "$ref": "#/components/schemas/DiagnosticsHealthResponse"
                 }
               }
             }
@@ -11239,7 +11237,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/SystemStatus"
+                  "$ref": "#/components/schemas/backend__api__domains__diagnostics__SystemStatus"
                 }
               }
             }
@@ -11317,9 +11315,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object",
-                  "additionalProperties": true,
-                  "title": "Response Get Dtcs Api V2 Diagnostics Dtcs Get"
+                  "$ref": "#/components/schemas/DiagnosticTroubleCodeCollection"
                 }
               }
             }
@@ -11399,9 +11395,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "additionalProperties": true,
-                  "type": "object",
-                  "title": "Response Get Statistics Api V2 Diagnostics Statistics Get"
+                  "$ref": "#/components/schemas/DiagnosticStatisticsResponse"
                 }
               }
             }
@@ -12007,9 +12001,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object",
-                  "additionalProperties": true,
-                  "title": "Response Control Entity Api V2 Entities  Entity Id  Control Post"
+                  "$ref": "#/components/schemas/SafetyOperationResultV2"
                 }
               }
             }
@@ -12069,9 +12061,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object",
-                  "additionalProperties": true,
-                  "title": "Response Bulk Control Entities Api V2 Entities Bulk Control Post"
+                  "$ref": "#/components/schemas/BulkSafetyOperationResultV2"
                 }
               }
             }
@@ -12424,9 +12414,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "additionalProperties": true,
-                  "type": "object",
-                  "title": "Response Health Check Api V2 System Health Get"
+                  "$ref": "#/components/schemas/backend__schemas__domain_api__SystemHealthResponse"
                 }
               }
             }
@@ -12506,8 +12494,14 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object",
-                  "additionalProperties": true,
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/backend__api__domains__system__SystemStatus"
+                    },
+                    {
+                      "$ref": "#/components/schemas/IETFHealthStatusResponse"
+                    }
+                  ],
                   "title": "Response Get System Status Api V2 System Status Get"
                 }
               }
@@ -14109,6 +14103,72 @@
         "title": "BulkControlResult",
         "description": "Result of a bulk control operation."
       },
+      "BulkSafetyOperationResultV2": {
+        "properties": {
+          "operation_id": {
+            "type": "string",
+            "title": "Operation Id",
+            "description": "Unique bulk operation identifier"
+          },
+          "total_count": {
+            "type": "integer",
+            "title": "Total Count",
+            "description": "Total number of operations attempted"
+          },
+          "success_count": {
+            "type": "integer",
+            "title": "Success Count",
+            "description": "Number of successful operations"
+          },
+          "failed_count": {
+            "type": "integer",
+            "title": "Failed Count",
+            "description": "Number of failed operations"
+          },
+          "timeout_count": {
+            "type": "integer",
+            "title": "Timeout Count",
+            "description": "Number of timed out operations"
+          },
+          "safety_abort_count": {
+            "type": "integer",
+            "title": "Safety Abort Count",
+            "description": "Number of operations aborted for safety"
+          },
+          "results": {
+            "items": {
+              "$ref": "#/components/schemas/SafetyOperationResultV2"
+            },
+            "type": "array",
+            "title": "Results",
+            "description": "Per-entity operation results"
+          },
+          "total_execution_time_ms": {
+            "type": "number",
+            "title": "Total Execution Time Ms",
+            "description": "Total execution time"
+          },
+          "safety_summary": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Safety Summary",
+            "description": "Safety operation summary"
+          }
+        },
+        "type": "object",
+        "required": [
+          "operation_id",
+          "total_count",
+          "success_count",
+          "failed_count",
+          "timeout_count",
+          "safety_abort_count",
+          "results",
+          "total_execution_time_ms"
+        ],
+        "title": "BulkSafetyOperationResultV2",
+        "description": "Bulk operation result with safety tracking"
+      },
       "CANBusSummary": {
         "properties": {
           "interfaces_count": {
@@ -15382,6 +15442,200 @@
         "title": "DeviceSetupRequest",
         "description": "Request model for device setup wizard."
       },
+      "DiagnosticAccuracySummary": {
+        "properties": {
+          "accuracy": {
+            "type": "number",
+            "title": "Accuracy",
+            "description": "Accuracy score"
+          }
+        },
+        "type": "object",
+        "required": [
+          "accuracy"
+        ],
+        "title": "DiagnosticAccuracySummary",
+        "description": "Accuracy summary for diagnostics analysis features."
+      },
+      "DiagnosticStatisticsMetrics": {
+        "properties": {
+          "total_dtcs": {
+            "type": "integer",
+            "title": "Total Dtcs",
+            "description": "Total DTCs observed"
+          },
+          "active_dtcs": {
+            "type": "integer",
+            "title": "Active Dtcs",
+            "description": "Currently active DTCs"
+          },
+          "resolved_dtcs": {
+            "type": "integer",
+            "title": "Resolved Dtcs",
+            "description": "Resolved DTCs"
+          },
+          "processing_rate": {
+            "type": "number",
+            "title": "Processing Rate",
+            "description": "Diagnostic processing rate"
+          },
+          "system_health_trend": {
+            "type": "string",
+            "enum": [
+              "improving",
+              "stable",
+              "degrading"
+            ],
+            "title": "System Health Trend",
+            "description": "System health trend"
+          }
+        },
+        "type": "object",
+        "required": [
+          "total_dtcs",
+          "active_dtcs",
+          "resolved_dtcs",
+          "processing_rate",
+          "system_health_trend"
+        ],
+        "title": "DiagnosticStatisticsMetrics",
+        "description": "Core diagnostic processing metrics."
+      },
+      "DiagnosticStatisticsResponse": {
+        "properties": {
+          "metrics": {
+            "$ref": "#/components/schemas/DiagnosticStatisticsMetrics",
+            "description": "Diagnostic metrics"
+          },
+          "correlation": {
+            "$ref": "#/components/schemas/DiagnosticAccuracySummary",
+            "description": "Correlation accuracy"
+          },
+          "prediction": {
+            "$ref": "#/components/schemas/DiagnosticAccuracySummary",
+            "description": "Prediction accuracy"
+          }
+        },
+        "type": "object",
+        "required": [
+          "metrics",
+          "correlation",
+          "prediction"
+        ],
+        "title": "DiagnosticStatisticsResponse",
+        "description": "Diagnostic statistics response grouped by metrics and model quality."
+      },
+      "DiagnosticTroubleCodeCollection": {
+        "properties": {
+          "dtcs": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "type": "array",
+            "title": "Dtcs",
+            "description": "DTC detail objects from the diagnostics handler; keys vary by protocol"
+          },
+          "total_count": {
+            "type": "integer",
+            "title": "Total Count",
+            "description": "Total DTC count after filters"
+          },
+          "active_count": {
+            "type": "integer",
+            "title": "Active Count",
+            "description": "Unresolved active DTC count after filters"
+          },
+          "by_severity": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "type": "object",
+            "title": "By Severity",
+            "description": "Counts by severity"
+          },
+          "by_protocol": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "type": "object",
+            "title": "By Protocol",
+            "description": "Counts by protocol"
+          }
+        },
+        "type": "object",
+        "required": [
+          "total_count",
+          "active_count"
+        ],
+        "title": "DiagnosticTroubleCodeCollection",
+        "description": "Diagnostic trouble-code collection with dynamic item details."
+      },
+      "DiagnosticsHealthResponse": {
+        "properties": {
+          "status": {
+            "type": "string",
+            "title": "Status",
+            "description": "Diagnostics domain health status"
+          },
+          "domain": {
+            "type": "string",
+            "title": "Domain",
+            "description": "Domain name"
+          },
+          "version": {
+            "type": "string",
+            "title": "Version",
+            "description": "Domain API version"
+          },
+          "diagnostics_services": {
+            "$ref": "#/components/schemas/DiagnosticsServiceFeatures",
+            "description": "Diagnostics feature availability"
+          },
+          "timestamp": {
+            "type": "string",
+            "title": "Timestamp",
+            "description": "Health timestamp"
+          }
+        },
+        "type": "object",
+        "required": [
+          "status",
+          "domain",
+          "version",
+          "diagnostics_services",
+          "timestamp"
+        ],
+        "title": "DiagnosticsHealthResponse",
+        "description": "Service-health response for the diagnostics v2 domain."
+      },
+      "DiagnosticsServiceFeatures": {
+        "properties": {
+          "real_time_monitoring": {
+            "type": "boolean",
+            "title": "Real Time Monitoring",
+            "description": "Real-time diagnostics enabled"
+          },
+          "predictive_alerts": {
+            "type": "boolean",
+            "title": "Predictive Alerts",
+            "description": "Predictive diagnostics alerts enabled"
+          },
+          "cross_protocol_analysis": {
+            "type": "boolean",
+            "title": "Cross Protocol Analysis",
+            "description": "Cross-protocol analysis enabled"
+          }
+        },
+        "type": "object",
+        "required": [
+          "real_time_monitoring",
+          "predictive_alerts",
+          "cross_protocol_analysis"
+        ],
+        "title": "DiagnosticsServiceFeatures",
+        "description": "Feature flags reported by the diagnostics service-health endpoint."
+      },
       "DiscoverDevicesRequest": {
         "properties": {
           "protocol": {
@@ -16399,6 +16653,45 @@
         "type": "object",
         "title": "HTTPValidationError"
       },
+      "HealthServiceMetadata": {
+        "properties": {
+          "name": {
+            "type": "string",
+            "title": "Name",
+            "description": "Service name"
+          },
+          "version": {
+            "type": "string",
+            "title": "Version",
+            "description": "Service version"
+          },
+          "environment": {
+            "type": "string",
+            "title": "Environment",
+            "description": "Runtime environment"
+          },
+          "hostname": {
+            "type": "string",
+            "title": "Hostname",
+            "description": "System hostname"
+          },
+          "platform": {
+            "type": "string",
+            "title": "Platform",
+            "description": "Operating system platform"
+          }
+        },
+        "type": "object",
+        "required": [
+          "name",
+          "version",
+          "environment",
+          "hostname",
+          "platform"
+        ],
+        "title": "HealthServiceMetadata",
+        "description": "Service metadata used by system status responses."
+      },
       "HealthStatus": {
         "type": "string",
         "enum": [
@@ -16408,6 +16701,62 @@
         ],
         "title": "HealthStatus",
         "description": "Overall health status following IETF health+json standard."
+      },
+      "IETFHealthStatusResponse": {
+        "properties": {
+          "status": {
+            "type": "string",
+            "title": "Status",
+            "description": "IETF health status: pass/warn/fail"
+          },
+          "version": {
+            "type": "string",
+            "title": "Version",
+            "description": "Health check format version"
+          },
+          "releaseId": {
+            "type": "string",
+            "title": "Releaseid",
+            "description": "Application release identifier"
+          },
+          "serviceId": {
+            "type": "string",
+            "title": "Serviceid",
+            "description": "Service identifier"
+          },
+          "description": {
+            "type": "string",
+            "title": "Description",
+            "description": "Human-readable health description"
+          },
+          "timestamp": {
+            "type": "string",
+            "title": "Timestamp",
+            "description": "Health timestamp"
+          },
+          "service": {
+            "$ref": "#/components/schemas/HealthServiceMetadata",
+            "description": "Service metadata"
+          },
+          "response_time_ms": {
+            "type": "number",
+            "title": "Response Time Ms",
+            "description": "Response time in milliseconds"
+          }
+        },
+        "type": "object",
+        "required": [
+          "status",
+          "version",
+          "releaseId",
+          "serviceId",
+          "description",
+          "timestamp",
+          "service",
+          "response_time_ms"
+        ],
+        "title": "IETFHealthStatusResponse",
+        "description": "IETF health+json response emitted by system status with format=ietf."
       },
       "InjectionMode": {
         "type": "string",
@@ -19453,6 +19802,93 @@
         "title": "SafetyLevel",
         "description": "Safety validation levels."
       },
+      "SafetyOperationResultV2": {
+        "properties": {
+          "operation_id": {
+            "type": "string",
+            "title": "Operation Id",
+            "description": "Unique operation identifier"
+          },
+          "entity_id": {
+            "type": "string",
+            "title": "Entity Id",
+            "description": "Entity ID that was operated on"
+          },
+          "status": {
+            "type": "string",
+            "title": "Status",
+            "description": "Operation status: success, failed, timeout, unauthorized, safety_abort"
+          },
+          "acknowledged": {
+            "type": "boolean",
+            "title": "Acknowledged",
+            "description": "Whether operation was acknowledged by physical system",
+            "default": false
+          },
+          "acknowledgment_time_ms": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Acknowledgment Time Ms",
+            "description": "Time to receive acknowledgment"
+          },
+          "error_message": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error Message",
+            "description": "Error details if failed"
+          },
+          "error_code": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error Code",
+            "description": "Machine-readable error code"
+          },
+          "execution_time_ms": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Execution Time Ms",
+            "description": "Operation execution time"
+          },
+          "safety_validation": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Safety Validation",
+            "description": "Safety validation results"
+          }
+        },
+        "type": "object",
+        "required": [
+          "operation_id",
+          "entity_id",
+          "status"
+        ],
+        "title": "SafetyOperationResultV2",
+        "description": "Safety-critical operation result with acknowledgment tracking"
+      },
       "SafetyReportResponse": {
         "properties": {
           "is_safe": {
@@ -19833,6 +20269,45 @@
         "title": "ServiceHealthDetail",
         "description": "Detailed health information for a single service."
       },
+      "ServiceMetadata": {
+        "properties": {
+          "name": {
+            "type": "string",
+            "title": "Name",
+            "description": "Service name"
+          },
+          "version": {
+            "type": "string",
+            "title": "Version",
+            "description": "Service version"
+          },
+          "environment": {
+            "type": "string",
+            "title": "Environment",
+            "description": "Environment (development, staging, production)"
+          },
+          "hostname": {
+            "type": "string",
+            "title": "Hostname",
+            "description": "System hostname"
+          },
+          "platform": {
+            "type": "string",
+            "title": "Platform",
+            "description": "Operating system platform"
+          }
+        },
+        "type": "object",
+        "required": [
+          "name",
+          "version",
+          "environment",
+          "hostname",
+          "platform"
+        ],
+        "title": "ServiceMetadata",
+        "description": "Service metadata information"
+      },
       "ServiceStatus-Input": {
         "type": "string",
         "enum": [
@@ -20144,6 +20619,33 @@
         "title": "SystemAnalytics",
         "description": "System analytics and monitoring data."
       },
+      "SystemDomainFeatures": {
+        "properties": {
+          "system_monitoring": {
+            "type": "boolean",
+            "title": "System Monitoring",
+            "description": "System monitoring enabled"
+          },
+          "service_management": {
+            "type": "boolean",
+            "title": "Service Management",
+            "description": "Service management enabled"
+          },
+          "configuration_api": {
+            "type": "boolean",
+            "title": "Configuration Api",
+            "description": "Configuration API enabled"
+          }
+        },
+        "type": "object",
+        "required": [
+          "system_monitoring",
+          "service_management",
+          "configuration_api"
+        ],
+        "title": "SystemDomainFeatures",
+        "description": "Feature flags reported by the system service-health endpoint."
+      },
       "SystemInfo": {
         "properties": {
           "hostname": {
@@ -20267,51 +20769,6 @@
         "type": "object",
         "title": "SystemStateUpdate",
         "description": "System state update model."
-      },
-      "SystemStatus": {
-        "properties": {
-          "overall_health": {
-            "type": "string",
-            "title": "Overall Health",
-            "description": "Overall system health: excellent/good/fair/poor/critical"
-          },
-          "health_score": {
-            "type": "number",
-            "title": "Health Score",
-            "description": "Health score 0-100"
-          },
-          "active_systems": {
-            "items": {
-              "type": "string"
-            },
-            "type": "array",
-            "title": "Active Systems",
-            "description": "List of active systems"
-          },
-          "degraded_systems": {
-            "items": {
-              "type": "string"
-            },
-            "type": "array",
-            "title": "Degraded Systems",
-            "description": "Systems with issues"
-          },
-          "last_assessment": {
-            "type": "number",
-            "title": "Last Assessment",
-            "description": "Last health assessment timestamp"
-          }
-        },
-        "type": "object",
-        "required": [
-          "overall_health",
-          "health_score",
-          "active_systems",
-          "degraded_systems",
-          "last_assessment"
-        ],
-        "title": "SystemStatus",
-        "description": "Overall system health status"
       },
       "SystemStatusResponse": {
         "properties": {
@@ -20751,6 +21208,51 @@
         "title": "SystemMetrics",
         "description": "System performance metrics for diagnostics"
       },
+      "backend__api__domains__diagnostics__SystemStatus": {
+        "properties": {
+          "overall_health": {
+            "type": "string",
+            "title": "Overall Health",
+            "description": "Overall system health: excellent/good/fair/poor/critical"
+          },
+          "health_score": {
+            "type": "number",
+            "title": "Health Score",
+            "description": "Health score 0-100"
+          },
+          "active_systems": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Active Systems",
+            "description": "List of active systems"
+          },
+          "degraded_systems": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Degraded Systems",
+            "description": "Systems with issues"
+          },
+          "last_assessment": {
+            "type": "number",
+            "title": "Last Assessment",
+            "description": "Last health assessment timestamp"
+          }
+        },
+        "type": "object",
+        "required": [
+          "overall_health",
+          "health_score",
+          "active_systems",
+          "degraded_systems",
+          "last_assessment"
+        ],
+        "title": "SystemStatus",
+        "description": "Overall system health status"
+      },
       "backend__api__domains__system__ServiceStatus": {
         "properties": {
           "name": {
@@ -20783,6 +21285,83 @@
         ],
         "title": "ServiceStatus",
         "description": "Service status information"
+      },
+      "backend__api__domains__system__SystemStatus": {
+        "properties": {
+          "overall_status": {
+            "type": "string",
+            "title": "Overall Status",
+            "description": "Overall system status"
+          },
+          "services": {
+            "items": {
+              "$ref": "#/components/schemas/backend__api__domains__system__ServiceStatus"
+            },
+            "type": "array",
+            "title": "Services",
+            "description": "Individual service statuses"
+          },
+          "total_services": {
+            "type": "integer",
+            "title": "Total Services",
+            "description": "Total number of services"
+          },
+          "healthy_services": {
+            "type": "integer",
+            "title": "Healthy Services",
+            "description": "Number of healthy services"
+          },
+          "timestamp": {
+            "type": "number",
+            "title": "Timestamp",
+            "description": "Status timestamp"
+          },
+          "response_time_ms": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Response Time Ms",
+            "description": "Response time in milliseconds"
+          },
+          "service": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ServiceMetadata"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Service metadata"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description",
+            "description": "Human-readable status description"
+          }
+        },
+        "type": "object",
+        "required": [
+          "overall_status",
+          "services",
+          "total_services",
+          "healthy_services",
+          "timestamp"
+        ],
+        "title": "SystemStatus",
+        "description": "Overall system status with enhanced metadata"
       },
       "backend__api__routers__diagnostics__SystemHealthResponse": {
         "properties": {
@@ -21084,6 +21663,44 @@
         ],
         "title": "SystemMetrics",
         "description": "System performance metrics."
+      },
+      "backend__schemas__domain_api__SystemHealthResponse": {
+        "properties": {
+          "status": {
+            "type": "string",
+            "title": "Status",
+            "description": "System domain health status"
+          },
+          "domain": {
+            "type": "string",
+            "title": "Domain",
+            "description": "Domain name"
+          },
+          "version": {
+            "type": "string",
+            "title": "Version",
+            "description": "Domain API version"
+          },
+          "features": {
+            "$ref": "#/components/schemas/SystemDomainFeatures",
+            "description": "System feature availability"
+          },
+          "timestamp": {
+            "type": "string",
+            "title": "Timestamp",
+            "description": "Health timestamp"
+          }
+        },
+        "type": "object",
+        "required": [
+          "status",
+          "domain",
+          "version",
+          "features",
+          "timestamp"
+        ],
+        "title": "SystemHealthResponse",
+        "description": "Service-health response for the system v2 domain."
       }
     },
     "securitySchemes": {

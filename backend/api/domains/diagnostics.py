@@ -12,12 +12,20 @@ This router integrates with existing diagnostic services.
 
 import logging
 import time
-from typing import Any
+from typing import Any, cast
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from pydantic import BaseModel, Field
 
 from backend.api.domains import register_domain_router
+from backend.schemas.domain_api import (
+    DiagnosticAccuracySummary,
+    DiagnosticHealthTrend,
+    DiagnosticsHealthResponse,
+    DiagnosticStatisticsMetrics,
+    DiagnosticStatisticsResponse,
+    DiagnosticTroubleCodeCollection,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -68,21 +76,21 @@ def create_diagnostics_router() -> APIRouter:
         # In a real implementation, this would get a diagnostics service from ServiceRegistry
         return  # Placeholder - actual diagnostics service would be injected here
 
-    @router.get("/health")
-    async def health_check(request: Request) -> dict[str, Any]:
+    @router.get("/health", response_model=DiagnosticsHealthResponse)
+    async def health_check() -> DiagnosticsHealthResponse:
         """Health check endpoint for diagnostics domain API"""
 
-        return {
-            "status": "healthy",
-            "domain": "diagnostics",
-            "version": "v2",
-            "diagnostics_services": {
+        return DiagnosticsHealthResponse(
+            status="healthy",
+            domain="diagnostics",
+            version="v2",
+            diagnostics_services={
                 "real_time_monitoring": True,
                 "predictive_alerts": True,
                 "cross_protocol_analysis": True,
             },
-            "timestamp": "2025-01-11T00:00:00Z",
-        }
+            timestamp="2025-01-11T00:00:00Z",
+        )
 
     @router.get("/schemas")
     async def get_schemas(request: Request) -> dict[str, Any]:
@@ -235,26 +243,26 @@ def create_diagnostics_router() -> APIRouter:
             logger.error(f"Error getting system status: {e}")
             raise HTTPException(status_code=500, detail=f"Failed to get system status: {e!s}")
 
-    @router.get("/dtcs")
+    @router.get("/dtcs", response_model=DiagnosticTroubleCodeCollection)
     async def get_dtcs(
         request: Request,
         system_type: str | None = Query(None, description="Filter by system type"),
         severity: str | None = Query(None, description="Filter by severity"),
         protocol: str | None = Query(None, description="Filter by protocol"),
         diagnostics_service=Depends(get_diagnostics_service),
-    ) -> dict[str, Any]:
+    ) -> DiagnosticTroubleCodeCollection:
         """Get diagnostic trouble codes"""
         try:
             # Check if we have a real diagnostics service
             if diagnostics_service is None:
                 # Return empty DTC collection when service is not available
-                return {
-                    "dtcs": [],
-                    "total_count": 0,
-                    "active_count": 0,
-                    "by_severity": {},
-                    "by_protocol": {},
-                }
+                return DiagnosticTroubleCodeCollection(
+                    dtcs=[],
+                    total_count=0,
+                    active_count=0,
+                    by_severity={},
+                    by_protocol={},
+                )
 
             # Get DTCs from diagnostics diagnostics_service
             dtc_dicts = []
@@ -284,13 +292,13 @@ def create_diagnostics_router() -> APIRouter:
                 by_severity[sev] = by_severity.get(sev, 0) + 1
                 by_protocol[proto] = by_protocol.get(proto, 0) + 1
 
-            return {
-                "dtcs": filtered_dtcs,
-                "total_count": len(filtered_dtcs),
-                "active_count": active_count,
-                "by_severity": by_severity,
-                "by_protocol": by_protocol,
-            }
+            return DiagnosticTroubleCodeCollection(
+                dtcs=filtered_dtcs,
+                total_count=len(filtered_dtcs),
+                active_count=active_count,
+                by_severity=by_severity,
+                by_protocol=by_protocol,
+            )
         except Exception as e:
             logger.error(f"Error getting DTCs: {e}")
             raise HTTPException(status_code=500, detail=f"Failed to get DTCs: {e!s}")
@@ -320,42 +328,55 @@ def create_diagnostics_router() -> APIRouter:
             logger.error(f"Error resolving DTC: {e}")
             raise HTTPException(status_code=500, detail=f"Failed to resolve DTC: {e!s}")
 
-    @router.get("/statistics")
+    @router.get("/statistics", response_model=DiagnosticStatisticsResponse)
     async def get_statistics(
         request: Request, diagnostics_service=Depends(get_diagnostics_service)
-    ) -> dict[str, Any]:
+    ) -> DiagnosticStatisticsResponse:
         """Get diagnostic statistics"""
+
+        def normalize_health_trend(value: object) -> DiagnosticHealthTrend:
+            """Normalize dynamic service health trends to the documented frontend enum."""
+            if isinstance(value, str) and value in {"improving", "stable", "degrading"}:
+                return cast("DiagnosticHealthTrend", value)
+            return "stable"
+
         try:
             # Check if we have a real diagnostics service
             if diagnostics_service is None:
                 # Return mock data when service is not available
-                return {
-                    "metrics": {
-                        "total_dtcs": 0,
-                        "active_dtcs": 0,
-                        "resolved_dtcs": 0,
-                        "processing_rate": 0.0,
-                        "system_health_trend": "stable",
-                    },
-                    "correlation": {"accuracy": 0.85},
-                    "prediction": {"accuracy": 0.75},
-                }
+                return DiagnosticStatisticsResponse(
+                    metrics=DiagnosticStatisticsMetrics(
+                        total_dtcs=0,
+                        active_dtcs=0,
+                        resolved_dtcs=0,
+                        processing_rate=0.0,
+                        system_health_trend="stable",
+                    ),
+                    correlation=DiagnosticAccuracySummary(accuracy=0.85),
+                    prediction=DiagnosticAccuracySummary(accuracy=0.75),
+                )
 
             status = diagnostics_service.get_status()
             stats = status.get("statistics", {})
 
             # Return in v2 format expected by frontend
-            return {
-                "metrics": {
-                    "total_dtcs": stats.get("total_dtcs", 0),
-                    "active_dtcs": stats.get("active_dtcs", 0),
-                    "resolved_dtcs": stats.get("resolved_dtcs", 0),
-                    "processing_rate": stats.get("processing_rate", 0.0),
-                    "system_health_trend": stats.get("system_health_trend", "stable"),
-                },
-                "correlation": {"accuracy": stats.get("correlation_accuracy", 0.0)},
-                "prediction": {"accuracy": stats.get("prediction_accuracy", 0.0)},
-            }
+            return DiagnosticStatisticsResponse(
+                metrics=DiagnosticStatisticsMetrics(
+                    total_dtcs=stats.get("total_dtcs", 0),
+                    active_dtcs=stats.get("active_dtcs", 0),
+                    resolved_dtcs=stats.get("resolved_dtcs", 0),
+                    processing_rate=stats.get("processing_rate", 0.0),
+                    system_health_trend=normalize_health_trend(
+                        stats.get("system_health_trend", "stable")
+                    ),
+                ),
+                correlation=DiagnosticAccuracySummary(
+                    accuracy=stats.get("correlation_accuracy", 0.0)
+                ),
+                prediction=DiagnosticAccuracySummary(
+                    accuracy=stats.get("prediction_accuracy", 0.0)
+                ),
+            )
         except Exception as e:
             logger.error(f"Error getting statistics: {e}")
             raise HTTPException(status_code=500, detail=f"Failed to get statistics: {e!s}")
