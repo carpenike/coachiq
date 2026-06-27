@@ -32,6 +32,41 @@ coordinate, see the `handoff/README` note in the `coachiq` basic-memory project.
 
 ---
 
+## Direction — v2-only convergence
+
+Per [ADR-0003](docs/adr/ADR-0003-api-v2-only-no-legacy.md), the API surface and
+frontend consumer code converge on `/api/v2` only. Legacy `/api/*` routers and
+frontend v1 clients/hooks are retired incrementally; each deletion is gated on a
+proven-equivalent v2 contract and migrated callers.
+
+The end state is deletion-heavy: no v1 `useEntities` hook stack, no legacy
+`frontend/src/api/endpoints.ts` functions, no `withDomainAPIFallback` or `useV2`
+machinery, and the 29 mounted legacy router modules / 263 routes inventoried in
+HOF-016 removed. The dual `detail` plus `error.{code,message}` envelope can be
+revisited once legacy is gone.
+
+The path is router-by-router and caller-by-caller. The HOF-016 inventory below
+is the retirement map; each row remains individually gated.
+
+Remaining contract gaps blocking completion:
+
+1. v2 `EntityCommand` lacks `lock`/`unlock`, which blocks full entity v1 removal
+   until the command contract is widened and tested.
+2. There is no v2 home for the legacy `SystemHealthResponse` system-health
+   contract, which blocks retirement of the diagnostics legacy router.
+
+Work hanging off this direction: HOF-017 removed the fake entity fallback and
+adopted generated result types; HOF-023 is the candidate for migrating the 22
+entity UI callers plus widening v2 for lock/unlock; HOF-022 is the candidate for
+a v2 system-health home or frontend migration; per-router retirements follow the
+HOF-016 plan.
+
+Pace caveat: interleave risk-reduction work such as HOF-015 guardrail coverage
+rather than pursuing pure surface shrink monotonically. Coverage addresses real
+risk; retirement addresses cleanliness.
+
+---
+
 ## Build Log
 
 ### HOF-017 — Remove Fake Entity Domain Fallback
