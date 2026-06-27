@@ -233,10 +233,10 @@ poetry run pyright backend                          # type-check (basic mode; ra
 whole-repo coverage, so `pytest.ini` does not set a global `--cov-fail-under`.
 Instead, `scripts/check_module_coverage.py` reads fresh `coverage.xml` after
 guardrail tests and enforces only the current high-value module floors:
-`backend/services/can_facade.py >= 45%`, `backend/services/safety_service.py >= 32%`,
-`backend/services/auth/service.py >= 60%`, `backend/services/auth/manager.py >= 22%`,
-`backend/middleware/secure_auth.py >= 30%`, and
-`backend/websocket/auth_handler.py >= 35%`. Run the ratchet locally with
+`backend/services/can_facade.py >= 65%`, `backend/services/safety_service.py >= 42%`,
+`backend/services/auth/service.py >= 80%`, `backend/services/auth/manager.py >= 32%`,
+`backend/middleware/secure_auth.py >= 60%`, and
+`backend/websocket/auth_handler.py >= 85%`. Run the ratchet locally with
 `nix run .#guardrail-coverage`, which executes `pytest -m "can or auth or safety or websocket"`
 then checks those floors. Raise these numbers when coverage improves; never
 lower them without a reviewed handoff.

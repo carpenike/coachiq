@@ -85,9 +85,10 @@ and enforces the ratchet; CI runs that app after the diff-aware quality gate.
 
 **Why.** HOF-015 moves coverage onto the realistic API-side risk paths from
 ADR-0004 without making narrow marker runs fail on unrelated long-tail modules.
-The ratchet floors are intentionally modest first milestones and should only
-move upward: CANFacade 45%, SafetyService 32%, AuthService 60%, AuthManager
-22%, SecureAuthenticationMiddleware 30%, and WebSocketAuthHandler 35%.
+The ratchet floors were seeded at the reviewed first milestones, then raised to
+lock in the HOF-015 measured gains with buffer: CANFacade 65%, SafetyService
+42%, AuthService 80%, AuthManager 32%, SecureAuthenticationMiddleware 60%, and
+WebSocketAuthHandler 85%.
 
 **Files.** .github/workflows/nix-ci.yml, flake.nix, pytest.ini,
 scripts/check_module_coverage.py, PROJECT_CONTEXT.md,
