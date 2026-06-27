@@ -33,6 +33,10 @@ applyTo: "**/*.py"
 - `COACHIQ_ROOT_PATH`: Mount point if reverse-proxied
 - `COACHIQ_USER_COACH_INFO_PATH`: Path to custom coach YAML
 
+## Security Secrets
+
+- In non-development environments, CSRF middleware must fail closed unless `COACHIQ_AUTH__SECRET_KEY` or a real `COACHIQ_SECURITY__SECRET_KEY` is configured. Never add hardcoded production fallbacks for signing secrets; development-only placeholders must stay explicitly labeled and rejected outside development.
+
 ## Misc
 
 - `LOG_LEVEL`: Logging verbosity

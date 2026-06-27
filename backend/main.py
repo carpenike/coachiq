@@ -26,7 +26,7 @@ from slowapi.errors import RateLimitExceeded
 from slowapi.middleware import SlowAPIMiddleware
 
 from backend.api.router_config import configure_routers
-from backend.core.config import get_settings
+from backend.core.config import Settings, get_settings
 from backend.core.dependencies import ServiceRegistry
 from backend.core.logging_config import configure_unified_logging, setup_early_logging
 from backend.core.metrics import initialize_backend_metrics
@@ -70,6 +70,43 @@ logger = logging.getLogger(__name__)
 
 # Store startup time for health checks
 SERVER_START_TIME = time.time()
+
+_DEVELOPMENT_SECURITY_SECRET = "development-only-secret-key-do-not-use-in-production"  # noqa: S105
+_DEVELOPMENT_CSRF_SECRET = "development-only-csrf-secret-do-not-use-in-production"  # noqa: S105
+
+
+def _is_real_csrf_secret(secret: str) -> bool:
+    """Return true when a configured CSRF secret is not an obvious placeholder."""
+    candidate = secret.strip()
+    if not candidate:
+        return False
+    if candidate == _DEVELOPMENT_SECURITY_SECRET:
+        return False
+
+    lowered = candidate.lower()
+    return "do-not-use-in-production" not in lowered and "change-in-production" not in lowered
+
+
+def _resolve_csrf_secret(settings: Settings) -> str:
+    """Resolve the CSRF signing secret, failing closed outside development."""
+    if settings.auth.secret_key:
+        return settings.auth.secret_key
+
+    security_secret = (
+        settings.security.secret_key.get_secret_value() if settings.security.secret_key else ""
+    )
+    if _is_real_csrf_secret(security_secret):
+        return security_secret
+
+    if settings.is_development():
+        return _DEVELOPMENT_CSRF_SECRET
+
+    msg = (
+        "CSRF secret key is required when CSRF protection is enabled. "
+        "Set COACHIQ_AUTH__SECRET_KEY or COACHIQ_SECURITY__SECRET_KEY to a secure "
+        "random value. Generate one with: openssl rand -hex 32"
+    )
+    raise RuntimeError(msg)
 
 
 async def _configure_service_startup_stages(service_registry: SafetyServiceRegistry) -> None:
@@ -400,7 +437,7 @@ def create_app() -> FastAPI:
     # Add CSRF protection for state-changing operations
     # Only in production mode when HTTPS is enabled
     if not settings.is_development():
-        csrf_secret = settings.auth.secret_key or "default-csrf-secret"
+        csrf_secret = _resolve_csrf_secret(settings)
         app.add_middleware(
             CSRFProtectionMiddleware,
             secret_key=csrf_secret,
