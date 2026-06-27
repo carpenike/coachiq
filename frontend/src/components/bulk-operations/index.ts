@@ -14,6 +14,3 @@ export { BulkOperationPanelV2 } from './BulkOperationPanelV2'
 export { BulkOperationResultsV2 } from './BulkOperationResultsV2'
 export { BulkOperationsModalV2 } from './BulkOperationsModalV2'
 export { EntitySelectorV2 } from './EntitySelectorV2'
-
-// Integration helpers
-export { BulkOperationsIntegrationExample, useBulkOperationsIntegration } from './BulkOperationsIntegrationExample'

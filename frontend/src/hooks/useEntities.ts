@@ -77,7 +77,6 @@ export function useEntities(params?: EntitiesQueryParams, useV2?: boolean) {
       queryKeys.entities.list(params),
     queryFn: async () => {
       if (shouldUseV2) {
-        console.log('🔄 Using Domain API v2 for fetchEntities with validation');
         try {
           // Use Domain API v2 with validation
           const v2Collection = await fetchEntitiesV2WithValidation(params);
@@ -87,8 +86,6 @@ export function useEntities(params?: EntitiesQueryParams, useV2?: boolean) {
           v2Collection.entities.forEach((entity) => {
             legacyEntities[entity.entity_id] = convertEntitySchemaToLegacy(entity) as unknown as EntityBase;
           });
-
-          console.log(`✅ Domain API v2 returned ${v2Collection.entities.length} entities`);
           return legacyEntities;
         } catch (error) {
           console.warn('⚠️ Domain API v2 failed, falling back to legacy API:', error);
@@ -96,7 +93,6 @@ export function useEntities(params?: EntitiesQueryParams, useV2?: boolean) {
           return fetchEntities(params);
         }
       } else {
-        console.log('📡 Using legacy API for fetchEntities');
         return fetchEntities(params);
       }
     },
@@ -123,15 +119,12 @@ export function useEntity(entityId: string, useV2?: boolean) {
       queryKeys.entities.detail(entityId),
     queryFn: async () => {
       if (shouldUseV2) {
-        console.log(`🔄 Using Domain API v2 for fetchEntity ${entityId} with validation`);
         try {
           // Use Domain API v2 with validation
           const v2Entity = await fetchEntityV2WithValidation(entityId);
 
           // Convert to legacy format for backward compatibility
           const legacyEntity = convertEntitySchemaToLegacy(v2Entity) as unknown as EntityBase;
-
-          console.log(`✅ Domain API v2 returned entity ${entityId}`);
           return legacyEntity;
         } catch (error) {
           console.warn(`⚠️ Domain API v2 failed for entity ${entityId}, falling back to legacy API:`, error);
@@ -139,7 +132,6 @@ export function useEntity(entityId: string, useV2?: boolean) {
           return fetchEntity(entityId);
         }
       } else {
-        console.log(`📡 Using legacy API for fetchEntity ${entityId}`);
         return fetchEntity(entityId);
       }
     },
@@ -270,7 +262,6 @@ export function useControlEntity(useV2?: boolean) {
   return useMutation({
     mutationFn: ({ entityId, command }: { entityId: string; command: ControlCommand }) => {
       if (shouldUseV2) {
-        console.log(`🔄 Using Domain API v2 for controlEntity ${entityId} with validation`);
         try {
           // Convert legacy command to v2 format
           const v2Command: ControlCommandSchemaV2 = {
@@ -292,7 +283,6 @@ export function useControlEntity(useV2?: boolean) {
               timestamp: new Date().toISOString(),
               ...(result.execution_time_ms !== undefined && result.execution_time_ms !== null && { execution_time_ms: result.execution_time_ms }),
             };
-            console.log(`✅ Domain API v2 control successful for ${entityId}`);
             return legacyResponse;
           });
         } catch (error) {
@@ -301,7 +291,6 @@ export function useControlEntity(useV2?: boolean) {
           return controlEntity(entityId, command);
         }
       } else {
-        console.log(`📡 Using legacy API for controlEntity ${entityId}`);
         return controlEntity(entityId, command);
       }
     },
@@ -320,7 +309,6 @@ export function useControlEntity(useV2?: boolean) {
     onMutate: async ({ entityId, command: _command }) => {
       if (shouldUseV2) {
         // Domain API v2 handles its own optimistic updates via controlEntityV2
-        console.log(`🔄 Domain API v2 managing optimistic updates for ${entityId}`);
         return {};
       }
 
@@ -478,7 +466,6 @@ export function useBulkEntityControl(useV2?: boolean) {
       ignoreErrors?: boolean
     }) => {
       if (shouldUseV2) {
-        console.log(`🔄 Using Domain API v2 for bulk control of ${entityIds.length} entities with validation`);
         try {
           // Convert legacy command to v2 format
           const v2Command: ControlCommandSchemaV2 = {
@@ -494,9 +481,6 @@ export function useBulkEntityControl(useV2?: boolean) {
             command: v2Command,
             ignore_errors: ignoreErrors,
           });
-
-          console.log(`✅ Domain API v2 bulk control completed: ${result.success_count}/${result.total_count} successful`);
-
           // Convert v2 result to legacy-compatible format
           return {
             successful: result.results.filter(r => r.status === 'success').map(r => r.entity_id),
@@ -514,7 +498,6 @@ export function useBulkEntityControl(useV2?: boolean) {
       }
 
       // Legacy bulk operation: individual calls
-      console.log(`📡 Using legacy API for bulk control of ${entityIds.length} entities (individual calls)`);
       const results = { successful: [] as string[], failed: [] as { entityId: string; error: string; errorCode?: string }[], totalTime: 0 };
       const startTime = Date.now();
 
@@ -536,7 +519,6 @@ export function useBulkEntityControl(useV2?: boolean) {
       }
 
       results.totalTime = Date.now() - startTime;
-      console.log(`✅ Legacy bulk control completed: ${results.successful.length}/${entityIds.length} successful`);
 
       return results;
     },

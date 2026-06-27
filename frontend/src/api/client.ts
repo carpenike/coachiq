@@ -335,7 +335,7 @@ export function logApiRequest(method: string, url: string, data?: unknown): void
   if (env.isDevelopment) {
     console.group(`🌐 API ${method.toUpperCase()} ${url}`);
     if (data) {
-      console.log('📤 Request data:', data);
+      console.debug('📤 Request data:', data);
     }
     console.groupEnd();
   }
@@ -347,7 +347,7 @@ export function logApiRequest(method: string, url: string, data?: unknown): void
 export function logApiResponse<T>(url: string, data: T): void {
   if (env.isDevelopment) {
     console.group(`✅ API Response ${url}`);
-    console.log('📥 Response data:', data);
+    console.debug('📥 Response data:', data);
     console.groupEnd();
   }
 }

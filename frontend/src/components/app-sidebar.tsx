@@ -136,18 +136,6 @@ const data = {
       icon: IconFileWord,
     },
   ],
-  navDevelopment: [
-    {
-      title: "Demo Dashboard",
-      url: "/demo-dashboard",
-      icon: IconChartBar,
-    },
-    {
-      title: "Theme Test",
-      url: "/theme-test",
-      icon: IconSettings,
-    },
-  ],
   documents: [
     {
       name: "Configuration",
@@ -193,12 +181,6 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
         <NavDocuments items={data.documents} />
         <NavSecondary items={data.navSecondary} className="mt-auto" />
 
-        {/* Development tools - TODO: Hide based on user role (admin vs operator) */}
-        <NavSection
-          title="Development"
-          items={data.navDevelopment}
-          className="mt-4 border-t pt-4"
-        />
       </SidebarContent>
       <SidebarFooter>
         <SystemStatusIndicator />

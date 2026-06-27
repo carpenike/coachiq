@@ -10,7 +10,6 @@ import CanSniffer from "@/pages/can-sniffer";
 import CanTools from "@/pages/can-tools";
 import ConfigurationPage from "@/pages/config";
 import Dashboard from "@/pages/dashboard";
-import DemoDashboard from "@/pages/demo-dashboard";
 import DeviceMapping from "@/pages/device-mapping";
 import DiagnosticsPage from "@/pages/diagnostics";
 import Documentation from "@/pages/documentation";
@@ -30,7 +29,6 @@ import SecurityDashboard from "@/pages/security-dashboard";
 import { Toaster } from "@/components/ui/toaster";
 import RVCSpec from "@/pages/rvc-spec";
 import SystemStatus from "@/pages/system-status";
-import ThemeTest from "@/pages/theme-test";
 import UnknownPGNs from "@/pages/unknown-pgns";
 import UnmappedEntries from "@/pages/unmapped-entries";
 import { StrictMode } from "react";
@@ -65,7 +63,6 @@ createRoot(document.getElementById("root")!).render(
               {/* Protected routes */}
               <Route path="/" element={<Navigate to="/dashboard" replace />} />
               <Route path="/dashboard" element={<AuthGuard><Dashboard /></AuthGuard>} />
-              <Route path="/demo-dashboard" element={<AuthGuard><DemoDashboard /></AuthGuard>} />
               <Route path="/entities" element={<AuthGuard><EntitiesPage /></AuthGuard>} />
               <Route path="/lights" element={<AuthGuard><Lights /></AuthGuard>} />
               <Route path="/device-mapping" element={<AuthGuard><DeviceMapping /></AuthGuard>} />
@@ -87,7 +84,6 @@ createRoot(document.getElementById("root")!).render(
               <Route path="/settings" element={<AuthGuard><SettingsPage /></AuthGuard>} />
               <Route path="/profile" element={<AuthGuard><ProfilePage /></AuthGuard>} />
               <Route path="/admin-settings" element={<AuthGuard><AdminSettingsPage /></AuthGuard>} />
-              <Route path="/theme-test" element={<AuthGuard><ThemeTest /></AuthGuard>} />
               <Route path="/logs" element={<AuthGuard><LogsPage /></AuthGuard>} />
             </Routes>
           </BrowserRouter>

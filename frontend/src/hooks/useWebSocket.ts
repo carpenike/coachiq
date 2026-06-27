@@ -123,7 +123,7 @@ function getExponentialBackoffDelay(attempt: number, baseDelay = 1000, maxDelay 
  *   endpoint: '/ws/can-analyzer',
  *   subscriptions: [{
  *     type: 'can_message',
- *     handler: (msg) => console.log('CAN:', msg)
+ *     handler: handleCanMessage
  *   }]
  * });
  * ```
@@ -181,10 +181,6 @@ export function useWebSocket<T = unknown>(options: IUseWebSocketOptions<T>): IUs
       reconnectAttempts: 0,
     }));
 
-    if (env.isDevelopment) {
-      console.log(`[useWebSocket] Connected to ${endpoint}`);
-    }
-
     onOpen?.();
   }, [endpoint, onOpen]);
 
@@ -198,10 +194,6 @@ export function useWebSocket<T = unknown>(options: IUseWebSocketOptions<T>): IUs
       if (attempts < maxReconnectAttemptsRef.current) {
         setStatus('reconnecting');
         const delay = getExponentialBackoffDelay(attempts + 1);
-
-        if (env.isDevelopment) {
-          console.log(`[useWebSocket] Reconnecting to ${endpoint} (attempt ${attempts + 1}/${maxReconnectAttemptsRef.current}) in ${Math.round(delay)}ms`);
-        }
 
         setTimeout(() => {
           if (clientRef.current && !clientRef.current.isConnected) {
@@ -225,13 +217,6 @@ export function useWebSocket<T = unknown>(options: IUseWebSocketOptions<T>): IUs
       const { connectedAt, ...rest } = prev;
       return rest;
     });
-
-    if (env.isDevelopment && event.code !== 1000) {
-      console.log(`[useWebSocket] Disconnected from ${endpoint}`, {
-        code: event.code,
-        reason: event.reason,
-      });
-    }
 
     onClose?.(event);
   }, [endpoint, userConfig?.autoReconnect, onClose]);

@@ -5,7 +5,7 @@
  * event acknowledgment, and configuration management.
  */
 
-import { useCallback, useEffect, useMemo, useState, useContext } from 'react';
+import { useCallback, useMemo, useState, useContext } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { WebSocketContext } from '@/contexts/websocket-context';
 import {
@@ -102,15 +102,6 @@ export function useSecurityDashboard(options?: {
     queryFn: fetchSecurityConfiguration,
     staleTime: 60000, // Config doesn't change often
   });
-
-  // WebSocket event handler - simplified for now
-  // In a real implementation, we would need to access the actual WebSocket connection
-  // For now, we'll simulate real-time updates through polling
-  useEffect(() => {
-    // This is a placeholder - actual WebSocket integration would be implemented
-    // by extending the WebSocket provider to handle security events
-    console.log('Security dashboard WebSocket integration placeholder');
-  }, [queryClient]);
 
   // Merge realtime events with fetched events
   const allEvents = useMemo(() => {

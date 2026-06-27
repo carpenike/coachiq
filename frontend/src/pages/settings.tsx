@@ -180,9 +180,6 @@ const SettingsPage: React.FC = () => {
             {/* PIN Management for Current User */}
             <PINManagementCard
               isAdminView={false}
-              onPINAction={(action, pinType) => {
-                console.log(`User PIN action: ${action} on ${pinType}`);
-              }}
             />
           </div>
         </TabsContent>

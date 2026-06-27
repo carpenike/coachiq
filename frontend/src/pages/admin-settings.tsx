@@ -212,18 +212,12 @@ export default function AdminSettingsPage() {
               autoRefresh
               refreshInterval={30000}
               isAdminView
-              onSessionAction={(action, sessionId) => {
-                console.log(`Admin session action: ${action} on ${sessionId}`);
-              }}
             />
 
             {/* PIN Management for Current Admin */}
             <PINManagementCard
               userId={user?.user_id}
               isAdminView
-              onPINAction={(action, pinType) => {
-                console.log(`Admin PIN action: ${action} on ${pinType}`);
-              }}
             />
           </div>
         </TabsContent>

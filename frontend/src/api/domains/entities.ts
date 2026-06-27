@@ -525,8 +525,6 @@ export async function fetchEntitiesV2WithValidation(params?: EntitiesQueryParams
     console.warn('⚠️ Entity collection validation failed, returning unvalidated data');
     return rawResult;
   }
-
-  console.log('✅ Entity collection validated successfully');
   return validatedResult;
 }
 
@@ -546,8 +544,6 @@ export async function fetchEntityV2WithValidation(entityId: string): Promise<Ent
     console.warn('⚠️ Entity validation failed, returning unvalidated data');
     return rawResult;
   }
-
-  console.log('✅ Entity validated successfully');
   return validatedResult;
 }
 
@@ -567,9 +563,6 @@ export async function controlEntityV2WithValidation(
   if (!commandValidation.success) {
     throw new Error(`Invalid control command: ${commandValidation.errors.join(', ')}`);
   }
-
-  console.log('✅ Control command validated');
-
   // Execute with validated command
   const rawResult = await controlEntityV2(entityId, commandValidation.data);
 
@@ -580,8 +573,6 @@ export async function controlEntityV2WithValidation(
     console.warn('⚠️ Operation result validation failed, returning unvalidated data');
     return rawResult;
   }
-
-  console.log('✅ Operation result validated successfully');
   return validatedResult;
 }
 
@@ -599,9 +590,6 @@ export async function bulkControlEntitiesV2WithValidation(
   if (!requestValidation.success) {
     throw new Error(`Invalid bulk control request: ${requestValidation.errors.join(', ')}`);
   }
-
-  console.log('✅ Bulk control request validated');
-
   // Execute with validated request
   const rawResult = await bulkControlEntitiesV2(requestValidation.data);
 
@@ -612,8 +600,6 @@ export async function bulkControlEntitiesV2WithValidation(
     console.warn('⚠️ Bulk operation result validation failed, returning unvalidated data');
     return rawResult;
   }
-
-  console.log('✅ Bulk operation result validated successfully');
   return validatedResult;
 }
 

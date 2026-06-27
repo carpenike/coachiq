@@ -89,13 +89,7 @@ export async function withDomainAPIFallback<T>(
 ): Promise<T> {
   if (options.preferDomainAPI) {
     try {
-      if (options.logMigration) {
-        console.log('🚀 Attempting domain API call');
-      }
       const result = await domainFn();
-      if (options.logMigration) {
-        console.log('✅ Domain API call successful');
-      }
       return result;
     } catch (error) {
       if (options.fallbackToLegacy) {

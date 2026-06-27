@@ -144,8 +144,6 @@ class SchemaCache {
 
       this.version = version;
       this.lastFetch = new Date();
-
-      console.log(`✅ Refreshed ${Object.keys(schemas).length} schemas (v${version})`);
     } catch (error) {
       console.error('❌ Failed to refresh schemas from backend:', error);
 

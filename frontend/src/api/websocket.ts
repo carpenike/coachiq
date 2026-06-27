@@ -20,7 +20,7 @@ export const DEBUG_WS = {
   enabled: import.meta.env.DEV && import.meta.env.VITE_DEBUG_WS === 'true',
   log: (...args: unknown[]) => {
     if (DEBUG_WS.enabled) {
-      console.log('[WebSocket Debug]', ...args);
+      console.debug('[WebSocket Debug]', ...args);
     }
   },
 };
@@ -206,7 +206,6 @@ export class RVCWebSocketClient {
 
         // If token expired, try to refresh and reconnect
         if (event.reason?.includes('expired') && tokenStorage.isRefreshTokenValid()) {
-          console.log('Attempting to refresh token and reconnect...');
           tokenStorage.attemptTokenRefresh().then((success) => {
             if (success) {
               setTimeout(() => this.connect(), 1000);
@@ -224,7 +223,7 @@ export class RVCWebSocketClient {
 
       // Only log unexpected closures (not normal 1000 closure)
       if (env.isDevelopment && event.code !== 1000) {
-        console.log(`🔌 WebSocket closed unexpectedly: ${this.endpoint}`, { code: event.code, reason: event.reason });
+        console.debug(`🔌 WebSocket closed unexpectedly: ${this.endpoint}`, { code: event.code, reason: event.reason });
       }
 
       DEBUG_WS.log('WebSocket closed:', this.endpoint, { code: event.code, reason: event.reason });
@@ -301,9 +300,6 @@ export class RVCWebSocketClient {
         break;
       default:
         // Handle unknown message types gracefully
-        if (env.isDevelopment) {
-          console.log('Unknown WebSocket message type:', message.type, message);
-        }
         DEBUG_WS.log('Unknown WebSocket message type:', message.type, message);
     }
   }
@@ -368,10 +364,6 @@ export class RVCWebSocketClient {
     }
 
     this.reconnectAttempts++;
-
-    if (env.isDevelopment) {
-      console.log(`📡 Scheduling WebSocket reconnect attempt ${this.reconnectAttempts} in ${this.config.reconnectDelay}ms`);
-    }
 
     DEBUG_WS.log('Scheduling WebSocket reconnect attempt:', this.reconnectAttempts, this.config.reconnectDelay);
 

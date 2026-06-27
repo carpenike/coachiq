@@ -164,8 +164,6 @@ export function useControlEntityV2() {
       // When falling back to legacy API, we wait for server confirmation to prevent
       // dangerous state mismatches in vehicle control systems
       if (isDomainAPIAvailable && !isCheckingAPI && previousEntity) {
-        console.log('🔄 Applying optimistic update (Domain API v2 available)');
-
         const optimisticState = { ...previousEntity.state };
 
         // Apply optimistic updates based on command
@@ -194,8 +192,6 @@ export function useControlEntityV2() {
             last_updated: new Date().toISOString(),
           }
         );
-      } else {
-        console.log('⚠️  Skipping optimistic update (using legacy API - waiting for server confirmation)');
       }
 
       return { previousEntity };
@@ -258,8 +254,6 @@ export function useBulkControlEntitiesV2() {
       // When falling back to legacy API, we wait for server confirmation to prevent
       // dangerous state mismatches in vehicle control systems
       if (isDomainAPIAvailable && !isCheckingAPI) {
-        console.log(`🔄 Applying bulk optimistic updates for ${request.entity_ids.length} entities (Domain API v2 available)`);
-
         // Apply optimistic updates to all entities
         request.entity_ids.forEach((entityId) => {
           const previousEntity = queryClient.getQueryData<EntitySchema>(
@@ -291,8 +285,6 @@ export function useBulkControlEntitiesV2() {
             );
           }
         });
-      } else {
-        console.log(`⚠️  Skipping bulk optimistic updates for ${request.entity_ids.length} entities (using legacy API - waiting for server confirmation)`);
       }
 
       return { previousEntities };
@@ -562,8 +554,6 @@ export function useControlEntityV2WithValidation() {
       // SAFETY CRITICAL: Only apply optimistic updates if domain API v2 is available
       // AND validation is working properly
       if (isDomainAPIAvailable && !isCheckingAPI && previousEntity) {
-        console.log('🔄 Applying validated optimistic update (Domain API v2 + validation available)');
-
         const optimisticState = { ...previousEntity.state };
 
         // Apply optimistic updates with enhanced safety checks
@@ -598,8 +588,6 @@ export function useControlEntityV2WithValidation() {
             last_updated: new Date().toISOString(),
           }
         );
-      } else {
-        console.log('⚠️ Skipping optimistic update (validation/domain API not available)');
       }
 
       return { previousEntity };
@@ -619,9 +607,6 @@ export function useControlEntityV2WithValidation() {
           context.previousEntity
         );
       }
-    },
-    onSuccess: (data, { entityId }) => {
-      console.log('✅ Validated entity control successful:', { entityId, status: data.status });
     },
     onSettled: (data, error, { entityId }) => {
       // Refetch entity data to ensure consistency
@@ -678,8 +663,6 @@ export function useBulkControlEntitiesV2WithValidation() {
           console.warn(`⚠️ Large bulk operation detected: ${request.entity_ids.length} entities`);
         }
 
-        console.log(`🔄 Applying validated bulk optimistic updates for ${request.entity_ids.length} entities`);
-
         // Apply optimistic updates to all entities
         request.entity_ids.forEach((entityId) => {
           const previousEntity = queryClient.getQueryData<EntitySchema>(
@@ -713,8 +696,6 @@ export function useBulkControlEntitiesV2WithValidation() {
             );
           }
         });
-      } else {
-        console.log(`⚠️ Skipping validated bulk optimistic updates for ${request.entity_ids.length} entities`);
       }
 
       return { previousEntities };
@@ -740,13 +721,6 @@ export function useBulkControlEntitiesV2WithValidation() {
       }
     },
     onSuccess: (result, request) => {
-      console.log('✅ Validated bulk operation successful:', {
-        total: result.total_count,
-        successful: result.success_count,
-        failed: result.failed_count,
-        executionTime: result.total_execution_time_ms
-      });
-
       // Handle partial success scenarios with detailed logging
       const failedOperations = result.results.filter(r => r.status !== 'success');
       if (failedOperations.length > 0) {
