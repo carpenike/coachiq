@@ -92,8 +92,11 @@ One repo, two halves. A single feature commonly spans both.
 - **Server state via React Query**; client state via React Context (auth,
   websocket, health, theme). No Redux.
 - `src/` is organized by `pages/`, `components/` (with `ui/` for shadcn),
-  `hooks/`, `contexts/`, `api/`, `types/`. Frontend TypeScript types are
-  generated from the backend OpenAPI schema.
+  `hooks/`, `contexts/`, `api/`, `types/`. OpenAPI-strong frontend REST
+  types are generated into `src/api/generated/openapi-types.ts`; WebSocket
+  envelopes, runtime validators, legacy adapters, analytics responses, and
+  loose-response endpoints remain manual until their backend schemas are
+  tightened.
 - Talks to the backend over REST (`/api/v2/*`) + WebSocket (`/ws*`). Vite dev
   server proxies both to the backend.
 
@@ -114,7 +117,9 @@ One repo, two halves. A single feature commonly spans both.
   and `nix/test-module.nix` is wired into Linux flake checks for module eval
   coverage.
 - **`dev_tools/`, `scripts/`** — dev utilities; `scripts/export_openapi.py`
-  exports the OpenAPI schema; `scripts/ci-quality-gate.sh` is the CI gate.
+  exports the OpenAPI schema; `frontend/scripts/generate-api-types.mjs` and
+  `frontend/scripts/check-api-types.mjs` generate/check the committed frontend
+  OpenAPI types; `scripts/ci-quality-gate.sh` is the CI gate.
 
 ---
 
@@ -260,10 +265,15 @@ bandit, ESLint-staged). `dev_start.sh` sets up a virtual-CAN dev environment.
   lines are tolerated, but any **new** error on a line you touched fails CI
   (enforced by `scripts/eslint_diff_check.py`). Warnings are advisory. Trailing
   commas are disallowed; 2-space indent; LF line endings.
-- **OpenAPI is the contract.** Frontend types are generated from the backend
-  schema and contract tests assert the v2 shapes. If you change a v2 payload,
-  regenerate/export (`scripts/export_openapi.py`) and update the frontend types
-  in the same change — don't infer the shape by hand (see comms lesson L-02).
+- **OpenAPI is the contract where the schema is strong.** Generate frontend
+  REST types with `cd frontend && npm run gen:api`; verify freshness with
+  `npm run check:api-types`. `frontend/src/api/types/domains.ts` aliases the
+  generated components for strong v2 schemas and explicitly keeps manual types
+  for WebSocket envelopes, Zod/runtime validation helpers, legacy adapters,
+  analytics responses, and loose OpenAPI responses such as entity control and
+  bulk-control until HOF-021 tightens those backend response models. If you
+  change a v2 payload, regenerate/export and update the generated types in the
+  same change — don't infer the shape by hand (see comms lesson L-02).
 - **Real bus vs virtual CAN.** Dev/tests use `vcan`/mocked CAN; production is a
   real bus talking to a real Firefly panel. What the coach actually _does_ with
   a frame is knowable only from the live bus, never from CoachIQ's source (see

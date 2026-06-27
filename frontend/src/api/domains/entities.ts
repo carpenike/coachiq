@@ -6,14 +6,19 @@
  * and optimistic update support with Zod runtime validation.
  */
 
-import { apiGet, apiPost, buildQueryString, logApiRequest, logApiResponse } from '../client';
-import { withDomainAPIFallback } from './index';
-import {
-  fetchEntities as legacyFetchEntities,
-  fetchEntity as legacyFetchEntity,
-  controlEntity as legacyControlEntity
-} from '../endpoints';
-import type { Entity as LegacyEntity } from '../types';
+import { apiGet, apiPost, buildQueryString, logApiRequest, logApiResponse } from "../client";
+import { withDomainAPIFallback } from "./index";
+import { controlEntity as legacyControlEntity } from "../endpoints";
+import type { Entity as LegacyEntity } from "../types";
+import type {
+  BulkControlRequestSchema,
+  BulkOperationResultSchema,
+  ControlCommandSchema,
+  EntitiesQueryParams,
+  EntityCollectionSchema,
+  EntitySchema,
+  OperationResultSchema
+} from "../types/domains";
 import {
   safeParseApiResponse,
   getEntitySchema,
@@ -21,75 +26,18 @@ import {
   getBulkOperationResultSchema,
   getEntityCollectionSchema,
   validateControlCommand,
-  validateBulkControlRequest,
-} from '../validation/zod-schemas';
+  validateBulkControlRequest
+} from "../validation/zod-schemas";
 
-//
-// ===== TYPES FROM BACKEND SCHEMAS =====
-//
-
-export interface EntitySchema {
-  entity_id: string;
-  name: string;
-  device_type: string;
-  protocol: string;
-  state: Record<string, string | number | boolean>;
-  area?: string | null;
-  last_updated: string;
-  available: boolean;
-}
-
-export interface ControlCommandSchema {
-  command: 'set' | 'toggle' | 'brightness_up' | 'brightness_down';
-  state?: boolean | null;
-  brightness?: number | null;
-  parameters?: Record<string, string | number | boolean> | null;
-}
-
-export interface BulkControlRequestSchema {
-  entity_ids: string[];
-  command: ControlCommandSchema;
-  ignore_errors?: boolean;
-  timeout_seconds?: number | null;
-}
-
-export interface OperationResultSchema {
-  entity_id: string;
-  status: 'success' | 'failed' | 'timeout' | 'unauthorized';
-  error_message?: string | null;
-  error_code?: string | null;
-  execution_time_ms?: number | null;
-}
-
-export interface BulkOperationResultSchema {
-  operation_id: string;
-  total_count: number;
-  success_count: number;
-  failed_count: number;
-  results: OperationResultSchema[];
-  total_execution_time_ms: number;
-}
-
-export interface EntityCollectionSchema {
-  entities: EntitySchema[];
-  total_count: number;
-  page: number;
-  page_size: number;
-  has_next: boolean;
-  filters_applied: Record<string, string | number | boolean | string[]>;
-}
-
-//
-// ===== QUERY PARAMETERS =====
-//
-
-export interface EntitiesQueryParams extends Record<string, unknown> {
-  device_type?: string;
-  area?: string;
-  protocol?: string;
-  page?: number;
-  page_size?: number;
-}
+export type {
+  BulkControlRequestSchema,
+  BulkOperationResultSchema,
+  ControlCommandSchema,
+  EntitiesQueryParams,
+  EntityCollectionSchema,
+  EntitySchema,
+  OperationResultSchema
+} from "../types/domains";
 
 //
 // ===== API CLIENT FUNCTIONS =====

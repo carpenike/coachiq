@@ -307,7 +307,7 @@ export const EntitySchemaZod = z.object({
   name: z.string().min(1),
   device_type: z.string().min(1),
   protocol: z.string().min(1),
-  state: z.record(z.union([z.string(), z.number(), z.boolean()])),
+  state: z.record(z.unknown()).optional(),
   area: z.string().nullable().optional(),
   last_updated: z.string().datetime(),
   available: z.boolean(),
@@ -371,7 +371,7 @@ export const EntityCollectionSchemaZod = z.object({
   page: z.number().min(1),
   page_size: z.number().min(1).max(100),
   has_next: z.boolean(),
-  filters_applied: z.record(z.union([z.string(), z.number(), z.boolean(), z.array(z.string())])),
+  filters_applied: z.record(z.unknown()).optional(),
 }).strict();
 
 //

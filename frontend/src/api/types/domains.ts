@@ -1,69 +1,46 @@
+import type { components } from "../generated/openapi-types";
+
 /**
  * Domain API Types
  *
- * TypeScript types generated from backend Pydantic schemas with Zod export capability.
- * These types are synchronized with the backend domain models and provide compile-time
- * type safety for the frontend.
+ * OpenAPI-strong REST schemas are aliases to the generated contract module.
+ * Manual types remain here for WebSocket/legacy compatibility, runtime validation helpers,
+ * analytics responses, and endpoints whose OpenAPI responses are still loose objects.
  */
+
+type GeneratedSchemas = components["schemas"];
 
 //
 // ===== ENTITIES DOMAIN TYPES =====
 //
 
 /** Supported entity control commands */
-export type EntityCommand = 'set' | 'toggle' | 'brightness_up' | 'brightness_down';
+export type EntityCommand = "set" | "toggle" | "brightness_up" | "brightness_down";
 
 /** Entity state values */
-export type EntityState = 'on' | 'off' | 'unknown';
+export type EntityState = "on" | "off" | "unknown";
 
 /** Operation result status */
-export type OperationStatus = 'success' | 'failed' | 'timeout' | 'unauthorized';
+export type OperationStatus = "success" | "failed" | "timeout" | "unauthorized";
 
-/** Server-side entity schema with validation */
-export interface EntitySchema {
-  /** Unique entity identifier */
-  entity_id: string;
-  /** Human-readable entity name */
-  name: string;
-  /** Device type (light, lock, etc.) */
-  device_type: string;
-  /** Communication protocol (rvc, j1939, etc.) */
-  protocol: string;
-  /** Current entity state */
-  state: Record<string, string | number | boolean>;
-  /** Area or zone the entity belongs to */
-  area?: string | null;
-  /** Last update timestamp */
-  last_updated: string;
-  /** Entity availability status */
-  available: boolean;
-}
+/** Server-side entity schema from the OpenAPI contract */
+export type EntitySchema = GeneratedSchemas["EntitySchemaV2"];
 
-/** Entity control command schema */
-export interface ControlCommandSchema {
-  /** Control command to execute */
+/** Entity control command schema from OpenAPI, narrowed to known frontend commands */
+export type ControlCommandSchema = Omit<GeneratedSchemas["ControlCommandV2"], "command" | "parameters"> & {
   command: EntityCommand;
-  /** Target state for set commands */
-  state?: boolean | null;
-  /** Brightness level (0-100) */
-  brightness?: number | null;
-  /** Additional command parameters */
   parameters?: Record<string, string | number | boolean> | null;
-}
+};
 
-/** Bulk entity control request schema */
-export interface BulkControlRequestSchema {
-  /** List of entity IDs to control */
-  entity_ids: string[];
-  /** Command to apply to all entities */
+/** Bulk entity control request schema from the OpenAPI contract */
+export type BulkControlRequestSchema = Omit<GeneratedSchemas["BulkControlRequestV2"], "command"> & {
   command: ControlCommandSchema;
-  /** Continue operation if some entities fail */
-  ignore_errors?: boolean;
-  /** Operation timeout in seconds */
-  timeout_seconds?: number | null;
-}
+};
 
-/** Individual operation result schema */
+/**
+ * Individual operation result schema.
+ * Manual until HOF-021 tightens `/api/v2/entities/{entity_id}/control` in OpenAPI.
+ */
 export interface OperationResultSchema {
   /** Entity ID that was operated on */
   entity_id: string;
@@ -77,7 +54,10 @@ export interface OperationResultSchema {
   execution_time_ms?: number | null;
 }
 
-/** Bulk operation result schema */
+/**
+ * Bulk operation result schema.
+ * Manual until HOF-021 tightens `/api/v2/entities/bulk-control` in OpenAPI.
+ */
 export interface BulkOperationResultSchema {
   /** Unique operation identifier */
   operation_id: string;
@@ -93,21 +73,20 @@ export interface BulkOperationResultSchema {
   total_execution_time_ms: number;
 }
 
-/** Entity collection with pagination and filtering */
-export interface EntityCollectionSchema {
-  /** List of entities */
-  entities: EntitySchema[];
-  /** Total number of entities available */
-  total_count: number;
-  /** Current page number */
-  page: number;
-  /** Number of entities per page */
-  page_size: number;
-  /** Whether there are more pages */
-  has_next: boolean;
-  /** Applied filters */
-  filters_applied: Record<string, string | number | boolean | string[]>;
-}
+/** Entity collection with pagination and filtering from the OpenAPI contract */
+export type EntityCollectionSchema = GeneratedSchemas["EntityCollectionV2"];
+
+/** Network status schema from the OpenAPI contract */
+export type NetworkStatusSchema = GeneratedSchemas["NetworkStatus"];
+
+/** Network summary schema from the OpenAPI contract */
+export type NetworkSummarySchema = GeneratedSchemas["NetworkSummary"];
+
+/** System health status schema from the OpenAPI contract */
+export type SystemStatusSchema = GeneratedSchemas["SystemStatus"];
+
+/** PIN system status response schema from the OpenAPI contract */
+export type SystemStatusResponseSchema = GeneratedSchemas["SystemStatusResponse"];
 
 //
 // ===== QUERY PARAMETERS =====
@@ -196,20 +175,20 @@ export function isEntitySchema(obj: unknown): obj is EntitySchema {
   return (
     obj !== null &&
     typeof obj === 'object' &&
-    'entity_id' in obj &&
-    'name' in obj &&
-    'device_type' in obj &&
-    'protocol' in obj &&
-    'state' in obj &&
-    'last_updated' in obj &&
-    'available' in obj &&
-    typeof (obj as EntitySchema).entity_id === 'string' &&
-    typeof (obj as EntitySchema).name === 'string' &&
-    typeof (obj as EntitySchema).device_type === 'string' &&
-    typeof (obj as EntitySchema).protocol === 'string' &&
-    typeof (obj as EntitySchema).state === 'object' &&
-    typeof (obj as EntitySchema).last_updated === 'string' &&
-    typeof (obj as EntitySchema).available === 'boolean'
+    "entity_id" in obj &&
+    "name" in obj &&
+    "device_type" in obj &&
+    "protocol" in obj &&
+    "last_updated" in obj &&
+    "available" in obj &&
+    typeof (obj as EntitySchema).entity_id === "string" &&
+    typeof (obj as EntitySchema).name === "string" &&
+    typeof (obj as EntitySchema).device_type === "string" &&
+    typeof (obj as EntitySchema).protocol === "string" &&
+    ((obj as EntitySchema).state === undefined ||
+      typeof (obj as EntitySchema).state === "object") &&
+    typeof (obj as EntitySchema).last_updated === "string" &&
+    typeof (obj as EntitySchema).available === "boolean"
   );
 }
 
@@ -218,18 +197,18 @@ export function isBulkOperationResult(obj: unknown): obj is BulkOperationResultS
   return (
     obj !== null &&
     typeof obj === 'object' &&
-    'operation_id' in obj &&
-    'total_count' in obj &&
-    'success_count' in obj &&
-    'failed_count' in obj &&
-    'results' in obj &&
-    'total_execution_time_ms' in obj &&
-    typeof (obj as BulkOperationResultSchema).operation_id === 'string' &&
-    typeof (obj as BulkOperationResultSchema).total_count === 'number' &&
-    typeof (obj as BulkOperationResultSchema).success_count === 'number' &&
-    typeof (obj as BulkOperationResultSchema).failed_count === 'number' &&
+    "operation_id" in obj &&
+    "total_count" in obj &&
+    "success_count" in obj &&
+    "failed_count" in obj &&
+    "results" in obj &&
+    "total_execution_time_ms" in obj &&
+    typeof (obj as BulkOperationResultSchema).operation_id === "string" &&
+    typeof (obj as BulkOperationResultSchema).total_count === "number" &&
+    typeof (obj as BulkOperationResultSchema).success_count === "number" &&
+    typeof (obj as BulkOperationResultSchema).failed_count === "number" &&
     Array.isArray((obj as BulkOperationResultSchema).results) &&
-    typeof (obj as BulkOperationResultSchema).total_execution_time_ms === 'number'
+    typeof (obj as BulkOperationResultSchema).total_execution_time_ms === "number"
   );
 }
 
@@ -238,18 +217,18 @@ export function isEntityCollection(obj: unknown): obj is EntityCollectionSchema 
   return (
     obj !== null &&
     typeof obj === 'object' &&
-    'entities' in obj &&
-    'total_count' in obj &&
-    'page' in obj &&
-    'page_size' in obj &&
-    'has_next' in obj &&
-    'filters_applied' in obj &&
+    "entities" in obj &&
+    "total_count" in obj &&
+    "page" in obj &&
+    "page_size" in obj &&
+    "has_next" in obj &&
     Array.isArray((obj as EntityCollectionSchema).entities) &&
-    typeof (obj as EntityCollectionSchema).total_count === 'number' &&
-    typeof (obj as EntityCollectionSchema).page === 'number' &&
-    typeof (obj as EntityCollectionSchema).page_size === 'number' &&
-    typeof (obj as EntityCollectionSchema).has_next === 'boolean' &&
-    typeof (obj as EntityCollectionSchema).filters_applied === 'object'
+    typeof (obj as EntityCollectionSchema).total_count === "number" &&
+    typeof (obj as EntityCollectionSchema).page === "number" &&
+    typeof (obj as EntityCollectionSchema).page_size === "number" &&
+    typeof (obj as EntityCollectionSchema).has_next === "boolean" &&
+    ((obj as EntityCollectionSchema).filters_applied === undefined ||
+      typeof (obj as EntityCollectionSchema).filters_applied === "object")
   );
 }
 
@@ -259,16 +238,16 @@ export function isEntityCollection(obj: unknown): obj is EntityCollectionSchema 
 
 /** Extract entity IDs from various entity containers */
 export type EntityId<T> = T extends EntitySchema
-  ? T['entity_id']
+  ? T["entity_id"]
   : T extends LegacyEntity
-  ? T['entity_id']
+  ? T["entity_id"]
   : never;
 
 /** Extract entity state from various entity containers */
 export type EntityStateType<T> = T extends EntitySchema
-  ? T['state']
+  ? T["state"]
   : T extends LegacyEntity
-  ? T['raw']
+  ? T["raw"]
   : never;
 
 /** Utility type for entity filtering */
