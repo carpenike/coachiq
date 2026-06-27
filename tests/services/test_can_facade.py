@@ -5,8 +5,7 @@ Tests the unified CAN operations facade that coordinates all CAN-related functio
 including message sending, interface management, recording, analysis, and monitoring.
 """
 
-import asyncio
-from unittest.mock import AsyncMock, MagicMock, Mock, patch
+from unittest.mock import AsyncMock, Mock
 
 import pytest
 
@@ -165,6 +164,46 @@ class TestCANFacade:
         # Verify message was sent successfully
         assert result["success"] is True
         mock_dependencies["injector"].inject_message.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    async def test_bus_statistics_summary_uses_real_socketcan_counters(
+        self, can_facade, mock_dependencies
+    ):
+        """Test summary totals derive from RX/TX packet and error counters."""
+        mock_dependencies["interface_service"].get_interface_stats = AsyncMock(
+            return_value={
+                "can0": {
+                    "rx_packets": 100,
+                    "tx_packets": 25,
+                    "rx_errors": 2,
+                    "tx_errors": 1,
+                    "bus_errors": 99,
+                    "message_count": 999999,
+                    "error_count": 999999,
+                },
+                "can1": {
+                    "rx_packets": 7,
+                    "tx_packets": 3,
+                    "rx_errors": 0,
+                    "tx_errors": 4,
+                    "bus_off": 5,
+                },
+            }
+        )
+        mock_dependencies["recorder"].get_queue_status = AsyncMock(return_value={"size": 0})
+        mock_dependencies["analyzer"].get_statistics = AsyncMock(return_value={})
+        mock_dependencies["performance_monitor"].get_performance_baselines = AsyncMock(
+            return_value={"uptime_seconds": 42.0}
+        )
+
+        stats = await can_facade.get_bus_statistics()
+
+        assert stats["summary"]["total_messages"] == 135
+        assert stats["summary"]["total_errors"] == 7
+        assert stats["summary"]["error_rate_percent"] == pytest.approx(7 / 135 * 100)
+        assert stats["summary"]["uptime"] == 42.0
+        assert stats["interfaces"]["can0"]["bus_errors"] == 99
+        assert stats["interfaces"]["can1"]["bus_off"] == 5
 
     @pytest.mark.asyncio
     async def test_emergency_stop_idempotency(self, can_facade, mock_dependencies):

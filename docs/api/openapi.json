@@ -12346,11 +12346,11 @@
           "networks-v2"
         ],
         "summary": "Get network status",
-        "description": "Return configured CAN interface mappings, service-level CAN health, and facade-reported queue status without fabricated per-interface telemetry.",
+        "description": "Return configured CAN interface mappings, service-level CAN health, and real cumulative per-interface SocketCAN telemetry when available.",
         "operationId": "get_network_status_api_v2_networks_status_get",
         "responses": {
           "200": {
-            "description": "Truthful network summary from currently available CAN facade data",
+            "description": "Truthful network summary from CAN facade and SocketCAN telemetry",
             "content": {
               "application/json": {
                 "schema": {
@@ -12368,11 +12368,11 @@
           "networks-v2"
         ],
         "summary": "Get configured network interfaces",
-        "description": "Return configured logical-to-physical CAN interface mappings.",
+        "description": "Return configured logical-to-physical CAN interface mappings with telemetry.",
         "operationId": "get_network_interfaces_api_v2_networks_interfaces_get",
         "responses": {
           "200": {
-            "description": "List of configured CAN interface mappings",
+            "description": "List of configured CAN interface mappings with telemetry",
             "content": {
               "application/json": {
                 "schema": {
@@ -12393,18 +12393,16 @@
         "tags": [
           "networks-v2"
         ],
-        "summary": "Get facade-reported queue status",
-        "description": "Return CANFacade.get_queue_status() only. This is facade-reported queue status and not real TX queue telemetry.",
+        "summary": "Get CAN network statistics",
+        "description": "Return facade-reported queue status plus bus statistics derived from real cumulative SocketCAN counters. Queue status is not real TX queue telemetry.",
         "operationId": "get_network_statistics_api_v2_networks_statistics_get",
         "responses": {
           "200": {
-            "description": "Facade-reported CAN queue status",
+            "description": "CAN queue status and cumulative bus statistics",
             "content": {
               "application/json": {
                 "schema": {
-                  "additionalProperties": true,
-                  "type": "object",
-                  "title": "Response Get Network Statistics Api V2 Networks Statistics Get"
+                  "$ref": "#/components/schemas/NetworkStatistics"
                 }
               }
             }
@@ -14390,6 +14388,28 @@
             ],
             "title": "Rx Errors"
           },
+          "tx_dropped": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tx Dropped"
+          },
+          "rx_dropped": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Rx Dropped"
+          },
           "bus_errors": {
             "anyOf": [
               {
@@ -14411,6 +14431,17 @@
               }
             ],
             "title": "Restarts"
+          },
+          "arbitration_lost": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Arbitration Lost"
           },
           "link/can": {
             "anyOf": [
@@ -17397,6 +17428,35 @@
         "title": "NetworkSecurityPolicy",
         "description": "Network security policy configuration."
       },
+      "NetworkStatistics": {
+        "properties": {
+          "queue_status": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Queue Status",
+            "description": "Facade-reported CAN queue status, not real TX queue telemetry"
+          },
+          "bus_statistics": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Bus Statistics",
+            "description": "CANFacade bus statistics built from cumulative SocketCAN counters"
+          },
+          "timestamp": {
+            "type": "string",
+            "title": "Timestamp",
+            "description": "Statistics timestamp in ISO 8601 format"
+          }
+        },
+        "type": "object",
+        "required": [
+          "queue_status",
+          "bus_statistics",
+          "timestamp"
+        ],
+        "title": "NetworkStatistics",
+        "description": "CAN network statistics from facade-reported queue and bus telemetry."
+      },
       "NetworkStatus": {
         "properties": {
           "logical_name": {
@@ -17408,6 +17468,198 @@
             "type": "string",
             "title": "Physical Interface",
             "description": "Configured physical interface name"
+          },
+          "state": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "State",
+            "description": "SocketCAN controller state when available"
+          },
+          "bitrate": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Bitrate",
+            "description": "Configured CAN bitrate when available"
+          },
+          "rx_packets": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Rx Packets",
+            "description": "Cumulative received packet count"
+          },
+          "tx_packets": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tx Packets",
+            "description": "Cumulative transmitted packet count"
+          },
+          "rx_bytes": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Rx Bytes",
+            "description": "Cumulative received byte count"
+          },
+          "tx_bytes": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tx Bytes",
+            "description": "Cumulative transmitted byte count"
+          },
+          "rx_errors": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Rx Errors",
+            "description": "Cumulative received error count"
+          },
+          "tx_errors": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tx Errors",
+            "description": "Cumulative transmitted error count"
+          },
+          "rx_dropped": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Rx Dropped",
+            "description": "Cumulative received dropped count"
+          },
+          "tx_dropped": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tx Dropped",
+            "description": "Cumulative transmitted dropped count"
+          },
+          "bus_errors": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Bus Errors",
+            "description": "Best-effort CAN controller bus error count"
+          },
+          "restarts": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Restarts",
+            "description": "Best-effort CAN controller restart count"
+          },
+          "arbitration_lost": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Arbitration Lost",
+            "description": "Best-effort CAN controller arbitration lost count"
+          },
+          "error_warning": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error Warning",
+            "description": "Best-effort CAN controller error-warning count"
+          },
+          "error_passive": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error Passive",
+            "description": "Best-effort CAN controller error-passive count"
+          },
+          "bus_off": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Bus Off",
+            "description": "Best-effort CAN controller bus-off count"
           }
         },
         "type": "object",
@@ -17416,7 +17668,7 @@
           "physical_interface"
         ],
         "title": "NetworkStatus",
-        "description": "Configured logical-to-physical network interface mapping."
+        "description": "Configured logical-to-physical network interface mapping with CAN telemetry."
       },
       "NetworkSummary": {
         "properties": {
@@ -17460,7 +17712,7 @@
           "timestamp"
         ],
         "title": "NetworkSummary",
-        "description": "Truthful network summary from currently available CAN facade data."
+        "description": "Truthful network summary from CAN facade and SocketCAN telemetry."
       },
       "NotificationChannel": {
         "type": "string",

@@ -20,6 +20,7 @@ class FakeCANFacade:
 
     def __init__(self) -> None:
         self.bus_statistics_called = False
+        self.interface_details_called = False
 
     async def get_interface_mappings(self) -> dict[str, str]:
         """Return configured logical-to-physical interface mappings."""
@@ -45,10 +46,64 @@ class FakeCANFacade:
             "status": "operational",
         }
 
+    async def get_interface_details(self) -> dict[str, dict[str, Any]]:
+        """Return real per-interface telemetry shaped like CANInterfaceStats dumps."""
+        self.interface_details_called = True
+        return {
+            "can0": {
+                "state": "ERROR-ACTIVE",
+                "bitrate": 250000,
+                "rx_packets": 100,
+                "tx_packets": 25,
+                "rx_bytes": 800,
+                "tx_bytes": 200,
+                "rx_errors": 1,
+                "tx_errors": 0,
+                "rx_dropped": 2,
+                "tx_dropped": 3,
+                "bus_errors": 4,
+                "restarts": 0,
+                "arbitration_lost": 5,
+                "error_warning": 6,
+                "error_passive": 7,
+                "bus_off": 8,
+            },
+            "can1": {
+                "state": "ERROR-WARNING",
+                "bitrate": 250000,
+                "rx_packets": 50,
+                "tx_packets": 10,
+                "rx_bytes": 400,
+                "tx_bytes": 80,
+                "rx_errors": 2,
+                "tx_errors": 1,
+                "rx_dropped": 0,
+                "tx_dropped": 1,
+                "bus_errors": None,
+                "restarts": None,
+                "arbitration_lost": None,
+                "error_warning": None,
+                "error_passive": None,
+                "bus_off": None,
+            },
+        }
+
     async def get_bus_statistics(self) -> dict[str, Any]:
-        """Fail if the networks router reaches the deferred telemetry path."""
+        """Return bus statistics now that HOF-002 implements telemetry."""
         self.bus_statistics_called = True
-        raise AssertionError("networks v2 must not call get_bus_statistics in HOF-001")
+        return {
+            "interfaces": await self.get_interface_details(),
+            "queue": await self.get_queue_status(),
+            "analyzer": {},
+            "performance": {"uptime_seconds": 123.0},
+            "summary": {
+                "total_messages": 185,
+                "total_errors": 4,
+                "message_rate": 0.0,
+                "error_rate_percent": 2.1621621621621623,
+                "uptime": 123.0,
+            },
+        }
 
 
 @pytest.fixture
@@ -68,21 +123,37 @@ def networks_client() -> Generator[tuple[TestClient, FakeCANFacade], None, None]
 def test_interfaces_return_configured_mappings(
     networks_client: tuple[TestClient, FakeCANFacade],
 ) -> None:
-    """Interfaces expose only configured logical-to-physical mappings."""
+    """Interfaces expose configured mappings with real telemetry when available."""
     client, fake_can_facade = networks_client
 
     response = client.get("/api/v2/networks/interfaces")
 
     assert response.status_code == 200
-    assert response.json() == [
-        {"logical_name": "chassis", "physical_interface": "can1"},
-        {"logical_name": "house", "physical_interface": "can0"},
-    ]
+    payload: list[dict[str, Any]] = response.json()
+    assert payload[0]["logical_name"] == "chassis"
+    assert payload[0]["physical_interface"] == "can1"
+    assert payload[0]["state"] == "ERROR-WARNING"
+    assert payload[0]["rx_packets"] == 50
+    assert payload[0]["tx_dropped"] == 1
+    assert payload[0]["bus_errors"] is None
+    assert payload[1]["logical_name"] == "house"
+    assert payload[1]["physical_interface"] == "can0"
+    assert payload[1]["state"] == "ERROR-ACTIVE"
+    assert payload[1]["rx_packets"] == 100
+    assert payload[1]["tx_packets"] == 25
+    assert payload[1]["rx_dropped"] == 2
+    assert payload[1]["tx_dropped"] == 3
+    assert payload[1]["bus_errors"] == 4
+    assert payload[1]["arbitration_lost"] == 5
+    assert payload[1]["bus_off"] == 8
+    assert "message_rate" not in payload[1]
+    assert "last_activity" not in payload[1]
+    assert fake_can_facade.interface_details_called is True
     assert fake_can_facade.bus_statistics_called is False
 
 
 def test_status_uses_truthful_sources(networks_client: tuple[TestClient, FakeCANFacade]) -> None:
-    """Status combines mappings, service health, and queue status only."""
+    """Status combines mappings, service health, queue status, and telemetry."""
     client, fake_can_facade = networks_client
 
     response = client.get("/api/v2/networks/status")
@@ -90,32 +161,34 @@ def test_status_uses_truthful_sources(networks_client: tuple[TestClient, FakeCAN
     assert response.status_code == 200
     payload = response.json()
     assert payload["total_interfaces"] == 2
-    assert payload["interfaces"] == [
-        {"logical_name": "chassis", "physical_interface": "can1"},
-        {"logical_name": "house", "physical_interface": "can0"},
-    ]
+    assert payload["interfaces"][0]["logical_name"] == "chassis"
+    assert payload["interfaces"][0]["rx_packets"] == 50
+    assert payload["interfaces"][1]["logical_name"] == "house"
+    assert payload["interfaces"][1]["rx_packets"] == 100
     assert payload["can_service_health"]["service"] == "CANBusService"
     assert payload["can_service_health"]["healthy"] is True
     assert payload["queue_status"]["status"] == "operational"
     assert "total_messages" not in payload
     assert "message_count" not in payload["interfaces"][0]
+    assert fake_can_facade.interface_details_called is True
     assert fake_can_facade.bus_statistics_called is False
 
 
-def test_statistics_returns_queue_status_only(
+def test_statistics_returns_queue_status_and_bus_statistics(
     networks_client: tuple[TestClient, FakeCANFacade],
 ) -> None:
-    """Statistics returns only facade-reported queue status."""
+    """Statistics reaches the real bus-statistics path in HOF-002."""
     client, fake_can_facade = networks_client
 
     response = client.get("/api/v2/networks/statistics")
 
     assert response.status_code == 200
     payload = response.json()
-    assert payload["queue_length"] == 0
-    assert payload["queue_capacity"] == 1000
-    assert "summary" not in payload
-    assert fake_can_facade.bus_statistics_called is False
+    assert payload["queue_status"]["queue_length"] == 0
+    assert payload["queue_status"]["queue_capacity"] == 1000
+    assert payload["bus_statistics"]["summary"]["total_messages"] == 185
+    assert payload["bus_statistics"]["summary"]["total_errors"] == 4
+    assert fake_can_facade.bus_statistics_called is True
 
 
 def test_schemas_include_statistics(networks_client: tuple[TestClient, FakeCANFacade]) -> None:

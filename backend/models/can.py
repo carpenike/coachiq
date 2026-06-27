@@ -31,8 +31,11 @@ class CANInterfaceStats(BaseModel):
     rx_bytes: int | None = None
     tx_errors: int | None = None
     rx_errors: int | None = None
+    tx_dropped: int | None = None
+    rx_dropped: int | None = None
     bus_errors: int | None = None  # General bus errors
     restarts: int | None = None  # Controller restarts
+    arbitration_lost: int | None = None  # Controller arbitration lost count
 
     # Additional details from ip -details link show
     link_type: str | None = Field(default=None, alias="link/can")

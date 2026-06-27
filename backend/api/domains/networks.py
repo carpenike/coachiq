@@ -26,14 +26,42 @@ logger = logging.getLogger(__name__)
 
 # Domain-specific schemas for v2 API
 class NetworkStatus(BaseModel):
-    """Configured logical-to-physical network interface mapping."""
+    """Configured logical-to-physical network interface mapping with CAN telemetry."""
 
     logical_name: str = Field(..., description="Logical interface name")
     physical_interface: str = Field(..., description="Configured physical interface name")
+    state: str | None = Field(default=None, description="SocketCAN controller state when available")
+    bitrate: int | None = Field(default=None, description="Configured CAN bitrate when available")
+    rx_packets: int | None = Field(default=None, description="Cumulative received packet count")
+    tx_packets: int | None = Field(default=None, description="Cumulative transmitted packet count")
+    rx_bytes: int | None = Field(default=None, description="Cumulative received byte count")
+    tx_bytes: int | None = Field(default=None, description="Cumulative transmitted byte count")
+    rx_errors: int | None = Field(default=None, description="Cumulative received error count")
+    tx_errors: int | None = Field(default=None, description="Cumulative transmitted error count")
+    rx_dropped: int | None = Field(default=None, description="Cumulative received dropped count")
+    tx_dropped: int | None = Field(default=None, description="Cumulative transmitted dropped count")
+    bus_errors: int | None = Field(
+        default=None, description="Best-effort CAN controller bus error count"
+    )
+    restarts: int | None = Field(
+        default=None, description="Best-effort CAN controller restart count"
+    )
+    arbitration_lost: int | None = Field(
+        default=None, description="Best-effort CAN controller arbitration lost count"
+    )
+    error_warning: int | None = Field(
+        default=None, description="Best-effort CAN controller error-warning count"
+    )
+    error_passive: int | None = Field(
+        default=None, description="Best-effort CAN controller error-passive count"
+    )
+    bus_off: int | None = Field(
+        default=None, description="Best-effort CAN controller bus-off count"
+    )
 
 
 class NetworkSummary(BaseModel):
-    """Truthful network summary from currently available CAN facade data."""
+    """Truthful network summary from CAN facade and SocketCAN telemetry."""
 
     total_interfaces: int = Field(..., description="Total configured logical interfaces")
     interfaces: list[NetworkStatus] = Field(..., description="Configured interface mappings")
@@ -46,17 +74,62 @@ class NetworkSummary(BaseModel):
     timestamp: str = Field(..., description="Summary timestamp in ISO 8601 format")
 
 
+class NetworkStatistics(BaseModel):
+    """CAN network statistics from facade-reported queue and bus telemetry."""
+
+    queue_status: dict[str, Any] = Field(
+        ..., description="Facade-reported CAN queue status, not real TX queue telemetry"
+    )
+    bus_statistics: dict[str, Any] = Field(
+        ..., description="CANFacade bus statistics built from cumulative SocketCAN counters"
+    )
+    timestamp: str = Field(..., description="Statistics timestamp in ISO 8601 format")
+
+
 def _utc_timestamp() -> str:
     """Return the current UTC timestamp in ISO 8601 format."""
     return datetime.now(UTC).isoformat()
 
 
-def _network_statuses(interface_mappings: dict[str, str]) -> list[NetworkStatus]:
+NETWORK_TELEMETRY_FIELDS = (
+    "state",
+    "bitrate",
+    "rx_packets",
+    "tx_packets",
+    "rx_bytes",
+    "tx_bytes",
+    "rx_errors",
+    "tx_errors",
+    "rx_dropped",
+    "tx_dropped",
+    "bus_errors",
+    "restarts",
+    "arbitration_lost",
+    "error_warning",
+    "error_passive",
+    "bus_off",
+)
+
+
+def _network_statuses(
+    interface_mappings: dict[str, str], interface_details: dict[str, dict[str, Any]] | None = None
+) -> list[NetworkStatus]:
     """Build response models from configured interface mappings."""
-    return [
-        NetworkStatus(logical_name=logical_name, physical_interface=physical_interface)
-        for logical_name, physical_interface in sorted(interface_mappings.items())
-    ]
+    details = interface_details or {}
+    statuses = []
+    for logical_name, physical_interface in sorted(interface_mappings.items()):
+        telemetry = {
+            field_name: details.get(physical_interface, {}).get(field_name)
+            for field_name in NETWORK_TELEMETRY_FIELDS
+        }
+        statuses.append(
+            NetworkStatus(
+                logical_name=logical_name,
+                physical_interface=physical_interface,
+                **telemetry,
+            )
+        )
+    return statuses
 
 
 def create_networks_router() -> APIRouter:
@@ -94,9 +167,9 @@ def create_networks_router() -> APIRouter:
         summary="Get network status",
         description=(
             "Return configured CAN interface mappings, service-level CAN health, and "
-            "facade-reported queue status without fabricated per-interface telemetry."
+            "real cumulative per-interface SocketCAN telemetry when available."
         ),
-        response_description="Truthful network summary from currently available CAN facade data",
+        response_description="Truthful network summary from CAN facade and SocketCAN telemetry",
     )
     async def get_network_status(
         can_facade: VerifiedCANFacade,
@@ -106,7 +179,8 @@ def create_networks_router() -> APIRouter:
 
         try:
             interface_mappings = await can_facade.get_interface_mappings()
-            interfaces = _network_statuses(interface_mappings)
+            interface_details = await can_facade.get_interface_details()
+            interfaces = _network_statuses(interface_mappings, interface_details)
 
             return NetworkSummary(
                 total_interfaces=len(interfaces),
@@ -126,8 +200,8 @@ def create_networks_router() -> APIRouter:
         "/interfaces",
         response_model=list[NetworkStatus],
         summary="Get configured network interfaces",
-        description="Return configured logical-to-physical CAN interface mappings.",
-        response_description="List of configured CAN interface mappings",
+        description="Return configured logical-to-physical CAN interface mappings with telemetry.",
+        response_description="List of configured CAN interface mappings with telemetry",
     )
     async def get_network_interfaces(
         can_facade: VerifiedCANFacade,
@@ -136,7 +210,9 @@ def create_networks_router() -> APIRouter:
         """Get configured logical-to-physical network interface mappings."""
 
         try:
-            return _network_statuses(await can_facade.get_interface_mappings())
+            interface_mappings = await can_facade.get_interface_mappings()
+            interface_details = await can_facade.get_interface_details()
+            return _network_statuses(interface_mappings, interface_details)
 
         except Exception as e:
             logger.error("Error getting network interfaces: %s", e)
@@ -144,22 +220,26 @@ def create_networks_router() -> APIRouter:
 
     @router.get(
         "/statistics",
-        response_model=dict[str, Any],
-        summary="Get facade-reported queue status",
+        response_model=NetworkStatistics,
+        summary="Get CAN network statistics",
         description=(
-            "Return CANFacade.get_queue_status() only. This is facade-reported queue status "
-            "and not real TX queue telemetry."
+            "Return facade-reported queue status plus bus statistics derived from real cumulative "
+            "SocketCAN counters. Queue status is not real TX queue telemetry."
         ),
-        response_description="Facade-reported CAN queue status",
+        response_description="CAN queue status and cumulative bus statistics",
     )
     async def get_network_statistics(
         can_facade: VerifiedCANFacade,
         _: Annotated[None, Depends(verify_can_interface_enabled)],
-    ) -> dict[str, Any]:
-        """Get facade-reported CAN queue status without bus statistics telemetry."""
+    ) -> NetworkStatistics:
+        """Get facade-reported queue status and cumulative bus statistics telemetry."""
 
         try:
-            return await can_facade.get_queue_status()
+            return NetworkStatistics(
+                queue_status=await can_facade.get_queue_status(),
+                bus_statistics=await can_facade.get_bus_statistics(),
+                timestamp=_utc_timestamp(),
+            )
 
         except Exception as e:
             logger.error("Error getting network statistics: %s", e)

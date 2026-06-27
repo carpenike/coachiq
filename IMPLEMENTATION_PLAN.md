@@ -34,6 +34,35 @@ coordinate, see the `handoff/README` note in the `coachiq` basic-memory project.
 
 ## Build Log
 
+### HOF-002 — Networks v2 Real Per-Interface CAN Telemetry
+- [shipped] same commit as this entry · 2026-06-26
+- [component] backend
+- [adr] docs/adr/ADR-0002-can-facade-pattern.md
+
+**What changed.** `CANInterfaceService` now provides the facade-backed
+SocketCAN telemetry methods for discovered Linux CAN interfaces, using
+`pyroute2` when available and degrading to empty data on unsupported platforms.
+The provider exposes cumulative RX/TX packets, bytes, errors, dropped counters,
+CAN state/bitrate, and best-effort nullable controller xstats. `CANFacade` now
+summarizes real RX/TX packet and error counters instead of obsolete
+`message_count` / `error_count` aliases, and `/api/v2/networks` surfaces the
+real per-interface telemetry plus bus statistics. OpenAPI artifacts were
+regenerated.
+
+**Why.** HOF-002 graduates the RECON-001 hardware truth table into the v2
+networks API without fabricating telemetry: rolling rates, `last_activity`, and
+real TX queue depth remain deferred because they require a stateful sampler or
+are not exposed by the current stack. Controller counters are best-effort only;
+raw `pyroute2` xstats blobs are left nullable rather than parsed or invented.
+Legacy `backend/api/routers/can.py` remains untouched to keep the blast radius
+on v2 networks and the facade provider.
+
+**Files.** backend/api/domains/networks.py, backend/models/can.py,
+backend/services/can_facade.py, backend/services/can_interface_service.py,
+docs/api/openapi.json, docs/api/openapi.yaml,
+tests/api/test_networks_domain.py, tests/services/test_can_facade.py,
+tests/services/test_can_interface_service.py
+
 ### HOF-006 — Bump GitHub Actions To Node24 Runtimes
 - [shipped] same commit as this entry · 2026-06-26
 - [component] both

@@ -13,7 +13,7 @@ The OEM Firefly MIRA panel owns the actual vehicle safety case. See
 
 import asyncio
 import logging
-from typing import Any
+from typing import Any, override
 
 # CAN-specific Prometheus metrics for safety-critical monitoring
 from prometheus_client import Counter, Gauge
@@ -27,6 +27,17 @@ from backend.core.safety_interfaces import (
 )
 
 logger = logging.getLogger(__name__)
+
+
+def _counter_total(stats: dict[str, Any], *field_names: str) -> int:
+    """Sum integer counter fields from an interface statistics dictionary."""
+    total = 0
+    for field_name in field_names:
+        value = stats.get(field_name)
+        if isinstance(value, int) and not isinstance(value, bool):
+            total += value
+    return total
+
 
 # CAN-specific Prometheus metrics for safety-critical monitoring
 CAN_MESSAGE_QUEUE_DEPTH = Gauge(
@@ -99,7 +110,7 @@ class CANFacade(SafetyAware):
         self._performance_monitor = performance_monitor
 
         # Health monitoring
-        self._health_task: asyncio.Task | None = None
+        self._health_task: asyncio.Task[None] | None = None
 
         # Performance monitoring helper
         self._monitor = self._performance_monitor.monitor_service_method
@@ -185,6 +196,7 @@ class CANFacade(SafetyAware):
         await self._recorder.stop()
         await self._bus_service.stop()
 
+    @override
     async def emergency_stop(self, reason: str) -> None:
         """Execute coordinated emergency stop across all services."""
         logger.critical("CANFacade EMERGENCY STOP: %s", reason)
@@ -238,7 +250,7 @@ class CANFacade(SafetyAware):
 
     async def get_comprehensive_health(self) -> dict[str, Any]:
         """Get comprehensive health status from all services."""
-        health_data = {
+        health_data: dict[str, Any] = {
             "facade_status": self._safety_status.value,
             "emergency_stop_active": self._emergency_stop_active,
             "services": {},
@@ -307,14 +319,14 @@ class CANFacade(SafetyAware):
                     interface_stats = await self._interface_service.get_interface_stats()
                     for iface_name, stats in interface_stats.items():
                         # Update error frame metrics if available
-                        error_count = stats.get("error_count", 0)
+                        error_count = _counter_total(stats, "rx_errors", "tx_errors")
                         if error_count > 0:
                             CAN_ERROR_FRAMES_TOTAL.labels(
                                 interface=iface_name, error_type="general"
                             ).inc(error_count)
 
                         # Calculate and update bus load percentage
-                        message_count = stats.get("message_count", 0)
+                        message_count = _counter_total(stats, "rx_packets", "tx_packets")
                         # Rough estimation: assume 500 messages/sec is 100% load
                         load_percent = min((message_count / 500.0) * 100, 100)
                         CAN_BUS_LOAD_PERCENT.labels(interface=iface_name).set(load_percent)
@@ -365,9 +377,13 @@ class CANFacade(SafetyAware):
 
         # Calculate summary metrics
         total_messages = sum(
-            iface.get("message_count", 0) for iface in stats["interfaces"].values()
+            _counter_total(iface, "rx_packets", "tx_packets")
+            for iface in stats["interfaces"].values()
         )
-        total_errors = sum(iface.get("error_count", 0) for iface in stats["interfaces"].values())
+        total_errors = sum(
+            _counter_total(iface, "rx_errors", "tx_errors")
+            for iface in stats["interfaces"].values()
+        )
 
         # Calculate message rate from performance data
         message_rate = 0.0
