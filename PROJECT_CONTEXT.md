@@ -103,15 +103,15 @@ One repo, two halves. A single feature commonly spans both.
   `coach_mapping.default.yml` (generic device→entity map),
   `2021_Entegra_Aspire_44R.yml` (reference coach), `security.yml`,
   `Caddyfile.example`.
-- **`docs/`** — `docs/adr/` (the 8 formal ADRs — see §4), `docs/architecture/`,
+- **`docs/`** — `docs/adr/` (the 9 formal ADRs — see §4), `docs/architecture/`,
   `docs/api/`, `docs/safety.md` (the operational-safety policy), MkDocs site.
 - **`.github/`** — `copilot-instructions.md` + the modular
   `.github/instructions/*.instructions.md` set + `.github/prompts/` (audit /
   feature prompts) + CI workflows.
 - **`nix/`, `flake.nix`** — Nix package/module support. `flake.nix` stays a thin
   output shell; `nix/package.nix` owns the CoachIQ/backend + frontend package
-  derivations, `nix/module.nix` owns the preserved `coachiq.*` NixOS module, and
-  `nix/test-module.nix` is wired into Linux flake checks for module eval
+  derivations, `nix/module.nix` owns the `services.coachiq` hybrid NixOS module,
+  and `nix/test-module.nix` is wired into Linux flake checks for module eval
   coverage.
 - **`dev_tools/`, `scripts/`** — dev utilities; `scripts/export_openapi.py`
   exports the OpenAPI schema; `scripts/ci-quality-gate.sh` is the CI gate.
@@ -157,6 +157,14 @@ unified `/api/v2/entities` surface, not per-type routes like `/api/lights`.
   loader for the RV-C **spec/mapping files on disk**. Internal to the decoder.
   Renamed from the old `ConfigurationService`.
 
+**Nix module hybrid config (ADR-0009).** The NixOS module lives at
+`nix/module.nix`, is exposed as `nixosModules.default`, and configures
+`services.coachiq`. Keep only load-bearing deployment knobs first-class
+(`host`, `port`, `dataDir`, `environmentFile`, `openFirewall`, `logLevel`,
+`tlsTerminationIsExternal`); pass the long-tail non-secret settings through the
+freeform `settings` attrset as current `COACHIQ_*` env vars. Secrets belong in
+`environmentFile`, not literal Nix options.
+
 **Auth consolidated under `backend/services/auth/` (ADR-0007).** The auth
 subsystem is one package: `manager.py` (`AuthManager`, the policy engine) vs
 `service.py` (`AuthService`, the request-time facade) are intentionally
@@ -192,6 +200,7 @@ proposing anything that touches the area.
 | ADR-0006 | Typed dependency injection            | Typed aliases in `dependencies.py` map to concrete classes; registry is string-keyed       |
 | ADR-0007 | Auth service namespace                | Auth consolidated into `backend/services/auth/`; `AuthManager` ≠ `AuthService` by design   |
 | ADR-0008 | RVC config facade naming              | `Settings` (app) vs `RVCConfigFacade` (metadata) vs `RVCSpecLoader` (spec files)           |
+| ADR-0009 | Nix module hybrid options             | `services.coachiq` keeps a small typed surface; long-tail config flows through env vars     |
 
 ---
 

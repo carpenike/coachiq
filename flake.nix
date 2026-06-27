@@ -45,9 +45,9 @@
 #   environment.systemPackages = [ inputs.coachiq.packages.${system}.coachiq ];
 #
 #   # As a NixOS module:
-#   imports = [ inputs.coachiq.nixosModules.coachiq ];
+#   imports = [ inputs.coachiq.nixosModules.default ];
 #   # Then configure it:
-#   coachiq.settings = { ... };
+#   services.coachiq = { ... };
 #
 #   # Or to reference CLI apps:
 #   nix run inputs.coachiq#check
@@ -58,7 +58,7 @@
   description = "CoachIQ Python package and devShells";
 
   inputs = {
-    nixpkgs.url     = "github:NixOS/nixpkgs/nixpkgs-unstable";
+    nixpkgs.url     = "github:NixOS/nixpkgs/nixos-25.11";
     flake-utils.url = "github:numtide/flake-utils";
   };
 
@@ -479,7 +479,7 @@ EOF
         } // pkgs.lib.optionalAttrs pkgs.stdenv.isLinux {
           module = import ./nix/test-module.nix {
             inherit nixpkgs system;
-            module = self.nixosModules.coachiq;
+            module = self.nixosModules.default;
             package = self.packages.${system}.coachiq;
           };
         };
@@ -499,6 +499,10 @@ EOF
       }
     ) //
     {
-      nixosModules.coachiq = import ./nix/module.nix { inherit self; };
+      nixosModules.default = import ./nix/module.nix { inherit self; };
+
+      overlays.default = final: _prev: {
+        coachiq = self.packages.${final.system}.coachiq;
+      };
     };
 }

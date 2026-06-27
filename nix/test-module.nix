@@ -1,5 +1,4 @@
 # Test the CoachIQ NixOS module configuration.
-# Wired into flake checks by HOF-019.
 
 {
   nixpkgs ? <nixpkgs>,
@@ -39,43 +38,78 @@ let
         self.packages.${system}.coachiq = testPackage;
       };
 
+  envFile = "/run/secrets/coachiq.env";
   evaluatedConfig = lib.nixosSystem {
     inherit system;
     modules = [
       coachiqModule
       {
-        coachiq.enable = true;
-        coachiq.package = testPackage;
-        coachiq.settings = {
-          server.port = 8080;
-          security.secretKeyFile = "/run/secrets/coachiq-security-secret";
-          features.enableJ1939 = true;
+        services.coachiq = {
+          enable = true;
+          package = testPackage;
+          host = "127.0.0.1";
+          port = 8080;
+          dataDir = "/var/lib/coachiq-test";
+          environmentFile = envFile;
+          logLevel = "WARNING";
+          tlsTerminationIsExternal = true;
+          settings = {
+            COACHIQ_CAN__INTERFACE_MAPPINGS = builtins.toJSON {
+              house = "can0";
+              chassis = "can1";
+            };
+            COACHIQ_FEATURES__DOMAIN_API_V2 = false;
+            COACHIQ_MULTI_NETWORK__CROSS_NETWORK_WHITELIST = builtins.toJSON [ "rvc" "j1939" ];
+            COACHIQ_MULTI_NETWORK__MESSAGE_ROUTING_TIMEOUT = "0.25";
+          };
         };
       }
     ];
   };
 
-  env = evaluatedConfig.config.systemd.services.coachiq.environment;
+  service = evaluatedConfig.config.systemd.services.coachiq;
+  env = service.environment;
+  serviceConfig = service.serviceConfig;
   checks = [
     {
-      name = "coachiq namespace is preserved";
-      ok = evaluatedConfig.config.coachiq.enable == true;
+      name = "services.coachiq namespace is preserved";
+      ok = evaluatedConfig.config.services.coachiq.enable == true;
     }
     {
       name = "configured server port reaches environment";
       ok = env.COACHIQ_SERVER__PORT == "8080";
     }
     {
-      name = "default server host stays unset";
-      ok = !(env ? COACHIQ_SERVER__HOST);
+      name = "data dir reaches environment";
+      ok = env.COACHIQ_PERSISTENCE__DATA_DIR == "/var/lib/coachiq-test";
     }
     {
-      name = "security secret file reaches environment";
-      ok = env.COACHIQ_SECURITY__SECRET_KEY_FILE == "/run/secrets/coachiq-security-secret";
+      name = "environment file reaches systemd service";
+      ok = serviceConfig.EnvironmentFile == envFile;
     }
     {
-      name = "J1939 feature flag reaches environment";
-      ok = env.COACHIQ_J1939__ENABLED == "true";
+      name = "first-class log level reaches environment";
+      ok = env.COACHIQ_LOGGING__LEVEL == "WARNING";
+    }
+    {
+      name = "first-class TLS termination reaches environment";
+      ok = env.COACHIQ_SECURITY__TLS_TERMINATION_IS_EXTERNAL == "true";
+    }
+    {
+      name = "freeform bool uses current Pydantic key";
+      ok = env.COACHIQ_FEATURES__DOMAIN_API_V2 == "false";
+    }
+    {
+      name = "freeform JSON dict reaches environment";
+      ok = env.COACHIQ_CAN__INTERFACE_MAPPINGS == ''{"chassis":"can1","house":"can0"}'';
+    }
+    {
+      name = "freeform JSON list reaches environment";
+      ok = env.COACHIQ_MULTI_NETWORK__CROSS_NETWORK_WHITELIST == ''["rvc","j1939"]'';
+    }
+    {
+      name = "freeform float string reaches environment";
+      ok = env.COACHIQ_MULTI_NETWORK__MESSAGE_ROUTING_TIMEOUT == "0.25";
     }
   ];
 

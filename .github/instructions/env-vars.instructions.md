@@ -38,6 +38,12 @@ applyTo: "**/*.py"
 - In non-development environments, CSRF middleware must fail closed unless `COACHIQ_AUTH__SECRET_KEY` or a real `COACHIQ_SECURITY__SECRET_KEY` is configured. Never add hardcoded production fallbacks for signing secrets; development-only placeholders must stay explicitly labeled and rejected outside development.
 - Production and staging settings must reject missing secrets, `development-only-secret-key-do-not-use-in-production`, and copied example placeholders such as `your-secret-key-change-in-production`. Prefer `COACHIQ_SECURITY__SECRET_KEY_FILE` and `COACHIQ_AUTH__SECRET_KEY_FILE` for deployments so secrets come from `/run/secrets` or systemd credentials rather than Nix config, the Nix store, or a checked-in env file.
 
+## NixOS Module
+
+- The NixOS module is `services.coachiq` via `nixosModules.default`. Keep secrets in `environmentFile`; do not add literal secret-valued Nix options.
+- Use first-class module options only for deployment knobs (`host`, `port`, `dataDir`, `environmentFile`, `openFirewall`, `logLevel`, `tlsTerminationIsExternal`). Put other non-secret config in `services.coachiq.settings` using current `COACHIQ_*` env-var names from `backend/core/config.py`.
+- Freeform settings accept Nix strings, ints, and bools. Floats must be quoted strings. Lists and dictionaries should be JSON strings unless the specific Pydantic field parser is known to accept comma-separated text.
+
 ## Misc
 
 - `LOG_LEVEL`: Logging verbosity
