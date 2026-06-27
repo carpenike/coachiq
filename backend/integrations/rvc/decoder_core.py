@@ -11,6 +11,12 @@ from typing import Any
 
 logger = logging.getLogger(__name__)
 
+MAX_INLINE_BIT_LENGTH = 64
+MAKE_CODE_BYTE_LENGTH = 2
+MODEL_FIELD_END = 17
+SERIAL_FIELD_END = 32
+UNIT_FIELD_END = 37
+
 
 class DecodingError(Exception):
     """Raised when decoding fails."""
@@ -30,10 +36,33 @@ class DecodeError:
 class DecodedValue:
     """Successfully decoded value with metadata."""
 
-    value: int | float | str | bool
+    value: int | float | str | bool | None
     unit: str | None = None
     valid: bool = True
     raw_value: int | None = None
+    unavailable: bool = False
+
+
+def _coerce_raw_sentinel(value: Any) -> int | None:
+    """Coerce configured raw sentinel values from int/decimal/hex to int."""
+    if isinstance(value, int):
+        return value
+    if isinstance(value, str):
+        try:
+            return int(value, 0)
+        except ValueError:
+            return None
+    return None
+
+
+def _unavailable_raw_values(signal: dict[str, Any]) -> set[int]:
+    """Return explicitly configured raw values that mean data is unavailable."""
+    configured = signal.get("unavailable_raw_values", [])
+    if not isinstance(configured, list):
+        configured = [configured]
+
+    values = {_coerce_raw_sentinel(value) for value in configured}
+    return {value for value in values if value is not None}
 
 
 def get_bits(data_bytes: bytes, start_bit: int, length: int) -> int:
@@ -74,9 +103,11 @@ def get_bits(data_bytes: bytes, start_bit: int, length: int) -> int:
         raise DecodingError(msg)
 
     # For very long fields (> 64 bits), we need special handling
-    if length > 64:
+    if length > MAX_INLINE_BIT_LENGTH:
         logger.warning(
-            f"Extracting field longer than 64 bits ({length} bits) - results may be truncated"
+            "Extracting field longer than %d bits (%d bits) - results may be truncated",
+            MAX_INLINE_BIT_LENGTH,
+            length,
         )
 
     # Convert to integer using little-endian byte order
@@ -87,7 +118,7 @@ def get_bits(data_bytes: bytes, start_bit: int, length: int) -> int:
     return (raw_int >> start_bit) & mask
 
 
-def decode_signal(signal: dict[str, Any], data_bytes: bytes) -> DecodedValue | DecodeError:
+def decode_signal(signal: dict[str, Any], data_bytes: bytes) -> DecodedValue | DecodeError:  # noqa: PLR0911
     """
     Decode a single signal from CAN data.
 
@@ -106,15 +137,23 @@ def decode_signal(signal: dict[str, Any], data_bytes: bytes) -> DecodedValue | D
         length = signal.get("length", 8)
         raw_value = get_bits(data_bytes, start_bit, length)
 
+        # Get unit
+        unit = signal.get("unit")
+
+        if raw_value in _unavailable_raw_values(signal):
+            return DecodedValue(
+                value=None,
+                unit=unit,
+                raw_value=raw_value,
+                unavailable=True,
+            )
+
         # Apply scale and offset
         scale = signal.get("scale", 1)
         offset = signal.get("offset", 0)
 
         # Calculate physical value
         physical_value = raw_value * scale + offset
-
-        # Get unit
-        unit = signal.get("unit")
 
         # Handle enumerated values
         if "enum" in signal:
@@ -165,7 +204,7 @@ def decode_payload(
 
     signals = entry.get("signals", [])
     if not signals:
-        logger.warning(f"No signals defined for PGN {entry.get('pgn', 'unknown')}")
+        logger.warning("No signals defined for PGN %s", entry.get("pgn", "unknown"))
         return results, errors
 
     for signal in signals:
@@ -214,7 +253,7 @@ def decode_string_payload(data_bytes: bytes, encoding: str = "utf-8") -> str:
         return text.strip()
 
     except Exception as e:
-        logger.error(f"Failed to decode string payload: {e}")
+        logger.error("Failed to decode string payload: %s", e)
         return f"<decode error: {e}>"
 
 
@@ -238,27 +277,27 @@ def decode_product_id(data_bytes: bytes) -> dict[str, str]:
         result = {}
 
         # Make code (2 bytes, little-endian)
-        if len(data_bytes) >= 2:
-            make_code = int.from_bytes(data_bytes[0:2], "little")
+        if len(data_bytes) >= MAKE_CODE_BYTE_LENGTH:
+            make_code = int.from_bytes(data_bytes[0:MAKE_CODE_BYTE_LENGTH], "little")
             result["make_code"] = str(make_code)
 
         # Model string (15 bytes max)
-        if len(data_bytes) >= 17:
-            model = decode_string_payload(data_bytes[2:17])
+        if len(data_bytes) >= MODEL_FIELD_END:
+            model = decode_string_payload(data_bytes[MAKE_CODE_BYTE_LENGTH:MODEL_FIELD_END])
             result["model"] = model
 
         # Serial number string (15 bytes max)
-        if len(data_bytes) >= 32:
-            serial = decode_string_payload(data_bytes[17:32])
+        if len(data_bytes) >= SERIAL_FIELD_END:
+            serial = decode_string_payload(data_bytes[MODEL_FIELD_END:SERIAL_FIELD_END])
             result["serial_number"] = serial
 
         # Unit number string (5 bytes max)
-        if len(data_bytes) >= 37:
-            unit = decode_string_payload(data_bytes[32:37])
+        if len(data_bytes) >= UNIT_FIELD_END:
+            unit = decode_string_payload(data_bytes[SERIAL_FIELD_END:UNIT_FIELD_END])
             result["unit_number"] = unit
 
         return result
 
     except Exception as e:
-        logger.error(f"Failed to decode product ID: {e}")
+        logger.error("Failed to decode product ID: %s", e)
         return {"error": str(e)}

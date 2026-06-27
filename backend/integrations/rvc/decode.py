@@ -20,6 +20,7 @@ The actual implementation is split across several modules:
 
 import functools
 import logging
+from typing import Any
 
 from backend.integrations.rvc.config_loader import (
     extract_coach_info,
@@ -93,7 +94,7 @@ def clear_config_cache() -> None:
 
 
 def decode_payload_safe(
-    dgn_dict: dict[int, dict], dgn_id: int, data_bytes: bytes
+    dgn_dict: dict[int, dict[str, Any]], dgn_id: int, data_bytes: bytes
 ) -> tuple[dict[str, str], dict[str, int], bool]:
     """
     Safely decode a payload, handling missing DGNs gracefully.
@@ -111,7 +112,7 @@ def decode_payload_safe(
     """
     if dgn_id not in dgn_dict:
         record_missing_dgn(dgn_id, context="decode_payload_safe")
-        logger.warning(f"DGN {dgn_id:X} not found in specification - storing for future processing")
+        logger.warning("DGN %X not found in specification - storing for future processing", dgn_id)
         return {}, {}, False
 
     try:
@@ -124,7 +125,7 @@ def decode_payload_safe(
 
         for signal_name, result in results.items():
             if isinstance(result, DecodedValue):
-                decoded[signal_name] = str(result.value)
+                decoded[signal_name] = "n/a" if result.unavailable else str(result.value)
                 if result.raw_value is not None:
                     raw_values[signal_name] = int(result.raw_value)
             elif isinstance(result, DecodeError):
@@ -132,13 +133,13 @@ def decode_payload_safe(
 
         return decoded, raw_values, len(errors) == 0
     except Exception as e:
-        logger.error(f"Error decoding DGN {dgn_id:X}: {e}")
+        logger.error("Error decoding DGN %X: %s", dgn_id, e)
         record_missing_dgn(dgn_id, context=f"decode_error: {e!s}")
         return {}, {}, False
 
 
 @functools.cache
-def load_config_data(
+def load_config_data(  # noqa: C901
     rvc_spec_path_override: str | None = None,
     device_mapping_path_override: str | None = None,
 ) -> tuple[
@@ -321,9 +322,7 @@ def load_config_data_v2(
     ) = load_config_data(rvc_spec_path_override, device_mapping_path_override)
 
     # Convert inst_map to use RVCEntityMapping objects
-    inst_map_structured = {}
-    for entity_id, mapping in inst_map.items():
-        inst_map_structured[entity_id] = mapping  # Keep as dict for now for compatibility
+    inst_map_structured = dict(inst_map)  # Keep as dict for now for compatibility
 
     # Create structured spec metadata
     spec_meta_structured = RVCSpecMeta(

@@ -51,6 +51,9 @@ jobs:
       - name: "Run guardrail coverage ratchet"
         run: nix run .#guardrail-coverage
 
+      - name: "Run RV-C spec validation harness"
+        run: nix run .#rvc-spec-validation
+
       - name: "Build CoachIQ package (for Cachix caching)"
         run: nix build .#coachiq
 

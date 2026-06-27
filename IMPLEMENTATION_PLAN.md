@@ -69,6 +69,35 @@ risk; retirement addresses cleanliness.
 
 ## Build Log
 
+### HOF-028 — RV-C Decode Quality Harness
+
+- [shipped] same commit as this entry · 2026-06-27
+- [component] backend
+
+**What changed.** The RV-C decoder now supports explicit per-signal
+`unavailable_raw_values` metadata, returning unavailable live values as `None`
+in the core decoder and `"n/a"` through `decode_payload_safe`. `rvc.json` masks
+live-proven no-data fields and corrects scale/offset for load-bearing signals
+validated against the RECON-004 corpus, including ATS current/frequency,
+thermostat setpoints, tank level capacity fields, AC load status, and AC command
+percent/dead-band fields. The PDF-confirmed `WATERHEATER_STATUS` (`1FFF7`) and
+`CHARGER_CONFIGURATION_COMMAND_2` (`1FF95`) DGNs were added; unconfirmed
+observed PGNs remain classified as gaps instead of invented layouts.
+
+**Why.** RECON-004 showed that structural decoding was not enough: raw sentinel
+and Table 5.3 encoded values surfaced as plausible physical readings such as
+`65535`, `32000`, and raw thermostat setpoints. HOF-028 turns that into a
+repeatable check by committing a trimmed live-corpus fixture and validating it in
+CI with `scripts/validate_rvc_spec.py` / `nix run .#rvc-spec-validation`.
+The coach mapping files are incomplete by design: mapped DGNs are confirmed
+user-facing entities and must exist in `rvc.json`, but live bus DGNs that are not
+yet mapped are roadmap candidates rather than validation failures.
+
+**Files.** .github/workflows/nix-ci.yml, flake.nix, config/rvc.json,
+backend/integrations/rvc/decoder_core.py, backend/integrations/rvc/decode.py,
+scripts/validate_rvc_spec.py, recordings/recon004_decode_sanity.candump,
+tests/test_rvc_decoder_comprehensive.py, PROJECT_CONTEXT.md
+
 ### HOF-015 — Guardrail Coverage Ratchet
 - [shipped] same commit as this entry · 2026-06-27
 - [component] backend

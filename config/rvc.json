@@ -328,50 +328,60 @@
           "start_bit": 16,
           "length": 8,
           "byte_order": "big_endian",
-          "scale": 0.4,
+          "scale": 0.5,
           "unit": "%",
-          "description": "Limits fan speed output for power-sharing; 255 = don't change"
+          "description": "Limits fan speed output for power-sharing; 255 = don't change",
+          "unavailable_raw_values": [255]
         },
         {
           "name": "max_ac_output_level",
           "start_bit": 24,
           "length": 8,
           "byte_order": "big_endian",
-          "scale": 0.4,
+          "scale": 0.5,
           "unit": "%",
-          "description": "Limits compressor output; final level may be affected by internal constraints"
+          "description": "Limits compressor output; final level may be affected by internal constraints",
+          "unavailable_raw_values": [255]
         },
         {
           "name": "fan_speed",
           "start_bit": 32,
           "length": 8,
           "byte_order": "big_endian",
-          "scale": 0.4,
+          "scale": 0.5,
           "unit": "%",
-          "description": "0 = off or automatic; >0 = manual override"
+          "description": "0 = off or automatic; >0 = manual override",
+          "unavailable_raw_values": [255]
         },
         {
           "name": "ac_output_level",
           "start_bit": 40,
           "length": 8,
           "byte_order": "big_endian",
-          "scale": 0.4,
+          "scale": 0.5,
           "unit": "%",
-          "description": "Desired compressor output level; power-sharing and timing delays may alter response"
+          "description": "Desired compressor output level; power-sharing and timing delays may alter response",
+          "unavailable_raw_values": [255]
         },
         {
           "name": "dead_band",
           "start_bit": 48,
           "length": 8,
           "description": "Tolerance band around setpoint; higher values reduce cycling",
-          "byte_order": "big_endian"
+          "byte_order": "big_endian",
+          "scale": 0.1,
+          "unit": "deg C",
+          "unavailable_raw_values": [255]
         },
         {
           "name": "second_stage_dead_band",
           "start_bit": 56,
           "length": 8,
           "description": "Threshold above setpoint to trigger high-output mode",
-          "byte_order": "big_endian"
+          "byte_order": "big_endian",
+          "scale": 0.1,
+          "unit": "deg C",
+          "unavailable_raw_values": [255]
         }
       ],
       "pgn": "0x1FFE0"
@@ -584,24 +594,31 @@
           "start_bit": 8,
           "length": 16,
           "byte_order": "big_endian",
+          "scale": 0.05,
           "unit": "Vac",
-          "description": "Root Mean Square Voltage"
+          "description": "Root Mean Square Voltage",
+          "unavailable_raw_values": [65535]
         },
         {
           "name": "rms_current",
           "start_bit": 24,
           "length": 16,
           "byte_order": "big_endian",
+          "scale": 0.05,
+          "offset": -1600,
           "unit": "Aac",
-          "description": "Root Mean Square Current"
+          "description": "Root Mean Square Current (0 A = raw 0x7D00)",
+          "unavailable_raw_values": [65535]
         },
         {
           "name": "frequency",
           "start_bit": 40,
           "length": 16,
           "byte_order": "big_endian",
+          "scale": 0.0078125,
           "unit": "Hz",
-          "description": "AC frequency (typically 50/60Hz)"
+          "description": "AC frequency (typically 50/60Hz)",
+          "unavailable_raw_values": [65535]
         },
         {
           "name": "fault_open_ground",
@@ -676,24 +693,32 @@
           "start_bit": 8,
           "length": 16,
           "byte_order": "big_endian",
+          "scale": 0.05,
           "unit": "Vac",
-          "description": "Peak voltage measured"
+          "description": "Peak voltage measured",
+          "unavailable_raw_values": [65535]
         },
         {
           "name": "peak_current",
           "start_bit": 24,
           "length": 16,
           "byte_order": "big_endian",
+          "scale": 0.05,
+          "offset": -1600,
           "unit": "Aac",
-          "description": "Peak current measured"
+          "description": "Peak current measured (0 A = raw 0x7D00)",
+          "unavailable_raw_values": [65535]
         },
         {
           "name": "ground_current",
           "start_bit": 40,
           "length": 16,
           "byte_order": "big_endian",
+          "scale": 0.05,
+          "offset": -1600,
           "unit": "Aac",
-          "description": "Leakage/ground current detected"
+          "description": "Leakage/ground current detected (0 A = raw 0x7D00)",
+          "unavailable_raw_values": [65535]
         },
         {
           "name": "capacity",
@@ -701,7 +726,8 @@
           "length": 8,
           "byte_order": "big_endian",
           "unit": "Aac",
-          "description": "Configured breaker or current limit capacity"
+          "description": "Configured breaker or current limit capacity",
+          "unavailable_raw_values": [255]
         }
       ],
       "pgn": "0x1FFAC"
@@ -832,6 +858,119 @@
       ],
       "pgn": "0x1FF85"
     },
+    "436205470": {
+      "name": "WATERHEATER_STATUS",
+      "id": 436205470,
+      "extended": true,
+      "length": 8,
+      "source_address": "0x9E",
+      "description": "Water Heater Status",
+      "pdf_reference": "Sec. 6.9.2 (DGN 1FFF7h)",
+      "signals": [
+        {
+          "name": "instance",
+          "start_bit": 0,
+          "length": 8,
+          "description": "Water heater instance number (0 = all)",
+          "byte_order": "big_endian"
+        },
+        {
+          "name": "operating_mode",
+          "start_bit": 8,
+          "length": 8,
+          "description": "0 = off, 1 = combustion, 2 = electric, 3 = gas/electric, 4 = automatic, 5 = test combustion, 6 = test electric",
+          "byte_order": "big_endian",
+          "unavailable_raw_values": [255]
+        },
+        {
+          "name": "setpoint_temperature",
+          "start_bit": 16,
+          "length": 16,
+          "byte_order": "little_endian",
+          "scale": 0.03125,
+          "offset": -273,
+          "unit": "deg C",
+          "description": "Desired water temperature (Table 5.3 uint16 temperature)",
+          "unavailable_raw_values": [65535]
+        },
+        {
+          "name": "water_temperature",
+          "start_bit": 32,
+          "length": 16,
+          "byte_order": "little_endian",
+          "scale": 0.03125,
+          "offset": -273,
+          "unit": "deg C",
+          "description": "Actual water temperature (Table 5.3 uint16 temperature)",
+          "unavailable_raw_values": [65535]
+        },
+        {
+          "name": "thermostat_status",
+          "start_bit": 48,
+          "length": 2,
+          "description": "00 = set point met, 01 = set point not met",
+          "byte_order": "big_endian",
+          "unavailable_raw_values": [3]
+        },
+        {
+          "name": "burner_status",
+          "start_bit": 50,
+          "length": 2,
+          "description": "00 = off, 01 = burner is lit",
+          "byte_order": "big_endian",
+          "unavailable_raw_values": [3]
+        },
+        {
+          "name": "ac_element_status",
+          "start_bit": 52,
+          "length": 2,
+          "description": "00 = inactive, 01 = active",
+          "byte_order": "big_endian",
+          "unavailable_raw_values": [3]
+        },
+        {
+          "name": "high_temperature_limit_switch_status",
+          "start_bit": 54,
+          "length": 2,
+          "description": "00 = not tripped, 01 = tripped",
+          "byte_order": "big_endian",
+          "unavailable_raw_values": [3]
+        },
+        {
+          "name": "failure_to_ignite_status",
+          "start_bit": 56,
+          "length": 2,
+          "description": "00 = no failure, 01 = failed to ignite",
+          "byte_order": "big_endian",
+          "unavailable_raw_values": [3]
+        },
+        {
+          "name": "ac_power_failure_status",
+          "start_bit": 58,
+          "length": 2,
+          "description": "00 = AC power present, 01 = AC power not present",
+          "byte_order": "big_endian",
+          "unavailable_raw_values": [3]
+        },
+        {
+          "name": "dc_power_failure_status",
+          "start_bit": 60,
+          "length": 2,
+          "description": "00 = DC power present, 01 = DC power not present",
+          "byte_order": "big_endian",
+          "unavailable_raw_values": [3]
+        },
+        {
+          "name": "dc_power_warning_status",
+          "start_bit": 62,
+          "length": 2,
+          "description": "00 = DC power sufficient, 01 = DC power warning",
+          "byte_order": "big_endian",
+          "unavailable_raw_values": [3]
+        }
+      ],
+      "pgn": "0x1FFF7"
+    },
     "436115613": {
       "name": "WATERHEATER_COMMAND_2",
       "id": 436115613,
@@ -868,7 +1007,8 @@
           "length": 16,
           "byte_order": "little_endian",
           "unit": "s",
-          "description": "Duration of engine preheat in seconds"
+          "description": "Duration of engine preheat in seconds",
+          "unavailable_raw_values": [65535]
         },
         {
           "name": "lockout_time",
@@ -876,7 +1016,8 @@
           "length": 16,
           "byte_order": "little_endian",
           "unit": "s",
-          "description": "Duration in seconds before the heater can retry after a failure"
+          "description": "Duration in seconds before the heater can retry after a failure",
+          "unavailable_raw_values": [65535]
         }
       ],
       "pgn": "0x1FE98"
@@ -1314,6 +1455,81 @@
       ],
       "pgn": "0x1FFF4"
     },
+    "436180476": {
+      "name": "CHARGER_CONFIGURATION_COMMAND_2",
+      "id": 436180476,
+      "extended": true,
+      "length": 8,
+      "source_address": "0xFC",
+      "description": "Charger Configuration Command 2",
+      "pdf_reference": "Sec. 6.20.15 (DGN 1FF95h)",
+      "signals": [
+        {
+          "name": "instance",
+          "start_bit": 0,
+          "length": 8,
+          "description": "Charger instance (1-250 valid, 0 invalid)",
+          "byte_order": "big_endian"
+        },
+        {
+          "name": "maximum_charge_current_percent",
+          "start_bit": 8,
+          "length": 8,
+          "byte_order": "big_endian",
+          "scale": 0.5,
+          "unit": "%",
+          "description": "Maximum charge current as percent",
+          "unavailable_raw_values": [255]
+        },
+        {
+          "name": "charge_rate_limit_percent",
+          "start_bit": 16,
+          "length": 8,
+          "byte_order": "big_endian",
+          "scale": 0.5,
+          "unit": "%",
+          "description": "Charge rate limit as percent of bank size",
+          "unavailable_raw_values": [255]
+        },
+        {
+          "name": "shore_breaker_size",
+          "start_bit": 24,
+          "length": 8,
+          "byte_order": "big_endian",
+          "unit": "A",
+          "description": "Shore breaker size",
+          "unavailable_raw_values": [255]
+        },
+        {
+          "name": "default_battery_temperature",
+          "start_bit": 32,
+          "length": 8,
+          "byte_order": "big_endian",
+          "offset": -40,
+          "unit": "deg C",
+          "description": "Default battery temperature when no battery temperature sensor is available",
+          "unavailable_raw_values": [255]
+        },
+        {
+          "name": "recharge_voltage",
+          "start_bit": 40,
+          "length": 16,
+          "byte_order": "little_endian",
+          "scale": 0.05,
+          "unit": "Vdc",
+          "description": "Voltage below which charger may initiate charging",
+          "unavailable_raw_values": [65535]
+        },
+        {
+          "name": "reserved",
+          "start_bit": 56,
+          "length": 8,
+          "byte_order": "big_endian",
+          "unavailable_raw_values": [255]
+        }
+      ],
+      "pgn": "0x1FF95"
+    },
     "436132045": {
       "name": "DC_DIMMER_COMMAND_2",
       "id": 436132045,
@@ -1422,7 +1638,8 @@
           "length": 16,
           "byte_order": "big_endian",
           "unit": "L",
-          "description": "Actual liquid volume in liters (0\u201365530)"
+          "description": "Actual liquid volume in liters (0-65530)",
+          "unavailable_raw_values": [65535]
         },
         {
           "name": "tank_size",
@@ -1430,7 +1647,8 @@
           "length": 16,
           "byte_order": "big_endian",
           "unit": "L",
-          "description": "Total tank capacity in liters (0\u201365530)"
+          "description": "Total tank capacity in liters (0-65530)",
+          "unavailable_raw_values": [65535]
         }
       ],
       "pgn": "0x1FFB7"
@@ -1653,7 +1871,8 @@
           "start_bit": 28,
           "length": 4,
           "description": "0000 = Highest, 1101 = Lowest, 1110 = Error, 1111 = No data",
-          "byte_order": "big_endian"
+          "byte_order": "big_endian",
+          "unavailable_raw_values": [15]
         },
         {
           "name": "command",
@@ -1739,15 +1958,19 @@
           "length": 8,
           "byte_order": "big_endian",
           "unit": "A",
-          "description": "Expected current draw of this load"
+          "description": "Expected current draw of this load",
+          "unavailable_raw_values": [255]
         },
         {
           "name": "present_current",
           "start_bit": 48,
           "length": 16,
           "byte_order": "big_endian",
+          "scale": 0.05,
+          "offset": -1600,
           "unit": "A",
-          "description": "Measured current being used by this load"
+          "description": "Measured current being used by this load (0 A = raw 0x7D00)",
+          "unavailable_raw_values": [65535]
         }
       ],
       "pgn": "0x1FFBF"
@@ -2598,24 +2821,32 @@
           "start_bit": 16,
           "length": 8,
           "byte_order": "big_endian",
+          "scale": 0.5,
           "unit": "%",
-          "description": "0 = Automatic fan speed; >0 = manual override"
+          "description": "0 = Automatic fan speed; >0 = manual override",
+          "unavailable_raw_values": [255]
         },
         {
           "name": "setpoint_heat",
           "start_bit": 24,
           "length": 16,
           "byte_order": "big_endian",
-          "unit": "\u00b0C",
-          "description": "Setpoint for heating (\u00b0C \u00d7 10); e.g. 215 = 21.5\u00b0C"
+          "scale": 0.03125,
+          "offset": -273,
+          "unit": "deg C",
+          "description": "Setpoint for heating (Table 5.3 uint16 temperature)",
+          "unavailable_raw_values": [65535]
         },
         {
           "name": "setpoint_cool",
           "start_bit": 40,
           "length": 16,
           "byte_order": "big_endian",
-          "unit": "\u00b0C",
-          "description": "Setpoint for cooling (\u00b0C \u00d7 10); e.g. 245 = 24.5\u00b0C"
+          "scale": 0.03125,
+          "offset": -273,
+          "unit": "deg C",
+          "description": "Setpoint for cooling (Table 5.3 uint16 temperature)",
+          "unavailable_raw_values": [65535]
         }
       ],
       "pgn": "0x1FFE2"

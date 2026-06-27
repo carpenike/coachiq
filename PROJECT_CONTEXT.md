@@ -224,6 +224,7 @@ poetry install
 poetry run python run_server.py --reload --debug   # dev server (Swagger at /docs)
 poetry run pytest                                   # tests; markers: unit, integration, api, can, safety, websocket, rvc, auth, smoke, performance
 poetry run python scripts/check_module_coverage.py  # per-module guardrail coverage ratchet after coverage.xml exists
+poetry run python scripts/validate_rvc_spec.py      # RV-C spec + live-corpus decode sanity harness
 poetry run ruff check .                             # lint (zero warnings)
 poetry run ruff format backend                      # format (line length 100)
 poetry run pyright backend                          # type-check (basic mode; ratcheting toward strict)
@@ -240,6 +241,21 @@ guardrail tests and enforces only the current high-value module floors:
 `nix run .#guardrail-coverage`, which executes `pytest -m "can or auth or safety or websocket"`
 then checks those floors. Raise these numbers when coverage improves; never
 lower them without a reviewed handoff.
+
+**RV-C decode validation harness (HOF-028).** `scripts/validate_rvc_spec.py`
+checks the curated `config/rvc.json` against structural rules, coach-mapping
+references, duplicate-PGN variant classification, and the trimmed live fixture
+at `recordings/recon004_decode_sanity.candump`. The full RECON-004 Pi capture is
+provenance only; CI uses the committed fixture so builds are reproducible.
+Per-signal `unavailable_raw_values` metadata is the only mechanism for masking
+not-available values; do not add blanket max-value masking.
+
+Treat the RV-C layers as distinct: the spec PDF is the standard, `rvc.json` is
+the curated decode subset, the live bus is what is present on this coach, and the
+coach mapping YAML is the partial set surfaced as entities so far. The harness
+therefore validates mapped DGN references one-way against `rvc.json`; it must not
+flag live-but-unmapped bus DGNs as errors because mapping completion is host-led
+future work.
 
 **Frontend (from `frontend/`):**
 

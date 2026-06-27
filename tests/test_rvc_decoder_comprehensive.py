@@ -38,6 +38,8 @@ from backend.integrations.rvc.decoder_core import DecodedValue
 # rvc.json + coach mapping live in the repo's top-level `config/` directory
 # and are resolved by RVCSettings.get_config_dir() in production.
 _REPO_CONFIG_DIR = Path(__file__).resolve().parents[1] / "config"
+_REPO_ROOT = Path(__file__).resolve().parents[1]
+_RECORDINGS_DIR = _REPO_ROOT / "recordings"
 
 
 def discover_coach_mapping_files():
@@ -421,6 +423,34 @@ class TestDGNMappingConsistency:
 class TestSignalDecoding:
     """Test signal decoding functionality."""
 
+    @staticmethod
+    def _decode_fixture_frame(can_id_hex: str, payload_hex: str) -> dict[str, DecodedValue]:
+        """Decode a fixture frame by raw ID or PGN using the RV-C spec."""
+        from backend.integrations.rvc.decode import load_config_data_v2
+
+        config = load_config_data_v2()
+        can_id = int(can_id_hex, 16)
+        pgn = (can_id >> 8) & 0x3FFFF
+        entry = None
+        for candidate in config.dgn_dict.values():
+            if candidate.get("id") == can_id:
+                entry = candidate
+                break
+        if entry is None:
+            fallback_entry = None
+            for candidate in config.dgn_dict.values():
+                if int(candidate.get("pgn", "0"), 16) == pgn:
+                    if not str(candidate.get("name", "")).startswith("UNKNOWN"):
+                        entry = candidate
+                        break
+                    fallback_entry = candidate
+            entry = entry or fallback_entry
+        assert entry is not None
+
+        results, errors = decode_payload(entry, bytes.fromhex(payload_hex))
+        assert errors == []
+        return {name: value for name, value in results.items() if isinstance(value, DecodedValue)}
+
     def test_get_bits_function(self):
         """Test bit extraction function."""
         # Test data: 0x19 0x7C 0xFF 0xFF 0xFF 0xFF 0xFF 0xFF
@@ -489,6 +519,58 @@ class TestSignalDecoding:
         results, errors = decode_payload(test_entry, test_data_4)
         assert errors == []
         assert results["test_field"].raw_value == 0x42
+
+    def test_decode_payload_masks_configured_unavailable_values(self):
+        """Configured raw not-available sentinels decode as unavailable, not numbers."""
+        test_entry = {
+            "name": "TEST_ENTRY",
+            "signals": [
+                {
+                    "name": "current",
+                    "start_bit": 0,
+                    "length": 16,
+                    "byte_order": "little_endian",
+                    "scale": 0.05,
+                    "offset": -1600,
+                    "unit": "A",
+                    "unavailable_raw_values": ["0xFFFF"],
+                }
+            ],
+        }
+
+        available_results, available_errors = decode_payload(test_entry, b"\x00\x7d")
+        unavailable_results, unavailable_errors = decode_payload(test_entry, b"\xff\xff")
+
+        assert available_errors == []
+        assert unavailable_errors == []
+        assert available_results["current"].value == 0
+        assert available_results["current"].unavailable is False
+        assert unavailable_results["current"].value is None
+        assert unavailable_results["current"].raw_value == 0xFFFF
+        assert unavailable_results["current"].unavailable is True
+
+    def test_recon004_fixture_masks_live_not_available_values(self):
+        """Representative live frames mask no-data sentinels and scale physical values."""
+        fixture_path = _RECORDINGS_DIR / "recon004_decode_sanity.candump"
+        assert fixture_path.exists()
+
+        ats_status_2 = self._decode_fixture_frame("0DFFAC4F", "910000007DFFFF32")
+        ats_status_1 = self._decode_fixture_frame("0DFFAD4F", "010000007DFFFF00")
+        tank_status = self._decode_fixture_frame("19FFB7AF", "00021CFFFFFFFFFF")
+        thermostat_status = self._decode_fixture_frame("19FFE29C", "0000002525252500")
+        ac_command = self._decode_fixture_frame("19FFE09C", "0100FFFF0000FFFF")
+
+        assert ats_status_2["peak_current"].value == 0
+        assert ats_status_2["ground_current"].value is None
+        assert ats_status_2["ground_current"].unavailable is True
+        assert ats_status_1["rms_current"].value == 0
+        assert ats_status_1["frequency"].value is None
+        assert tank_status["absolute_level"].value is None
+        assert tank_status["tank_size"].value is None
+        assert thermostat_status["setpoint_heat"].value == pytest.approx(24.15625)
+        assert thermostat_status["setpoint_cool"].value == pytest.approx(24.15625)
+        assert ac_command["max_fan_speed"].value is None
+        assert ac_command["fan_speed"].value == 0
 
 
 class TestMissingDGNHandling:
@@ -744,6 +826,30 @@ class TestMissingDGNHandling:
             # safe_decoded uses str(value); raw_values mirror DecodedValue.raw_value
             assert safe_decoded[signal_name] == str(dv.value)
             assert safe_raw[signal_name] == int(dv.raw_value)
+
+    def test_decode_payload_safe_formats_unavailable_values_as_na(self):
+        """Safe decoding preserves raw sentinel values but displays them as n/a."""
+        dgn_dict = {
+            0x1FFAC: {
+                "name": "ATS_AC_STATUS_2",
+                "signals": [
+                    {
+                        "name": "ground_current",
+                        "start_bit": 0,
+                        "length": 16,
+                        "byte_order": "little_endian",
+                        "unit": "Aac",
+                        "unavailable_raw_values": [65535],
+                    }
+                ],
+            }
+        }
+
+        decoded, raw_values, success = decode_payload_safe(dgn_dict, 0x1FFAC, b"\xff\xff")
+
+        assert success is True
+        assert decoded["ground_current"] == "n/a"
+        assert raw_values["ground_current"] == 65535
 
 
 class TestEndToEndFunctionality:

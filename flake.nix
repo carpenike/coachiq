@@ -379,6 +379,24 @@ EOF
             };
           };
 
+          rvc-spec-validation = (flake-utils.lib.mkApp {
+            drv = pkgs.writeShellApplication {
+              name = "rvc-spec-validation";
+              runtimeInputs = [ pkgs.poetry python ];
+              text = ''
+                poetry env use ${python}/bin/python
+                poetry install --no-root
+                poetry run python scripts/validate_rvc_spec.py
+              '';
+            };
+          }) // {
+            meta = {
+              description = "Validate rvc.json structure and live-corpus decode sanity";
+              maintainers = [ "carpenike" ];
+              license = pkgs.lib.licenses.asl20;
+            };
+          };
+
           lint = (flake-utils.lib.mkApp {
             drv = pkgs.writeShellApplication {
               name = "lint";
