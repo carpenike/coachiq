@@ -312,6 +312,16 @@ bandit, ESLint-staged). `dev_start.sh` sets up a virtual-CAN dev environment.
   a frame is knowable only from the live bus, never from CoachIQ's source (see
   comms lesson L-06 and ADR-0004). Treat coach-specific behavior as a fact to
   capture from a trace, not to assert from the spec JSON.
+- **The reference coach's CAN networks are bridged.** On the nixpi reference
+  install, `can0` (chassis/vehicle) and `can1` (house/Firefly) are not
+  independent buses; they were originally wired together, and nixpi now bridges
+  them while selectively filtering to keep a coach-specific signal from reaching
+  the chassis computer. Consequences: most frames, including DM_RV / J1939 DM1
+  (`0xFECA`), appear mirrored on both interfaces, so per-interface telemetry and
+  DTC ingestion must account for the mirror; DTC ingestion dedupes by source
+  address, SPN, and FMI rather than by interface; and the interfaces are not a
+  clean chassis/house split because some packets are filtered. This is a
+  deployment characteristic of the reference coach, not a code default.
 - **All Python runs under Poetry.** `poetry run python …`, never bare `python`.
 
 ---
