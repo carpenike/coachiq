@@ -365,6 +365,7 @@ EOF
               name = "guardrail-coverage";
               runtimeInputs = [ pkgs.poetry python ];
               text = ''
+                export LD_LIBRARY_PATH=${pkgs.zlib}/lib:${pkgs.stdenv.cc.cc.lib}/lib''${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}
                 poetry env use ${python}/bin/python
                 poetry install --no-root
                 poetry run pytest -m "can or auth or safety or websocket"
