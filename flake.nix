@@ -366,6 +366,8 @@ EOF
               runtimeInputs = [ pkgs.poetry python ];
               text = ''
                 export LD_LIBRARY_PATH=${pkgs.zlib}/lib:${pkgs.stdenv.cc.cc.lib}/lib''${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}
+                export COACHIQ_PERSISTENCE__DATA_DIR="''${TMPDIR:-/tmp}/coachiq-guardrail-coverage"
+                mkdir -p "$COACHIQ_PERSISTENCE__DATA_DIR"
                 poetry env use ${python}/bin/python
                 poetry install --no-root
                 poetry run pytest -m "can or auth or safety or websocket"
