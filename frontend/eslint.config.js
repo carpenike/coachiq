@@ -20,6 +20,7 @@ export default tseslint.config(
       ".vite/**",            // Vite cache
       "*.config.js",         // Config files
       "*.config.ts",         // Config files
+      "src/api/generated/**", // Generated OpenAPI types
       "**/*.d.ts",           // Type declaration files
       ".DS_Store",           // OS files
       "*.log",               // Log files

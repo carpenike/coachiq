@@ -19,9 +19,9 @@ RESET="\033[0m"
 # gate's job is to stop the count from going UP (a ratchet); fixing actual
 # pyright errors lower the count and the script will print a green message
 # nudging you to update the baseline downward.
-EXPECTED_PYRIGHT_ERRORS=1435  # Ratcheted 2026-06-26 after the HOF-001/002/003/004/005/006/007/009/011 stack reduced pyright errors from 1441 -> 1435.
+EXPECTED_PYRIGHT_ERRORS=1375  # Ratcheted 2026-06-28 after the HOF-030 stack reduced pyright errors from 1435 -> 1375.
 EXPECTED_FRONTEND_TS_ERRORS=0  # Ratcheted 2026-05-12 to 0 by PR #110 (DatabaseManagementTab + can-sniffer + useCANScanWebSocket generic). Any new TS error is a hard fail.
-EXPECTED_FRONTEND_ESLINT_ERRORS=648  # Captured 2026-05-12 by PR #117. Whole-project ESLint baseline; the diff-aware gate (eslint_diff_check.py in Stage 1) catches NEW issues per-line, this baseline is the project-wide ratchet.
+EXPECTED_FRONTEND_ESLINT_ERRORS=603  # Ratcheted 2026-06-28 after generated OpenAPI types were excluded from ESLint (648 -> 603).
 
 # Determine target branch (for GitHub Actions or local testing)
 if [ -n "${GITHUB_BASE_REF:-}" ]; then

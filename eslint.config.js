@@ -24,6 +24,7 @@ export default [
       "**/.output/**",
       "**/.storybook-static/**",
       "**/coverage/**",
+      "**/frontend/src/api/generated/**",
       "**/assets/javascripts/workers/*.min.js", // Minified/generated JS (e.g., search workers)
       "frontend/scripts/generate-api-types.js", // Exclude Node.js utility script from linting
       "**/CNAME",
