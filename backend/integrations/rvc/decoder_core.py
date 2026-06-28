@@ -16,6 +16,7 @@ MAKE_CODE_BYTE_LENGTH = 2
 MODEL_FIELD_END = 17
 SERIAL_FIELD_END = 32
 UNIT_FIELD_END = 37
+COMPONENT_ID_FIELD_COUNT = 4
 
 
 class DecodingError(Exception):
@@ -300,4 +301,23 @@ def decode_product_id(data_bytes: bytes) -> dict[str, str]:
 
     except Exception as e:
         logger.error("Failed to decode product ID: %s", e)
+        return {"error": str(e)}
+
+
+def decode_component_id(data_bytes: bytes) -> dict[str, str]:
+    """Decode a J1939 Component Identification payload (PGN 0xFEEB)."""
+    try:
+        text = decode_string_payload(data_bytes)
+        fields = [field.strip() for field in text.rstrip("*").split("*")]
+        while len(fields) < COMPONENT_ID_FIELD_COUNT:
+            fields.append("")
+        make, model, serial, unit = fields[:COMPONENT_ID_FIELD_COUNT]
+        return {
+            "make": make,
+            "model": model,
+            "serial": serial,
+            "unit": unit,
+        }
+    except Exception as e:
+        logger.error("Failed to decode component ID: %s", e)
         return {"error": str(e)}

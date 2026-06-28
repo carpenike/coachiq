@@ -69,6 +69,33 @@ risk; retirement addresses cleanliness.
 
 ## Build Log
 
+### HOF-029 — Component-ID BAM Into Device Discovery
+
+- [shipped] same commit as this entry · 2026-06-27
+- [component] backend
+
+**What changed.** The dead J1939 TP/BAM receive path now normalizes addressed
+PDU1 TP PGNs before transport checks in both `protocol_router.py` and
+`CANBusService`, so live `0xECFF`/`0xECFC` and `0xEBFF`/`0xEBFC` frames reach
+`BAMHandler.process_frame()` as `0xEC00`/`0xEB00`. Reassembled J1939 Component
+Identification (`0xFEEB`) payloads are decoded as captured `Make*Model*Serial*Unit`
+ASCII strings and recorded into the existing `DeviceDiscoveryService` topology,
+deduped by source address plus payload so mirrored `can0`/`can1` completions do
+not double-count a device. Existing Product Identification (`0x1FEF2`) BAM tests
+were corrected to use the actual little-endian PGN bytes and kept green.
+
+**Why.** HOF-029's worth-it review killed the broad arbitrary multi-packet RV-C
+decode premise, but the observed TP traffic is useful inventory data. This makes
+that physical-device evidence visible to discovery without adding a parallel
+store or creating any CAN rebroadcast path.
+
+**Files.** `backend/integrations/rvc/bam_handler.py`,
+`backend/integrations/can/protocol_router.py`,
+`backend/integrations/rvc/decoder_core.py`, `backend/integrations/rvc/__init__.py`,
+`backend/services/can_bus_service.py`, `backend/services/device_discovery_service.py`,
+`backend/integrations/rvc/tests/test_bam_handler.py`,
+`tests/services/test_component_identification_discovery.py`
+
 ### HOF-026 — v2 Diagnostics Health Widget And Legacy Router Retirement
 
 - [shipped] same commit as this entry · 2026-06-27

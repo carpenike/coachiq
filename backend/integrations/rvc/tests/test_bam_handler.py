@@ -17,8 +17,8 @@ class TestBAMHandler:
         # Total size = 50 bytes (0x32, 0x00 in little endian)
         # Total packets = 8
         # Reserved = 0xFF
-        # Target PGN = 0x1FEF2 (Product ID) = F2 EF 01 in little endian
-        control_data = bytes([0x20, 0x32, 0x00, 0x08, 0xFF, 0xF2, 0xEF, 0x01])
+        # Target PGN = 0x1FEF2 (Product ID) = F2 FE 01 in little endian
+        control_data = bytes([0x20, 0x32, 0x00, 0x08, 0xFF, 0xF2, 0xFE, 0x01])
 
         result = handler.process_frame(BAMHandler.TP_CM_PGN, control_data, source_address=0x42)
 
@@ -41,7 +41,7 @@ class TestBAMHandler:
 
         # Start a BAM session
         control_data = bytes(
-            [0x20, 0x15, 0x00, 0x03, 0xFF, 0xF2, 0xEF, 0x01]
+            [0x20, 0x15, 0x00, 0x03, 0xFF, 0xF2, 0xFE, 0x01]
         )  # 21 bytes, 3 packets
         handler.process_frame(BAMHandler.TP_CM_PGN, control_data, source_address=0x42)
 
@@ -75,7 +75,7 @@ class TestBAMHandler:
 
         # Start a BAM session
         control_data = bytes(
-            [0x20, 0x0E, 0x00, 0x02, 0xFF, 0xF2, 0xEF, 0x01]
+            [0x20, 0x0E, 0x00, 0x02, 0xFF, 0xF2, 0xFE, 0x01]
         )  # 14 bytes, 2 packets
         handler.process_frame(BAMHandler.TP_CM_PGN, control_data, source_address=0x42)
 
@@ -91,7 +91,7 @@ class TestBAMHandler:
         handler = BAMHandler(session_timeout=0.1)  # Very short timeout for testing
 
         # Start a BAM session
-        control_data = bytes([0x20, 0x0E, 0x00, 0x02, 0xFF, 0xF2, 0xEF, 0x01])
+        control_data = bytes([0x20, 0x0E, 0x00, 0x02, 0xFF, 0xF2, 0xFE, 0x01])
         handler.process_frame(BAMHandler.TP_CM_PGN, control_data, source_address=0x42)
 
         assert handler.get_active_session_count() == 1
@@ -102,7 +102,7 @@ class TestBAMHandler:
         time.sleep(0.2)
 
         # Trigger cleanup by processing another frame
-        dummy_control = bytes([0x20, 0x0E, 0x00, 0x02, 0xFF, 0xF3, 0xEF, 0x01])
+        dummy_control = bytes([0x20, 0x0E, 0x00, 0x02, 0xFF, 0xF3, 0xFE, 0x01])
         handler.process_frame(BAMHandler.TP_CM_PGN, dummy_control, source_address=0x43)
 
         # Original session should be cleaned up, only new one remains
@@ -115,11 +115,11 @@ class TestBAMHandler:
         handler = BAMHandler()
 
         # Start first session from source 0x42
-        control1 = bytes([0x20, 0x0E, 0x00, 0x02, 0xFF, 0xF2, 0xEF, 0x01])
+        control1 = bytes([0x20, 0x0E, 0x00, 0x02, 0xFF, 0xF2, 0xFE, 0x01])
         handler.process_frame(BAMHandler.TP_CM_PGN, control1, source_address=0x42)
 
         # Start second session from source 0x43
-        control2 = bytes([0x20, 0x15, 0x00, 0x03, 0xFF, 0xF3, 0xEF, 0x01])
+        control2 = bytes([0x20, 0x15, 0x00, 0x03, 0xFF, 0xF3, 0xFE, 0x01])
         handler.process_frame(BAMHandler.TP_CM_PGN, control2, source_address=0x43)
 
         assert handler.get_active_session_count() == 2
@@ -140,7 +140,7 @@ class TestBAMHandler:
         result1 = handler.process_frame(BAMHandler.TP_DT_PGN, packet1_2, source_address=0x42)
 
         assert result1 is not None
-        pgn1, data1 = result1
+        _pgn1, data1 = result1
         assert data1 == b"First  Message"
 
         # Only second session should remain

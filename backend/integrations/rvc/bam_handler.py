@@ -10,6 +10,8 @@ Transport Protocol PGNs:
 - 0xEB00 (60160): Transport Protocol Data Transfer (TP.DT) - Data packets
 """
 
+# ruff: noqa: G004
+
 import logging
 import time
 from dataclasses import dataclass, field
@@ -44,6 +46,8 @@ class BAMHandler:
     # Transport Protocol PGNs
     TP_CM_PGN = 0xEC00  # Transport Protocol Control
     TP_DT_PGN = 0xEB00  # Transport Protocol Data Transfer
+    TP_CM_PF = 0xEC
+    TP_DT_PF = 0xEB
     BAM_CONTROL_BYTE = 0x20  # Identifies a BAM start message
 
     # CAN frame constants
@@ -64,6 +68,14 @@ class BAMHandler:
         self._last_cleanup = time.time()
         self._cleanup_interval = 10.0  # Run cleanup every 10 seconds
 
+    @classmethod
+    def normalize_transport_pgn(cls, pgn: int) -> int:
+        """Normalize PDU1 TP PGNs by clearing the destination-address byte."""
+        protocol_format = (pgn >> 8) & 0xFF
+        if protocol_format in {cls.TP_CM_PF, cls.TP_DT_PF}:
+            return pgn & 0x3FF00
+        return pgn
+
     def process_frame(self, pgn: int, data: bytes, source_address: int) -> tuple[int, bytes] | None:
         """
         Process a CAN frame that might be part of a BAM transfer.
@@ -78,12 +90,15 @@ class BAMHandler:
             None otherwise
         """
         # Periodic cleanup of stale sessions
-        if time.time() - self._last_cleanup > self._cleanup_interval:
+        cleanup_after = min(self._cleanup_interval, self.session_timeout)
+        if time.time() - self._last_cleanup > cleanup_after:
             self._cleanup_stale_sessions()
 
-        if pgn == self.TP_CM_PGN:
+        normalized_pgn = self.normalize_transport_pgn(pgn)
+
+        if normalized_pgn == self.TP_CM_PGN:
             return self._handle_control_message(data, source_address)
-        if pgn == self.TP_DT_PGN:
+        if normalized_pgn == self.TP_DT_PGN:
             return self._handle_data_transfer(data, source_address)
 
         return None
@@ -118,8 +133,9 @@ class BAMHandler:
 
         if session_key in self.sessions:
             logger.warning(
-                f"Overwriting existing BAM session for source={source_address:02X}, "
-                f"PGN={target_pgn:05X}"
+                "Overwriting existing BAM session for source=%02X, PGN=%05X",
+                source_address,
+                target_pgn,
             )
 
         self.sessions[session_key] = BAMSession(
@@ -136,8 +152,11 @@ class BAMHandler:
             self.source_to_sessions[source_address].append(target_pgn)
 
         logger.debug(
-            f"Started BAM session: source={source_address:02X}, PGN={target_pgn:05X}, "
-            f"size={total_size}, packets={total_packets}"
+            "Started BAM session: source=%02X, PGN=%05X, size=%d, packets=%d",
+            source_address,
+            target_pgn,
+            total_size,
+            total_packets,
         )
 
         return None
@@ -172,8 +191,9 @@ class BAMHandler:
         # Validate sequence number
         if sequence_number < 1 or sequence_number > session.total_packets:
             logger.warning(
-                f"Invalid sequence number {sequence_number} for session with "
-                f"{session.total_packets} packets"
+                "Invalid sequence number %d for session with %d packets",
+                sequence_number,
+                session.total_packets,
             )
             return None
 
@@ -194,8 +214,9 @@ class BAMHandler:
                     self._remove_session(session_key)
 
                 logger.debug(
-                    f"Completed BAM message: PGN={session.target_pgn:05X}, "
-                    f"size={len(reassembled)} bytes"
+                    "Completed BAM message: PGN=%05X, size=%d bytes",
+                    session.target_pgn,
+                    len(reassembled),
                 )
 
                 return (session.target_pgn, reassembled)
@@ -211,8 +232,9 @@ class BAMHandler:
             for seq_num in range(1, session.total_packets + 1):
                 if seq_num not in session.received_packets:
                     logger.error(
-                        f"Missing packet {seq_num} in BAM reassembly for "
-                        f"PGN={session.target_pgn:05X}"
+                        "Missing packet %d in BAM reassembly for PGN=%05X",
+                        seq_num,
+                        session.target_pgn,
                     )
                     return None
 
@@ -235,9 +257,11 @@ class BAMHandler:
         for key, session in self.sessions.items():
             if current_time - session.timestamp > self.session_timeout:
                 logger.warning(
-                    f"BAM session timeout: source={session.source_address:02X}, "
-                    f"PGN={session.target_pgn:05X}, received {len(session.received_packets)}/"
-                    f"{session.total_packets} packets"
+                    "BAM session timeout: source=%02X, PGN=%05X, received %d/%d packets",
+                    session.source_address,
+                    session.target_pgn,
+                    len(session.received_packets),
+                    session.total_packets,
                 )
                 keys_to_remove.append(key)
 

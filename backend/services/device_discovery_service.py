@@ -8,6 +8,8 @@ This service follows the established backend patterns with proper integration
 into the config, logging, persistence, and WebSocket systems.
 """
 
+# ruff: noqa: ARG002, E501, FIX002, G004, PLR0913, PLR2004
+
 import asyncio
 import contextlib
 import logging
@@ -35,6 +37,8 @@ class DeviceInfo:
     device_type: str | None = None
     manufacturer: str | None = None
     product_id: str | None = None
+    serial_number: str | None = None
+    unit_number: str | None = None
     version: str | None = None
     capabilities: set[str] = field(default_factory=set)
     last_seen: float = field(default_factory=time.time)
@@ -114,7 +118,7 @@ class DeviceDiscoveryService:
             self.enabled_protocols.append("j1939")
 
         # Protocol-specific PGN ranges for detection
-        self.protocol_pgn_ranges = {
+        self.protocol_pgn_ranges: dict[str, dict[str, Any]] = {
             "rvc": {
                 # RV-C specific PGNs
                 "characteristic_pgns": {0x1FEF2, 0x1FEDA, 0x1FEEB, 0x1FEE1, 0x1FF7D},
@@ -139,7 +143,7 @@ class DeviceDiscoveryService:
         )
 
         # Protocol-specific configurations
-        self.protocol_configs = {
+        self.protocol_configs: dict[str, dict[str, Any]] = {
             "rvc": {
                 "discovery_pgns": [
                     0x1FEF2,
@@ -164,12 +168,42 @@ class DeviceDiscoveryService:
         }
 
         # Async tasks
-        self._discovery_task: asyncio.Task | None = None
-        self._polling_task: asyncio.Task | None = None
+        self._discovery_task: asyncio.Task[None] | None = None
+        self._polling_task: asyncio.Task[None] | None = None
 
         logger.info(
             f"DeviceDiscoveryService initialized with polling_interval={self.polling_interval}s"
         )
+
+    def record_component_identification(
+        self,
+        source_address: int,
+        component_id: dict[str, str],
+        interface: str | None = None,
+    ) -> DeviceInfo:
+        """Record decoded J1939 Component Identification metadata for a device."""
+        now = time.time()
+        device = self.topology.devices.get(source_address)
+        if device is None:
+            device = DeviceInfo(source_address=source_address, protocol="j1939", first_seen=now)
+            self.topology.devices[source_address] = device
+        elif device.protocol == "unknown":
+            device.protocol = "j1939"
+
+        device.manufacturer = component_id.get("make") or device.manufacturer
+        device.product_id = component_id.get("model") or device.product_id
+        device.serial_number = component_id.get("serial") or device.serial_number
+        device.unit_number = component_id.get("unit") or device.unit_number
+        device.capabilities.add("component_identification")
+        device.last_seen = now
+        device.status = "online"
+        device.response_count += 1
+        self.topology.last_discovery = now
+
+        if interface:
+            self.detected_protocols[interface].add("j1939")
+
+        return device
 
     async def start_discovery(self) -> None:
         """Start the device discovery service."""
@@ -216,8 +250,8 @@ class DeviceDiscoveryService:
             logger.warning(f"Unsupported protocol for discovery: {protocol}")
             return {}
 
-        config = self.protocol_configs[protocol]
-        discovered = {}
+        config: dict[str, Any] = self.protocol_configs[protocol]
+        discovered: dict[int, DeviceInfo] = {}
 
         logger.info(f"Starting device discovery for protocol: {protocol}")
 
@@ -312,7 +346,7 @@ class DeviceDiscoveryService:
         """
         logger.info(f"Starting auto-discovery wizard for protocols: {protocols}")
 
-        discovery_results = {
+        discovery_results: dict[str, Any] = {
             "scan_id": f"discovery_{int(time.time())}",
             "protocols_scanned": protocols,
             "scan_duration": scan_duration,
@@ -326,7 +360,7 @@ class DeviceDiscoveryService:
         }
 
         # Phase 1: Basic discovery across all protocols
-        all_discovered = {}
+        all_discovered: dict[str, dict[int, DeviceInfo]] = {}
         for protocol in protocols:
             logger.info(f"Phase 1: Basic discovery for {protocol}")
             protocol_devices = await self.discover_devices(protocol)
@@ -398,7 +432,7 @@ class DeviceDiscoveryService:
             logger.warning(f"Device {device_address:02X} not found in topology")
             return {}
 
-        profile = {
+        profile: dict[str, Any] = {
             "device_address": device_address,
             "protocol": protocol,
             "basic_info": {
@@ -406,6 +440,8 @@ class DeviceDiscoveryService:
                 "device_type": device_info.device_type or "unknown",
                 "manufacturer": device_info.manufacturer or "unknown",
                 "product_id": device_info.product_id or "unknown",
+                "serial_number": device_info.serial_number or "unknown",
+                "unit_number": device_info.unit_number or "unknown",
                 "version": device_info.version or "unknown",
                 "status": device_info.status,
                 "last_seen": device_info.last_seen,
@@ -548,7 +584,7 @@ class DeviceDiscoveryService:
         Returns:
             Setup recommendations and configuration guidance
         """
-        recommendations = {
+        recommendations: dict[str, Any] = {
             "total_devices": len(self.topology.devices),
             "unconfigured_devices": 0,
             "recommendations": [],
@@ -558,7 +594,7 @@ class DeviceDiscoveryService:
             "generated_at": time.time(),
         }
 
-        unconfigured_devices = []
+        unconfigured_devices: list[DeviceInfo] = []
 
         for device in self.topology.devices.values():
             # Determine if device is configured
@@ -606,7 +642,7 @@ class DeviceDiscoveryService:
         Returns:
             Enhanced network topology with relationships and metrics
         """
-        network_map = {
+        network_map: dict[str, Any] = {
             "total_devices": len(self.topology.devices),
             "online_devices": 0,
             "offline_devices": 0,
@@ -623,7 +659,7 @@ class DeviceDiscoveryService:
         protocol_counts = defaultdict(int)
 
         # Process devices
-        devices_to_include = []
+        devices_to_include: list[DeviceInfo] = []
         for device in self.topology.devices.values():
             is_online = (
                 device.status in ["online", "discovered"] and (time.time() - device.last_seen) < 300
@@ -654,6 +690,10 @@ class DeviceDiscoveryService:
                 device_info = {
                     "address": device.source_address,
                     "device_type": device.device_type or "unknown",
+                    "manufacturer": device.manufacturer,
+                    "product_id": device.product_id,
+                    "serial_number": device.serial_number,
+                    "unit_number": device.unit_number,
                     "status": device.status,
                     "last_seen": device.last_seen,
                     "response_count": device.response_count,
@@ -662,12 +702,16 @@ class DeviceDiscoveryService:
                 network_map["device_groups"][protocol].append(device_info)
         else:
             # Group by device type
-            type_groups = defaultdict(list)
+            type_groups: defaultdict[str, list[dict[str, Any]]] = defaultdict(list)
             for device in devices_to_include:
                 device_type = device.device_type or "unknown"
                 device_info = {
                     "address": device.source_address,
                     "protocol": device.protocol,
+                    "manufacturer": device.manufacturer,
+                    "product_id": device.product_id,
+                    "serial_number": device.serial_number,
+                    "unit_number": device.unit_number,
                     "status": device.status,
                     "last_seen": device.last_seen,
                     "response_count": device.response_count,
@@ -888,7 +932,7 @@ class DeviceDiscoveryService:
         configuration: dict[str, Any],
     ) -> dict[str, Any]:
         """Validate device setup configuration."""
-        validation = {
+        validation: dict[str, Any] = {
             "valid": True,
             "errors": [],
             "warnings": [],
@@ -938,7 +982,7 @@ class DeviceDiscoveryService:
         return steps
 
     async def _generate_discovery_recommendations(
-        self, all_discovered: dict[str, dict]
+        self, all_discovered: dict[str, dict[int, DeviceInfo]]
     ) -> list[dict[str, Any]]:
         """Generate recommendations from discovery results."""
         recommendations = []
@@ -964,9 +1008,11 @@ class DeviceDiscoveryService:
 
         return recommendations
 
-    async def _build_network_topology(self, all_discovered: dict[str, dict]) -> dict[str, Any]:
+    async def _build_network_topology(
+        self, all_discovered: dict[str, dict[int, DeviceInfo]]
+    ) -> dict[str, Any]:
         """Build network topology from discovery results."""
-        topology = {
+        topology: dict[str, Any] = {
             "protocols": list(all_discovered.keys()),
             "device_count_by_protocol": {
                 protocol: len(devices) for protocol, devices in all_discovered.items()
@@ -1156,6 +1202,10 @@ class DeviceDiscoveryService:
                 {
                     "source_address": device.source_address,
                     "device_type": device.device_type,
+                    "manufacturer": device.manufacturer,
+                    "product_id": device.product_id,
+                    "serial_number": device.serial_number,
+                    "unit_number": device.unit_number,
                     "status": device.status,
                     "last_seen": device.last_seen,
                     "response_count": device.response_count,
@@ -1187,7 +1237,7 @@ class DeviceDiscoveryService:
         now = time.time()
         availability_threshold = 300  # 5 minutes
 
-        stats = {
+        stats: dict[str, Any] = {
             "total_devices": len(self.topology.devices),
             "online_devices": 0,
             "offline_devices": 0,
@@ -1282,6 +1332,8 @@ class DeviceDiscoveryService:
             "fan": 0x1FED6,
         }
 
+        if device.device_type is None:
+            return None
         return device_type_pgns.get(device.device_type)
 
     async def _send_pgn_request(
@@ -1334,11 +1386,14 @@ class DeviceDiscoveryService:
             message = can.Message(arbitration_id=can_id, data=data, is_extended_id=True)
 
             # Send via CAN queue
-            await can_tx_queue.put(message)
+            await can_tx_queue.put((message, "can0"))
 
             logger.debug(
-                f"Sent PGN request: PGN={pgn:04X}, Dest={destination:02X}, "
-                f"Protocol={protocol}, Instance={instance}"
+                "Sent PGN request: PGN=%04X, Dest=%02X, Protocol=%s, Instance=%s",
+                pgn,
+                destination,
+                protocol,
+                instance,
             )
 
             return True
@@ -1398,8 +1453,10 @@ class DeviceDiscoveryService:
                 del self.active_polls[poll_key]
 
                 logger.debug(
-                    f"Poll response received from {source_address:02X} "
-                    f"for PGN {pgn:04X} in {response_time:.3f}s"
+                    "Poll response received from %02X for PGN %04X in %.3fs",
+                    source_address,
+                    pgn,
+                    response_time,
                 )
                 break
 

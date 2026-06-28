@@ -20,7 +20,12 @@ from backend.core.safety_interfaces import (
 from backend.core.structured_logging import get_logger, log_execution_time, log_safety_critical
 from backend.integrations.diagnostics.handler import DiagnosticHandler
 from backend.integrations.diagnostics.models import DTCSeverity, ProtocolType, SystemType
-from backend.integrations.rvc import BAMHandler, decode_payload, decode_product_id
+from backend.integrations.rvc import (
+    BAMHandler,
+    decode_component_id,
+    decode_payload,
+    decode_product_id,
+)
 from backend.integrations.rvc.decoder_core import DecodedValue
 from backend.repositories.can_tracking_repository import CANTrackingRepository
 from backend.repositories.system_state_repository import SystemStateRepository
@@ -32,6 +37,7 @@ DM_RV_CLEAR_SPN = 0x7FFFF
 DM_RV_CLEAR_FMI = 31
 DM_RV_CLEAR_OCCURRENCE_COUNT = 127
 PRODUCT_IDENTIFICATION_PGN = 0x1FEF2
+COMPONENT_IDENTIFICATION_PGN = 0xFEEB
 PENDING_COMMAND_WINDOW_SECONDS = 5.0
 LIGHT_STATUS_SIMULATION_TYPE = 2
 SIMULATION_ERROR_SLEEP_SECONDS = 5
@@ -97,6 +103,7 @@ class CANBusService(SafetyAware):
 
         # BAM handler for multi-packet messages
         self.bam_handler: BAMHandler | None = None
+        self._component_identity_seen: set[tuple[int, bytes]] = set()
 
         # Pattern recognition engine for unknown messages
         self.pattern_engine = None
@@ -773,21 +780,18 @@ class CANBusService(SafetyAware):
             source_address = arbitration_id & 0xFF
 
             # Check if this is a BAM transport protocol message
-            if self.bam_handler and pgn in [BAMHandler.TP_CM_PGN, BAMHandler.TP_DT_PGN]:
+            normalized_pgn = BAMHandler.normalize_transport_pgn(pgn)
+            if self.bam_handler and normalized_pgn in [BAMHandler.TP_CM_PGN, BAMHandler.TP_DT_PGN]:
                 # Process through BAM handler
-                result = self.bam_handler.process_frame(pgn, data, source_address)
+                result = self.bam_handler.process_frame(normalized_pgn, data, source_address)
 
                 if result:
                     # We have a complete multi-packet message
                     target_pgn, reassembled_data = result
 
-                    # Handle specific multi-packet PGNs
-                    if target_pgn == PRODUCT_IDENTIFICATION_PGN:
-                        decoded = decode_product_id(reassembled_data)
-                        logger.info("Decoded Product ID: %s", decoded)
-                        # Future work: update entity with product information.
-                    else:
-                        logger.debug("Reassembled multi-packet message for PGN %05X", target_pgn)
+                    self._process_reassembled_message(
+                        target_pgn, reassembled_data, source_address, msg
+                    )
 
                 # Don't process transport protocol messages further
                 return
@@ -863,6 +867,55 @@ class CANBusService(SafetyAware):
 
         except Exception as e:
             logger.error("Error processing CAN message: %s", e)
+
+    def _process_reassembled_message(
+        self,
+        target_pgn: int,
+        reassembled_data: bytes,
+        source_address: int,
+        msg: dict[str, Any],
+    ) -> None:
+        """Process a completed BAM message from the receive path."""
+        if target_pgn == PRODUCT_IDENTIFICATION_PGN:
+            decoded = decode_product_id(reassembled_data)
+            logger.info("Decoded Product ID: %s", decoded)
+            # Future work: update entity with product information.
+            return
+
+        if target_pgn == COMPONENT_IDENTIFICATION_PGN:
+            self._record_component_identification(source_address, reassembled_data, msg)
+            return
+
+        logger.debug("Reassembled multi-packet message for PGN %05X", target_pgn)
+
+    def _record_component_identification(
+        self, source_address: int, reassembled_data: bytes, msg: dict[str, Any]
+    ) -> None:
+        """Decode and record J1939 Component Identification in DeviceDiscoveryService."""
+        identity_key = (source_address, reassembled_data)
+        if identity_key in self._component_identity_seen:
+            return
+        self._component_identity_seen.add(identity_key)
+
+        component_id = decode_component_id(reassembled_data)
+        if "error" in component_id:
+            logger.debug("Skipping invalid Component ID from source 0x%02X", source_address)
+            return
+
+        try:
+            from backend.core.dependencies import get_service_registry
+
+            service_registry = get_service_registry()
+            if not service_registry.has_service("device_discovery_service"):
+                return
+            discovery_service = service_registry.get_service("device_discovery_service")
+            discovery_service.record_component_identification(
+                source_address=source_address,
+                component_id=component_id,
+                interface=msg.get("interface") if isinstance(msg.get("interface"), str) else None,
+            )
+        except Exception as e:
+            logger.debug("Unable to record Component ID for source 0x%02X: %s", source_address, e)
 
     @staticmethod
     def _split_decoded_payload(

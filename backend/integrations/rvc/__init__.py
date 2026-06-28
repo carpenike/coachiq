@@ -38,6 +38,7 @@ from backend.integrations.rvc.decode import (
 
 # Import decoder core functions
 from backend.integrations.rvc.decoder_core import (
+    decode_component_id,
     decode_product_id,
     decode_string_payload,
 )
@@ -46,6 +47,7 @@ __all__ = [
     "BAMHandler",
     "clear_config_cache",
     "clear_missing_dgns",
+    "decode_component_id",
     "decode_payload",
     "decode_payload_safe",
     "decode_product_id",
