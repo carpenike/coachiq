@@ -35,35 +35,58 @@ coordinate, see the `handoff/README` note in the `coachiq` basic-memory project.
 ## Direction — v2-only convergence
 
 Per [ADR-0003](docs/adr/ADR-0003-api-v2-only-no-legacy.md), the API surface and
-frontend consumer code converge on `/api/v2` only. Legacy `/api/*` routers and
-frontend v1 clients/hooks are retired incrementally; each deletion is gated on a
-proven-equivalent v2 contract and migrated callers.
+frontend consumer code converge on `/api/v2` only.
+
+### Pre-1.0 — No Backward-Compatibility Obligation
+
+CoachIQ has not shipped a release. The only consumers of its REST/WS API and
+frontend interfaces are this repo's own frontend and the maintainer's
+`carpenike/nix-config`, both of which change in lockstep with the code.
+Consequences:
+
+- Legacy surfaces are retired decisively, not incrementally: no deprecation
+  windows, no parallel-maintained legacy, no compat shims, and no convergence
+  ratchets. The deletion gate is: does the v2/replacement cover it, do our own
+  callers still work, and do tests pass. It is not: will this break an external
+  consumer.
+- This relaxes the conservative framing of
+  [ADR-0003](docs/adr/ADR-0003-api-v2-only-no-legacy.md). Pre-1.0, legacy
+  routers with v2 equivalents can be removed in bulk, fixing our own callers in
+  the same change.
+- It supersedes the backward-compatibility rationale in
+  [ADR-0005](docs/adr/ADR-0005-http-error-response-envelope.md) for the dual
+  `detail` plus `error.{code,message}` envelope. That compatibility is with no
+  external consumer, so the envelope can collapse to one shape in its own future
+  HOF.
+- What does not change: the mandatory review gate, grounding/enumeration
+  discipline, and tests. Those caught real bugs and incomplete scope regardless
+  of compatibility, and stay in force.
+- Revisit this stance when a 1.0/public release creates real external
+  consumers; at that point, reinstate deprecation discipline.
 
 The end state is deletion-heavy: no v1 `useEntities` hook stack, no legacy
 `frontend/src/api/endpoints.ts` functions, no `withDomainAPIFallback` or `useV2`
-machinery, and the remaining mounted legacy router modules inventoried in
-HOF-016 removed. The dual `detail` plus `error.{code,message}` envelope can be
-revisited once legacy is gone.
+machinery, one HTTP error response envelope, and the remaining mounted legacy
+router modules inventoried in HOF-016 removed.
 
-The path is router-by-router and caller-by-caller. The HOF-016 inventory below
-is the retirement map; each row remains individually gated.
+The HOF-016 inventory below is the retirement map, but it is not a strangler-fig
+mandate. Rows can be removed together when the replacement is grounded, our own
+callers migrate in the same change, and the relevant tests pass.
 
 Remaining contract gaps blocking completion:
 
-1. v2 `EntityCommand` lacks `lock`/`unlock`, which blocks full entity v1 removal
-   until the command contract is widened and tested.
+1. `lock`/`unlock` remains deferred after RECON-002 weakened the standard RV-C
+    command hypothesis. Do not widen v2 `EntityCommand` for locks until a future
+    proprietary-lock effort has a validated frame; this does not block the
+    frontend-only v1 entity caller migration.
 2. Diagnostics legacy-router retirement is closed by HOF-026; remaining
   `SystemHealthResponse` generated names belong to other v2/security-dashboard
   contracts, not `/api/diagnostics/health`.
 
 Work hanging off this direction: HOF-017 removed the fake entity fallback and
-adopted generated result types; HOF-023 is the candidate for migrating the 22
-entity UI callers plus widening v2 for lock/unlock; per-router retirements
-follow the HOF-016 plan.
-
-Pace caveat: interleave risk-reduction work such as HOF-015 guardrail coverage
-rather than pursuing pure surface shrink monotonically. Coverage addresses real
-risk; retirement addresses cleanliness.
+adopted generated result types; HOF-023 is the candidate for the frontend-only
+v1 entity caller migration while lock/unlock stays deferred; per-router
+retirements follow the HOF-016 plan.
 
 ---
 
