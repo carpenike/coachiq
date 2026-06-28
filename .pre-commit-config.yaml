@@ -76,7 +76,7 @@ repos:
         entry: bash -c 'cd frontend && args=(); for f in "$@"; do args+=("${f#frontend/}"); done; npx eslint --fix --no-error-on-unmatched-pattern -- "${args[@]}" || true' --
         language: system
         files: ^frontend/.*\.(js|jsx|ts|tsx)$
-        exclude: ^frontend/(node_modules|dist|coverage)/
+        exclude: ^frontend/(node_modules|dist|coverage|src/api/generated)/
         pass_filenames: true
 
   # ===== MANUAL/CI-ONLY HOOKS =====

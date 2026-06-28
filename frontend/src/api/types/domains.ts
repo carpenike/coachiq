@@ -52,8 +52,11 @@ export type NetworkStatusSchema = GeneratedSchemas["NetworkStatus"];
 /** Network summary schema from the OpenAPI contract */
 export type NetworkSummarySchema = GeneratedSchemas["NetworkSummary"];
 
-/** System health status schema from the OpenAPI contract */
-export type SystemStatusSchema = GeneratedSchemas["backend__api__domains__diagnostics__SystemStatus"];
+/** Diagnostics system status schema from the OpenAPI contract */
+export type DiagnosticsSystemStatusSchema = GeneratedSchemas["backend__api__domains__diagnostics__SystemStatus"];
+
+/** Diagnostic fault summary schema from the OpenAPI contract */
+export type DiagnosticFaultSummarySchema = GeneratedSchemas["FaultSummary"];
 
 /** PIN system status response schema from the OpenAPI contract */
 export type SystemStatusResponseSchema = GeneratedSchemas["SystemStatusResponse"];

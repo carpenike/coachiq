@@ -41,7 +41,7 @@ proven-equivalent v2 contract and migrated callers.
 
 The end state is deletion-heavy: no v1 `useEntities` hook stack, no legacy
 `frontend/src/api/endpoints.ts` functions, no `withDomainAPIFallback` or `useV2`
-machinery, and the 29 mounted legacy router modules / 263 routes inventoried in
+machinery, and the remaining mounted legacy router modules inventoried in
 HOF-016 removed. The dual `detail` plus `error.{code,message}` envelope can be
 revisited once legacy is gone.
 
@@ -52,14 +52,14 @@ Remaining contract gaps blocking completion:
 
 1. v2 `EntityCommand` lacks `lock`/`unlock`, which blocks full entity v1 removal
    until the command contract is widened and tested.
-2. There is no v2 home for the legacy `SystemHealthResponse` system-health
-   contract, which blocks retirement of the diagnostics legacy router.
+2. Diagnostics legacy-router retirement is closed by HOF-026; remaining
+  `SystemHealthResponse` generated names belong to other v2/security-dashboard
+  contracts, not `/api/diagnostics/health`.
 
 Work hanging off this direction: HOF-017 removed the fake entity fallback and
 adopted generated result types; HOF-023 is the candidate for migrating the 22
-entity UI callers plus widening v2 for lock/unlock; HOF-022 is the candidate for
-a v2 system-health home or frontend migration; per-router retirements follow the
-HOF-016 plan.
+entity UI callers plus widening v2 for lock/unlock; per-router retirements
+follow the HOF-016 plan.
 
 Pace caveat: interleave risk-reduction work such as HOF-015 guardrail coverage
 rather than pursuing pure surface shrink monotonically. Coverage addresses real
@@ -68,6 +68,33 @@ risk; retirement addresses cleanliness.
 ---
 
 ## Build Log
+
+### HOF-026 — v2 Diagnostics Health Widget And Legacy Router Retirement
+
+- [shipped] same commit as this entry · 2026-06-27
+- [component] both
+- [adr] docs/adr/ADR-0003-api-v2-only-no-legacy.md
+
+**What changed.** The frontend diagnostics health path now reads real v2
+diagnostics data from `/api/v2/diagnostics/system-status` and
+`/api/v2/diagnostics/faults`, using generated OpenAPI types for the status and
+fault summary shapes. `SystemHealthScore`, `useDiagnostics`, and the performance
+page were migrated off the old hand-written `SystemHealthResponse` contract.
+The legacy backend `GET /api/diagnostics/health` router was deleted and removed
+from router registration, and OpenAPI plus generated frontend API types were
+regenerated.
+
+**Why.** HOF-022 made v2 diagnostics real, so the UI can now cut over without
+displaying the fake health/fault data that blocked HOF-016. This is the first
+actual legacy-router deletion in the ADR-0003 retirement inventory.
+
+**Files.** backend/api/router_config.py, backend/api/routers/diagnostics.py,
+docs/api/openapi.json, docs/api/openapi.yaml, frontend/src/api/endpoints.ts,
+frontend/src/api/generated/openapi-types.ts, frontend/src/api/types.ts,
+frontend/src/api/types/domains.ts,
+frontend/src/components/diagnostics/SystemHealthScore.tsx,
+frontend/src/components/diagnostics/index.ts, frontend/src/hooks/useDiagnostics.ts,
+frontend/src/pages/performance.tsx
 
 ### HOF-022 — Real v2 Diagnostics Backend
 
@@ -358,10 +385,11 @@ router is proven fully covered by v2 in this pass.
   `GET /api/discovery/wizard/setup-recommendations`; v2 coverage: none beyond
   adjacent network concepts; frontend callers: `frontend/src/api/endpoints.ts`;
   gate: discovery v2 domain or feature consolidation.
-- `diagnostics` — routes: `GET /api/diagnostics/health`; v2 coverage: partial
-  path-name overlap only, not contract-equivalent; frontend callers:
-  `frontend/src/api/endpoints.ts::fetchSystemHealth()`; gate: add a v2
-  `SystemHealthResponse` equivalent and migrate callers before deletion.
+- `diagnostics` — retired in HOF-026. Former route:
+  `GET /api/diagnostics/health`; replacement: real v2 diagnostics
+  `GET /api/v2/diagnostics/system-status` plus
+  `GET /api/v2/diagnostics/faults`; frontend callers migrated off
+  `fetchSystemHealth()`; OpenAPI no longer advertises the legacy path.
 - `docs` — routes: `GET /api/docs/openapi`, `GET /api/docs/search`,
   `GET /api/docs/status`; v2 coverage: none; frontend callers:
   `frontend/src/pages/documentation.tsx`; gate: documentation/search v2 design

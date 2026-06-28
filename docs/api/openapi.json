@@ -4278,58 +4278,6 @@
         }
       }
     },
-    "/api/diagnostics/health": {
-      "get": {
-        "tags": [
-          "diagnostics"
-        ],
-        "summary": "Get System Health",
-        "description": "Get comprehensive system health status.\n\nArgs:\n    system_type: Optional specific system to query, or None for all systems\n\nReturns:\n    System health response with scores and recommendations",
-        "operationId": "get_system_health_api_diagnostics_health_get",
-        "parameters": [
-          {
-            "name": "system_type",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "description": "Specific system to query",
-              "title": "System Type"
-            },
-            "description": "Specific system to query"
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/backend__api__routers__diagnostics__SystemHealthResponse"
-                }
-              }
-            }
-          },
-          "422": {
-            "description": "Validation Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
     "/api/docs/status": {
       "get": {
         "tags": [
@@ -21362,51 +21310,6 @@
         ],
         "title": "SystemStatus",
         "description": "Overall system status with enhanced metadata"
-      },
-      "backend__api__routers__diagnostics__SystemHealthResponse": {
-        "properties": {
-          "overall_health": {
-            "type": "number",
-            "title": "Overall Health"
-          },
-          "system_scores": {
-            "additionalProperties": {
-              "type": "number"
-            },
-            "type": "object",
-            "title": "System Scores"
-          },
-          "status": {
-            "type": "string",
-            "title": "Status"
-          },
-          "recommendations": {
-            "items": {
-              "type": "string"
-            },
-            "type": "array",
-            "title": "Recommendations"
-          },
-          "last_assessment": {
-            "type": "number",
-            "title": "Last Assessment"
-          },
-          "active_dtcs": {
-            "type": "integer",
-            "title": "Active Dtcs"
-          }
-        },
-        "type": "object",
-        "required": [
-          "overall_health",
-          "system_scores",
-          "status",
-          "recommendations",
-          "last_assessment",
-          "active_dtcs"
-        ],
-        "title": "SystemHealthResponse",
-        "description": "System health response model matching frontend expectations."
       },
       "backend__api__routers__notification_analytics__DashboardMetrics": {
         "properties": {

@@ -24,7 +24,6 @@ from backend.api.routers import (
     database_management,
     dbc,
     device_discovery,
-    diagnostics,
     docs,
     health,
     logs,
@@ -72,7 +71,6 @@ def configure_routers(app: FastAPI) -> None:
     app.include_router(dashboard.router)
     app.include_router(database_management.router)
     app.include_router(dbc.router)
-    app.include_router(diagnostics.router)
     app.include_router(docs.router)
     app.include_router(health.router)
     app.include_router(logs.router)

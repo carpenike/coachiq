@@ -5,6 +5,8 @@
  * These types ensure type safety when working with API responses.
  */
 
+import type { DiagnosticsSystemStatusSchema } from './types/domains';
+
 // Base Entity Interface
 export interface EntityBase {
   entity_id: string;
@@ -470,16 +472,6 @@ export interface SystemAnalytics {
 // ===== ADVANCED DIAGNOSTICS TYPES =====
 //
 
-// System Health Response (matches backend SystemHealthResponse)
-export interface SystemHealthResponse {
-  overall_health: number; // 0.0-1.0
-  system_scores: Record<string, number>;
-  status: "healthy" | "warning" | "critical";
-  recommendations: string[];
-  last_assessment: number;
-  active_dtcs: number;
-}
-
 // DTC Filters for API queries
 export interface DTCFilters {
   system_type?: string;
@@ -765,7 +757,7 @@ export interface DiagnosticUpdateMessage extends WebSocketMessage {
     health_score_change?: number;
     new_correlation?: FaultCorrelation;
     maintenance_alert?: MaintenanceAlert;
-    system_health?: SystemHealthResponse;
+    system_health?: DiagnosticsSystemStatusSchema;
   };
 }
 

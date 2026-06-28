@@ -83,7 +83,6 @@ import type {
     ResourceUsage,
     SupportedProtocols,
     SystemAnalytics,
-    SystemHealthResponse,
     SystemMetrics,
     SystemSettings,
     TrendData,
@@ -95,8 +94,10 @@ import type {
 
 // Import Domain API v2 types for enhanced functionality
 import type {
+  DiagnosticFaultSummarySchema,
     EntityCollectionSchema,
     EntitySchema,
+  DiagnosticsSystemStatusSchema,
     OperationResultSchema
 } from './types/domains';
 
@@ -695,21 +696,40 @@ export async function acknowledgeAlert(alertId: string): Promise<{ success: bool
 }
 
 //
-// ===== ADVANCED DIAGNOSTICS API (/api/diagnostics) =====
+// ===== ADVANCED DIAGNOSTICS API (/api/v2/diagnostics) =====
 //
 
 /**
- * Get comprehensive system health status
+ * Get v2 diagnostics system status
  *
- * @param systemType - Optional specific system to query, or null for all systems
- * @returns Promise resolving to system health response
+ * @returns Promise resolving to real diagnostics system status
  */
-export async function fetchSystemHealth(systemType?: string): Promise<SystemHealthResponse> {
-  const queryString = systemType ? buildQueryString({ system_type: systemType }) : '';
-  const url = queryString ? `/api/diagnostics/health?${queryString}` : '/api/diagnostics/health';
+export async function fetchDiagnosticsSystemStatus(): Promise<DiagnosticsSystemStatusSchema> {
+  const url = '/api/v2/diagnostics/system-status';
 
-  logApiRequest('GET', url, { systemType });
-  const result = await apiGet<SystemHealthResponse>(url);
+  logApiRequest('GET', url);
+  const result = await apiGet<DiagnosticsSystemStatusSchema>(url);
+  logApiResponse(url, result);
+
+  return result;
+}
+
+/**
+ * Get v2 diagnostics fault summary
+ *
+ * @param filters - Optional fault summary filters
+ * @returns Promise resolving to real diagnostics fault summary
+ */
+export async function fetchDiagnosticFaultSummary(
+  filters?: Pick<DTCFilters, 'system_type' | 'severity'>
+): Promise<DiagnosticFaultSummarySchema> {
+  const queryString = filters ? buildQueryString(filters) : '';
+  const url = queryString
+    ? `/api/v2/diagnostics/faults?${queryString}`
+    : '/api/v2/diagnostics/faults';
+
+  logApiRequest('GET', url, filters);
+  const result = await apiGet<DiagnosticFaultSummarySchema>(url);
   logApiResponse(url, result);
 
   return result;

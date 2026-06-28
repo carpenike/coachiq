@@ -12,10 +12,11 @@ import {
   fetchActiveDTCs,
   fetchBackendComputedDiagnosticStatistics,
   fetchDiagnosticStatistics,
+  fetchDiagnosticFaultSummary,
+  fetchDiagnosticsSystemStatus,
   fetchDiagnosticsStatus,
   fetchFaultCorrelations,
   fetchMaintenancePredictions,
-  fetchSystemHealth,
   resolveDTC
 } from '@/api/endpoints'
 import type {
@@ -70,7 +71,13 @@ export function useActiveDTCs(filters?: DTCFilters) {
 export function useSystemHealth(systemType?: string) {
   return useQuery({
     queryKey: [...DIAGNOSTICS_KEYS.health, systemType],
-    queryFn: () => fetchSystemHealth(systemType),
+    queryFn: async () => {
+      const [systemStatus, faultSummary] = await Promise.all([
+        fetchDiagnosticsSystemStatus(),
+        fetchDiagnosticFaultSummary(systemType ? { system_type: systemType } : undefined)
+      ])
+      return { systemStatus, faultSummary }
+    },
     staleTime: 30000,
     refetchInterval: 45000,
     retry: 2,

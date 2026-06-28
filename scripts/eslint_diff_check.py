@@ -146,6 +146,7 @@ def _changed_frontend_files(base_ref: str) -> list[str]:
         "frontend/node_modules/",
         "frontend/dist/",
         "frontend/coverage/",
+        "frontend/src/api/generated/",
     )
     files = []
     for line in out.splitlines():

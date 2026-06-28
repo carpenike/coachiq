@@ -1,10 +1,10 @@
 import {
     fetchBaselineDeviations,
+  fetchDiagnosticsSystemStatus,
     fetchOptimizationRecommendations,
     fetchPerformanceMetrics,
     fetchProtocolThroughput,
     fetchResourceUtilization,
-    fetchSystemHealth,
     generatePerformanceReport
 } from '@/api/endpoints';
 import type { OptimizationSuggestion, PerformanceMetrics, ResourceUsage } from '@/api/types';
@@ -36,6 +36,8 @@ interface PerformanceScoreProps {
   status?: 'healthy' | 'warning' | 'critical'; // Backend-computed status
   size?: 'compact' | 'full';
 }
+
+type PerformanceStatus = NonNullable<PerformanceScoreProps['status']>;
 
 function PerformanceScore({ value, label, status = 'healthy', size = 'compact' }: PerformanceScoreProps) {
   const percentage = Math.round(value * 100);
@@ -85,6 +87,23 @@ function PerformanceScore({ value, label, status = 'healthy', size = 'compact' }
       </CardContent>
     </Card>
   );
+}
+
+function diagnosticsHealthToPerformanceStatus(
+  overallHealth: string
+): PerformanceStatus {
+  switch (overallHealth) {
+    case 'excellent':
+    case 'good':
+      return 'healthy';
+    case 'fair':
+      return 'warning';
+    case 'poor':
+    case 'critical':
+      return 'critical';
+    default:
+      return 'warning';
+  }
 }
 
 interface MetricCardProps {
@@ -327,8 +346,8 @@ export default function PerformancePage() {
     isLoading: healthLoading,
     refetch: refetchHealth
   } = useQuery({
-    queryKey: ['system-health'],
-    queryFn: () => fetchSystemHealth(),
+    queryKey: ['diagnostics-system-status'],
+    queryFn: fetchDiagnosticsSystemStatus,
     refetchInterval: refreshInterval,
     staleTime: 15000,
   });
@@ -474,7 +493,7 @@ export default function PerformancePage() {
           <PerformanceScore
             value={metrics.overall_health || 0}
             label="Overall Performance"
-            status={systemHealth?.status} // Use backend-computed status
+            status={diagnosticsHealthToPerformanceStatus(systemHealth.overall_health)}
             size="full"
           />
           {metrics.api_performance ? (

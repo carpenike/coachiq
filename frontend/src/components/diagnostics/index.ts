@@ -8,4 +8,8 @@ export { SystemHealthScore } from './SystemHealthScore';
 export { DTCManager } from './DTCManager';
 
 // Re-export types for convenience
-export type { SystemHealthResponse, DiagnosticTroubleCode, DTCFilters } from '@/api/types';
+export type { DiagnosticTroubleCode, DTCFilters } from '@/api/types';
+export type {
+	DiagnosticFaultSummarySchema,
+	DiagnosticsSystemStatusSchema
+} from '@/api/types/domains';
