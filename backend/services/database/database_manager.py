@@ -27,8 +27,8 @@ from backend.repositories.database_repository import (
     DatabaseSessionRepository,
     MigrationRepository,
 )
-from backend.services.database_engine import DatabaseEngine, DatabaseSettings
-from backend.services.database_services import (
+from backend.services.database.database_engine import DatabaseEngine, DatabaseSettings
+from backend.services.database.database_services import (
     DatabaseConnectionService,
     DatabaseMigrationService,
     DatabaseSessionService,

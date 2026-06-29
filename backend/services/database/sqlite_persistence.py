@@ -9,14 +9,14 @@ import logging
 
 from backend.models.persistence import DashboardConfiguration
 from backend.models.unmapped import UnmappedEntryModel
-from backend.services.database_engine import DatabaseEngine, DatabaseSettings
+from backend.services.database.database_engine import DatabaseEngine, DatabaseSettings
 from backend.services.persistence_interface import (
     ConfigRepositoryInterface,
     DashboardRepositoryInterface,
     PersistenceServiceInterface,
     UnmappedRepositoryInterface,
 )
-from backend.services.repositories import ConfigRepository, DashboardRepository
+from backend.services.database.repositories import ConfigRepository, DashboardRepository
 
 logger = logging.getLogger(__name__)
 

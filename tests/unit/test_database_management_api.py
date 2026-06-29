@@ -32,8 +32,8 @@ from backend.api.routers.database_management import (
 )
 from backend.core.dependencies import get_authenticated_admin
 from backend.main import app
-from backend.services.database_update_service import DatabaseUpdateService
-from backend.services.migration_safety_validator import MigrationSafetyValidator
+from backend.services.database.database_update_service import DatabaseUpdateService
+from backend.services.database.migration_safety_validator import MigrationSafetyValidator
 
 
 @pytest.fixture

@@ -117,7 +117,7 @@ def register_database_update_services(service_registry: ServiceRegistry) -> None
         database_connection_repository: Any,
         performance_monitor: Any = None,
     ) -> Any:
-        from backend.services.migration_safety_validator import MigrationSafetyValidator
+        from backend.services.database.migration_safety_validator import MigrationSafetyValidator
 
         # Direct service creation with repository injection only
         validator = MigrationSafetyValidator(
@@ -152,7 +152,7 @@ def register_database_update_services(service_registry: ServiceRegistry) -> None
         websocket_repository: Any = None,
         performance_monitor: Any = None,
     ) -> Any:
-        from backend.services.database_update_service import DatabaseUpdateService
+        from backend.services.database.database_update_service import DatabaseUpdateService
 
         # Get backup directory from settings
         backup_dir = app_settings.persistence.get_backup_dir()

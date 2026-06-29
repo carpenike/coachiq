@@ -25,8 +25,8 @@ from backend.services.auth.lockout import LockoutService
 from backend.services.auth.mfa import MfaService
 from backend.services.auth.sessions import SessionService
 from backend.services.auth.tokens import TokenService
-from backend.services.database_engine import DatabaseEngine
-from backend.services.database_services import (
+from backend.services.database.database_engine import DatabaseEngine
+from backend.services.database.database_services import (
     DatabaseConnectionService,
     DatabaseMigrationService,
     DatabaseSessionService,

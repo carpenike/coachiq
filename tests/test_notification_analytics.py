@@ -26,7 +26,7 @@ from backend.models.notification_analytics import (
     NotificationMetric,
     NotificationQueueHealth,
 )
-from backend.services.database_manager import DatabaseManager
+from backend.services.database.database_manager import DatabaseManager
 from backend.services.notification_analytics_service import NotificationAnalyticsService
 from backend.services.notification_reporting_service import (
     DailyDigestTemplate,

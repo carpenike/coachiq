@@ -18,7 +18,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 if TYPE_CHECKING:
     from backend.core.entity_manager import EntityManager
-    from backend.services.database_manager import DatabaseManager
+    from backend.services.database.database_manager import DatabaseManager
 
 import contextlib
 

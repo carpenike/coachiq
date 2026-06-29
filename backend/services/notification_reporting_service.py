@@ -24,7 +24,7 @@ from backend.models.notification_analytics import (
 from backend.models.notification_analytics import (
     NotificationReport as NotificationReportModel,
 )
-from backend.services.database_manager import DatabaseManager
+from backend.services.database.database_manager import DatabaseManager
 
 if TYPE_CHECKING:
     from backend.services.notification_analytics_service import NotificationAnalyticsService

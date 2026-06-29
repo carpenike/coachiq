@@ -10,7 +10,7 @@ from sqlalchemy.ext.asyncio import async_engine_from_config
 # The imports ensure the models are registered with SQLAlchemy's metadata
 # Import our database models and engine
 from backend.models.database import Base
-from backend.services.database_engine import DatabaseSettings
+from backend.services.database.database_engine import DatabaseSettings
 
 # this is the Alembic Config object, which provides
 # access to the values within the .ini file in use.

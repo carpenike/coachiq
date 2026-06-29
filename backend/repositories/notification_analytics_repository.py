@@ -27,7 +27,7 @@ from backend.models.notification_analytics import (
     NotificationReport as NotificationReportModel,
 )
 from backend.repositories.base import MonitoredRepository
-from backend.services.database_manager import DatabaseManager
+from backend.services.database.database_manager import DatabaseManager
 
 logger = logging.getLogger(__name__)
 

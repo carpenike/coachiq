@@ -15,7 +15,7 @@ from typing import Any
 from backend.core.dependencies import get_security_event_manager
 from backend.models.security_events import SecurityEvent
 from backend.models.security_events_db import SecurityEventDB
-from backend.services.database_manager import DatabaseManager
+from backend.services.database.database_manager import DatabaseManager
 
 logger = logging.getLogger(__name__)
 

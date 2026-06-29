@@ -75,11 +75,13 @@ from backend.services.can.can_facade import CANFacade as _CANFacade
 from backend.services.can.can_network_telemetry_service import (
     CANNetworkTelemetryService as _CANNetworkTelemetryService,
 )
-from backend.services.database_update_service import DatabaseUpdateService as _DatabaseUpdateService
+from backend.services.database.database_update_service import (
+    DatabaseUpdateService as _DatabaseUpdateService,
+)
 from backend.services.edge_proxy_monitor_service import (
     EdgeProxyMonitorService as _EdgeProxyMonitorService,
 )
-from backend.services.migration_safety_validator import (
+from backend.services.database.migration_safety_validator import (
     MigrationSafetyValidator as _MigrationSafetyValidator,
 )
 from backend.services.notification_analytics_service import (

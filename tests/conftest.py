@@ -35,8 +35,8 @@ from backend.core.dependencies import (
 
 # Persistence is now default - using dependencies from core.dependencies
 from backend.main import app
-from backend.services.database_engine import DatabaseSettings
-from backend.services.database_manager import DatabaseManager
+from backend.services.database.database_engine import DatabaseSettings
+from backend.services.database.database_manager import DatabaseManager
 
 # Import performance test fixtures so pytest can discover them via the
 # top-level conftest. Without this, ``performance_timer`` -- defined in

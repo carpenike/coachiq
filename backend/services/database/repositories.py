@@ -14,7 +14,7 @@ from sqlalchemy import update as update_stmt
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.models.database import ConfigurationModel, DashboardModel
-from backend.services.database_manager import DatabaseManager
+from backend.services.database.database_manager import DatabaseManager
 
 T = TypeVar("T")
 

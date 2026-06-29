@@ -285,7 +285,7 @@ async def _init_database_manager(
     performance_monitor=None,
 ):
     """Initialize database manager with optional dependencies."""
-    from backend.services.database_manager import DatabaseManager
+    from backend.services.database.database_manager import DatabaseManager
 
     db_manager = DatabaseManager(
         connection_service=database_connection_service,

@@ -1720,7 +1720,7 @@ class Settings(BaseSettings):
 
         # Import here to avoid circular dependency and initialize database field
         try:
-            from backend.services.database_engine import DatabaseSettings
+            from backend.services.database.database_engine import DatabaseSettings
 
             if "database" not in data:
                 data["database"] = DatabaseSettings()

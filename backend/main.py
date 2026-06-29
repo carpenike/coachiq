@@ -131,7 +131,7 @@ def _register_group2_services(service_registry: SafetyServiceRegistry) -> None:
 def _create_database_engine():
     """Create a database engine instance."""
     from backend.core.config import get_settings
-    from backend.services.database_engine import DatabaseEngine
+    from backend.services.database.database_engine import DatabaseEngine
 
     settings = get_settings()
     return DatabaseEngine(settings)

@@ -9,8 +9,8 @@ from pathlib import Path
 
 import pytest
 
-from backend.services.database_engine import DatabaseSettings
-from backend.services.database_manager import DatabaseManager
+from backend.services.database.database_engine import DatabaseSettings
+from backend.services.database.database_manager import DatabaseManager
 
 
 def test_database_path_fixture(test_database_path: Path) -> None:

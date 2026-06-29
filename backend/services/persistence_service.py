@@ -16,7 +16,7 @@ from backend.models.persistence import (
     StorageInfo,
 )
 from backend.repositories.persistence_repository import PersistenceRepository
-from backend.services.database_manager import DatabaseManager
+from backend.services.database.database_manager import DatabaseManager
 
 logger = logging.getLogger(__name__)
 
@@ -165,7 +165,10 @@ class PersistenceService:
         try:
             if self._db_manager and not self._config_repository:
                 # Import here to avoid circular dependencies
-                from backend.services.repositories import ConfigRepository, DashboardRepository
+                from backend.services.database.repositories import (
+                    ConfigRepository,
+                    DashboardRepository,
+                )
 
                 self._config_repository = ConfigRepository(self._db_manager)
                 self._dashboard_repository = DashboardRepository(self._db_manager)

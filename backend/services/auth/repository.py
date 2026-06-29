@@ -24,7 +24,7 @@ from backend.models.auth import (
     UserMFABackupCode,
     UserSession,
 )
-from backend.services.database_manager import DatabaseManager
+from backend.services.database.database_manager import DatabaseManager
 
 logger = logging.getLogger(__name__)
 

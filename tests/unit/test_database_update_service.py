@@ -12,8 +12,8 @@ from backend.repositories.database_update_repository import (
     MigrationHistoryRepository,
     SafetyRepository,
 )
-from backend.services.database_update_service import DatabaseUpdateService
-from backend.services.migration_safety_validator import MigrationSafetyValidator
+from backend.services.database.database_update_service import DatabaseUpdateService
+from backend.services.database.migration_safety_validator import MigrationSafetyValidator
 
 
 @pytest.fixture
@@ -127,7 +127,7 @@ class TestDatabaseUpdateService:
 
         # Execute
         with patch(
-            "backend.services.database_update_service.asyncio.create_task"
+            "backend.services.database.database_update_service.asyncio.create_task"
         ) as mock_create_task:
             result = await database_update_service.start_migration()
 

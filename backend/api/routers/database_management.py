@@ -10,8 +10,8 @@ from backend.core.dependencies import (
     get_database_update_service,
     get_migration_safety_validator,
 )
-from backend.services.database_update_service import DatabaseUpdateService
-from backend.services.migration_safety_validator import MigrationSafetyValidator
+from backend.services.database.database_update_service import DatabaseUpdateService
+from backend.services.database.migration_safety_validator import MigrationSafetyValidator
 
 router = APIRouter(prefix="/api/database", tags=["database", "admin"])
 

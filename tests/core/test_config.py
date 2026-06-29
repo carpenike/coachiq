@@ -240,7 +240,7 @@ class TestGetSettings:
 
     def test_database_path_is_cwd_independent(self, monkeypatch):
         """Effective SQLite paths are anchored to the project/config root, not cwd."""
-        from backend.services.database_engine import DatabaseSettings
+        from backend.services.database.database_engine import DatabaseSettings
 
         repo_root = Path(__file__).resolve().parents[2]
         snapshots = []
