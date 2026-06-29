@@ -47,15 +47,15 @@ from backend.models.notification import (
     QueueStatistics,
     RateLimitStatus,
 )
-from backend.services.email_template_manager import EmailTemplateManager
-from backend.services.notification_queue import NotificationQueue
-from backend.services.notification_rate_limiting import (
+from backend.services.notifications.email_template_manager import EmailTemplateManager
+from backend.services.notifications.notification_queue import NotificationQueue
+from backend.services.notifications.notification_rate_limiting import (
     ChannelSpecificRateLimiter,
     NotificationDebouncer,
     TokenBucketRateLimiter,
     create_message_hash,
 )
-from backend.services.notification_routing import NotificationRouter, SystemContext
+from backend.services.notifications.notification_routing import NotificationRouter, SystemContext
 
 
 class SafeNotificationManager:
@@ -866,7 +866,7 @@ class SafeNotificationManager:
         if not self.router:
             return False
 
-        from backend.services.notification_routing import RoutingRule
+        from backend.services.notifications.notification_routing import RoutingRule
 
         try:
             rule = RoutingRule(**rule_data)
@@ -880,7 +880,7 @@ class SafeNotificationManager:
         if not self.router:
             return False
 
-        from backend.services.notification_routing import UserNotificationPreferences
+        from backend.services.notifications.notification_routing import UserNotificationPreferences
 
         try:
             prefs = UserNotificationPreferences(user_id=user_id, **preferences)

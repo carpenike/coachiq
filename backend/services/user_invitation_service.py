@@ -14,7 +14,7 @@ from pydantic import BaseModel, EmailStr
 
 from backend.core.config import get_settings
 from backend.services.auth.manager import AuthManager
-from backend.services.notification_manager import NotificationManager
+from backend.services.notifications.notification_manager import NotificationManager
 
 logger = logging.getLogger(__name__)
 

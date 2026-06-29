@@ -17,7 +17,7 @@ import pytest
 
 from backend.core.config import NotificationSettings
 from backend.models.notification import NotificationType
-from backend.services.notification_lightweight import LightweightNotificationManager
+from backend.services.notifications.notification_lightweight import LightweightNotificationManager
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)

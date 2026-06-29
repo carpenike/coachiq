@@ -13,8 +13,10 @@ from backend.models.notification import (
     NotificationPayload,
     NotificationStatus,
 )
-from backend.services.async_notification_dispatcher import AsyncNotificationDispatcher
-from backend.services.notification_analytics_service import NotificationAnalyticsService
+from backend.services.notifications.async_notification_dispatcher import AsyncNotificationDispatcher
+from backend.services.notifications.notification_analytics_service import (
+    NotificationAnalyticsService,
+)
 
 
 class AnalyticsNotificationDispatcher(AsyncNotificationDispatcher):

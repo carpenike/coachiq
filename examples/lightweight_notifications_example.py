@@ -11,7 +11,7 @@ import logging
 from datetime import datetime
 
 from backend.core.config import NotificationSettings
-from backend.services.notification_lightweight import LightweightNotificationManager
+from backend.services.notifications.notification_lightweight import LightweightNotificationManager
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)

@@ -9,7 +9,7 @@ from typing import Any, Dict
 from fastapi import APIRouter
 
 from backend.core.config import get_settings
-from backend.services.notification_lightweight import LightweightNotificationManager
+from backend.services.notifications.notification_lightweight import LightweightNotificationManager
 
 router = APIRouter(prefix="/api/notifications", tags=["notifications"])
 

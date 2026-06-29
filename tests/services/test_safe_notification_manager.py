@@ -33,7 +33,7 @@ from backend.models.notification import (
     QueueStatistics,
     RateLimitStatus,
 )
-from backend.services.safe_notification_manager import SafeNotificationManager
+from backend.services.notifications.safe_notification_manager import SafeNotificationManager
 
 
 @pytest.fixture
@@ -395,7 +395,7 @@ class TestContextSanitization:
         # Should handle large context gracefully (may truncate)
         assert result
 
-    @patch("backend.services.safe_notification_manager.JINJA2_AVAILABLE", False)
+    @patch("backend.services.notifications.safe_notification_manager.JINJA2_AVAILABLE", False)
     async def test_fallback_sanitization_without_jinja2(self, safe_manager):
         """Test fallback sanitization when Jinja2 is not available."""
         context = {

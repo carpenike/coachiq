@@ -27,7 +27,9 @@ from backend.models.notification_analytics import (
 from backend.services.database.database_manager import DatabaseManager
 
 if TYPE_CHECKING:
-    from backend.services.notification_analytics_service import NotificationAnalyticsService
+    from backend.services.notifications.notification_analytics_service import (
+        NotificationAnalyticsService,
+    )
 
 
 # Insight thresholds for ``WeeklyAnalyticsTemplate``. Tuned conservatively

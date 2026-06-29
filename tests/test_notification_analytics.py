@@ -27,8 +27,10 @@ from backend.models.notification_analytics import (
     NotificationQueueHealth,
 )
 from backend.services.database.database_manager import DatabaseManager
-from backend.services.notification_analytics_service import NotificationAnalyticsService
-from backend.services.notification_reporting_service import (
+from backend.services.notifications.notification_analytics_service import (
+    NotificationAnalyticsService,
+)
+from backend.services.notifications.notification_reporting_service import (
     DailyDigestTemplate,
     NotificationReportingService,
     WeeklyAnalyticsTemplate,
@@ -569,11 +571,11 @@ class TestAnalyticsIntegration:
     async def test_dispatcher_analytics_integration(self, analytics_service, db_manager):
         """Test dispatcher integration with analytics."""
         from backend.core.config import NotificationSettings
-        from backend.services.async_notification_dispatcher_analytics import (
+        from backend.services.notifications.async_notification_dispatcher_analytics import (
             AnalyticsNotificationDispatcher,
         )
-        from backend.services.notification_manager import NotificationManager
-        from backend.services.notification_queue import NotificationQueue
+        from backend.services.notifications.notification_manager import NotificationManager
+        from backend.services.notifications.notification_queue import NotificationQueue
 
         # Create mock components
         queue = MagicMock(spec=NotificationQueue)

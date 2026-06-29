@@ -27,7 +27,7 @@ from fastapi import WebSocket, WebSocketDisconnect
 from pydantic import BaseModel
 
 # WebSocket handlers don't use FastAPI dependencies the same way as REST endpoints
-from backend.services.safe_notification_manager import SafeNotificationManager
+from backend.services.notifications.safe_notification_manager import SafeNotificationManager
 
 
 class DashboardMessage(BaseModel):

@@ -40,7 +40,7 @@ This document describes the optimized notification system designed specifically 
 
 ```python
 from backend.core.config import NotificationSettings
-from backend.services.notification_lightweight import LightweightNotificationManager
+from backend.services.notifications.notification_lightweight import LightweightNotificationManager
 
 # Minimal configuration
 config = NotificationSettings(

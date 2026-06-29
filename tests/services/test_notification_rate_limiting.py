@@ -18,7 +18,7 @@ from unittest.mock import patch
 import pytest
 
 from backend.models.notification import RateLimitStatus
-from backend.services.notification_rate_limiting import (
+from backend.services.notifications.notification_rate_limiting import (
     AdaptiveRateLimiter,
     ChannelSpecificRateLimiter,
     NotificationDebouncer,

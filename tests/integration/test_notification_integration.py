@@ -38,18 +38,18 @@ from backend.models.notification import (
     NotificationStatus,
     NotificationType,
 )
-from backend.services.async_notification_dispatcher import AsyncNotificationDispatcher
-from backend.services.email_template_manager import EmailTemplateManager
-from backend.services.notification_manager import NotificationManager
-from backend.services.notification_queue import NotificationQueue
-from backend.services.notification_routing import (
+from backend.services.notifications.async_notification_dispatcher import AsyncNotificationDispatcher
+from backend.services.notifications.email_template_manager import EmailTemplateManager
+from backend.services.notifications.notification_manager import NotificationManager
+from backend.services.notifications.notification_queue import NotificationQueue
+from backend.services.notifications.notification_routing import (
     NotificationRouter,
     RoutingConditionType,
     RoutingRule,
     SystemContext,
     UserNotificationPreferences,
 )
-from backend.services.safe_notification_manager import SafeNotificationManager
+from backend.services.notifications.safe_notification_manager import SafeNotificationManager
 
 
 class IntegrationTestConfig:

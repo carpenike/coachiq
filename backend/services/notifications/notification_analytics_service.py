@@ -37,9 +37,15 @@ from backend.models.notification_analytics import (
 )
 from backend.repositories.notification_analytics_repository import NotificationAnalyticsRepository
 from backend.services.database.database_manager import DatabaseManager
-from backend.services.notification_ingestion_service import NotificationIngestionService
-from backend.services.notification_processing_service import NotificationProcessingService
-from backend.services.notification_reporting_service import NotificationReportingService
+from backend.services.notifications.notification_ingestion_service import (
+    NotificationIngestionService,
+)
+from backend.services.notifications.notification_processing_service import (
+    NotificationProcessingService,
+)
+from backend.services.notifications.notification_reporting_service import (
+    NotificationReportingService,
+)
 
 logger = logging.getLogger(__name__)
 

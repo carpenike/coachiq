@@ -49,7 +49,7 @@ from backend.models.notification import (
     NotificationPayload,
     NotificationType,
 )
-from backend.services.safe_notification_manager import SafeNotificationManager
+from backend.services.notifications.safe_notification_manager import SafeNotificationManager
 
 
 def requires_real_smtp(func):

@@ -25,7 +25,7 @@ from backend.models.notification import (
     NotificationPayload,
     NotificationType,
 )
-from backend.services.notification_queue import NotificationQueue
+from backend.services.notifications.notification_queue import NotificationQueue
 
 
 @pytest.fixture

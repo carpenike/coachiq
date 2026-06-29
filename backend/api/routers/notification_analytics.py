@@ -23,8 +23,12 @@ from backend.models.notification_analytics import (
     MetricType,
     NotificationMetric,
 )
-from backend.services.notification_analytics_service import NotificationAnalyticsService
-from backend.services.notification_reporting_service import NotificationReportingService
+from backend.services.notifications.notification_analytics_service import (
+    NotificationAnalyticsService,
+)
+from backend.services.notifications.notification_reporting_service import (
+    NotificationReportingService,
+)
 
 # Request/Response Models
 

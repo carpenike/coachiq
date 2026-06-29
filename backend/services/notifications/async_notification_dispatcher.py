@@ -46,8 +46,8 @@ from backend.models.notification import (
     NotificationChannel,
     NotificationPayload,
 )
-from backend.services.notification_manager import NotificationManager
-from backend.services.notification_queue import NotificationQueue
+from backend.services.notifications.notification_manager import NotificationManager
+from backend.services.notifications.notification_queue import NotificationQueue
 
 
 class AsyncNotificationDispatcher:

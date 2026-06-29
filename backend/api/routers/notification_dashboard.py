@@ -27,7 +27,7 @@ from pydantic import BaseModel, Field
 
 from backend.core.dependencies import get_notification_manager
 from backend.models.notification import NotificationType
-from backend.services.safe_notification_manager import SafeNotificationManager
+from backend.services.notifications.safe_notification_manager import SafeNotificationManager
 
 
 class DashboardHealth(BaseModel):

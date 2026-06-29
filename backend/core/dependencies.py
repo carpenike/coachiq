@@ -84,11 +84,13 @@ from backend.services.edge_proxy_monitor_service import (
 from backend.services.database.migration_safety_validator import (
     MigrationSafetyValidator as _MigrationSafetyValidator,
 )
-from backend.services.notification_analytics_service import (
+from backend.services.notifications.notification_analytics_service import (
     NotificationAnalyticsService as _NotificationAnalyticsService,
 )
-from backend.services.notification_manager import NotificationManager as _NotificationManager
-from backend.services.notification_reporting_service import (
+from backend.services.notifications.notification_manager import (
+    NotificationManager as _NotificationManager,
+)
+from backend.services.notifications.notification_reporting_service import (
     NotificationReportingService as _NotificationReportingService,
 )
 from backend.services.pin_manager import PINManager as _PINManager
