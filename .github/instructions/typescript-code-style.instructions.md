@@ -9,7 +9,7 @@ applyTo: "**/*.{ts,tsx,js,jsx}"
 ## Linting & Code Quality
 
 - **TypeScript**: Strict mode enabled with project references
-- **ESLint**: Using flat config system with both eslint.config.js and eslint.config.mjs
+- **ESLint**: Using the frontend flat config at `frontend/eslint.config.js`
 - **Commands**:
   - Lint: `cd frontend && npm run lint`
   - Fix: `cd frontend && npm run lint:fix`

@@ -122,7 +122,7 @@ Implications for code generation in this repo:
 
 ### TypeScript/React
 
-- **ESLint**: Using flat config in eslint.config.js and eslint.config.mjs. Project runs in **pragmatic mode**: legacy debt on unchanged lines is allowed, but any NEW ESLint **error** on a line you touched fails CI (warnings are advisory). Enforced by `scripts/eslint_diff_check.py` in `scripts/ci-quality-gate.sh` Stage 1.
+- **ESLint**: Frontend linting uses the flat config at `frontend/eslint.config.js` and runs from `frontend/`. Project runs in **pragmatic mode**: legacy debt on unchanged lines is allowed, but any NEW ESLint **error** on a line you touched fails CI (warnings are advisory). Enforced by `scripts/eslint_diff_check.py` in `scripts/ci-quality-gate.sh` Stage 1.
 - **TypeScript**: Strict mode enabled with project references - **COMPILATION MUST SUCCEED** (`npm run typecheck` baseline = 0 errors).
 - **Build Verification**: `npm run build` must complete successfully
 - **Formatting**: Follow ESLint configuration rules; the `eslint-staged` pre-commit hook applies `--fix` automatically on staged files.
@@ -131,14 +131,14 @@ Implications for code generation in this repo:
 - **TypeScript Interfaces**: Ensure all standalone interface files have imports to avoid parsing errors
 - **Trailing Commas**: Not allowed (configured in ESLint)
 
-## Monorepo ESLint & TypeScript Configuration (Frontend)
+## Frontend ESLint & TypeScript Configuration
 
-- **Monorepo Flat Config**: ESLint is configured at the repo root (`eslint.config.js`) and imports the frontend config (`frontend/eslint.config.js`) for monorepo compatibility. Always run ESLint and pre-commit from the repo root.
+- **Frontend Flat Config**: ESLint is configured in `frontend/eslint.config.js`. Run frontend lint commands from `frontend/` (`npm run lint`, `npm run lint:fix`) or through the repo tooling that changes into `frontend/` before invoking ESLint.
 - **TypeScript Project References**: The frontend uses strict TypeScript project references (`tsconfig.json`, `tsconfig.app.json`, `tsconfig.test.json`, etc.) for modularity and performance. ESLint is pointed to the correct `tsconfig.eslint.json` using absolute paths.
 - **Legacy Code Exclusion**: ESLint configuration excludes build artifacts and cache files using robust absolute ignore patterns in ESLint config and pre-commit hooks. This ensures only source code is checked.
-- **Pre-commit Integration**: The `.pre-commit-config.yaml` runs ESLint from the repo root, using the root config and correct args. It is set up to ignore legacy files and only check relevant frontend code.
+- **Pre-commit Integration**: The `.pre-commit-config.yaml` receives repo-relative frontend file paths, strips the `frontend/` prefix, then runs ESLint from `frontend/` so `frontend/eslint.config.js` is used.
 - **Troubleshooting**:
-  - If ESLint or pre-commit reports config or parsing errors, check that you are running from the repo root and that ignore patterns are absolute.
+  - If ESLint or pre-commit reports config or parsing errors, check that the command is running from `frontend/` or that repo tooling changed into `frontend/` before invoking ESLint.
   - For TypeScript interface parsing errors, ensure all interface files have at least one import (see `npm run fix:interfaces`).
   - For persistent config issues, see `.github/instructions/eslint-typescript-config.instructions.md` and use MCP tools for targeted queries (e.g., `@context7 ESLint ignore patterns`, `@context7 legacy exclusion`).
 

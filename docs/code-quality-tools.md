@@ -70,7 +70,7 @@ npx pyright src
 
 ### ESLint
 
-[ESLint](https://eslint.org/) is the standard linter for the React + TypeScript frontend. The configuration lives in `frontend/eslint.config.js` (flat config) and is imported from the repo-root `eslint.config.js` so monorepo-wide tooling stays consistent.
+[ESLint](https://eslint.org/) is the standard linter for the React + TypeScript frontend. The active configuration lives in `frontend/eslint.config.js` (flat config). Frontend scripts, pre-commit, and CI quality checks invoke ESLint from `frontend/` so that config is the single source of truth.
 
 #### Usage
 

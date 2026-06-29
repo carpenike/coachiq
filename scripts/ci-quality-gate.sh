@@ -203,7 +203,7 @@ fi
 # This mirrors Stage 3 (pyright). When the baseline reaches 0 the
 # diff-check in Stage 1 becomes redundant for blocking purposes, but
 # we keep both because the diff-check gives MUCH better error messages
-# (only the new ones, not the full 648-error wall of text).
+# (only the new ones, not the full 602-error wall of text).
 if [ -d "frontend" ]; then
     echo -e "\n${BLUE}🎨 Stage 5: Full-project ESLint with baseline...${RESET}"
 

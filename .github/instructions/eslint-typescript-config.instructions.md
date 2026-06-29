@@ -9,9 +9,8 @@ applyTo: "**/frontend/**"
 ## ESLint Setup
 
 - Using ESLint v9+ with flat configuration format
-- Configuration files:
-  - `eslint.config.js`: Main flat config file for the project
-  - `eslint.config.mjs`: Alternative format for module support
+- Active configuration file:
+  - `frontend/eslint.config.js`: Frontend flat config used by `npm run lint`, pre-commit's ESLint hook, and CI quality checks
 
 ## TypeScript Configuration
 
@@ -36,21 +35,15 @@ rules: {
 
 ## Monorepo Path Handling & Ignore Patterns
 
-- **Root ESLint Config**: The repo root contains `eslint.config.js` which imports the frontend config (`frontend/eslint.config.js`). Always run ESLint and pre-commit from the repo root for correct path resolution.
-- **Absolute Ignore Patterns**: Legacy and legacy-adjacent files (e.g., `src/core_daemon/frontend/`) are excluded using absolute ignore patterns in both ESLint config and pre-commit. Example:
-  ```js
-  ignores: [
-    // ...other ignores...
-    path.resolve(__dirname, "../src/core_daemon/frontend/**"),
-  ];
-  ```
-- **Pre-commit Hook**: The `.pre-commit-config.yaml` is set to run ESLint from the root, using the root config and correct args. It uses absolute ignore patterns to ensure legacy files are not checked.
+- **Frontend ESLint Config**: The active ESLint flat config lives in `frontend/eslint.config.js`. Frontend scripts run from `frontend/`, and repo-level tooling changes into `frontend/` before invoking ESLint.
+- **Ignore Patterns**: Legacy, generated, build, cache, and coverage files are excluded in `frontend/eslint.config.js` and in pre-commit path filters.
+- **Pre-commit Hook**: The `.pre-commit-config.yaml` ESLint hook receives repo-relative paths, strips the leading `frontend/`, then runs `npx eslint` from `frontend/` so the frontend flat config is used.
 
 ## Best Practices for Flat Config + Pre-commit
 
 - Always use absolute paths for `tsconfig.eslint.json` and `tsconfigRootDir` in ESLint config.
 - Exclude all legacy/legacy-adjacent files in both ESLint and pre-commit configs.
-- Run ESLint and pre-commit from the repo root to ensure correct config resolution.
+- Run manual ESLint commands from `frontend/` (`npm run lint` or `npm run lint:fix`).
 - Use `npm run lint` and `npm run lint:fix` to check/fix only modern code.
 
 ## Legacy Code Exclusion

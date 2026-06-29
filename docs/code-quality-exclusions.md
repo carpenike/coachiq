@@ -14,7 +14,6 @@ When adding new exclusions, update these files:
 2. **`pyproject.toml`**: `[tool.pyright]` → `exclude`
 3. **`pyproject.toml`**: `[tool.bandit]` → `exclude_dirs`
 4. **`frontend/eslint.config.js`**: `ignores` array
-5. **`.eslintignore`** (root level)
 
 ## Standard Exclusions
 
@@ -96,4 +95,4 @@ We maintain separate exclusion lists for each tool because:
 
 - `force-exclude = true` in Ruff ensures exclusions work even when pre-commit passes files explicitly
 - `pass_filenames: false` for Pyright lets it analyze the full project context
-- Frontend tools use `.eslintignore` at root to prevent scanning Python directories
+- Frontend tools run ESLint from `frontend/` and use `frontend/eslint.config.js` ignore patterns plus pre-commit path filters to avoid non-frontend directories

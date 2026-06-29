@@ -16,7 +16,7 @@ applyTo: "**/frontend/**"
 ## Linting & Code Quality
 
 - TypeScript: Strict mode enabled with project references (tsconfig.json → tsconfig.app.json)
-- ESLint: Using flat config system with both eslint.config.js and eslint.config.mjs
+- ESLint: Using the flat config at `frontend/eslint.config.js`
 - Plugins: react-hooks, react-refresh, jsdoc
 - Type Checking: Run with `npm run typecheck` (required for all PRs)
 - Format: Follow ESLint configuration rules
