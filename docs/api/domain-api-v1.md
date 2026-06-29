@@ -1,10 +1,10 @@
-# Domain API v2 Documentation
+# Domain API v1 Documentation
 
-The Domain API v2 provides enhanced functionality over the legacy monolithic API, featuring domain-driven architecture, bulk operations, optimistic updates, and comprehensive monitoring.
+The Domain API v1 provides enhanced functionality over the legacy monolithic API, featuring domain-driven architecture, bulk operations, optimistic updates, and comprehensive monitoring.
 
 ## Overview
 
-The Domain API v2 is organized around business domains rather than technical concerns, providing:
+The Domain API v1 is organized around business domains rather than technical concerns, providing:
 
 - **Enhanced Performance**: Intelligent caching, rate limiting, and optimized bulk operations
 - **Better Security**: Fine-grained permissions, API key authentication, and comprehensive audit logging
@@ -16,7 +16,7 @@ The Domain API v2 is organized around business domains rather than technical con
 ### Domain Structure
 
 ```
-/api/v2/
+/api/v1/
 ├── entities/          # Entity management domain
 │   ├── GET /          # List entities with filtering
 │   ├── GET /{id}      # Get single entity
@@ -48,7 +48,7 @@ The Domain API v2 is organized around business domains rather than technical con
 
 ### List Entities
 
-**Endpoint**: `GET /api/v2/entities`
+**Endpoint**: `GET /api/v1/entities`
 
 Retrieve a paginated list of entities with advanced filtering capabilities.
 
@@ -90,7 +90,7 @@ Retrieve a paginated list of entities with advanced filtering capabilities.
 
 **Example Request**:
 ```bash
-curl -X GET "/api/v2/entities?device_type=light&area=living_room&page=1&page_size=10" \
+curl -X GET "/api/v1/entities?device_type=light&area=living_room&page=1&page_size=10" \
   -H "Authorization: Bearer <token>"
 ```
 
@@ -101,7 +101,7 @@ curl -X GET "/api/v2/entities?device_type=light&area=living_room&page=1&page_siz
 
 ### Get Single Entity
 
-**Endpoint**: `GET /api/v2/entities/{entity_id}`
+**Endpoint**: `GET /api/v1/entities/{entity_id}`
 
 Retrieve detailed information for a specific entity.
 
@@ -134,7 +134,7 @@ Retrieve detailed information for a specific entity.
 
 ### Control Single Entity
 
-**Endpoint**: `POST /api/v2/entities/{entity_id}/control`
+**Endpoint**: `POST /api/v1/entities/{entity_id}/control`
 
 Execute a control command on a specific entity with optimistic update support.
 
@@ -181,7 +181,7 @@ Execute a control command on a specific entity with optimistic update support.
 
 1. **Turn on light with brightness**:
 ```bash
-curl -X POST "/api/v2/entities/light_001/control" \
+curl -X POST "/api/v1/entities/light_001/control" \
   -H "Authorization: Bearer <token>" \
   -H "Content-Type: application/json" \
   -d '{
@@ -193,7 +193,7 @@ curl -X POST "/api/v2/entities/light_001/control" \
 
 2. **Toggle light state**:
 ```bash
-curl -X POST "/api/v2/entities/light_001/control" \
+curl -X POST "/api/v1/entities/light_001/control" \
   -H "X-API-Key: <api_key>" \
   -H "Content-Type: application/json" \
   -d '{"command": "toggle"}'
@@ -201,7 +201,7 @@ curl -X POST "/api/v2/entities/light_001/control" \
 
 ### Bulk Control Operations
 
-**Endpoint**: `POST /api/v2/entities/bulk-control`
+**Endpoint**: `POST /api/v1/entities/bulk-control`
 
 Execute the same control command on multiple entities efficiently with detailed result tracking.
 
@@ -274,7 +274,7 @@ HTTP Status:
 
 1. **Turn off all lights in living room**:
 ```bash
-curl -X POST "/api/v2/entities/bulk-control" \
+curl -X POST "/api/v1/entities/bulk-control" \
   -H "Authorization: Bearer <token>" \
   -H "Content-Type: application/json" \
   -d '{
@@ -287,7 +287,7 @@ curl -X POST "/api/v2/entities/bulk-control" \
 
 2. **Dim all lights to 30%**:
 ```bash
-curl -X POST "/api/v2/entities/bulk-control" \
+curl -X POST "/api/v1/entities/bulk-control" \
   -H "X-API-Key: <api_key>" \
   -H "Content-Type: application/json" \
   -d '{
@@ -299,7 +299,7 @@ curl -X POST "/api/v2/entities/bulk-control" \
 
 ### Schema Export
 
-**Endpoint**: `GET /api/v2/entities/schemas`
+**Endpoint**: `GET /api/v1/entities/schemas`
 
 Export TypeScript-compatible schemas for frontend validation and type safety.
 
@@ -335,7 +335,7 @@ Export TypeScript-compatible schemas for frontend validation and type safety.
 
 ### Health Check
 
-**Endpoint**: `GET /api/v2/entities/health`
+**Endpoint**: `GET /api/v1/entities/health`
 
 Domain-specific health check with configuration and performance information.
 
@@ -362,7 +362,7 @@ Domain-specific health check with configuration and performance information.
 
 ### Cache Management (Admin Only)
 
-**Endpoint**: `POST /api/v2/entities/cache/invalidate`
+**Endpoint**: `POST /api/v1/entities/cache/invalidate`
 
 Manually invalidate cache entries for the entities domain.
 
@@ -379,7 +379,7 @@ Manually invalidate cache entries for the entities domain.
 }
 ```
 
-**Endpoint**: `GET /api/v2/entities/cache/stats`
+**Endpoint**: `GET /api/v1/entities/cache/stats`
 
 Get cache performance statistics.
 
@@ -730,4 +730,4 @@ export function EntityDashboard() {
 }
 ```
 
-This comprehensive documentation provides developers with everything they need to effectively use the Domain API v2, including detailed endpoint documentation, examples, best practices, and migration guidance.
+This comprehensive documentation provides developers with everything they need to effectively use the Domain API v1, including detailed endpoint documentation, examples, best practices, and migration guidance.

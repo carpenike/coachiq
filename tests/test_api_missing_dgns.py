@@ -4,7 +4,7 @@ Tests for the missing DGNs functionality.
 The legacy ``/api/missing-dgns`` HTTP endpoint that this file used to
 exercise (``TestMissingDGNsAPI``) was retired during the
 service-registry / domain-API refactor. The replacement lives at
-``/api/v2/entities/debug/missing-dgns`` (see
+``/api/v1/entities/debug/missing-dgns`` (see
 ``backend/api/domains/entities.py``) and is currently a placeholder
 that returns ``{"missing_dgns": {}}`` because
 ``EntityService.get_missing_dgns()`` has not been implemented yet.
@@ -28,7 +28,7 @@ import pytest
 @pytest.mark.skip(
     reason=(
         "Legacy /api/missing-dgns endpoint retired; v2 replacement "
-        "(/api/v2/entities/debug/missing-dgns) is a placeholder. "
+        "(/api/v1/entities/debug/missing-dgns) is a placeholder. "
         "Mocked dependencies (get_app_state, services.feature_manager) "
         "no longer exist. See PR #109 / issue #105."
     )

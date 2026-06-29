@@ -4,7 +4,7 @@
  * Custom React Query hooks for entity management.
  * Provides type-safe, optimized data fetching for all entity types.
  *
- * Compatibility adapter backed by Domain API v2.
+ * Compatibility adapter backed by Domain API v1.
  *
  * UI callers still consume legacy-shaped entity records from this module while
  * they migrate to the native v2 hooks. There is no silent v1 fallback here.
@@ -23,7 +23,7 @@ import {
     lockEntity,
     unlockEntity,
 } from '../api';
-// Domain API v2 imports
+// Domain API v1 imports
 import {
     fetchEntitiesV2WithValidation,
     fetchEntityV2WithValidation,
@@ -69,7 +69,7 @@ function toLegacyEntityBase(entity: EntitySchemaV2): EntityBase {
 }
 
 /**
- * Hook to fetch all entities as legacy-shaped records backed by Domain API v2.
+ * Hook to fetch all entities as legacy-shaped records backed by Domain API v1.
  *
  * @param params - Query parameters for filtering and pagination.
  */
@@ -89,7 +89,7 @@ export function useEntities(params?: EntitiesQueryParams) {
 }
 
 /**
- * Hook to fetch a specific entity by ID as a legacy-shaped record backed by Domain API v2.
+ * Hook to fetch a specific entity by ID as a legacy-shaped record backed by Domain API v1.
  *
  * @param entityId - Entity ID to fetch.
  */
@@ -177,7 +177,7 @@ export function useTemperatureSensors() {
 }
 
 /**
- * Hook for generic entity control commands backed by Domain API v2.
+ * Hook for generic entity control commands backed by Domain API v1.
  *
  * Returns the legacy-shaped `ControlEntityResponse` expected by existing UI callers.
  */
@@ -265,7 +265,7 @@ export function useLightControl() {
 //
 
 /**
- * Hook for enhanced bulk entity control with Domain API v2 features.
+ * Hook for enhanced bulk entity control with Domain API v1 features.
  *
  * Returns the legacy-shaped bulk summary expected by existing UI callers.
  */

@@ -222,7 +222,7 @@ export interface HealthStatus {
   unhealthy_features?: Record<string, string>;
   all_features?: Record<string, string>;
 
-  // Enhanced metadata from Domain API v2
+  // Enhanced metadata from Domain API v1
   response_time_ms?: number;
   service?: ServiceMetadata;
   description?: string;

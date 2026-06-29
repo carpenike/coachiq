@@ -51,7 +51,7 @@ Keep ADRs short -- 50-150 lines is typical. If you find yourself writing
 - [ADR-0002](ADR-0002-can-facade-pattern.md) -- Single `CANFacade` as
   the only entry point for CAN operations.
 - [ADR-0003](ADR-0003-api-v2-only-no-legacy.md) -- New endpoints land
-  under `/api/v2/*`; legacy `/api/*` routes are retired, not parallel-
+  under `/api/v1/*`; legacy `/api/*` routes are retired, not parallel-
   maintained.
 - [ADR-0004](ADR-0004-coachiq-is-not-the-safety-system.md) -- CoachIQ
   is API guardrails for an OEM controller, not the vehicle safety
@@ -79,6 +79,9 @@ Keep ADRs short -- 50-150 lines is typical. If you find yourself writing
 - [ADR-0010](ADR-0010-pre-1.0-no-backward-compat.md) -- Carry no
   backward-compatibility obligation before 1.0; retire legacy surfaces
   decisively once replacements, in-repo callers, and tests are covered.
+- [ADR-0011](ADR-0011-public-api-v1-naming.md) -- Launch the public
+  Domain API at `/api/v1/*`; retire the internal v2 migration label
+  before 1.0 while keeping URL versioning.
 
 ## Status
 

@@ -39,7 +39,7 @@ poetry run pyright backend && poetry run ruff check . && poetry run ruff format 
 ## Core Requirements
 
 - All build, cache, and output files (e.g., dist, dist-ssr, .vite, .vite-temp, node*modules, *.tsbuildinfo, .cache, \_.log) are excluded from linting and type checking in both root and frontend ESLint configs.
-- All entity API calls are made via /api/v2/entities endpoints, not legacy per-type or v1 entity endpoints, to ensure a unified and extensible API design.
+- All entity API calls are made via /api/v1/entities endpoints, not legacy per-type or v1 entity endpoints, to ensure a unified and extensible API design.
 - All API endpoints require comprehensive documentation with examples, descriptions, and response schemas to maintain the OpenAPI specification.
 - **All Python scripts must be run using Poetry.** Use `poetry run python <script>.py` or `poetry run <command>`, never `python <script>.py` directly.
 
@@ -187,7 +187,7 @@ These integrations register themselves with the `FeatureManager` based on YAML f
 - `backend/services/`: Domain and management services.
 - `backend/repositories/`: Repository pattern for data access (replaces the previous monolithic `AppState`).
 - `backend/api/routers/`: REST API endpoints (legacy `/api/...`).
-- `backend/api/domains/`: Domain API v2 endpoints (`/api/v2/...`) with bulk operations and richer schemas.
+- `backend/api/domains/`: Domain API v1 endpoints (`/api/v1/...`) with bulk operations and richer schemas.
 - `backend/middleware/`: HTTP middleware (auth, CSRF, structured logging).
 - `backend/integrations/`: Protocol integrations (CAN, RV-C, J1939, Firefly, Spartan K2, analytics, diagnostics).
 - `backend/websocket/`: WebSocket handlers.

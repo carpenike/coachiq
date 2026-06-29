@@ -1,5 +1,5 @@
 /**
- * Zod Schema Integration for Domain API v2
+ * Zod Schema Integration for Domain API v1
  *
  * This module fetches Pydantic schemas from the backend and converts them to
  * Zod schemas for runtime validation. Provides type-safe validation with
@@ -101,7 +101,7 @@ class SchemaCache {
    */
   private async refreshSchemas(): Promise<void> {
     try {
-      const response = await fetch('/api/v2/entities/schemas');
+      const response = await fetch('/api/v1/entities/schemas');
 
       if (!response.ok) {
         throw new Error(`Schema fetch failed: ${response.status} ${response.statusText}`);

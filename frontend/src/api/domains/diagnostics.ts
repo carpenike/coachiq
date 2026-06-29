@@ -1,8 +1,8 @@
 /**
- * Diagnostics Domain API v2 Client
+ * Diagnostics Domain API v1 Client
  *
- * Provides access to diagnostic endpoints at /api/v2/diagnostics
- * Implements the Domain API v2 architecture for diagnostics
+ * Provides access to diagnostic endpoints at /api/v1/diagnostics
+ * Implements the Domain API v1 architecture for diagnostics
  */
 
 import { apiGet, apiPost, buildQueryString } from '../client';
@@ -25,7 +25,7 @@ export async function fetchDiagnosticsStatus() {
     active_systems: string[];
     degraded_systems: string[];
     last_assessment: number;
-  }>('/api/v2/diagnostics/health');
+  }>('/api/v1/diagnostics/health');
 }
 
 /**
@@ -46,7 +46,7 @@ export async function fetchDiagnosticStatistics(): Promise<DiagnosticStats> {
     prediction: {
       accuracy: number;
     };
-  }>('/api/v2/diagnostics/statistics');
+  }>('/api/v1/diagnostics/statistics');
 
   // Transform to frontend format
   return {
@@ -66,7 +66,7 @@ export async function fetchDiagnosticStatistics(): Promise<DiagnosticStats> {
  */
 export async function fetchActiveDTCs(filters?: DTCFilters): Promise<DTCCollection> {
   const queryString = filters ? buildQueryString(filters as Record<string, unknown>) : '';
-  const url = queryString ? `/api/v2/diagnostics/dtcs?${queryString}` : '/api/v2/diagnostics/dtcs';
+  const url = queryString ? `/api/v1/diagnostics/dtcs?${queryString}` : '/api/v1/diagnostics/dtcs';
 
   return apiGet<DTCCollection>(url);
 }
@@ -80,7 +80,7 @@ export async function resolveDTC(
   sourceAddress = 0
 ): Promise<DTCResolutionResponse> {
   const response = await apiPost<{ resolved: boolean }>(
-    '/api/v2/diagnostics/dtcs/resolve',
+    '/api/v1/diagnostics/dtcs/resolve',
     { protocol, code, source_address: sourceAddress }
   );
 
@@ -102,8 +102,8 @@ export async function fetchFaultCorrelations(
     ? buildQueryString({ time_window_seconds: timeWindowSeconds })
     : '';
   const url = queryString
-    ? `/api/v2/diagnostics/correlations?${queryString}`
-    : '/api/v2/diagnostics/correlations';
+    ? `/api/v1/diagnostics/correlations?${queryString}`
+    : '/api/v1/diagnostics/correlations';
 
   return apiGet<FaultCorrelation[]>(url);
 }
@@ -115,7 +115,7 @@ export async function fetchMaintenancePredictions(
   timeHorizonDays = 90
 ): Promise<MaintenancePrediction[]> {
   const queryString = buildQueryString({ time_horizon_days: timeHorizonDays });
-  const url = `/api/v2/diagnostics/predictions?${queryString}`;
+  const url = `/api/v1/diagnostics/predictions?${queryString}`;
 
   return apiGet<MaintenancePrediction[]>(url);
 }

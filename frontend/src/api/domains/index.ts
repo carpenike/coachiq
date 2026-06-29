@@ -27,7 +27,7 @@ export * from './diagnostics';
  */
 export async function isDomainAPIAvailable(domain: string): Promise<boolean> {
   try {
-    const response = await fetch(`/api/v2/${domain}/health`);
+    const response = await fetch(`/api/v1/${domain}/health`);
     return response.ok;
   } catch {
     return false;

@@ -1,9 +1,9 @@
 """
-Tests for Domain API v2 contract (OpenAPI schema conformance).
+Tests for Domain API v1 contract (OpenAPI schema conformance).
 
 This module is intentionally a skip stub.
 
-The previous test body validated that ``/api/v2/...`` endpoints conformed
+The previous test body validated that ``/api/v1/...`` endpoints conformed
 to the OpenAPI v3 contract documented at the time of the v2 migration
 (see deleted ``OPENAPI_V3_SPECIFICATION.md`` reference in the original
 docstring). The fixtures relied on ``backend.services.feature_manager``
@@ -33,7 +33,7 @@ Tracked in issue #105 (test-restoration sweep #2). Tied off via PR #120.
 import pytest
 
 pytest.skip(
-    "Domain API v2 contract validation is obsolete: it depends on the "
+    "Domain API v1 contract validation is obsolete: it depends on the "
     "removed backend.services.feature_manager module to toggle v2 routes "
     "(now unconditionally registered) and asserts against a hand-written "
     "OpenAPI doc that's no longer the source of truth. See PR #120.",

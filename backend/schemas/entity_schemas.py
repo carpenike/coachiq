@@ -1,5 +1,5 @@
 """
-Entity Schema Definitions for Domain API v2
+Entity Schema Definitions for Domain API v1
 
 Provides Pydantic schemas with Zod export capability for runtime type safety.
 These schemas are based on the safety-critical models from EntityDomainService.

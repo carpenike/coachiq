@@ -16,7 +16,7 @@ nav:
     - Overview: adr/README.md
     - "ADR-0001 — FastAPI Depends over a DI framework": adr/ADR-0001-fastapi-depends-over-di-framework.md
     - "ADR-0002 — Single CANFacade entry point": adr/ADR-0002-can-facade-pattern.md
-    - "ADR-0003 — API v2 only, no legacy parallel-maintenance": adr/ADR-0003-api-v2-only-no-legacy.md
+    - "ADR-0003 — API v1 only, no legacy parallel-maintenance": adr/ADR-0003-api-v2-only-no-legacy.md
     - "ADR-0004 — CoachIQ is API guardrails, not the safety system": adr/ADR-0004-coachiq-is-not-the-safety-system.md
   - Safety:
     - Overview: safety.md

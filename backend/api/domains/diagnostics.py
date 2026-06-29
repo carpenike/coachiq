@@ -193,7 +193,7 @@ async def _compute_system_status(
     )
 
 
-# Domain-specific schemas for v2 API
+# Domain-specific schemas for v1 API
 class SystemMetrics(BaseModel):
     """System performance metrics for diagnostics"""
 
@@ -242,7 +242,7 @@ PredictionHorizon = Annotated[int, Query(description="Time horizon for predictio
 
 def create_diagnostics_router() -> APIRouter:  # noqa: C901, PLR0915
     """Create the diagnostics domain router with all endpoints"""
-    router = APIRouter(tags=["diagnostics-v2"])
+    router = APIRouter(tags=["diagnostics"])
 
     @router.get("/health", response_model=DiagnosticsHealthResponse)
     async def health_check() -> DiagnosticsHealthResponse:

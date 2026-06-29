@@ -1,7 +1,7 @@
 """
 Secure Authentication Middleware
 
-Enhanced authentication middleware with HttpOnly cookie support for Domain API v2.
+Enhanced authentication middleware with HttpOnly cookie support for Domain API v1.
 Provides automatic token refresh, secure cookie handling, and safety-critical
 validation for vehicle control operations.
 
@@ -38,11 +38,11 @@ class SecureAuthenticationMiddleware(BaseHTTPMiddleware):
 
     # Endpoints that require authentication
     PROTECTED_ENDPOINTS = [
-        "/api/v2/entities/control",
-        "/api/v2/entities/bulk-control",
-        "/api/v2/entities/control-safe",
-        "/api/v2/entities/emergency-stop",
-        "/api/v2/entities/clear-emergency-stop",
+        "/api/v1/entities/control",
+        "/api/v1/entities/bulk-control",
+        "/api/v1/entities/control-safe",
+        "/api/v1/entities/emergency-stop",
+        "/api/v1/entities/clear-emergency-stop",
         "/api/schemas/validate/integrity",
     ]
 

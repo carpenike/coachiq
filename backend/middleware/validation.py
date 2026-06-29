@@ -38,9 +38,9 @@ class RuntimeValidationMiddleware(BaseHTTPMiddleware):
 
     # Endpoints that require strict validation
     CRITICAL_ENDPOINTS = {
-        "/api/v2/entities/control": ControlCommandSchemaV2,
-        "/api/v2/entities/bulk-control": BulkOperationSchemaV2,
-        "/api/v2/entities/control-safe": ControlCommandSchemaV2,
+        "/api/v1/entities/control": ControlCommandSchemaV2,
+        "/api/v1/entities/bulk-control": BulkOperationSchemaV2,
+        "/api/v1/entities/control-safe": ControlCommandSchemaV2,
     }
 
     def __init__(self, app, validate_requests: bool = True, validate_responses: bool = False):
@@ -107,7 +107,8 @@ class RuntimeValidationMiddleware(BaseHTTPMiddleware):
 
         # Find matching schema for endpoint
         for pattern, schema in self.CRITICAL_ENDPOINTS.items():
-            if endpoint_path.startswith(pattern.replace("/api/v2", "/api")):
+            legacy_pattern = pattern.replace("/api/v1", "/api")
+            if endpoint_path.startswith(pattern) or endpoint_path.startswith(legacy_pattern):
                 schema_class = schema
                 validation_result["schema_used"] = schema.__name__
                 break

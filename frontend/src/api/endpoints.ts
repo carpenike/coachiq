@@ -92,7 +92,7 @@ import type {
     User
 } from './types';
 
-// Import Domain API v2 types for enhanced functionality
+// Import Domain API v1 types for enhanced functionality
 import type {
   DiagnosticFaultSummarySchema,
     EntityCollectionSchema,
@@ -105,12 +105,12 @@ import type {
 export * from './pin-auth';
 
 //
-// ===== ENTITIES API (/api/v2/entities) =====
+// ===== ENTITIES API (/api/v1/entities) =====
 //
 
 /**
  * Fetch all entities with optional filtering
- * Now uses Domain API v2 for enhanced functionality and performance
+ * Now uses Domain API v1 for enhanced functionality and performance
  * Returns data in legacy format for backward compatibility
  *
  * @param params - Optional query parameters for filtering
@@ -118,7 +118,7 @@ export * from './pin-auth';
  */
 export async function fetchEntities(params?: EntitiesQueryParams): Promise<Record<string, any>> {
   const queryString = params ? buildQueryString(params) : '';
-  const url = queryString ? `/api/v2/entities?${queryString}` : '/api/v2/entities';
+  const url = queryString ? `/api/v1/entities?${queryString}` : '/api/v1/entities';
 
   logApiRequest('GET', url, params);
   const result = await apiGet<EntityCollectionSchema>(url);
@@ -153,13 +153,13 @@ export async function fetchEntities(params?: EntitiesQueryParams): Promise<Recor
 
 /**
  * Fetch a specific entity by ID
- * Now uses Domain API v2 for enhanced entity data format
+ * Now uses Domain API v1 for enhanced entity data format
  *
  * @param entityId - The entity ID to fetch
  * @returns Promise resolving to the entity data
  */
 export async function fetchEntity(entityId: string): Promise<EntitySchema> {
-  const url = `/api/v2/entities/${entityId}`;
+  const url = `/api/v1/entities/${entityId}`;
 
   logApiRequest('GET', url);
   const result = await apiGet<EntitySchema>(url);
@@ -170,7 +170,7 @@ export async function fetchEntity(entityId: string): Promise<EntitySchema> {
 
 /**
  * Control an entity (turn on/off, set brightness, etc.)
- * Now uses Domain API v2 for enhanced safety and acknowledgment patterns
+ * Now uses Domain API v1 for enhanced safety and acknowledgment patterns
  * Returns data in legacy format for backward compatibility
  *
  * @param entityId - The entity ID to control
@@ -181,7 +181,7 @@ export async function controlEntity(
   entityId: string,
   command: ControlCommand
 ): Promise<ControlEntityResponse> {
-  const url = `/api/v2/entities/${entityId}/control`;
+  const url = `/api/v1/entities/${entityId}/control`;
 
   logApiRequest('POST', url, command);
   const result = await apiPost<OperationResultSchema>(url, command);
@@ -203,7 +203,7 @@ export async function controlEntity(
 
 /**
  * Fetch entity history
- * Now uses Domain API v2 for enhanced history data and pagination
+ * Now uses Domain API v1 for enhanced history data and pagination
  *
  * @param entityId - The entity ID to get history for
  * @param params - Optional query parameters (limit, since)
@@ -215,8 +215,8 @@ export async function fetchEntityHistory(
 ): Promise<HistoryEntry[]> {
   const queryString = params ? buildQueryString(params) : '';
   const url = queryString
-    ? `/api/v2/entities/${entityId}/history?${queryString}`
-    : `/api/v2/entities/${entityId}/history`;
+    ? `/api/v1/entities/${entityId}/history?${queryString}`
+    : `/api/v1/entities/${entityId}/history`;
 
   logApiRequest('GET', url, params);
   const result = await apiGet<HistoryEntry[]>(url);
@@ -227,12 +227,12 @@ export async function fetchEntityHistory(
 
 /**
  * Fetch unmapped CAN entries
- * Now uses Domain API v2 for enhanced unmapped data format
+ * Now uses Domain API v1 for enhanced unmapped data format
  *
  * @returns Promise resolving to unmapped entries
  */
 export async function fetchUnmappedEntries(): Promise<UnmappedResponse> {
-  const url = '/api/v2/entities/debug/unmapped';
+  const url = '/api/v1/entities/debug/unmapped';
 
   logApiRequest('GET', url);
   const result = await apiGet<UnmappedResponse>(url);
@@ -243,7 +243,7 @@ export async function fetchUnmappedEntries(): Promise<UnmappedResponse> {
 
 /**
  * Create entity mapping from unmapped entry
- * Now uses Domain API v2 for enhanced mapping creation and validation
+ * Now uses Domain API v1 for enhanced mapping creation and validation
  *
  * @param request - Entity mapping configuration details
  * @returns Promise resolving to mapping creation response
@@ -251,7 +251,7 @@ export async function fetchUnmappedEntries(): Promise<UnmappedResponse> {
 export async function createEntityMapping(
   request: CreateEntityMappingRequest
 ): Promise<CreateEntityMappingResponse> {
-  const url = '/api/v2/entities/mappings';
+  const url = '/api/v1/entities/mappings';
 
   logApiRequest('POST', url, request);
   const result = await apiPost<CreateEntityMappingResponse>(url, request);
@@ -262,12 +262,12 @@ export async function createEntityMapping(
 
 /**
  * Fetch unknown PGN entries
- * Now uses Domain API v2 for enhanced unknown PGN data format
+ * Now uses Domain API v1 for enhanced unknown PGN data format
  *
  * @returns Promise resolving to unknown PGN entries
  */
 export async function fetchUnknownPGNs(): Promise<UnknownPGNResponse> {
-  const url = '/api/v2/entities/debug/unknown-pgns';
+  const url = '/api/v1/entities/debug/unknown-pgns';
 
   logApiRequest('GET', url);
   const result = await apiGet<UnknownPGNResponse>(url);
@@ -278,12 +278,12 @@ export async function fetchUnknownPGNs(): Promise<UnknownPGNResponse> {
 
 /**
  * Get entity metadata (device types, areas, etc.)
- * Now uses Domain API v2 for enhanced metadata format and validation
+ * Now uses Domain API v1 for enhanced metadata format and validation
  *
  * @returns Promise resolving to metadata response
  */
 export async function fetchEntityMetadata(): Promise<MetadataResponse> {
-  const url = '/api/v2/entities/metadata';
+  const url = '/api/v1/entities/metadata';
 
   logApiRequest('GET', url);
   const result = await apiGet<MetadataResponse>(url);
@@ -429,22 +429,22 @@ export async function fetchCANMetrics(): Promise<CANMetrics> {
 //
 
 /**
- * Get application health status from Domain API v2
+ * Get application health status from Domain API v1
  *
- * Transforms /api/v2/system/status response to match HealthStatus interface
+ * Transforms /api/v1/system/status response to match HealthStatus interface
  * for backward compatibility while providing richer system information.
  * Falls back to /healthz if system status is unavailable.
  *
  * @returns Promise resolving to health status
  */
 export async function fetchHealthStatus(): Promise<HealthStatus> {
-  const systemStatusUrl = '/api/v2/system/status';
+  const systemStatusUrl = '/api/v1/system/status';
   const healthzUrl = '/healthz';
 
   logApiRequest('GET', systemStatusUrl);
 
   try {
-    // Fetch rich system status from Domain API v2
+    // Fetch rich system status from Domain API v1
     const systemStatus = await apiGet<{
       overall_status: string;
       services: {
@@ -649,13 +649,13 @@ export async function fetchActivityFeed(params?: { limit?: number; since?: strin
 
 /**
  * Perform bulk control operations on multiple entities
- * Now uses Domain API v2 for enhanced bulk operations with safety controls
+ * Now uses Domain API v1 for enhanced bulk operations with safety controls
  *
  * @param request - Bulk control request with entity IDs and command
  * @returns Promise resolving to bulk control response
  */
 export async function bulkControlEntities(request: BulkControlRequest): Promise<BulkControlResponse> {
-  const url = '/api/v2/entities/bulk-control';
+  const url = '/api/v1/entities/bulk-control';
 
   logApiRequest('POST', url, request);
   const result = await apiPost<BulkControlResponse>(url, request);
@@ -696,7 +696,7 @@ export async function acknowledgeAlert(alertId: string): Promise<{ success: bool
 }
 
 //
-// ===== ADVANCED DIAGNOSTICS API (/api/v2/diagnostics) =====
+// ===== ADVANCED DIAGNOSTICS API (/api/v1/diagnostics) =====
 //
 
 /**
@@ -705,7 +705,7 @@ export async function acknowledgeAlert(alertId: string): Promise<{ success: bool
  * @returns Promise resolving to real diagnostics system status
  */
 export async function fetchDiagnosticsSystemStatus(): Promise<DiagnosticsSystemStatusSchema> {
-  const url = '/api/v2/diagnostics/system-status';
+  const url = '/api/v1/diagnostics/system-status';
 
   logApiRequest('GET', url);
   const result = await apiGet<DiagnosticsSystemStatusSchema>(url);
@@ -725,8 +725,8 @@ export async function fetchDiagnosticFaultSummary(
 ): Promise<DiagnosticFaultSummarySchema> {
   const queryString = filters ? buildQueryString(filters) : '';
   const url = queryString
-    ? `/api/v2/diagnostics/faults?${queryString}`
-    : '/api/v2/diagnostics/faults';
+    ? `/api/v1/diagnostics/faults?${queryString}`
+    : '/api/v1/diagnostics/faults';
 
   logApiRequest('GET', url, filters);
   const result = await apiGet<DiagnosticFaultSummarySchema>(url);
@@ -788,7 +788,7 @@ export async function fetchBackendComputedAPIPerformance(): Promise<Record<strin
  */
 export async function fetchBackendComputedDTCs(filters?: DTCFilters): Promise<DTCCollection> {
   const queryString = filters ? buildQueryString(filters as Record<string, unknown>) : '';
-  const url = queryString ? `/api/v2/diagnostics/dtcs?${queryString}` : '/api/v2/diagnostics/dtcs';
+  const url = queryString ? `/api/v1/diagnostics/dtcs?${queryString}` : '/api/v1/diagnostics/dtcs';
 
   logApiRequest('GET', url, filters);
   const result = await apiGet<DTCCollection>(url);
@@ -815,7 +815,7 @@ export async function fetchActiveDTCs(filters?: DTCFilters): Promise<DTCCollecti
 
   // Fallback: Use basic endpoint with frontend aggregation (legacy approach)
   const queryString = filters ? buildQueryString(filters as Record<string, unknown>) : '';
-  const url = queryString ? `/api/v2/diagnostics/dtcs?${queryString}` : '/api/v2/diagnostics/dtcs';
+  const url = queryString ? `/api/v1/diagnostics/dtcs?${queryString}` : '/api/v1/diagnostics/dtcs';
 
   logApiRequest('GET', url, filters);
   const rawResult = await apiGet<DiagnosticTroubleCode[]>(url);
@@ -852,7 +852,7 @@ export async function resolveDTC(
   code: number,
   sourceAddress = 0
 ): Promise<DTCResolutionResponse> {
-  const url = '/api/v2/diagnostics/dtcs/resolve';
+  const url = '/api/v1/diagnostics/dtcs/resolve';
   const request = { protocol, code, source_address: sourceAddress };
 
   logApiRequest('POST', url, request);
@@ -886,7 +886,7 @@ export async function resolveDTC(
  */
 export async function fetchFaultCorrelations(timeWindowSeconds?: number): Promise<FaultCorrelation[]> {
   const queryString = timeWindowSeconds ? buildQueryString({ time_window_seconds: timeWindowSeconds }) : '';
-  const url = queryString ? `/api/v2/diagnostics/correlations?${queryString}` : '/api/v2/diagnostics/correlations';
+  const url = queryString ? `/api/v1/diagnostics/correlations?${queryString}` : '/api/v1/diagnostics/correlations';
 
   logApiRequest('GET', url, { timeWindowSeconds });
   const result = await apiGet<FaultCorrelation[]>(url);
@@ -903,7 +903,7 @@ export async function fetchFaultCorrelations(timeWindowSeconds?: number): Promis
  */
 export async function fetchMaintenancePredictions(timeHorizonDays = 90): Promise<MaintenancePrediction[]> {
   const queryString = buildQueryString({ time_horizon_days: timeHorizonDays });
-  const url = `/api/v2/diagnostics/predictions?${queryString}`;
+  const url = `/api/v1/diagnostics/predictions?${queryString}`;
 
   logApiRequest('GET', url, { timeHorizonDays });
   const result = await apiGet<MaintenancePrediction[]>(url);
@@ -918,7 +918,7 @@ export async function fetchMaintenancePredictions(timeHorizonDays = 90): Promise
  * @returns Promise resolving to backend-computed diagnostic statistics
  */
 export async function fetchBackendComputedDiagnosticStatistics(): Promise<DiagnosticStats> {
-  const url = '/api/v2/diagnostics/statistics';
+  const url = '/api/v1/diagnostics/statistics';
 
   logApiRequest('GET', url);
   // Transform v2 response to frontend format
@@ -969,7 +969,7 @@ export async function fetchDiagnosticStatistics(): Promise<DiagnosticStats> {
   }
 
   // Fallback: Use basic endpoint with field mapping (legacy approach)
-  const url = '/api/v2/diagnostics/statistics';
+  const url = '/api/v1/diagnostics/statistics';
   logApiRequest('GET', url);
   const rawResult = await apiGet<{
     metrics: Record<string, unknown>;
@@ -1003,7 +1003,7 @@ export async function fetchDiagnosticStatistics(): Promise<DiagnosticStats> {
  * @returns Promise resolving to diagnostics status
  */
 export async function fetchDiagnosticsStatus(): Promise<Record<string, unknown>> {
-  const url = '/api/v2/diagnostics/health';
+  const url = '/api/v1/diagnostics/health';
 
   logApiRequest('GET', url);
   const result = await apiGet<Record<string, unknown>>(url);

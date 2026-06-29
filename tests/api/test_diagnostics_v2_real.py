@@ -123,7 +123,7 @@ def test_v2_faults_report_handler_dtcs(
         metadata={"spn": DM_RV_ACTIVE_SPN, "fmi": DM_RV_ACTIVE_FMI},
     )
 
-    response = diagnostics_client.get("/api/v2/diagnostics/faults")
+    response = diagnostics_client.get("/api/v1/diagnostics/faults")
 
     assert response.status_code == 200
     payload = response.json()
@@ -146,7 +146,7 @@ def test_v2_system_status_is_computed_not_hardcoded(
         severity=DTCSeverity.HIGH,
     )
 
-    response = diagnostics_client.get("/api/v2/diagnostics/system-status")
+    response = diagnostics_client.get("/api/v1/diagnostics/system-status")
 
     assert response.status_code == 200
     payload = response.json()

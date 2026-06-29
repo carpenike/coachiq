@@ -76,7 +76,7 @@ One repo, two halves. A single feature commonly spans both.
   `auth/`, `ip/`, `bluetooth/`.
 - **`backend/api/routers/`** — legacy `/api/*` REST endpoints (being retired,
   ADR-0003).
-- **`backend/api/domains/`** — **Domain API v2** (`/api/v2/*`): `entities.py`,
+- **`backend/api/domains/`** — **Domain API v1** (`/api/v1/*`): `entities.py`,
   `diagnostics.py`, `networks.py`, `system.py`. This is the primary development
   path.
 - **`backend/websocket/`** — WebSocket handlers/routes (entity updates, logs,
@@ -99,7 +99,7 @@ One repo, two halves. A single feature commonly spans both.
   Entity control/bulk-control uses the generated HOF-021 safety result schemas;
   `frontend/src/hooks/useEntities.ts` is only a legacy-shape adapter for current
   UI callers, not a v1/v2 fallback switch.
-- Talks to the backend over REST (`/api/v2/*`) + WebSocket (`/ws*`). Vite dev
+- Talks to the backend over REST (`/api/v1/*`) + WebSocket (`/ws*`). Vite dev
   server proxies both to the backend.
 
 ### Supporting trees
@@ -147,10 +147,10 @@ emergency-stop coordination. **Routers must never import `CANBusService` or
 the lower-level CAN modules directly** — go through the facade. This is the
 chokepoint that keeps CoachIQ a well-behaved bus citizen.
 
-**Domain API v2 only (ADR-0003).** New endpoints land under `/api/v2/*` in
+**Domain API v1 only (ADR-0003).** New endpoints land under `/api/v1/*` in
 `backend/api/domains/`. Legacy `/api/*` routers are retired as v2 replacements
 land — they are **not** maintained in parallel. Entity operations use the
-unified `/api/v2/entities` surface, not per-type routes like `/api/lights`.
+unified `/api/v1/entities` surface, not per-type routes like `/api/lights`.
 
 **Three-tier config, three distinct names (ADR-0008).** Do not conflate these:
 
@@ -201,7 +201,7 @@ proposing anything that touches the area.
 | -------- | ------------------------------------- | ------------------------------------------------------------------------------------------ |
 | ADR-0001 | FastAPI `Depends` over a DI framework | ServiceRegistry + native `Depends`; explicit wiring, no punq/dependency-injector           |
 | ADR-0002 | CAN facade pattern                    | One `CANFacade` is the sole entry point for all CAN; enforces rate-limit + e-stop          |
-| ADR-0003 | API v2 only, no legacy                | New work goes to `/api/v2/*`; legacy `/api/*` deleted as replaced, not parallel-maintained |
+| ADR-0003 | API v1 only, no legacy                | New work goes to `/api/v1/*`; legacy `/api/*` deleted as replaced, not parallel-maintained |
 | ADR-0004 | CoachIQ is not the safety system      | Firefly owns physical safety; CoachIQ is API guardrails, consumer-grade quality bar        |
 | ADR-0005 | HTTP error response envelope          | Dual `detail` + `error.{code,message}` for compatibility                                   |
 | ADR-0006 | Typed dependency injection            | Typed aliases in `dependencies.py` map to concrete classes; registry is string-keyed       |
@@ -209,6 +209,7 @@ proposing anything that touches the area.
 | ADR-0008 | RVC config facade naming              | `Settings` (app) vs `RVCConfigFacade` (metadata) vs `RVCSpecLoader` (spec files)           |
 | ADR-0009 | Nix module hybrid options             | `services.coachiq` keeps a small typed surface; long-tail config flows through env vars    |
 | ADR-0010 | Pre-1.0 no backward compatibility     | No external-compat obligation before 1.0; ADR-0003/0005 compat pacing is relaxed           |
+| ADR-0011 | Public API v1 naming                  | Domain API launches at `/api/v1/*`; the internal v2 migration label is retired             |
 
 ---
 
@@ -329,8 +330,8 @@ bandit, ESLint-staged). `dev_start.sh` sets up a virtual-CAN dev environment.
 
 ## 7. Current direction
 
-Domain API v2 is the active surface; legacy `/api/*` is being retired endpoint
-by endpoint as v2 equivalents land (ADR-0003). The codebase recently went
+Domain API v1 is the active surface; legacy `/api/*` is being retired endpoint
+by endpoint as domain API equivalents land (ADR-0003). The codebase recently went
 through an audit cycle (the `A*` prompts under `.github/prompts/`) that produced
 ADR-0006 through ADR-0008 — typed DI, the auth-namespace consolidation, and the
 RVC-config rename. Type-checking is in pyright "basic" mode and ratcheting

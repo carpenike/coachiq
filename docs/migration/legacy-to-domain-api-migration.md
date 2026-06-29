@@ -1,6 +1,6 @@
 # Legacy to Domain API Migration Guide
 
-This guide provides a comprehensive strategy for migrating from the existing monolithic API to the new Domain API v2, ensuring zero downtime and maintaining backward compatibility during the transition.
+This guide provides a comprehensive strategy for migrating from the existing monolithic API to the new Domain API v1, ensuring zero downtime and maintaining backward compatibility during the transition.
 
 ## Migration Overview
 
@@ -11,8 +11,8 @@ This guide provides a comprehensive strategy for migrating from the existing mon
 - Direct service calls from components
 - Limited bulk operations support
 
-### Target State (Domain API v2)
-- Domain-driven `/api/v2/{domain}` endpoints
+### Target State (Domain API v1)
+- Domain-driven `/api/v1/{domain}` endpoints
 - Domain-specific API clients and hooks
 - Type-safe schemas with runtime validation
 - Enhanced bulk operations with optimistic updates
@@ -423,7 +423,7 @@ export function EntityListV2({
       {/* Migration indicator (development only) */}
       {process.env.NODE_ENV === 'development' && (
         <div className="text-xs text-gray-500 bg-gray-100 p-2 rounded">
-          Using {useDomainAPI ? 'Domain API v2' : 'Legacy API'}
+          Using {useDomainAPI ? 'Domain API v1' : 'Legacy API'}
         </div>
       )}
 
@@ -792,7 +792,7 @@ curl -X POST /api/admin/migration/emergency-rollback \
 curl /api/admin/migration/status
 
 # Check domain API health
-curl /api/v2/entities/health
+curl /api/v1/entities/health
 
 # Check legacy API health
 curl /api/entities/health
@@ -817,4 +817,4 @@ curl /api/entities/health
 - [ ] Positive developer feedback
 - [ ] Successful legacy API deprecation
 
-This comprehensive migration strategy ensures a smooth, safe, and successful transition from the legacy monolithic API to the new Domain API v2 architecture.
+This comprehensive migration strategy ensures a smooth, safe, and successful transition from the legacy monolithic API to the new Domain API v1 architecture.

@@ -128,15 +128,15 @@ function createTestWrapper() {
 
 describe('entitiesV2QueryKeys', () => {
   it('should generate correct query keys', () => {
-    expect(entitiesV2QueryKeys.all).toEqual(['entities-v2']);
-    expect(entitiesV2QueryKeys.collections()).toEqual(['entities-v2', 'collections']);
+    expect(entitiesV2QueryKeys.all).toEqual(['entities']);
+    expect(entitiesV2QueryKeys.collections()).toEqual(['entities', 'collections']);
     expect(entitiesV2QueryKeys.collection({ device_type: 'light' })).toEqual([
-      'entities-v2',
+      'entities',
       'collections',
       { device_type: 'light' },
     ]);
     expect(entitiesV2QueryKeys.entity('light_001')).toEqual([
-      'entities-v2',
+      'entities',
       'entity',
       'light_001',
     ]);

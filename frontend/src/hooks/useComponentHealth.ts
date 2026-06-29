@@ -24,7 +24,7 @@ export function useComponentHealth() {
   return useQuery({
     queryKey: ['componentHealth'],
     queryFn: async () => {
-      return await apiGet<ComponentHealthResponse>('/api/v2/system/components/health');
+      return await apiGet<ComponentHealthResponse>('/api/v1/system/components/health');
     },
     refetchInterval: 30000, // Refresh every 30 seconds
     staleTime: 25000,

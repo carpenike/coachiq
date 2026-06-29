@@ -35,7 +35,7 @@ coordinate, see the `handoff/README` note in the `coachiq` basic-memory project.
 ## Direction — v2-only convergence
 
 Per [ADR-0003](docs/adr/ADR-0003-api-v2-only-no-legacy.md), the API surface and
-frontend consumer code converge on `/api/v2` only.
+frontend consumer code converge on `/api/v1` only.
 
 ### Pre-1.0 — No Backward-Compatibility Obligation
 
@@ -126,8 +126,8 @@ store or creating any CAN rebroadcast path.
 - [adr] docs/adr/ADR-0003-api-v2-only-no-legacy.md
 
 **What changed.** The frontend diagnostics health path now reads real v2
-diagnostics data from `/api/v2/diagnostics/system-status` and
-`/api/v2/diagnostics/faults`, using generated OpenAPI types for the status and
+diagnostics data from `/api/v1/diagnostics/system-status` and
+`/api/v1/diagnostics/faults`, using generated OpenAPI types for the status and
 fault summary shapes. `SystemHealthScore`, `useDiagnostics`, and the performance
 page were migrated off the old hand-written `SystemHealthResponse` contract.
 The legacy backend `GET /api/diagnostics/health` router was deleted and removed
@@ -245,7 +245,7 @@ switch and silent fallback behavior were removed. The bridge `as any` casts in
 `frontend/src/api` were eliminated.
 
 **Why.** HOF-017 review proved the fallback was not a real v1 safety net: the
-"legacy" fallback path also POSTed to `/api/v2/entities/{id}/control`, then
+"legacy" fallback path also POSTed to `/api/v1/entities/{id}/control`, then
 converted through untyped casts. Removing it makes entity failures visible and
 keeps the frontend on the finalized v2 contract from HOF-021 while deferring
 full `useEntities.ts` removal until each UI caller migrates.
@@ -297,8 +297,8 @@ recorded below as the gate for future ADR-0003 cutover work.
 **Why.** Review disproved the apparent diagnostics duplicate. Legacy
 `GET /api/diagnostics/health` returns the typed `SystemHealthResponse` consumed
 by `frontend/src/api/endpoints.ts::fetchSystemHealth()`, while
-`GET /api/v2/diagnostics/health` is a loose diagnostics-service health object
-and `GET /api/v2/diagnostics/system-status` has a different `SystemStatus`
+`GET /api/v1/diagnostics/health` is a loose diagnostics-service health object
+and `GET /api/v1/diagnostics/system-status` has a different `SystemStatus`
 shape. Deleting the legacy router would break the UI. Future removals must be
 per-router, contract-proven, and paired with frontend migration when callers
 remain.
@@ -437,8 +437,8 @@ router is proven fully covered by v2 in this pass.
   gate: discovery v2 domain or feature consolidation.
 - `diagnostics` — retired in HOF-026. Former route:
   `GET /api/diagnostics/health`; replacement: real v2 diagnostics
-  `GET /api/v2/diagnostics/system-status` plus
-  `GET /api/v2/diagnostics/faults`; frontend callers migrated off
+  `GET /api/v1/diagnostics/system-status` plus
+  `GET /api/v1/diagnostics/faults`; frontend callers migrated off
   `fetchSystemHealth()`; OpenAPI no longer advertises the legacy path.
 - `docs` — routes: `GET /api/docs/openapi`, `GET /api/docs/search`,
   `GET /api/docs/status`; v2 coverage: none; frontend callers:
@@ -567,7 +567,7 @@ router is proven fully covered by v2 in this pass.
 - `startup_monitoring` — routes: `GET /api/startup/baseline-comparison`,
   `GET /api/startup/health`, `GET /api/startup/metrics`,
   `GET /api/startup/report`, `GET /api/startup/services`; v2 coverage: none;
-  frontend callers: none found; gate: compare with `/api/v2/system` and
+  frontend callers: none found; gate: compare with `/api/v1/system` and
   deployment health probes before changing.
 
 **Unmounted router files.** `notification_health.py`, `performance_metrics.py`,
@@ -587,7 +587,7 @@ the HOF-002 cumulative CAN interface counters over time and derives nullable
 rolling `message_rate`, approximate `bus_load_percent`, and `last_activity`
 values. The sampler uses `startup()` / `shutdown()` hooks that the
 `ServiceRegistry` actually invokes, depends on `can_interface_service`, and is
-exposed through typed DI. `/api/v2/networks` merges the sampler's rolling state
+exposed through typed DI. `/api/v1/networks` merges the sampler's rolling state
 into `NetworkStatus`, and OpenAPI artifacts were regenerated.
 
 **Why.** HOF-011 completes the networks telemetry story that HOF-002
@@ -615,7 +615,7 @@ SocketCAN telemetry methods for discovered Linux CAN interfaces, using
 The provider exposes cumulative RX/TX packets, bytes, errors, dropped counters,
 CAN state/bitrate, and best-effort nullable controller xstats. `CANFacade` now
 summarizes real RX/TX packet and error counters instead of obsolete
-`message_count` / `error_count` aliases, and `/api/v2/networks` surfaces the
+`message_count` / `error_count` aliases, and `/api/v1/networks` surfaces the
 real per-interface telemetry plus bus statistics. OpenAPI artifacts were
 regenerated.
 
@@ -750,7 +750,7 @@ startup try/except masking.
 - [component] backend
 - [adr] docs/adr/ADR-0002-can-facade-pattern.md
 
-**What changed.** The `/api/v2/networks` domain router stopped returning
+**What changed.** The `/api/v1/networks` domain router stopped returning
 hardcoded mock `can0` / `virtual0` data. `/interfaces` now reports configured
 logical-to-physical CAN mappings via `CANFacade.get_interface_mappings()`,
 `/status` reports configured interface count, service-level CAN health, and

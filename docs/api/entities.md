@@ -1,14 +1,14 @@
 # Entity API Reference
 
 !!! warning "API Version Notice"
-    This documentation describes the **Domain API v2** which is now the primary API.
-    Legacy `/api/entities` endpoints have been removed. Please use `/api/v2/entities` for all entity operations.
+    This documentation describes the **Domain API v1** which is now the primary API.
+    Legacy `/api/entities` endpoints have been removed. Please use `/api/v1/entities` for all entity operations.
 
-Entities represent the devices and systems in your RV, such as lights, tanks, and temperature sensors. The Entity API v2 provides enhanced safety-critical controls and bulk operations.
+Entities represent the devices and systems in your RV, such as lights, tanks, and temperature sensors. The Entity API v1 provides enhanced safety-critical controls and bulk operations.
 
 ## Entity Model (v2)
 
-Each entity in the v2 API has the following structure:
+Each entity in the v1 API has the following structure:
 
 ```json
 {
@@ -37,7 +37,7 @@ Each entity in the v2 API has the following structure:
 ## List Entities
 
 ```
-GET /api/v2/entities
+GET /api/v1/entities
 ```
 
 Returns entities with enhanced pagination, filtering, and safety-critical metadata.
@@ -58,13 +58,13 @@ Returns entities with enhanced pagination, filtering, and safety-critical metada
 Get all lights:
 
 ```
-GET /api/v2/entities?device_type=light
+GET /api/v1/entities?device_type=light
 ```
 
 Get entities in the bedroom with pagination:
 
 ```
-GET /api/v2/entities?area=bedroom&page=1&page_size=50
+GET /api/v1/entities?area=bedroom&page=1&page_size=50
 ```
 
 ### Response
@@ -109,7 +109,7 @@ GET /api/v2/entities?area=bedroom&page=1&page_size=50
 ## Get Entity by ID
 
 ```
-GET /api/v2/entities/{entity_id}
+GET /api/v1/entities/{entity_id}
 ```
 
 Returns a specific entity by ID with enhanced metadata.
@@ -141,7 +141,7 @@ Returns a specific entity by ID with enhanced metadata.
 ## Control Entity
 
 ```
-POST /api/v2/entities/{entity_id}/control
+POST /api/v1/entities/{entity_id}/control
 ```
 
 Controls an entity with safety-critical command/acknowledgment patterns.
@@ -243,7 +243,7 @@ Decrease brightness by 10%:
 ## Bulk Control Entities
 
 ```
-POST /api/v2/entities/bulk/control
+POST /api/v1/entities/bulk/control
 ```
 
 Control multiple entities in a single operation with partial success handling.
@@ -303,7 +303,7 @@ Control multiple entities in a single operation with partial success handling.
 ### Get Entity Metadata
 
 ```
-GET /api/v2/entities/metadata
+GET /api/v1/entities/metadata
 ```
 
 Returns metadata about available device types, areas, and capabilities.
@@ -311,7 +311,7 @@ Returns metadata about available device types, areas, and capabilities.
 ### Get Protocol Summary
 
 ```
-GET /api/v2/entities/protocol-summary
+GET /api/v1/entities/protocol-summary
 ```
 
 Returns a summary of entities grouped by protocol with statistics.
@@ -319,8 +319,8 @@ Returns a summary of entities grouped by protocol with statistics.
 ### Debug Endpoints
 
 ```
-GET /api/v2/entities/debug/pending-commands
-GET /api/v2/entities/debug/state-sync
+GET /api/v1/entities/debug/pending-commands
+GET /api/v1/entities/debug/state-sync
 ```
 
 Provides debug information for pending commands and state synchronization (requires debug mode).

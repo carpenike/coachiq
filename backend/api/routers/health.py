@@ -229,7 +229,7 @@ async def health_check(
             "self": str(request.url) if request else "/api/health",
             "health_docs": "/docs#/health",
             "metrics": "/metrics",
-            "system_status": "/api/v2/system/status",
+            "system_status": "/api/v1/system/status",
         }
 
         # Determine status code based on health

@@ -11,13 +11,13 @@ import type {
 
 /**
  * Hook to fetch comprehensive system health status.
- * Uses the /api/v2/system/status endpoint with IETF format.
+ * Uses the /api/v1/system/status endpoint with IETF format.
  */
 export const useSystemHealthStatus = () => {
   return useQuery({
     queryKey: ['systemHealth'],
     queryFn: async () => {
-      return await apiGet<SystemHealth>('/api/v2/system/status?format=ietf');
+      return await apiGet<SystemHealth>('/api/v1/system/status?format=ietf');
     },
     refetchInterval: 5000, // Poll every 5 seconds
     staleTime: 4000,

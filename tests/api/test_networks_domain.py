@@ -132,7 +132,7 @@ def networks_client() -> Generator[tuple[TestClient, FakeCANFacade], None, None]
     fake_can_facade = FakeCANFacade()
     fake_telemetry_service = FakeTelemetryService()
 
-    app.include_router(create_networks_router(), prefix="/api/v2/networks")
+    app.include_router(create_networks_router(), prefix="/api/v1/networks")
     app.dependency_overrides[get_verified_can_facade] = lambda: fake_can_facade  # type: ignore[attr-defined]
     app.dependency_overrides[get_can_network_telemetry_service] = lambda: fake_telemetry_service  # type: ignore[attr-defined]
     app.dependency_overrides[verify_can_interface_enabled] = lambda: None  # type: ignore[attr-defined]
@@ -147,7 +147,7 @@ def test_interfaces_return_configured_mappings(
     """Interfaces expose configured mappings with real telemetry when available."""
     client, fake_can_facade = networks_client
 
-    response = client.get("/api/v2/networks/interfaces")
+    response = client.get("/api/v1/networks/interfaces")
 
     assert response.status_code == 200
     payload: list[dict[str, Any]] = response.json()
@@ -181,7 +181,7 @@ def test_status_uses_truthful_sources(networks_client: tuple[TestClient, FakeCAN
     """Status combines mappings, service health, queue status, and telemetry."""
     client, fake_can_facade = networks_client
 
-    response = client.get("/api/v2/networks/status")
+    response = client.get("/api/v1/networks/status")
 
     assert response.status_code == 200
     payload = response.json()
@@ -207,7 +207,7 @@ def test_statistics_returns_queue_status_and_bus_statistics(
     """Statistics reaches the real bus-statistics path in HOF-002."""
     client, fake_can_facade = networks_client
 
-    response = client.get("/api/v2/networks/statistics")
+    response = client.get("/api/v1/networks/statistics")
 
     assert response.status_code == 200
     payload = response.json()
@@ -222,7 +222,7 @@ def test_schemas_include_statistics(networks_client: tuple[TestClient, FakeCANFa
     """Schemas lists the new statistics endpoint."""
     client, _fake_can_facade = networks_client
 
-    response = client.get("/api/v2/networks/schemas")
+    response = client.get("/api/v1/networks/schemas")
 
     assert response.status_code == 200
     assert "/statistics" in response.json()["available_endpoints"]
@@ -234,7 +234,7 @@ def test_health_timestamp_is_current_iso_value(
     """Health uses a real timestamp instead of the old frozen literal."""
     client, _fake_can_facade = networks_client
 
-    response = client.get("/api/v2/networks/health")
+    response = client.get("/api/v1/networks/health")
 
     assert response.status_code == 200
     timestamp = response.json()["timestamp"]

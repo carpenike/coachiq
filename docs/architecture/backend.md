@@ -18,7 +18,7 @@ backend/
 ├── main.py               # ASGI app construction + service registration
 ├── api/
 │   ├── routers/          # Legacy /api/* endpoints
-│   ├── domains/          # Domain API v2 (/api/v2/*)
+│   ├── domains/          # Domain API v1 (/api/v1/*)
 │   └── router_config.py  # Mounts every router on the app
 ├── core/
 │   ├── config.py         # Pydantic Settings (COACHIQ_* env vars)
@@ -50,7 +50,7 @@ flowchart LR
     Client[Client / Browser] <--> FastAPI[FastAPI App]
 
     subgraph Backend
-        FastAPI --> Routers[Routers /api/* + /api/v2/*]
+        FastAPI --> Routers[Routers /api/* + /api/v1/*]
         FastAPI --> WS[WebSocket Handlers]
 
         Routers -->|Depends| Services[Services]
@@ -123,12 +123,12 @@ Two API namespaces coexist:
   v2 (notably `/api/entities` and `/api/missing-dgns`, both removed
   during the 2026-05 refactor).
 
-- **`/api/v2/*`** -- domain API under `backend/api/domains/`. Mounted
+- **`/api/v1/*`** -- domain API under `backend/api/domains/`. Mounted
   unconditionally by `register_all_domain_routers` in
   `backend/api/domains/__init__.py`. There are no feature flags around
   v2 routes; they are always on.
 
-The legacy `/api/entities` -> `/api/v2/entities` transition is documented
+The legacy `/api/entities` -> `/api/v1/entities` transition is documented
 in PR #126's docstring (and tested by
 `tests/contract/test_domain_api_spec_validation.py`).
 

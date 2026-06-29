@@ -16,6 +16,15 @@ updated, and tests pass. The original v2-only decision remains in force; only
 backward-compatibility-driven caution around retirement pacing is superseded by
 ADR-0010.
 
+### Status update (public v1 naming)
+
+[ADR-0011](ADR-0011-public-api-v1-naming.md) supersedes this ADR's naming only.
+The Domain API now launches publicly under `/api/v1/*`; the old v2-prefixed
+label was an internal migration marker for the replacement domain routers. This
+does not change the architectural rule above: new development uses the domain
+API surface, and legacy unversioned `/api/*` routes are retired rather than
+parallel-maintained once replacements, in-repo callers, and tests are covered.
+
 ## Context
 
 The backend has historically grown two API namespaces:

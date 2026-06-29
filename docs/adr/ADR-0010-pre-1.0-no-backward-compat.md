@@ -22,10 +22,10 @@ Until a 1.0 / first public release creates real external consumers, CoachIQ
 carries **no backward-compatibility obligation**. Concretely:
 
 - Legacy surfaces are retired decisively, not incrementally. The gate for
-  deleting a legacy interface is: the v2/replacement covers it, our own callers
+  deleting a legacy interface is: the replacement covers it, our own callers
   still work, and tests pass. It is not: will this break an external consumer.
-  Legacy routers with v2 equivalents may be removed in bulk, fixing our own
-  callers in the same change.
+  Legacy routers with domain API equivalents may be removed in bulk, fixing our
+  own callers in the same change.
 - Compatibility shims, dual-shape envelopes, deprecation windows, and
   convergence ratchets are not added for external compatibility, and existing
   ones may be removed.
@@ -45,7 +45,7 @@ This ADR relaxes only backward-compatibility-driven conservatism.
 
 ### Becomes easier
 
-- Deletion-heavy convergence on the v2-only API surface can proceed without
+- Deletion-heavy convergence on the domain API surface can proceed without
   compatibility ceremony for consumers that do not exist.
 - Error-contract cleanup can be evaluated as an internal repo-wide migration,
   not as a public API break.
@@ -84,7 +84,7 @@ This ADR relaxes only backward-compatibility-driven conservatism.
 
 ## See also
 
-- [ADR-0003](ADR-0003-api-v2-only-no-legacy.md) -- API v2 only; legacy
+- [ADR-0003](ADR-0003-api-v2-only-no-legacy.md) -- API v1 only; legacy
   `/api/*` routes are retired rather than parallel-maintained.
 - [ADR-0005](ADR-0005-http-error-response-envelope.md) -- HTTP error response
   envelope whose backward-compatibility rationale is superseded pre-1.0.

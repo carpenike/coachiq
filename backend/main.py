@@ -36,7 +36,6 @@ from backend.core.security_hardening import configure_security_hardening
 from backend.core.service_registry import ServiceStatus
 
 # CAN Tools Services
-
 # from backend.integrations.registration import register_custom_features  # No longer needed - all services in ServiceRegistry
 from backend.middleware.auth import AuthenticationMiddleware
 from backend.middleware.csrf_protection import CSRFProtectionMiddleware
@@ -517,7 +516,7 @@ async def health_check(request: Request):
         "uptime_seconds": uptime_seconds,
         "uptime_human": f"{uptime_seconds // 3600}h {(uptime_seconds % 3600) // 60}m {uptime_seconds % 60}s",
         "timestamp": datetime.now(UTC).isoformat(),
-        "entity_count": 0,  # Entity count removed - use /api/v2/entities endpoint for entity info
+        "entity_count": 0,  # Entity count removed - use /api/v1/entities endpoint for entity info
         "can_interfaces": settings.can.interfaces,
         "protocols_enabled": enabled_protocols,
         "hostname": platform.node(),
@@ -949,7 +948,7 @@ async def readyz(request: Request, details: bool = False) -> Response:
             critical_failures.append("safety_systems")
 
         # 6. API readiness
-        # Domain API v2 is always enabled in modern architecture
+        # Domain API v1 is always enabled in modern architecture
         domain_api_ready = True
         entities_api_ready = True
         api_systems_ready = domain_api_ready and entities_api_ready

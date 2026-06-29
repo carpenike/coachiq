@@ -2,7 +2,7 @@
  * Enhanced Entity Selector V2 Component
  *
  * Advanced entity selection interface with filtering, grouping, and bulk selection
- * capabilities. Integrates with domain API v2 for optimized performance.
+ * capabilities. Integrates with domain API v1 for optimized performance.
  */
 
 import type { EntitySchema } from "@/api/types/domains";

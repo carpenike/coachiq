@@ -976,13 +976,13 @@ class FeaturesSettings(BaseSettings):
         default=True, description="Enable activity feed tracking"
     )
 
-    # Domain API v2 features
-    domain_api_v2: bool = Field(default=True, description="Enable domain API v2")
-    entities_api_v2: bool = Field(default=True, description="Enable entities API v2")
-    diagnostics_api_v2: bool = Field(default=True, description="Enable diagnostics API v2")
-    analytics_api_v2: bool = Field(default=True, description="Enable analytics API v2")
-    networks_api_v2: bool = Field(default=True, description="Enable networks API v2")
-    system_api_v2: bool = Field(default=True, description="Enable system API v2")
+    # Domain API v1 features
+    domain_api_v2: bool = Field(default=True, description="Enable domain API v1")
+    entities_api_v2: bool = Field(default=True, description="Enable entities API v1")
+    diagnostics_api_v2: bool = Field(default=True, description="Enable diagnostics API v1")
+    analytics_api_v2: bool = Field(default=True, description="Enable analytics API v1")
+    networks_api_v2: bool = Field(default=True, description="Enable networks API v1")
+    system_api_v2: bool = Field(default=True, description="Enable system API v1")
 
     # Performance and optimization settings
     dashboard_cache_ttl: int = Field(
@@ -1512,7 +1512,7 @@ class APIDomainSettings(BaseSettings):
     model_config = SettingsConfigDict(env_prefix="COACHIQ_API_DOMAINS__", case_sensitive=False)
 
     # Core domain API settings
-    enabled: bool = Field(default=False, description="Enable Domain API v2 architecture")
+    enabled: bool = Field(default=False, description="Enable Domain API v1 architecture")
     safety_mode: str = Field(
         default="strict", description="Safety mode: strict, permissive, emergency_stop"
     )

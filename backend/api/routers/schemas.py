@@ -2,7 +2,7 @@
 Schema API Router
 
 Provides schema export endpoints for frontend runtime validation.
-Serves Zod-compatible schemas for Domain API v2 with safety-critical validation.
+Serves Zod-compatible schemas for Domain API v1 with safety-critical validation.
 
 Note: "safety-critical" / "safety" naming in this file is historical and
 refers to **API guardrail / command-validation** behavior, NOT vehicle safety.
@@ -29,7 +29,7 @@ async def get_all_schemas(
     """
     Export all Zod-compatible schemas for frontend validation.
 
-    Provides comprehensive schema definitions for Domain API v2 with
+    Provides comprehensive schema definitions for Domain API v1 with
     safety-critical validation requirements.
     """
 
@@ -157,7 +157,7 @@ async def get_openapi_schemas(
         return {
             "openapi": "3.0.0",
             "info": {
-                "title": "CoachIQ Domain API v2 Schemas",
+                "title": "CoachIQ Domain API v1 Schemas",
                 "version": zod_schemas["version"],
                 "description": "Safety-critical schemas for RV-C vehicle control",
             },

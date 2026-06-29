@@ -105,9 +105,9 @@ def configure_routers(app: FastAPI) -> None:
     # Include WebSocket routes that integrate with feature manager
     app.include_router(websocket_router)
 
-    # Register domain API v2 routers unconditionally (per CLAUDE.md - no feature flags)
+    # Register domain API v1 routers unconditionally (per CLAUDE.md - no feature flags)
     try:
-        logger.info("Registering domain API v2 routers...")
+        logger.info("Registering domain API v1 routers...")
         register_all_domain_routers(app)
     except Exception as e:
         logger.warning("Failed to register domain routers: %s", e)

@@ -47,11 +47,11 @@ fi
 # Check API documentation
 check_endpoint "/docs" "API documentation" || true
 
-# Check Domain API v2 endpoints
-if check_endpoint "/api/v2/entities/health" "Domain API v2 - Entities"; then
-    echo "  → Domain API v2 is active"
+# Check Domain API v1 endpoints
+if check_endpoint "/api/v1/entities/health" "Domain API v1 - Entities"; then
+    echo "  → Domain API v1 is active"
 else
-    echo "  → Domain API v2 not available"
+    echo "  → Domain API v1 not available"
 fi
 
 # Check WebSocket endpoint

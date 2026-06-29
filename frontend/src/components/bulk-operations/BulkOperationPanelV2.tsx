@@ -1,7 +1,7 @@
 /**
  * Enhanced Bulk Operation Panel V2 Component
  *
- * Modern bulk operations interface using domain API v2 with optimistic updates,
+ * Modern bulk operations interface using domain API v1 with optimistic updates,
  * enhanced error handling, and real-time progress tracking.
  */
 

@@ -9,7 +9,7 @@
 export {
   useControlEntity, useEntities,
   useEntity, useEntityHistory, useEntityMetadata, useLight, useLightControl, useLights, useLock, useLockControl, useLocks, useTankSensor, useTankSensors, useTemperatureSensor, useTemperatureSensors,
-  // Enhanced Domain API v2 hooks
+  // Enhanced Domain API v1 hooks
   useBulkEntityControl
 } from './useEntities';
 
@@ -71,7 +71,7 @@ export {
   useMaintenanceHistory
 } from './usePredictiveMaintenance';
 
-// Domain API v2 hooks with safety-aware optimistic updates
+// Domain API v1 hooks with safety-aware optimistic updates
 export {
   // Basic domain hooks
   useEntitiesV2,

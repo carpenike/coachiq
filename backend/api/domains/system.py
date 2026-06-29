@@ -38,7 +38,7 @@ def _map_service_status_to_ietf(status: str) -> str:
     return status_mapping.get(status, status)
 
 
-# Domain-specific schemas for v2 API
+# Domain-specific schemas for v1 API
 class SystemInfo(BaseModel):
     """System information"""
 
@@ -140,7 +140,7 @@ class SystemStatus(BaseModel):
 
 def create_system_router() -> APIRouter:
     """Create the system domain router with all endpoints"""
-    router = APIRouter(tags=["system-v2"])
+    router = APIRouter(tags=["system"])
 
     @router.get("/health", response_model=SystemHealthResponse)
     async def health_check() -> SystemHealthResponse:

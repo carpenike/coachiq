@@ -2,7 +2,7 @@
 Zod Schema Validation Testing
 
 This module tests the integration between backend Pydantic schemas and
-frontend Zod validation, ensuring runtime type safety for Domain API v2.
+frontend Zod validation, ensuring runtime type safety for Domain API v1.
 
 Tests cover:
 - Schema export functionality from backend
@@ -75,7 +75,7 @@ class TestZodSchemaExport:
 
     def test_domain_entities_schema_export(self, client):
         """Test domain-specific entities schema export"""
-        response = client.get("/api/v2/entities/schemas")
+        response = client.get("/api/v1/entities/schemas")
 
         # Should provide schemas or indicate feature not available
         if response.status_code == 200:
@@ -100,7 +100,7 @@ class TestZodSchemaExport:
 
         elif response.status_code == 404:
             # Domain API not available - this is acceptable for testing
-            pytest.skip("Domain API v2 not available in test environment")
+            pytest.skip("Domain API v1 not available in test environment")
 
         else:
             pytest.fail(

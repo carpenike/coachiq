@@ -34,7 +34,7 @@ export function useEventLogs(filter?: EventLogFilter) {
   if (filter?.end_time) queryParams.append('end_time', filter.end_time.toString());
 
   const queryString = queryParams.toString();
-  const url = `/api/v2/system/events${queryString ? `?${queryString}` : ''}`;
+  const url = `/api/v1/system/events${queryString ? `?${queryString}` : ''}`;
 
   return useQuery({
     queryKey: ['eventLogs', filter],

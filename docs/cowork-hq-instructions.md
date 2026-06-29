@@ -81,7 +81,7 @@ A good CoachIQ spec respects the load-bearing patterns (the ADR set in
 - Frontend: `npm run typecheck` + `npm run lint` + `npm run build` clean; the
   relevant `npm run test` passes.
 - Respect: CAN access only through `CANFacade` (ADR-0002); new endpoints on
-  `/api/v2` only (ADR-0003); services via `Depends(get_x)` from
+  `/api/v1` only (ADR-0003); services via `Depends(get_x)` from
   `backend/core/dependencies.py`, never `app.state` / module singletons;
   `Settings` vs `RVCConfigFacade` vs `RVCSpecLoader` kept distinct (ADR-0008).
   Do not frame work as life-critical safety — Firefly owns physical safety,

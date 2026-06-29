@@ -52,7 +52,7 @@ What this means in practice:
   - `backend/services/`: Business logic services (entity, auth, persistence, etc.) accessed via dependency injection.
   - `backend/repositories/`: Repository pattern for data access; replaces the previous monolithic `AppState`.
   - `backend/api/routers/`: REST API endpoints organized by domain.
-  - `backend/api/domains/`: Domain API v2 endpoints (`/api/v2/...`) with bulk operations and caching.
+  - `backend/api/domains/`: Domain API v1 endpoints (`/api/v1/...`) with bulk operations and caching.
   - `backend/websocket/`: WebSocket handlers for real-time entity, log, and CAN sniffer streams.
   - `backend/integrations/`: Protocol integrations
     - `backend/integrations/can/`: CAN bus interface management.
@@ -68,7 +68,7 @@ What this means in practice:
   - `config/Caddyfile.example`: Production Caddy reverse-proxy template.
 - **Frontend (`frontend/`):**
   - React 19 SPA built with Vite, TypeScript (strict), Tailwind CSS, and shadcn/ui.
-  - Communicates with the backend via REST (`/api/...` and `/api/v2/...`) and WebSockets.
+  - Communicates with the backend via REST (`/api/...` and `/api/v1/...`) and WebSockets.
   - State managed with React Query and React Context.
 - **Deployment:**
   - Nix flake provides dev shells, CLI apps (`nix run .#test|lint|format|ci`), and a NixOS module for production.
@@ -252,7 +252,7 @@ Refer to the FastAPI Swagger UI at `http://localhost:8000/docs` (or ReDoc at `/r
 
 Key endpoint groups:
 
-- `/api/entities/` and `/api/v2/entities/`: List and control RV-C entities (lights, locks, climate, etc.). All device-type operations are unified under entity endpoints (no `/api/lights`, `/api/locks`, etc.). Use `/api/v2/...` (Domain API v2) for new development — it supports bulk operations, partial-success responses, and richer schemas.
+- `/api/entities/` and `/api/v1/entities/`: List and control RV-C entities (lights, locks, climate, etc.). All device-type operations are unified under entity endpoints (no `/api/lights`, `/api/locks`, etc.). Use `/api/v1/...` (Domain API v1) for new development — it supports bulk operations, partial-success responses, and richer schemas.
 - `/api/can/`: CAN interface status and message tools.
 - `/api/auth/`: Authentication, tokens, and PIN/MFA management.
 - `/api/health`, `/health`: Liveness and readiness probes.

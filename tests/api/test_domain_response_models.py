@@ -1,4 +1,4 @@
-"""Contract tests for typed Domain API v2 response models."""
+"""Contract tests for typed Domain API v1 response models."""
 
 from collections.abc import Generator
 from typing import Any, Protocol
@@ -110,13 +110,13 @@ def _response_schema_for(path: str, method: str = "get") -> dict[str, Any]:
 @pytest.mark.parametrize(
     ("path", "method", "component"),
     [
-        ("/api/v2/entities/{entity_id}/control", "post", "SafetyOperationResultV2"),
-        ("/api/v2/entities/bulk-control", "post", "BulkSafetyOperationResultV2"),
-        ("/api/v2/diagnostics/health", "get", "DiagnosticsHealthResponse"),
-        ("/api/v2/diagnostics/dtcs", "get", "DiagnosticTroubleCodeCollection"),
-        ("/api/v2/diagnostics/statistics", "get", "DiagnosticStatisticsResponse"),
+        ("/api/v1/entities/{entity_id}/control", "post", "SafetyOperationResultV2"),
+        ("/api/v1/entities/bulk-control", "post", "BulkSafetyOperationResultV2"),
+        ("/api/v1/diagnostics/health", "get", "DiagnosticsHealthResponse"),
+        ("/api/v1/diagnostics/dtcs", "get", "DiagnosticTroubleCodeCollection"),
+        ("/api/v1/diagnostics/statistics", "get", "DiagnosticStatisticsResponse"),
         (
-            "/api/v2/system/health",
+            "/api/v1/system/health",
             "get",
             "backend__schemas__domain_api__SystemHealthResponse",
         ),
@@ -131,7 +131,7 @@ def test_loose_endpoints_now_use_component_response_models(
 
 def test_system_status_documents_default_and_ietf_response_shapes() -> None:
     """System status OpenAPI preserves both default and IETF health response contracts."""
-    schema = _response_schema_for("/api/v2/system/status")
+    schema = _response_schema_for("/api/v1/system/status")
 
     refs = {entry["$ref"] for entry in schema["anyOf"]}
     assert refs == {
@@ -144,27 +144,31 @@ def test_system_status_documents_default_and_ietf_response_shapes() -> None:
 def test_sample_domain_responses_validate_against_models(domain_client: TestClient) -> None:
     """Representative HOF-021 endpoint responses validate against their declared models."""
     assert DiagnosticsHealthResponse.model_validate(
-        domain_client.get("/api/v2/diagnostics/health").json()
+        domain_client.get("/api/v1/diagnostics/health").json()
     )
     assert DiagnosticTroubleCodeCollection.model_validate(
-        domain_client.get("/api/v2/diagnostics/dtcs").json()
+        domain_client.get("/api/v1/diagnostics/dtcs").json()
     )
     assert DiagnosticStatisticsResponse.model_validate(
-        domain_client.get("/api/v2/diagnostics/statistics").json()
+        domain_client.get("/api/v1/diagnostics/statistics").json()
     )
-    assert SystemHealthResponse.model_validate(domain_client.get("/api/v2/system/health").json())
+    assert SystemHealthResponse.model_validate(domain_client.get("/api/v1/system/health").json())
     assert IETFHealthStatusResponse.model_validate(
-        domain_client.get("/api/v2/system/status?format=ietf").json()
+        domain_client.get("/api/v1/system/status?format=ietf").json()
     )
     assert SafetyOperationResultV2.model_validate(
         domain_client.post(
-            "/api/v2/entities/light_1/control", json={"command": "set", "state": True}
+            "/api/v1/entities/light_1/control", json={"command": "set", "state": True}
         ).json()
     )
     assert BulkSafetyOperationResultV2.model_validate(
         domain_client.post(
-            "/api/v2/entities/bulk-control",
-            json={"entity_ids": ["light_1", "light_2"], "command": {"command": "toggle"}},
+            "/api/v1/entities/bulk-control",
+            json={
+                "operation_type": "control",
+                "entity_ids": ["light_1", "light_2"],
+                "command": {"command": "toggle"},
+            },
         ).json()
     )
 
@@ -174,5 +178,5 @@ def test_system_status_default_shape_validates(domain_client: TestClient) -> Non
     from backend.api.domains.system import SystemStatus
 
     assert TypeAdapter(SystemStatus).validate_python(
-        domain_client.get("/api/v2/system/status").json()
+        domain_client.get("/api/v1/system/status").json()
     )

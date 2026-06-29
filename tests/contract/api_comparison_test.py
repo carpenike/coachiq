@@ -1,7 +1,7 @@
 """
 API Comparison Testing Framework
 
-This module implements side-by-side testing of legacy and Domain API v2 endpoints
+This module implements side-by-side testing of legacy and Domain API v1 endpoints
 to ensure feature parity before legacy code removal.
 
 SAFETY CRITICAL: This testing ensures no functionality is lost during migration.
@@ -41,7 +41,7 @@ class APIResponse:
 
 @dataclass
 class ComparisonResult:
-    """Result of comparing legacy vs v2 API responses"""
+    """Result of comparing legacy vs v1 API responses"""
 
     endpoint: str
     legacy_response: APIResponse
@@ -55,7 +55,7 @@ class ComparisonResult:
 
 class APIComparisonFramework:
     """
-    Framework for side-by-side testing of legacy and Domain API v2 endpoints
+    Framework for side-by-side testing of legacy and Domain API v1 endpoints
 
     This framework:
     1. Executes identical requests against both API versions
@@ -159,7 +159,7 @@ class APIComparisonFramework:
         self, legacy_response: APIResponse, v2_response: APIResponse
     ) -> ComparisonResult:
         """
-        Compare legacy and v2 API responses for functional equivalence
+        Compare legacy and v1 API responses for functional equivalence
 
         This method checks:
         1. Status code compatibility
@@ -369,13 +369,13 @@ def comparison_framework():
 
 
 class TestEntityEndpointParity:
-    """Test cases for entity endpoint parity between legacy and v2 APIs"""
+    """Test cases for entity endpoint parity between legacy and v1 APIs"""
 
     @pytest.mark.asyncio
     async def test_get_entities_parity(self, comparison_framework):
-        """Test GET /api/entities vs GET /api/v2/entities"""
+        """Test GET /api/entities vs GET /api/v1/entities"""
         result = await comparison_framework.test_endpoint_parity(
-            legacy_endpoint="/api/entities", v2_endpoint="/api/v2/entities"
+            legacy_endpoint="/api/entities", v2_endpoint="/api/v1/entities"
         )
 
         # Assert functional equivalence at minimum
@@ -385,7 +385,7 @@ class TestEntityEndpointParity:
 
     @pytest.mark.asyncio
     async def test_get_entity_by_id_parity(self, comparison_framework):
-        """Test GET /api/entities/{id} vs GET /api/v2/entities/{id}"""
+        """Test GET /api/entities/{id} vs GET /api/v1/entities/{id}"""
         # First get an entity ID to test with
         entities_response = await comparison_framework.make_api_request("/api/entities")
 
@@ -399,7 +399,7 @@ class TestEntityEndpointParity:
 
             result = await comparison_framework.test_endpoint_parity(
                 legacy_endpoint=f"/api/entities/{entity_id}",
-                v2_endpoint=f"/api/v2/entities/{entity_id}",
+                v2_endpoint=f"/api/v1/entities/{entity_id}",
             )
 
             assert result.functional_equivalent, (
@@ -408,7 +408,7 @@ class TestEntityEndpointParity:
 
     @pytest.mark.asyncio
     async def test_control_entity_parity(self, comparison_framework):
-        """Test POST /api/entities/{id}/control vs POST /api/v2/entities/control"""
+        """Test POST /api/entities/{id}/control vs POST /api/v1/entities/control"""
         # First get a controllable entity
         entities_response = await comparison_framework.make_api_request("/api/entities")
 
@@ -426,10 +426,10 @@ class TestEntityEndpointParity:
                 entity_id = light_entities[0]["entity_id"]
                 test_command = {"command": "toggle"}
 
-                # Note: v2 API might have different endpoint structure
+                # Note: v1 API might have different endpoint structure
                 result = await comparison_framework.test_endpoint_parity(
                     legacy_endpoint=f"/api/entities/{entity_id}/control",
-                    v2_endpoint="/api/v2/entities/control",
+                    v2_endpoint="/api/v1/entities/control",
                     method="POST",
                     test_data={"entity_id": entity_id, **test_command},
                 )
@@ -445,10 +445,10 @@ class TestBulkOperationsParity:
 
     @pytest.mark.asyncio
     async def test_bulk_control_availability(self, comparison_framework):
-        """Test that bulk operations are available in v2 API"""
+        """Test that bulk operations are available in v1 API"""
         # Legacy API might not have bulk operations, so we test v2 availability
         result = await comparison_framework.make_api_request(
-            "/api/v2/entities/bulk-control",
+            "/api/v1/entities/bulk-control",
             method="POST",
             data={
                 "entity_ids": ["test_light_1"],
@@ -458,7 +458,7 @@ class TestBulkOperationsParity:
         )
 
         # Should return proper error or success, not 404
-        assert result.status_code != 404, "Bulk control endpoint should be available in v2 API"
+        assert result.status_code != 404, "Bulk control endpoint should be available in v1 API"
 
 
 class TestSafetyEndpointsParity:
@@ -469,7 +469,7 @@ class TestSafetyEndpointsParity:
         """Test emergency stop functionality availability"""
         # Test v2 emergency stop endpoint
         result = await comparison_framework.make_api_request(
-            "/api/v2/entities/emergency-stop", method="POST"
+            "/api/v1/entities/emergency-stop", method="POST"
         )
 
         # Should be available (even if no actual devices)
@@ -480,7 +480,7 @@ class TestSafetyEndpointsParity:
     @pytest.mark.asyncio
     async def test_safety_status_availability(self, comparison_framework):
         """Test safety status endpoint availability"""
-        result = await comparison_framework.make_api_request("/api/v2/entities/safety-status")
+        result = await comparison_framework.make_api_request("/api/v1/entities/safety-status")
 
         assert result.status_code == 200, f"Safety status should be available: {result.status_code}"
 
@@ -494,12 +494,12 @@ async def run_comprehensive_comparison_tests():
     # Define test scenarios
     test_scenarios = [
         # Basic entity operations
-        ("/api/entities", "/api/v2/entities", "GET", None),
-        ("/api/health", "/api/v2/entities/health", "GET", None),
+        ("/api/entities", "/api/v1/entities", "GET", None),
+        ("/api/health", "/api/v1/entities/health", "GET", None),
         # Error handling tests
-        ("/api/entities/nonexistent", "/api/v2/entities/nonexistent", "GET", None),
+        ("/api/entities/nonexistent", "/api/v1/entities/nonexistent", "GET", None),
         # Schema availability
-        ("/api/docs", "/api/v2/entities/schemas", "GET", None),
+        ("/api/docs", "/api/v1/entities/schemas", "GET", None),
     ]
 
     logger.info("Starting comprehensive API comparison tests...")

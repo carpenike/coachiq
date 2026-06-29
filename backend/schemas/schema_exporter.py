@@ -23,7 +23,7 @@ class ZodSchemaExporter:
     """
     Exports Pydantic schemas in Zod-compatible format for frontend validation.
 
-    Provides centralized schema management and version tracking for Domain API v2.
+    Provides centralized schema management and version tracking for Domain API v1.
     """
 
     # Schema registry with version tracking

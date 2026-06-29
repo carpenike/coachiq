@@ -4,14 +4,14 @@ The CoachIQ server provides a RESTful API for interacting with RV-C devices and 
 
 ## API Base URL
 
-The primary API uses Domain API v2 with endpoints under `/api/v2/{domain}`. Legacy endpoints under `/api` have been deprecated and removed.
+The primary API uses Domain API v1 with endpoints under `/api/v1/{domain}`. Legacy endpoints under `/api` have been deprecated and removed.
 
-### Domain API v2 (Primary)
+### Domain API v1 (Primary)
 
-- **Entities**: `/api/v2/entities` - Entity management with safety-critical patterns
-- **Diagnostics**: `/api/v2/diagnostics` - System diagnostics and health monitoring
-- **Networks**: `/api/v2/networks` - Network interface management
-- **System**: `/api/v2/system` - System configuration and status
+- **Entities**: `/api/v1/entities` - Entity management with safety-critical patterns
+- **Diagnostics**: `/api/v1/diagnostics` - System diagnostics and health monitoring
+- **Networks**: `/api/v1/networks` - Network interface management
+- **System**: `/api/v1/system` - System configuration and status
 
 ### Specialized APIs
 
@@ -67,16 +67,16 @@ Error responses include a JSON body with details about the error:
 
 The API is organized into the following categories:
 
-### Entity API v2
+### Entity API v1
 
-Domain API v2 endpoints for managing and controlling entities with safety-critical patterns:
+Domain API v1 endpoints for managing and controlling entities with safety-critical patterns:
 
-- `GET /api/v2/entities` - List all entities with pagination and advanced filtering
-- `GET /api/v2/entities/{entity_id}` - Get details for a specific entity
-- `POST /api/v2/entities/{entity_id}/control` - Control an entity with command/acknowledgment
-- `POST /api/v2/entities/bulk/control` - Control multiple entities in a single operation
-- `GET /api/v2/entities/metadata` - Get available device types and capabilities
-- `GET /api/v2/entities/protocol-summary` - Get protocol statistics
+- `GET /api/v1/entities` - List all entities with pagination and advanced filtering
+- `GET /api/v1/entities/{entity_id}` - Get details for a specific entity
+- `POST /api/v1/entities/{entity_id}/control` - Control an entity with command/acknowledgment
+- `POST /api/v1/entities/bulk/control` - Control multiple entities in a single operation
+- `GET /api/v1/entities/metadata` - Get available device types and capabilities
+- `GET /api/v1/entities/protocol-summary` - Get protocol statistics
 
 ### CAN Bus API
 

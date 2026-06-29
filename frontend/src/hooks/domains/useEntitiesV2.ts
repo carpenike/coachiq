@@ -39,7 +39,7 @@ import type {
 //
 
 export const entitiesV2QueryKeys = {
-  all: ['entities-v2'] as const,
+  all: ['entities'] as const,
   collections: () => [...entitiesV2QueryKeys.all, 'collections'] as const,
   collection: (params?: EntitiesQueryParams) =>
     [...entitiesV2QueryKeys.collections(), params] as const,
@@ -53,10 +53,10 @@ export const entitiesV2QueryKeys = {
 //
 
 /**
- * Hook to check if entities domain API v2 is available
+ * Hook to check if entities domain API v1 is available
  *
  * This is critical for safety - optimistic updates should only be used
- * when the v2 API is available and reliable.
+ * when the v1 API is available and reliable.
  *
  * @returns Query result with availability status
  */
@@ -160,7 +160,7 @@ export function useControlEntityV2() {
         entitiesV2QueryKeys.entity(entityId)
       );
 
-      // SAFETY CRITICAL: Only apply optimistic updates if domain API v2 is available
+      // SAFETY CRITICAL: Only apply optimistic updates if domain API v1 is available
       // When falling back to legacy API, we wait for server confirmation to prevent
       // dangerous state mismatches in vehicle control systems
       if (isDomainAPIAvailable && !isCheckingAPI && previousEntity) {
@@ -250,7 +250,7 @@ export function useBulkControlEntitiesV2() {
         ),
       }));
 
-      // SAFETY CRITICAL: Only apply optimistic updates if domain API v2 is available
+      // SAFETY CRITICAL: Only apply optimistic updates if domain API v1 is available
       // When falling back to legacy API, we wait for server confirmation to prevent
       // dangerous state mismatches in vehicle control systems
       if (isDomainAPIAvailable && !isCheckingAPI) {
@@ -551,7 +551,7 @@ export function useControlEntityV2WithValidation() {
         entitiesV2QueryKeys.entity(entityId)
       );
 
-      // SAFETY CRITICAL: Only apply optimistic updates if domain API v2 is available
+      // SAFETY CRITICAL: Only apply optimistic updates if domain API v1 is available
       // AND validation is working properly
       if (isDomainAPIAvailable && !isCheckingAPI && previousEntity) {
         const optimisticState = { ...previousEntity.state };

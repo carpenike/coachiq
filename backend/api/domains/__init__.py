@@ -1,7 +1,7 @@
 """
 Domain API Routers Package
 
-This package contains domain-specific API routers for the v2 API architecture.
+This package contains domain-specific API routers for the v1 API architecture.
 Each domain provides enhanced capabilities over the legacy monolithic API.
 
 Domain routers:
@@ -42,7 +42,7 @@ def register_all_domain_routers(app: FastAPI) -> None:
     """
     Register all available domain routers unconditionally
 
-    Per CLAUDE.md: Domain API v2 is the ONLY implementation and should not be behind feature flags
+    Per CLAUDE.md: Domain API v1 is the ONLY implementation and should not be behind feature flags
 
     Args:
         app: FastAPI application instance
@@ -50,7 +50,7 @@ def register_all_domain_routers(app: FastAPI) -> None:
     for domain_name, register_func in DOMAIN_ROUTERS.items():
         try:
             router = register_func()
-            app.include_router(router, prefix=f"/api/v2/{domain_name}")
+            app.include_router(router, prefix=f"/api/v1/{domain_name}")
             logger.info("✅ Registered domain router: %s", domain_name)
         except Exception as e:
             logger.error("❌ Failed to register domain router %s: %s", domain_name, e)

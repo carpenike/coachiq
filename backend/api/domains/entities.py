@@ -8,7 +8,7 @@ Provides domain-specific entity management endpoints with enhanced capabilities:
 - Audit logging for all operations
 - State reconciliation with RV-C bus
 
-This router integrates with existing EntityService but provides v2 API patterns.
+This router integrates with existing EntityService but provides v1 API patterns.
 
 Note: "safety-critical" / "safety" naming in this file is historical and
 refers to **API guardrail / command-validation** behavior, NOT vehicle safety.
@@ -44,9 +44,9 @@ get_entity_domain_service = create_service_dependency("entity_domain_service")
 logger = logging.getLogger(__name__)
 
 
-# Domain-specific schemas for v2 API
+# Domain-specific schemas for v1 API
 class EntitySchemaV2(BaseModel):
-    """Enhanced entity schema for v2 API"""
+    """Enhanced entity schema for v1 API"""
 
     entity_id: str = Field(..., description="Unique entity identifier")
     name: str = Field(..., description="Human-readable entity name")
@@ -59,7 +59,7 @@ class EntitySchemaV2(BaseModel):
 
 
 class ControlCommandV2(BaseModel):
-    """Enhanced control command schema for v2 API"""
+    """Enhanced control command schema for v1 API"""
 
     command: str = Field(
         ..., description="Command type: set, toggle, brightness_up, brightness_down"
@@ -124,7 +124,7 @@ class EntitiesQueryParamsV2(BaseModel):
 def create_entities_router() -> APIRouter:
     """Create the entities domain router with all endpoints"""
     router = APIRouter(
-        tags=["entities-v2"],
+        tags=["entities"],
     )
 
     def _categorize_entities(entities: dict) -> dict:
@@ -189,10 +189,10 @@ def create_entities_router() -> APIRouter:
                 },
                 # Debug Info for Solo Developer
                 "debug_urls": {
-                    "safety_status": "/api/v2/entities/safety-status",
-                    "schemas": "/api/v2/entities/schemas",
-                    "unmapped_devices": "/api/v2/entities/debug/unmapped",
-                    "unknown_pgns": "/api/v2/entities/debug/unknown-pgns",
+                    "safety_status": "/api/v1/entities/safety-status",
+                    "schemas": "/api/v1/entities/schemas",
+                    "unmapped_devices": "/api/v1/entities/debug/unmapped",
+                    "unknown_pgns": "/api/v1/entities/debug/unknown-pgns",
                 },
             }
         except Exception as e:
@@ -294,10 +294,10 @@ def create_entities_router() -> APIRouter:
                         },
                     ],
                     "useful_endpoints": {
-                        "View all entities": "/api/v2/entities",
-                        "Emergency stop": "POST /api/v2/entities/emergency-stop",
-                        "Clear emergency": "POST /api/v2/entities/clear-emergency-stop",
-                        "Unmapped devices": "/api/v2/entities/debug/unmapped",
+                        "View all entities": "/api/v1/entities",
+                        "Emergency stop": "POST /api/v1/entities/emergency-stop",
+                        "Clear emergency": "POST /api/v1/entities/clear-emergency-stop",
+                        "Unmapped devices": "/api/v1/entities/debug/unmapped",
                     },
                 },
             }

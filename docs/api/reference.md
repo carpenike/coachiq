@@ -291,10 +291,18 @@ Get CAN message injector status and statistics.
 
 Inject CAN message(s) for testing and diagnostics.
 
+Admin-only: this bypasses normal entity-control validation and emits raw
+frames onto the bus. Audited via the request `user` field which is
+populated from the authenticated session, NOT a hardcoded value.
+
 Safety levels:
 - STRICT: Blocks dangerous messages
 - MODERATE: Warns on dangerous messages (default)
 - PERMISSIVE: Allows all messages (use with caution)
+
+**Parameters:**
+
+- `authorization` (header, optional): No description
 
 **Request Body:**
 
@@ -313,8 +321,14 @@ Content-Type: `application/json`
 
 Inject J1939 message with automatic CAN ID generation.
 
+Admin-only. See /inject for the same security rationale.
+
 This endpoint simplifies J1939 message injection by automatically
 constructing the proper 29-bit CAN identifier from PGN and addresses.
+
+**Parameters:**
+
+- `authorization` (header, optional): No description
 
 **Request Body:**
 
@@ -398,9 +412,14 @@ Get example message templates for testing.
 
 Get current database schema status.
 
+**Parameters:**
+
+- `authorization` (header, optional): No description
+
 **Responses:**
 
 - `200`: Successful Response
+- `422`: Validation Error
 
 ---
 
@@ -409,6 +428,10 @@ Get current database schema status.
 **Start Migration**
 
 Start database migration process.
+
+**Parameters:**
+
+- `authorization` (header, optional): No description
 
 **Request Body:**
 
@@ -430,6 +453,7 @@ Get migration job progress.
 **Parameters:**
 
 - `job_id` (path, required): No description
+- `authorization` (header, optional): No description
 
 **Responses:**
 
@@ -447,6 +471,7 @@ Get migration history.
 **Parameters:**
 
 - `limit` (query, optional): No description
+- `authorization` (header, optional): No description
 
 **Responses:**
 
@@ -461,9 +486,14 @@ Get migration history.
 
 Get detailed safety check for migration.
 
+**Parameters:**
+
+- `authorization` (header, optional): No description
+
 **Responses:**
 
 - `200`: Successful Response
+- `422`: Validation Error
 
 ---
 
@@ -2047,9 +2077,14 @@ Acknowledge an active system alert.
 
 Get current database schema status.
 
+**Parameters:**
+
+- `authorization` (header, optional): No description
+
 **Responses:**
 
 - `200`: Successful Response
+- `422`: Validation Error
 
 ---
 
@@ -2058,6 +2093,10 @@ Get current database schema status.
 **Start Migration**
 
 Start database migration process.
+
+**Parameters:**
+
+- `authorization` (header, optional): No description
 
 **Request Body:**
 
@@ -2079,6 +2118,7 @@ Get migration job progress.
 **Parameters:**
 
 - `job_id` (path, required): No description
+- `authorization` (header, optional): No description
 
 **Responses:**
 
@@ -2096,6 +2136,7 @@ Get migration history.
 **Parameters:**
 
 - `limit` (query, optional): No description
+- `authorization` (header, optional): No description
 
 **Responses:**
 
@@ -2110,9 +2151,14 @@ Get migration history.
 
 Get detailed safety check for migration.
 
+**Parameters:**
+
+- `authorization` (header, optional): No description
+
 **Responses:**
 
 - `200`: Successful Response
+- `422`: Validation Error
 
 ---
 
@@ -2464,32 +2510,7 @@ Get comprehensive network topology map with device relationships.
 
 ## diagnostics
 
-### GET /api/diagnostics/health
-
-**Get System Health**
-
-Get comprehensive system health status.
-
-Args:
-    system_type: Optional specific system to query, or None for all systems
-
-Returns:
-    System health response with scores and recommendations
-
-**Parameters:**
-
-- `system_type` (query, optional): Specific system to query
-
-**Responses:**
-
-- `200`: Successful Response
-- `422`: Validation Error
-
----
-
-## diagnostics-v2
-
-### GET /api/v2/diagnostics/health
+### GET /api/v1/diagnostics/health
 
 **Health Check**
 
@@ -2501,7 +2522,7 @@ Health check endpoint for diagnostics domain API
 
 ---
 
-### GET /api/v2/diagnostics/schemas
+### GET /api/v1/diagnostics/schemas
 
 **Get Schemas**
 
@@ -2513,7 +2534,7 @@ Export schemas for diagnostics domain
 
 ---
 
-### GET /api/v2/diagnostics/metrics
+### GET /api/v1/diagnostics/metrics
 
 **Get System Metrics**
 
@@ -2525,7 +2546,7 @@ Get real-time system performance metrics
 
 ---
 
-### GET /api/v2/diagnostics/faults
+### GET /api/v1/diagnostics/faults
 
 **Get Fault Summary**
 
@@ -2543,7 +2564,7 @@ Get fault summary with domain-specific aggregations
 
 ---
 
-### GET /api/v2/diagnostics/system-status
+### GET /api/v1/diagnostics/system-status
 
 **Get System Status**
 
@@ -2555,7 +2576,7 @@ Get overall system health status
 
 ---
 
-### GET /api/v2/diagnostics/dtcs
+### GET /api/v1/diagnostics/dtcs
 
 **Get Dtcs**
 
@@ -2574,7 +2595,7 @@ Get diagnostic trouble codes
 
 ---
 
-### POST /api/v2/diagnostics/dtcs/resolve
+### POST /api/v1/diagnostics/dtcs/resolve
 
 **Resolve Dtc**
 
@@ -2591,7 +2612,7 @@ Content-Type: `application/json`
 
 ---
 
-### GET /api/v2/diagnostics/statistics
+### GET /api/v1/diagnostics/statistics
 
 **Get Statistics**
 
@@ -2603,7 +2624,7 @@ Get diagnostic statistics
 
 ---
 
-### GET /api/v2/diagnostics/correlations
+### GET /api/v1/diagnostics/correlations
 
 **Get Correlations**
 
@@ -2620,7 +2641,7 @@ Get fault correlations
 
 ---
 
-### GET /api/v2/diagnostics/predictions
+### GET /api/v1/diagnostics/predictions
 
 **Get Predictions**
 
@@ -2681,9 +2702,9 @@ Returns the complete OpenAPI schema for the API.
 
 ---
 
-## entities-v2
+## entities
 
-### GET /api/v2/entities/health
+### GET /api/v1/entities/health
 
 **Health Check**
 
@@ -2695,7 +2716,7 @@ Comprehensive health check for Pi RV deployment debugging
 
 ---
 
-### GET /api/v2/entities/schemas
+### GET /api/v1/entities/schemas
 
 **Get Schemas**
 
@@ -2707,7 +2728,7 @@ Export Pydantic schemas as JSON Schema for frontend validation
 
 ---
 
-### GET /api/v2/entities/debug/system-info
+### GET /api/v1/entities/debug/system-info
 
 **Get Debug Info**
 
@@ -2719,7 +2740,7 @@ Comprehensive debug information for RV Pi troubleshooting
 
 ---
 
-### GET /api/v2/entities
+### GET /api/v1/entities
 
 **Get Entities**
 
@@ -2740,7 +2761,7 @@ Get entities with filtering and pagination (v2) - optimized for Pi deployment
 
 ---
 
-### GET /api/v2/entities/safety-status
+### GET /api/v1/entities/safety-status
 
 **Get Safety Status**
 
@@ -2752,7 +2773,7 @@ Get current safety system status
 
 ---
 
-### GET /api/v2/entities/metadata
+### GET /api/v1/entities/metadata
 
 **Get Entity Metadata**
 
@@ -2764,7 +2785,7 @@ Get metadata about entity types, areas, and capabilities
 
 ---
 
-### GET /api/v2/entities/protocol-summary
+### GET /api/v1/entities/protocol-summary
 
 **Get Protocol Summary**
 
@@ -2776,7 +2797,7 @@ Get summary of entity distribution across protocols
 
 ---
 
-### GET /api/v2/entities/debug/unmapped
+### GET /api/v1/entities/debug/unmapped
 
 **Get Unmapped Entries**
 
@@ -2788,7 +2809,7 @@ Get unmapped DGN/instance pairs observed on CAN bus
 
 ---
 
-### GET /api/v2/entities/debug/unknown-pgns
+### GET /api/v1/entities/debug/unknown-pgns
 
 **Get Unknown Pgns**
 
@@ -2800,7 +2821,7 @@ Get unknown PGNs observed on CAN bus
 
 ---
 
-### GET /api/v2/entities/debug/missing-dgns
+### GET /api/v1/entities/debug/missing-dgns
 
 **Get Missing Dgns**
 
@@ -2812,11 +2833,19 @@ Get DGNs encountered but not in specification
 
 ---
 
-### POST /api/v2/entities/mappings
+### POST /api/v1/entities/mappings
 
 **Create Entity Mapping**
 
-Create new entity mapping from unmapped entry
+Create new entity mapping from unmapped entry (admin only).
+
+Configuration ops that change which hardware our API can address
+require admin role; the service layer also re-validates as
+defense in depth.
+
+**Parameters:**
+
+- `authorization` (header, optional): No description
 
 **Request Body:**
 
@@ -2829,7 +2858,7 @@ Content-Type: `application/json`
 
 ---
 
-### GET /api/v2/entities/{entity_id}
+### GET /api/v1/entities/{entity_id}
 
 **Get Entity**
 
@@ -2846,7 +2875,7 @@ Get a specific entity by ID (v2)
 
 ---
 
-### POST /api/v2/entities/{entity_id}/control
+### POST /api/v1/entities/{entity_id}/control
 
 **Control Entity**
 
@@ -2855,6 +2884,7 @@ Control a single entity with safety validation (v2) - Pi optimized
 **Parameters:**
 
 - `entity_id` (path, required): No description
+- `authorization` (header, optional): No description
 
 **Request Body:**
 
@@ -2867,12 +2897,16 @@ Content-Type: `application/json`
 
 ---
 
-### POST /api/v2/entities/bulk-control
+### POST /api/v1/entities/bulk-control
 
 **Bulk Control Entities**
 
 Execute bulk control operations with safety validation (v2) - Pi optimized
 
+**Parameters:**
+
+- `authorization` (header, optional): No description
+
 **Request Body:**
 
 Content-Type: `application/json`
@@ -2884,31 +2918,41 @@ Content-Type: `application/json`
 
 ---
 
-### POST /api/v2/entities/emergency-stop
+### POST /api/v1/entities/emergency-stop
 
 **Emergency Stop**
 
 Emergency stop - immediately halt all entity operations (Admin Only)
 
+**Parameters:**
+
+- `authorization` (header, optional): No description
+
 **Responses:**
 
 - `200`: Successful Response
+- `422`: Validation Error
 
 ---
 
-### POST /api/v2/entities/clear-emergency-stop
+### POST /api/v1/entities/clear-emergency-stop
 
 **Clear Emergency Stop**
 
 Clear emergency stop condition (Admin Only)
 
+**Parameters:**
+
+- `authorization` (header, optional): No description
+
 **Responses:**
 
 - `200`: Successful Response
+- `422`: Validation Error
 
 ---
 
-### POST /api/v2/entities/reconcile-state
+### POST /api/v1/entities/reconcile-state
 
 **Reconcile State With Rvc Bus**
 
@@ -2920,7 +2964,7 @@ Reconcile application state with RV-C bus state
 
 ---
 
-### GET /api/v2/entities/{entity_id}/history
+### GET /api/v1/entities/{entity_id}/history
 
 **Get Entity History**
 
@@ -3179,9 +3223,9 @@ Returns:
 
 ---
 
-## networks-v2
+## networks
 
-### GET /api/v2/networks/health
+### GET /api/v1/networks/health
 
 **Health Check**
 
@@ -3193,7 +3237,7 @@ Health check endpoint for networks domain API
 
 ---
 
-### GET /api/v2/networks/schemas
+### GET /api/v1/networks/schemas
 
 **Get Schemas**
 
@@ -3205,27 +3249,39 @@ Export schemas for networks domain
 
 ---
 
-### GET /api/v2/networks/status
+### GET /api/v1/networks/status
 
-**Get Network Status**
+**Get network status**
 
-Get overall network status and statistics
+Return configured CAN interface mappings, service-level CAN health, and real cumulative per-interface SocketCAN telemetry when available.
 
 **Responses:**
 
-- `200`: Successful Response
+- `200`: Truthful network summary from CAN facade and SocketCAN telemetry
 
 ---
 
-### GET /api/v2/networks/interfaces
+### GET /api/v1/networks/interfaces
 
-**Get Network Interfaces**
+**Get configured network interfaces**
 
-Get detailed information about network interfaces
+Return configured logical-to-physical CAN interface mappings with telemetry.
 
 **Responses:**
 
-- `200`: Successful Response
+- `200`: List of configured CAN interface mappings with telemetry
+
+---
+
+### GET /api/v1/networks/statistics
+
+**Get CAN network statistics**
+
+Return facade-reported queue status plus bus statistics derived from real cumulative SocketCAN counters. Queue status is not real TX queue telemetry.
+
+**Responses:**
+
+- `200`: CAN queue status and cumulative bus statistics
 
 ---
 
@@ -4146,6 +4202,10 @@ Creates a time-limited session that can be used to authorize
 safety-critical operations. Sessions are single-use for emergency
 operations and multi-use for maintenance operations.
 
+**Parameters:**
+
+- `authorization` (header, optional): No description
+
 **Request Body:**
 
 Content-Type: `application/json`
@@ -4166,6 +4226,10 @@ Authorize an operation using PIN session.
 Consumes a PIN session to authorize a specific safety-critical operation.
 Some sessions are single-use (emergency) while others allow multiple
 operations (maintenance).
+
+**Parameters:**
+
+- `authorization` (header, optional): No description
 
 **Request Body:**
 
@@ -4189,6 +4253,7 @@ Users can revoke their own sessions. Admins can revoke any session.
 **Parameters:**
 
 - `session_id` (path, required): No description
+- `authorization` (header, optional): No description
 
 **Responses:**
 
@@ -4205,9 +4270,14 @@ Revoke all PIN sessions for the current user.
 
 Useful for security cleanup or when leaving the RV.
 
+**Parameters:**
+
+- `authorization` (header, optional): No description
+
 **Responses:**
 
 - `200`: Successful Response
+- `422`: Validation Error
 
 ---
 
@@ -4219,9 +4289,14 @@ Get PIN status for the current user.
 
 Shows lockout status, active sessions, and PIN availability.
 
+**Parameters:**
+
+- `authorization` (header, optional): No description
+
 **Responses:**
 
 - `200`: Successful Response
+- `422`: Validation Error
 
 ---
 
@@ -4233,9 +4308,14 @@ Get overall PIN system status (Admin only).
 
 Provides system-wide statistics and health information.
 
+**Parameters:**
+
+- `authorization` (header, optional): No description
+
 **Responses:**
 
 - `200`: Successful Response
+- `422`: Validation Error
 
 ---
 
@@ -4248,9 +4328,14 @@ Generate new PINs for all types (Admin only).
 This is a security operation that revokes all existing sessions
 and generates new PINs. Use with caution.
 
+**Parameters:**
+
+- `authorization` (header, optional): No description
+
 **Responses:**
 
 - `200`: Successful Response
+- `422`: Validation Error
 
 ---
 
@@ -4265,6 +4350,7 @@ Provides detailed information about user's PIN authentication status.
 **Parameters:**
 
 - `user_id` (path, required): No description
+- `authorization` (header, optional): No description
 
 **Responses:**
 
@@ -4284,6 +4370,7 @@ Clears PIN attempt failures and removes lockout for the specified user.
 **Parameters:**
 
 - `user_id` (path, required): No description
+- `authorization` (header, optional): No description
 
 **Responses:**
 
@@ -4300,9 +4387,14 @@ Get security status (compatibility endpoint for frontend).
 
 Maps to the system status endpoint for consistency.
 
+**Parameters:**
+
+- `authorization` (header, optional): No description
+
 **Responses:**
 
 - `200`: Successful Response
+- `422`: Validation Error
 
 ---
 
@@ -4314,9 +4406,14 @@ Get configured PINs for the current user.
 
 Returns information about available PIN types without revealing actual PINs.
 
+**Parameters:**
+
+- `authorization` (header, optional): No description
+
 **Responses:**
 
 - `200`: Successful Response
+- `422`: Validation Error
 
 ---
 
@@ -4357,9 +4454,14 @@ Returns current state of all safety systems including:
 - System state information
 - Audit log entry count
 
+**Parameters:**
+
+- `authorization` (header, optional): No description
+
 **Responses:**
 
 - `200`: Successful Response
+- `422`: Validation Error
 
 ---
 
@@ -4371,6 +4473,10 @@ Update system state information used by safety interlocks.
 
 This endpoint allows updating vehicle state information that
 safety interlocks use to determine if operations are safe.
+
+**Parameters:**
+
+- `authorization` (header, optional): No description
 
 **Request Body:**
 
@@ -4395,9 +4501,14 @@ Returns detailed information about each safety interlock including:
 - Required conditions
 - Engagement time and reason
 
+**Parameters:**
+
+- `authorization` (header, optional): No description
+
 **Responses:**
 
 - `200`: Successful Response
+- `422`: Validation Error
 
 ---
 
@@ -4410,9 +4521,14 @@ Manually trigger safety interlock checks.
 Forces an immediate check of all safety interlocks and returns
 the results. Interlocks will be engaged/disengaged as needed.
 
+**Parameters:**
+
+- `authorization` (header, optional): No description
+
 **Responses:**
 
 - `200`: Successful Response
+- `422`: Validation Error
 
 ---
 
@@ -4430,6 +4546,10 @@ This will:
 
 WARNING: This is a safety-critical operation that requires
 manual reset with authorization.
+
+**Parameters:**
+
+- `authorization` (header, optional): No description
 
 **Request Body:**
 
@@ -4450,6 +4570,10 @@ Reset emergency stop with authorization.
 
 Requires valid authorization code. After reset, individual
 features and interlocks must be manually re-enabled.
+
+**Parameters:**
+
+- `authorization` (header, optional): No description
 
 **Request Body:**
 
@@ -4480,6 +4604,7 @@ Args:
 **Parameters:**
 
 - `max_entries` (query, optional): No description
+- `authorization` (header, optional): No description
 
 **Responses:**
 
@@ -4499,9 +4624,14 @@ Returns information about the safety monitoring system itself:
 - Watchdog timer health
 - Last check timestamps
 
+**Parameters:**
+
+- `authorization` (header, optional): No description
+
 **Responses:**
 
 - `200`: Successful Response
+- `422`: Validation Error
 
 ---
 
@@ -4513,6 +4643,10 @@ Trigger emergency stop using PIN authorization (Admin Only).
 
 Requires valid PIN session for emergency operations.
 Provides enhanced security for safety-critical operations.
+
+**Parameters:**
+
+- `authorization` (header, optional): No description
 
 **Request Body:**
 
@@ -4533,6 +4667,10 @@ Reset emergency stop using PIN authorization (Admin Only).
 
 Requires valid PIN session for reset operations.
 Provides enhanced security for safety-critical operations.
+
+**Parameters:**
+
+- `authorization` (header, optional): No description
 
 **Request Body:**
 
@@ -4555,6 +4693,10 @@ Allows temporary override of safety interlocks for maintenance or
 diagnostic operations. Requires valid PIN session with override permissions.
 Override will automatically expire after the specified duration.
 
+**Parameters:**
+
+- `authorization` (header, optional): No description
+
 **Request Body:**
 
 Content-Type: `application/json`
@@ -4574,6 +4716,10 @@ Clear an active interlock override (Admin Only).
 
 Immediately removes any active override on the specified interlock,
 returning it to normal operation.
+
+**Parameters:**
+
+- `authorization` (header, optional): No description
 
 **Request Body:**
 
@@ -4595,9 +4741,14 @@ Get all active interlock overrides (Admin Only).
 Returns information about currently active interlock overrides including
 who authorized them, when they expire, and the reason for override.
 
+**Parameters:**
+
+- `authorization` (header, optional): No description
+
 **Responses:**
 
 - `200`: Successful Response
+- `422`: Validation Error
 
 ---
 
@@ -4614,6 +4765,10 @@ In maintenance mode:
 - Mode automatically expires after the specified duration
 
 Requires valid PIN session with maintenance permissions.
+
+**Parameters:**
+
+- `authorization` (header, optional): No description
 
 **Request Body:**
 
@@ -4639,6 +4794,10 @@ Returns system to normal operational mode:
 
 Requires valid PIN session.
 
+**Parameters:**
+
+- `authorization` (header, optional): No description
+
 **Request Body:**
 
 Content-Type: `application/json`
@@ -4662,9 +4821,14 @@ Returns information about the current operational mode including:
 - When it was activated and when it expires
 - Active overrides count
 
+**Parameters:**
+
+- `authorization` (header, optional): No description
+
 **Responses:**
 
 - `200`: Successful Response
+- `422`: Validation Error
 
 ---
 
@@ -4684,6 +4848,10 @@ WARNING: Diagnostic mode is intended for troubleshooting only.
 Safety constraints may be modified during diagnostics.
 
 Requires valid PIN session with diagnostic permissions.
+
+**Parameters:**
+
+- `authorization` (header, optional): No description
 
 **Request Body:**
 
@@ -4709,6 +4877,10 @@ Returns system to normal operational mode:
 
 Requires valid PIN session.
 
+**Parameters:**
+
+- `authorization` (header, optional): No description
+
 **Request Body:**
 
 Content-Type: `application/json`
@@ -4728,7 +4900,7 @@ Content-Type: `application/json`
 
 Export all Zod-compatible schemas for frontend validation.
 
-Provides comprehensive schema definitions for Domain API v2 with
+Provides comprehensive schema definitions for Domain API v1 with
 safety-critical validation requirements.
 
 **Responses:**
@@ -5035,9 +5207,14 @@ Get complete security configuration (Admin only).
 Returns the full security configuration including all policies
 and current settings.
 
+**Parameters:**
+
+- `authorization` (header, optional): No description
+
 **Responses:**
 
 - `200`: Successful Response
+- `422`: Validation Error
 
 ---
 
@@ -5049,6 +5226,10 @@ Update complete security configuration (Admin only).
 
 Replaces the entire security configuration with the provided data.
 Use with caution as this affects all security policies.
+
+**Parameters:**
+
+- `authorization` (header, optional): No description
 
 **Request Body:**
 
@@ -5069,9 +5250,14 @@ Get security configuration summary (Admin only).
 
 Returns a condensed view of security settings and validation status.
 
+**Parameters:**
+
+- `authorization` (header, optional): No description
+
 **Responses:**
 
 - `200`: Successful Response
+- `422`: Validation Error
 
 ---
 
@@ -5083,6 +5269,10 @@ Update security mode (Admin only).
 
 Changes the overall security mode which affects multiple policies.
 Available modes: minimal, standard, strict, paranoid.
+
+**Parameters:**
+
+- `authorization` (header, optional): No description
 
 **Request Body:**
 
@@ -5107,6 +5297,7 @@ Supported policy types: pin, rate_limiting, authentication, audit, network.
 **Parameters:**
 
 - `policy_type` (path, required): No description
+- `authorization` (header, optional): No description
 
 **Request Body:**
 
@@ -5127,9 +5318,14 @@ Validate current security configuration (Admin only).
 
 Checks the current configuration for issues and provides recommendations.
 
+**Parameters:**
+
+- `authorization` (header, optional): No description
+
 **Responses:**
 
 - `200`: Successful Response
+- `422`: Validation Error
 
 ---
 
@@ -5141,9 +5337,14 @@ Reload security configuration from disk (Admin only).
 
 Forces a reload of the configuration file, useful after manual edits.
 
+**Parameters:**
+
+- `authorization` (header, optional): No description
+
 **Responses:**
 
 - `200`: Successful Response
+- `422`: Validation Error
 
 ---
 
@@ -5153,9 +5354,14 @@ Forces a reload of the configuration file, useful after manual edits.
 
 Get PIN security policy configuration (Admin only).
 
+**Parameters:**
+
+- `authorization` (header, optional): No description
+
 **Responses:**
 
 - `200`: Successful Response
+- `422`: Validation Error
 
 ---
 
@@ -5165,9 +5371,14 @@ Get PIN security policy configuration (Admin only).
 
 Get rate limiting policy configuration (Admin only).
 
+**Parameters:**
+
+- `authorization` (header, optional): No description
+
 **Responses:**
 
 - `200`: Successful Response
+- `422`: Validation Error
 
 ---
 
@@ -5177,9 +5388,14 @@ Get rate limiting policy configuration (Admin only).
 
 Get authentication policy configuration (Admin only).
 
+**Parameters:**
+
+- `authorization` (header, optional): No description
+
 **Responses:**
 
 - `200`: Successful Response
+- `422`: Validation Error
 
 ---
 
@@ -5192,9 +5408,14 @@ Get Caddy-compatible rate limit configuration (Admin only).
 Returns the IP-based rate limits that should be configured in Caddy.
 This is separate from the user-aware rate limits handled in FastAPI.
 
+**Parameters:**
+
+- `authorization` (header, optional): No description
+
 **Responses:**
 
 - `200`: Successful Response
+- `422`: Validation Error
 
 ---
 
@@ -5580,9 +5801,9 @@ Get complete coach mapping metadata including interface analysis.
 
 ---
 
-## system-v2
+## system
 
-### GET /api/v2/system/health
+### GET /api/v1/system/health
 
 **Health Check**
 
@@ -5594,7 +5815,7 @@ Health check endpoint for system domain API
 
 ---
 
-### GET /api/v2/system/schemas
+### GET /api/v1/system/schemas
 
 **Get Schemas**
 
@@ -5606,7 +5827,7 @@ Export schemas for system domain
 
 ---
 
-### GET /api/v2/system/info
+### GET /api/v1/system/info
 
 **Get System Info**
 
@@ -5618,7 +5839,7 @@ Get system information
 
 ---
 
-### GET /api/v2/system/status
+### GET /api/v1/system/status
 
 **Get System Status**
 
@@ -5639,7 +5860,7 @@ Supports multiple formats:
 
 ---
 
-### GET /api/v2/system/services
+### GET /api/v1/system/services
 
 **Get Services**
 
@@ -5651,7 +5872,7 @@ Get detailed service information
 
 ---
 
-### GET /api/v2/system/components/health
+### GET /api/v1/system/components/health
 
 **Get Component Health**
 
@@ -5666,7 +5887,7 @@ organized by category (core, network, storage, external).
 
 ---
 
-### GET /api/v2/system/events
+### GET /api/v1/system/events
 
 **Get Event Logs**
 

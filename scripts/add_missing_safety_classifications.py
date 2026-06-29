@@ -55,7 +55,7 @@ def main():
         ("device_discovery", "operational", "continue_operation", True),
         ("predictive_maintenance", "operational", "continue_operation", True),
         ("advanced_diagnostics", "safety_related", "continue_operation", True),
-        # Domain API v2 features (critical for new architecture)
+        # Domain API v1 features (critical for new architecture)
         ("domain_api_v2", "critical", "continue_operation", True),
         ("entities_api_v2", "position_critical", "maintain_position", True),
         ("diagnostics_api_v2", "safety_related", "continue_operation", True),

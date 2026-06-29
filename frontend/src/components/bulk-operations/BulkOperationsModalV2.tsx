@@ -2,7 +2,7 @@
  * Enhanced Bulk Operations Modal V2 Component
  *
  * Complete bulk operations interface combining entity selection, operation controls,
- * and real-time progress tracking. Uses domain API v2 with optimistic updates.
+ * and real-time progress tracking. Uses domain API v1 with optimistic updates.
  */
 
 import { Button } from "@/components/ui/button";

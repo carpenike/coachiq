@@ -2,7 +2,7 @@
  * Entities Domain API Client
  *
  * This module provides typed API client functions for the entities domain,
- * leveraging the new /api/v2/entities endpoints with enhanced bulk operations
+ * leveraging the new /api/v1/entities endpoints with enhanced bulk operations
  * and optimistic update support with Zod runtime validation.
  */
 
@@ -49,9 +49,9 @@ export type {
  * @returns Promise resolving to paginated entity collection
  */
 export async function fetchEntitiesV2(params?: EntitiesQueryParams): Promise<EntityCollectionSchema> {
-  // Direct Domain API v2 call - no fallback needed since legacy endpoints have been removed
+  // Direct Domain API v1 call - no fallback needed since legacy endpoints have been removed
   const queryString = params ? buildQueryString(params as Record<string, unknown>) : '';
-  const url = queryString ? `/api/v2/entities?${queryString}` : '/api/v2/entities';
+  const url = queryString ? `/api/v1/entities?${queryString}` : '/api/v1/entities';
 
   logApiRequest('GET', url, params);
   const result = await apiGet<EntityCollectionSchema>(url);
@@ -68,8 +68,8 @@ export async function fetchEntitiesV2(params?: EntitiesQueryParams): Promise<Ent
  * @returns Promise resolving to the entity data
  */
 export async function fetchEntityV2(entityId: string): Promise<EntitySchema> {
-  // Direct Domain API v2 call - no fallback needed since legacy endpoints have been removed
-  const url = `/api/v2/entities/${entityId}`;
+  // Direct Domain API v1 call - no fallback needed since legacy endpoints have been removed
+  const url = `/api/v1/entities/${entityId}`;
 
   logApiRequest('GET', url);
   const result = await apiGet<EntitySchema>(url);
@@ -88,7 +88,7 @@ export async function controlEntityV2(
   entityId: string,
   command: ControlCommandSchema
 ): Promise<OperationResultSchema> {
-  const url = `/api/v2/entities/${entityId}/control`;
+  const url = `/api/v1/entities/${entityId}/control`;
 
   logApiRequest('POST', url, command);
   const result = await apiPost<OperationResultSchema>(url, command);
@@ -111,7 +111,7 @@ export async function controlEntityV2(
 export async function bulkControlEntitiesV2(
   request: BulkControlRequestSchema
 ): Promise<BulkOperationResultSchema> {
-  const url = '/api/v2/entities/bulk-control';
+  const url = '/api/v1/entities/bulk-control';
 
   logApiRequest('POST', url, request);
   const result = await apiPost<BulkOperationResultSchema>(url, request);
@@ -126,7 +126,7 @@ export async function bulkControlEntitiesV2(
  * @returns Promise resolving to schema definitions
  */
 export async function fetchSchemasV2(): Promise<Record<string, unknown>> {
-  const url = '/api/v2/entities/schemas';
+  const url = '/api/v1/entities/schemas';
 
   logApiRequest('GET', url);
   const result = await apiGet<Record<string, unknown>>(url);
@@ -141,7 +141,7 @@ export async function fetchSchemasV2(): Promise<Record<string, unknown>> {
  * @returns Promise resolving to health status
  */
 export async function fetchEntitiesHealthV2(): Promise<Record<string, unknown>> {
-  const url = '/api/v2/entities/health';
+  const url = '/api/v1/entities/health';
 
   logApiRequest('GET', url);
   const result = await apiGet<Record<string, unknown>>(url);
@@ -244,7 +244,7 @@ export async function bulkToggleEntities(
 //
 
 /**
- * Convert legacy Entity to new EntitySchema format for v2 API compatibility
+ * Convert legacy Entity to new EntitySchema format for v1 API compatibility
  *
  * @param legacyEntity - Legacy Entity from legacy API
  * @returns New EntitySchema format

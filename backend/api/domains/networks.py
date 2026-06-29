@@ -24,7 +24,7 @@ from backend.core.dependencies import CANNetworkTelemetryService, VerifiedCANFac
 logger = logging.getLogger(__name__)
 
 
-# Domain-specific schemas for v2 API
+# Domain-specific schemas for v1 API
 class NetworkStatus(BaseModel):
     """Configured logical-to-physical network interface mapping with CAN telemetry."""
 
@@ -152,7 +152,7 @@ def _network_statuses(
 
 def create_networks_router() -> APIRouter:
     """Create the networks domain router with all endpoints"""
-    router = APIRouter(tags=["networks-v2"])
+    router = APIRouter(tags=["networks"])
 
     @router.get("/health")
     async def health_check() -> dict[str, Any]:

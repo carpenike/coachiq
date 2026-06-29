@@ -1,7 +1,7 @@
 """Tests for the entities API endpoints.
 
 The previous version of this file targeted a hybrid legacy+v2 entity
-API where the test would try ``/api/v2/entities`` first and fall back
+API where the test would try ``/api/v1/entities`` first and fall back
 to ``/api/entities`` if v2 returned 404. That layout no longer
 matches production:
 
@@ -11,18 +11,18 @@ matches production:
 - The v2 endpoints are mounted unconditionally — there is no
   feature-flag gate, so the ``override_feature_manager`` fixture the
   tests required does not (and should not) exist.
-- The v2 ``GET /api/v2/entities`` endpoint expects
+- The v2 ``GET /api/v1/entities`` endpoint expects
   ``EntityService.list_entities()`` to return a *dict-of-dicts* keyed
   by ``entity_id`` with raw entity payloads (see
   ``backend/services/entity_service.py:98`` and the conversion loop
   at ``backend/api/domains/entities.py:480``); the previous test mocks
   returned a paginated ``{"entities": [...]}`` list, which the router
   would refuse to convert.
-- ``GET /api/v2/entities/ids`` was never implemented on the v2 router
+- ``GET /api/v1/entities/ids`` was never implemented on the v2 router
   at all.
 
 Because each of these clashes is structural (contract change, not a
-mock typo), restoring real coverage for ``/api/v2/entities/*`` requires
+mock typo), restoring real coverage for ``/api/v1/entities/*`` requires
 purpose-built tests against the actual v2 schema and service contract,
 not a tweak of the existing test bodies. That is a feature task that
 deserves its own PR (likely paired with the still-open

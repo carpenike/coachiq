@@ -2,27 +2,27 @@
 
 ## Executive Summary
 
-After a comprehensive review of the frontend codebase, I found that **the frontend is already well-aligned with the new backend architecture**. The frontend is correctly using Domain API v2 patterns, proper health endpoints, modern authentication, and correct error handling patterns.
+After a comprehensive review of the frontend codebase, I found that **the frontend is already well-aligned with the new backend architecture**. The frontend is correctly using Domain API v1 patterns, proper health endpoints, modern authentication, and correct error handling patterns.
 
 ## Review Results
 
-### ✅ Domain API v2 Usage
+### ✅ Domain API v1 Usage
 
-The frontend is correctly using Domain API v2 endpoints:
-- **Entity operations**: Using `/api/v2/entities` endpoints
-- **Bulk operations**: Properly implemented with `/api/v2/entities/bulk-control`
+The frontend is correctly using Domain API v1 endpoints:
+- **Entity operations**: Using `/api/v1/entities` endpoints
+- **Bulk operations**: Properly implemented with `/api/v1/entities/bulk-control`
 - **Fallback support**: Includes backward compatibility with legacy endpoints when needed
 - **Validation**: Includes Zod runtime validation for enhanced safety
 
 Key files:
-- `frontend/src/api/domains/entities.ts`: Full Domain API v2 implementation
+- `frontend/src/api/domains/entities.ts`: Full Domain API v1 implementation
 - `frontend/src/hooks/domains/useEntitiesV2.ts`: React Query hooks with optimistic updates
 - `frontend/src/api/endpoints.ts`: Main API client using v2 endpoints
 
 ### ✅ Unified Entity Endpoints
 
 The frontend correctly uses unified entity endpoints:
-- Uses `/api/entities` (through v2 `/api/v2/entities`) for all entity operations
+- Uses `/api/entities` (through v2 `/api/v1/entities`) for all entity operations
 - NO device-specific endpoints like `/api/lights` or `/api/locks`
 - Proper entity type filtering through query parameters
 
@@ -86,7 +86,7 @@ interface ControlCommandSchema {
 
 ### ✅ React Hooks
 
-Domain API v2 hooks properly implemented:
+Domain API v1 hooks properly implemented:
 - `useEntitiesV2()` - Fetch entities with pagination
 - `useControlEntityV2()` - Single entity control with optimistic updates
 - `useBulkControlEntitiesV2()` - Bulk operations with safety features
@@ -118,12 +118,12 @@ RVC-specific endpoints are properly implemented:
 
 ### ✅ Diagnostics Endpoints
 
-Diagnostics APIs use Domain API v2 patterns:
-- `/api/v2/diagnostics/dtcs` - Diagnostic trouble codes
-- `/api/v2/diagnostics/statistics` - Diagnostic statistics
-- `/api/v2/diagnostics/correlations` - Fault correlations
-- `/api/v2/diagnostics/predictions` - Maintenance predictions
-- `/api/v2/diagnostics/health` - Diagnostics service health
+Diagnostics APIs use Domain API v1 patterns:
+- `/api/v1/diagnostics/dtcs` - Diagnostic trouble codes
+- `/api/v1/diagnostics/statistics` - Diagnostic statistics
+- `/api/v1/diagnostics/correlations` - Fault correlations
+- `/api/v1/diagnostics/predictions` - Maintenance predictions
+- `/api/v1/diagnostics/health` - Diagnostics service health
 - `/api/diagnostics/health` - System health (legacy compatibility)
 
 Backend-computed endpoints for enhanced performance:
@@ -138,7 +138,7 @@ Backend-computed endpoints for enhanced performance:
 
 3. **Bulk Operation Support**: Full implementation of bulk operations with partial success handling, timeout management, and detailed error reporting.
 
-4. **Progressive Enhancement**: Domain API v2 is used when available with automatic fallback to legacy endpoints, ensuring smooth migration.
+4. **Progressive Enhancement**: Domain API v1 is used when available with automatic fallback to legacy endpoints, ensuring smooth migration.
 
 5. **Type Safety**: Comprehensive TypeScript types that match backend Pydantic schemas exactly.
 

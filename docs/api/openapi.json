@@ -6408,7 +6408,7 @@
           "schemas"
         ],
         "summary": "Get all available schemas",
-        "description": "Export all Zod-compatible schemas for frontend validation.\n\nProvides comprehensive schema definitions for Domain API v2 with\nsafety-critical validation requirements.",
+        "description": "Export all Zod-compatible schemas for frontend validation.\n\nProvides comprehensive schema definitions for Domain API v1 with\nsafety-critical validation requirements.",
         "operationId": "get_all_schemas_api_schemas__get",
         "responses": {
           "200": {
@@ -11033,14 +11033,14 @@
         }
       }
     },
-    "/api/v2/diagnostics/health": {
+    "/api/v1/diagnostics/health": {
       "get": {
         "tags": [
-          "diagnostics-v2"
+          "diagnostics"
         ],
         "summary": "Health Check",
         "description": "Health check endpoint for diagnostics domain API",
-        "operationId": "health_check_api_v2_diagnostics_health_get",
+        "operationId": "health_check_api_v1_diagnostics_health_get",
         "responses": {
           "200": {
             "description": "Successful Response",
@@ -11055,14 +11055,14 @@
         }
       }
     },
-    "/api/v2/diagnostics/schemas": {
+    "/api/v1/diagnostics/schemas": {
       "get": {
         "tags": [
-          "diagnostics-v2"
+          "diagnostics"
         ],
         "summary": "Get Schemas",
         "description": "Export schemas for diagnostics domain",
-        "operationId": "get_schemas_api_v2_diagnostics_schemas_get",
+        "operationId": "get_schemas_api_v1_diagnostics_schemas_get",
         "responses": {
           "200": {
             "description": "Successful Response",
@@ -11071,7 +11071,7 @@
                 "schema": {
                   "additionalProperties": true,
                   "type": "object",
-                  "title": "Response Get Schemas Api V2 Diagnostics Schemas Get"
+                  "title": "Response Get Schemas Api V1 Diagnostics Schemas Get"
                 }
               }
             }
@@ -11079,14 +11079,14 @@
         }
       }
     },
-    "/api/v2/diagnostics/metrics": {
+    "/api/v1/diagnostics/metrics": {
       "get": {
         "tags": [
-          "diagnostics-v2"
+          "diagnostics"
         ],
         "summary": "Get System Metrics",
         "description": "Get real-time system performance metrics",
-        "operationId": "get_system_metrics_api_v2_diagnostics_metrics_get",
+        "operationId": "get_system_metrics_api_v1_diagnostics_metrics_get",
         "responses": {
           "200": {
             "description": "Successful Response",
@@ -11101,14 +11101,14 @@
         }
       }
     },
-    "/api/v2/diagnostics/faults": {
+    "/api/v1/diagnostics/faults": {
       "get": {
         "tags": [
-          "diagnostics-v2"
+          "diagnostics"
         ],
         "summary": "Get Fault Summary",
         "description": "Get fault summary with domain-specific aggregations",
-        "operationId": "get_fault_summary_api_v2_diagnostics_faults_get",
+        "operationId": "get_fault_summary_api_v1_diagnostics_faults_get",
         "parameters": [
           {
             "name": "system_type",
@@ -11171,14 +11171,14 @@
         }
       }
     },
-    "/api/v2/diagnostics/system-status": {
+    "/api/v1/diagnostics/system-status": {
       "get": {
         "tags": [
-          "diagnostics-v2"
+          "diagnostics"
         ],
         "summary": "Get System Status",
         "description": "Get overall system health status",
-        "operationId": "get_system_status_api_v2_diagnostics_system_status_get",
+        "operationId": "get_system_status_api_v1_diagnostics_system_status_get",
         "responses": {
           "200": {
             "description": "Successful Response",
@@ -11193,14 +11193,14 @@
         }
       }
     },
-    "/api/v2/diagnostics/dtcs": {
+    "/api/v1/diagnostics/dtcs": {
       "get": {
         "tags": [
-          "diagnostics-v2"
+          "diagnostics"
         ],
         "summary": "Get Dtcs",
         "description": "Get diagnostic trouble codes",
-        "operationId": "get_dtcs_api_v2_diagnostics_dtcs_get",
+        "operationId": "get_dtcs_api_v1_diagnostics_dtcs_get",
         "parameters": [
           {
             "name": "system_type",
@@ -11281,14 +11281,14 @@
         }
       }
     },
-    "/api/v2/diagnostics/dtcs/resolve": {
+    "/api/v1/diagnostics/dtcs/resolve": {
       "post": {
         "tags": [
-          "diagnostics-v2"
+          "diagnostics"
         ],
         "summary": "Resolve Dtc",
         "description": "Resolve a diagnostic trouble code",
-        "operationId": "resolve_dtc_api_v2_diagnostics_dtcs_resolve_post",
+        "operationId": "resolve_dtc_api_v1_diagnostics_dtcs_resolve_post",
         "requestBody": {
           "content": {
             "application/json": {
@@ -11311,7 +11311,7 @@
                     "type": "boolean"
                   },
                   "type": "object",
-                  "title": "Response Resolve Dtc Api V2 Diagnostics Dtcs Resolve Post"
+                  "title": "Response Resolve Dtc Api V1 Diagnostics Dtcs Resolve Post"
                 }
               }
             }
@@ -11329,14 +11329,14 @@
         }
       }
     },
-    "/api/v2/diagnostics/statistics": {
+    "/api/v1/diagnostics/statistics": {
       "get": {
         "tags": [
-          "diagnostics-v2"
+          "diagnostics"
         ],
         "summary": "Get Statistics",
         "description": "Get diagnostic statistics",
-        "operationId": "get_statistics_api_v2_diagnostics_statistics_get",
+        "operationId": "get_statistics_api_v1_diagnostics_statistics_get",
         "responses": {
           "200": {
             "description": "Successful Response",
@@ -11351,14 +11351,14 @@
         }
       }
     },
-    "/api/v2/diagnostics/correlations": {
+    "/api/v1/diagnostics/correlations": {
       "get": {
         "tags": [
-          "diagnostics-v2"
+          "diagnostics"
         ],
         "summary": "Get Correlations",
         "description": "Get fault correlations",
-        "operationId": "get_correlations_api_v2_diagnostics_correlations_get",
+        "operationId": "get_correlations_api_v1_diagnostics_correlations_get",
         "parameters": [
           {
             "name": "time_window_seconds",
@@ -11391,7 +11391,7 @@
                     "type": "object",
                     "additionalProperties": true
                   },
-                  "title": "Response Get Correlations Api V2 Diagnostics Correlations Get"
+                  "title": "Response Get Correlations Api V1 Diagnostics Correlations Get"
                 }
               }
             }
@@ -11409,14 +11409,14 @@
         }
       }
     },
-    "/api/v2/diagnostics/predictions": {
+    "/api/v1/diagnostics/predictions": {
       "get": {
         "tags": [
-          "diagnostics-v2"
+          "diagnostics"
         ],
         "summary": "Get Predictions",
         "description": "Get maintenance predictions",
-        "operationId": "get_predictions_api_v2_diagnostics_predictions_get",
+        "operationId": "get_predictions_api_v1_diagnostics_predictions_get",
         "parameters": [
           {
             "name": "time_horizon_days",
@@ -11442,7 +11442,7 @@
                     "type": "object",
                     "additionalProperties": true
                   },
-                  "title": "Response Get Predictions Api V2 Diagnostics Predictions Get"
+                  "title": "Response Get Predictions Api V1 Diagnostics Predictions Get"
                 }
               }
             }
@@ -11460,14 +11460,14 @@
         }
       }
     },
-    "/api/v2/entities/health": {
+    "/api/v1/entities/health": {
       "get": {
         "tags": [
-          "entities-v2"
+          "entities"
         ],
         "summary": "Health Check",
         "description": "Comprehensive health check for Pi RV deployment debugging",
-        "operationId": "health_check_api_v2_entities_health_get",
+        "operationId": "health_check_api_v1_entities_health_get",
         "responses": {
           "200": {
             "description": "Successful Response",
@@ -11476,7 +11476,7 @@
                 "schema": {
                   "additionalProperties": true,
                   "type": "object",
-                  "title": "Response Health Check Api V2 Entities Health Get"
+                  "title": "Response Health Check Api V1 Entities Health Get"
                 }
               }
             }
@@ -11484,14 +11484,14 @@
         }
       }
     },
-    "/api/v2/entities/schemas": {
+    "/api/v1/entities/schemas": {
       "get": {
         "tags": [
-          "entities-v2"
+          "entities"
         ],
         "summary": "Get Schemas",
         "description": "Export Pydantic schemas as JSON Schema for frontend validation",
-        "operationId": "get_schemas_api_v2_entities_schemas_get",
+        "operationId": "get_schemas_api_v1_entities_schemas_get",
         "responses": {
           "200": {
             "description": "Successful Response",
@@ -11500,7 +11500,7 @@
                 "schema": {
                   "additionalProperties": true,
                   "type": "object",
-                  "title": "Response Get Schemas Api V2 Entities Schemas Get"
+                  "title": "Response Get Schemas Api V1 Entities Schemas Get"
                 }
               }
             }
@@ -11508,14 +11508,14 @@
         }
       }
     },
-    "/api/v2/entities/debug/system-info": {
+    "/api/v1/entities/debug/system-info": {
       "get": {
         "tags": [
-          "entities-v2"
+          "entities"
         ],
         "summary": "Get Debug Info",
         "description": "Comprehensive debug information for RV Pi troubleshooting",
-        "operationId": "get_debug_info_api_v2_entities_debug_system_info_get",
+        "operationId": "get_debug_info_api_v1_entities_debug_system_info_get",
         "responses": {
           "200": {
             "description": "Successful Response",
@@ -11524,7 +11524,7 @@
                 "schema": {
                   "additionalProperties": true,
                   "type": "object",
-                  "title": "Response Get Debug Info Api V2 Entities Debug System Info Get"
+                  "title": "Response Get Debug Info Api V1 Entities Debug System Info Get"
                 }
               }
             }
@@ -11532,14 +11532,14 @@
         }
       }
     },
-    "/api/v2/entities": {
+    "/api/v1/entities": {
       "get": {
         "tags": [
-          "entities-v2"
+          "entities"
         ],
         "summary": "Get Entities",
         "description": "Get entities with filtering and pagination (v2) - optimized for Pi deployment",
-        "operationId": "get_entities_api_v2_entities_get",
+        "operationId": "get_entities_api_v1_entities_get",
         "parameters": [
           {
             "name": "device_type",
@@ -11647,14 +11647,14 @@
         }
       }
     },
-    "/api/v2/entities/safety-status": {
+    "/api/v1/entities/safety-status": {
       "get": {
         "tags": [
-          "entities-v2"
+          "entities"
         ],
         "summary": "Get Safety Status",
         "description": "Get current safety system status",
-        "operationId": "get_safety_status_api_v2_entities_safety_status_get",
+        "operationId": "get_safety_status_api_v1_entities_safety_status_get",
         "responses": {
           "200": {
             "description": "Successful Response",
@@ -11663,7 +11663,7 @@
                 "schema": {
                   "additionalProperties": true,
                   "type": "object",
-                  "title": "Response Get Safety Status Api V2 Entities Safety Status Get"
+                  "title": "Response Get Safety Status Api V1 Entities Safety Status Get"
                 }
               }
             }
@@ -11671,14 +11671,14 @@
         }
       }
     },
-    "/api/v2/entities/metadata": {
+    "/api/v1/entities/metadata": {
       "get": {
         "tags": [
-          "entities-v2"
+          "entities"
         ],
         "summary": "Get Entity Metadata",
         "description": "Get metadata about entity types, areas, and capabilities",
-        "operationId": "get_entity_metadata_api_v2_entities_metadata_get",
+        "operationId": "get_entity_metadata_api_v1_entities_metadata_get",
         "responses": {
           "200": {
             "description": "Successful Response",
@@ -11687,7 +11687,7 @@
                 "schema": {
                   "additionalProperties": true,
                   "type": "object",
-                  "title": "Response Get Entity Metadata Api V2 Entities Metadata Get"
+                  "title": "Response Get Entity Metadata Api V1 Entities Metadata Get"
                 }
               }
             }
@@ -11695,14 +11695,14 @@
         }
       }
     },
-    "/api/v2/entities/protocol-summary": {
+    "/api/v1/entities/protocol-summary": {
       "get": {
         "tags": [
-          "entities-v2"
+          "entities"
         ],
         "summary": "Get Protocol Summary",
         "description": "Get summary of entity distribution across protocols",
-        "operationId": "get_protocol_summary_api_v2_entities_protocol_summary_get",
+        "operationId": "get_protocol_summary_api_v1_entities_protocol_summary_get",
         "responses": {
           "200": {
             "description": "Successful Response",
@@ -11711,7 +11711,7 @@
                 "schema": {
                   "additionalProperties": true,
                   "type": "object",
-                  "title": "Response Get Protocol Summary Api V2 Entities Protocol Summary Get"
+                  "title": "Response Get Protocol Summary Api V1 Entities Protocol Summary Get"
                 }
               }
             }
@@ -11719,14 +11719,14 @@
         }
       }
     },
-    "/api/v2/entities/debug/unmapped": {
+    "/api/v1/entities/debug/unmapped": {
       "get": {
         "tags": [
-          "entities-v2"
+          "entities"
         ],
         "summary": "Get Unmapped Entries",
         "description": "Get unmapped DGN/instance pairs observed on CAN bus",
-        "operationId": "get_unmapped_entries_api_v2_entities_debug_unmapped_get",
+        "operationId": "get_unmapped_entries_api_v1_entities_debug_unmapped_get",
         "responses": {
           "200": {
             "description": "Successful Response",
@@ -11735,7 +11735,7 @@
                 "schema": {
                   "additionalProperties": true,
                   "type": "object",
-                  "title": "Response Get Unmapped Entries Api V2 Entities Debug Unmapped Get"
+                  "title": "Response Get Unmapped Entries Api V1 Entities Debug Unmapped Get"
                 }
               }
             }
@@ -11743,14 +11743,14 @@
         }
       }
     },
-    "/api/v2/entities/debug/unknown-pgns": {
+    "/api/v1/entities/debug/unknown-pgns": {
       "get": {
         "tags": [
-          "entities-v2"
+          "entities"
         ],
         "summary": "Get Unknown Pgns",
         "description": "Get unknown PGNs observed on CAN bus",
-        "operationId": "get_unknown_pgns_api_v2_entities_debug_unknown_pgns_get",
+        "operationId": "get_unknown_pgns_api_v1_entities_debug_unknown_pgns_get",
         "responses": {
           "200": {
             "description": "Successful Response",
@@ -11759,7 +11759,7 @@
                 "schema": {
                   "additionalProperties": true,
                   "type": "object",
-                  "title": "Response Get Unknown Pgns Api V2 Entities Debug Unknown Pgns Get"
+                  "title": "Response Get Unknown Pgns Api V1 Entities Debug Unknown Pgns Get"
                 }
               }
             }
@@ -11767,14 +11767,14 @@
         }
       }
     },
-    "/api/v2/entities/debug/missing-dgns": {
+    "/api/v1/entities/debug/missing-dgns": {
       "get": {
         "tags": [
-          "entities-v2"
+          "entities"
         ],
         "summary": "Get Missing Dgns",
         "description": "Get DGNs encountered but not in specification",
-        "operationId": "get_missing_dgns_api_v2_entities_debug_missing_dgns_get",
+        "operationId": "get_missing_dgns_api_v1_entities_debug_missing_dgns_get",
         "responses": {
           "200": {
             "description": "Successful Response",
@@ -11783,7 +11783,7 @@
                 "schema": {
                   "additionalProperties": true,
                   "type": "object",
-                  "title": "Response Get Missing Dgns Api V2 Entities Debug Missing Dgns Get"
+                  "title": "Response Get Missing Dgns Api V1 Entities Debug Missing Dgns Get"
                 }
               }
             }
@@ -11791,14 +11791,14 @@
         }
       }
     },
-    "/api/v2/entities/mappings": {
+    "/api/v1/entities/mappings": {
       "post": {
         "tags": [
-          "entities-v2"
+          "entities"
         ],
         "summary": "Create Entity Mapping",
         "description": "Create new entity mapping from unmapped entry (admin only).\n\nConfiguration ops that change which hardware our API can address\nrequire admin role; the service layer also re-validates as\ndefense in depth.",
-        "operationId": "create_entity_mapping_api_v2_entities_mappings_post",
+        "operationId": "create_entity_mapping_api_v1_entities_mappings_post",
         "parameters": [
           {
             "name": "authorization",
@@ -11837,7 +11837,7 @@
                 "schema": {
                   "type": "object",
                   "additionalProperties": true,
-                  "title": "Response Create Entity Mapping Api V2 Entities Mappings Post"
+                  "title": "Response Create Entity Mapping Api V1 Entities Mappings Post"
                 }
               }
             }
@@ -11855,14 +11855,14 @@
         }
       }
     },
-    "/api/v2/entities/{entity_id}": {
+    "/api/v1/entities/{entity_id}": {
       "get": {
         "tags": [
-          "entities-v2"
+          "entities"
         ],
         "summary": "Get Entity",
         "description": "Get a specific entity by ID (v2)",
-        "operationId": "get_entity_api_v2_entities__entity_id__get",
+        "operationId": "get_entity_api_v1_entities__entity_id__get",
         "parameters": [
           {
             "name": "entity_id",
@@ -11898,14 +11898,14 @@
         }
       }
     },
-    "/api/v2/entities/{entity_id}/control": {
+    "/api/v1/entities/{entity_id}/control": {
       "post": {
         "tags": [
-          "entities-v2"
+          "entities"
         ],
         "summary": "Control Entity",
         "description": "Control a single entity with safety validation (v2) - Pi optimized",
-        "operationId": "control_entity_api_v2_entities__entity_id__control_post",
+        "operationId": "control_entity_api_v1_entities__entity_id__control_post",
         "parameters": [
           {
             "name": "entity_id",
@@ -11967,14 +11967,14 @@
         }
       }
     },
-    "/api/v2/entities/bulk-control": {
+    "/api/v1/entities/bulk-control": {
       "post": {
         "tags": [
-          "entities-v2"
+          "entities"
         ],
         "summary": "Bulk Control Entities",
         "description": "Execute bulk control operations with safety validation (v2) - Pi optimized",
-        "operationId": "bulk_control_entities_api_v2_entities_bulk_control_post",
+        "operationId": "bulk_control_entities_api_v1_entities_bulk_control_post",
         "parameters": [
           {
             "name": "authorization",
@@ -12027,14 +12027,14 @@
         }
       }
     },
-    "/api/v2/entities/emergency-stop": {
+    "/api/v1/entities/emergency-stop": {
       "post": {
         "tags": [
-          "entities-v2"
+          "entities"
         ],
         "summary": "Emergency Stop",
         "description": "Emergency stop - immediately halt all entity operations (Admin Only)",
-        "operationId": "emergency_stop_api_v2_entities_emergency_stop_post",
+        "operationId": "emergency_stop_api_v1_entities_emergency_stop_post",
         "parameters": [
           {
             "name": "authorization",
@@ -12061,7 +12061,7 @@
                 "schema": {
                   "type": "object",
                   "additionalProperties": true,
-                  "title": "Response Emergency Stop Api V2 Entities Emergency Stop Post"
+                  "title": "Response Emergency Stop Api V1 Entities Emergency Stop Post"
                 }
               }
             }
@@ -12079,14 +12079,14 @@
         }
       }
     },
-    "/api/v2/entities/clear-emergency-stop": {
+    "/api/v1/entities/clear-emergency-stop": {
       "post": {
         "tags": [
-          "entities-v2"
+          "entities"
         ],
         "summary": "Clear Emergency Stop",
         "description": "Clear emergency stop condition (Admin Only)",
-        "operationId": "clear_emergency_stop_api_v2_entities_clear_emergency_stop_post",
+        "operationId": "clear_emergency_stop_api_v1_entities_clear_emergency_stop_post",
         "parameters": [
           {
             "name": "authorization",
@@ -12113,7 +12113,7 @@
                 "schema": {
                   "type": "object",
                   "additionalProperties": true,
-                  "title": "Response Clear Emergency Stop Api V2 Entities Clear Emergency Stop Post"
+                  "title": "Response Clear Emergency Stop Api V1 Entities Clear Emergency Stop Post"
                 }
               }
             }
@@ -12131,14 +12131,14 @@
         }
       }
     },
-    "/api/v2/entities/reconcile-state": {
+    "/api/v1/entities/reconcile-state": {
       "post": {
         "tags": [
-          "entities-v2"
+          "entities"
         ],
         "summary": "Reconcile State With Rvc Bus",
         "description": "Reconcile application state with RV-C bus state",
-        "operationId": "reconcile_state_with_rvc_bus_api_v2_entities_reconcile_state_post",
+        "operationId": "reconcile_state_with_rvc_bus_api_v1_entities_reconcile_state_post",
         "responses": {
           "200": {
             "description": "Successful Response",
@@ -12147,7 +12147,7 @@
                 "schema": {
                   "additionalProperties": true,
                   "type": "object",
-                  "title": "Response Reconcile State With Rvc Bus Api V2 Entities Reconcile State Post"
+                  "title": "Response Reconcile State With Rvc Bus Api V1 Entities Reconcile State Post"
                 }
               }
             }
@@ -12155,14 +12155,14 @@
         }
       }
     },
-    "/api/v2/entities/{entity_id}/history": {
+    "/api/v1/entities/{entity_id}/history": {
       "get": {
         "tags": [
-          "entities-v2"
+          "entities"
         ],
         "summary": "Get Entity History",
         "description": "Get entity state change history",
-        "operationId": "get_entity_history_api_v2_entities__entity_id__history_get",
+        "operationId": "get_entity_history_api_v1_entities__entity_id__history_get",
         "parameters": [
           {
             "name": "entity_id",
@@ -12212,7 +12212,7 @@
                 "schema": {
                   "type": "object",
                   "additionalProperties": true,
-                  "title": "Response Get Entity History Api V2 Entities  Entity Id  History Get"
+                  "title": "Response Get Entity History Api V1 Entities  Entity Id  History Get"
                 }
               }
             }
@@ -12230,14 +12230,14 @@
         }
       }
     },
-    "/api/v2/networks/health": {
+    "/api/v1/networks/health": {
       "get": {
         "tags": [
-          "networks-v2"
+          "networks"
         ],
         "summary": "Health Check",
         "description": "Health check endpoint for networks domain API",
-        "operationId": "health_check_api_v2_networks_health_get",
+        "operationId": "health_check_api_v1_networks_health_get",
         "responses": {
           "200": {
             "description": "Successful Response",
@@ -12246,7 +12246,7 @@
                 "schema": {
                   "additionalProperties": true,
                   "type": "object",
-                  "title": "Response Health Check Api V2 Networks Health Get"
+                  "title": "Response Health Check Api V1 Networks Health Get"
                 }
               }
             }
@@ -12254,14 +12254,14 @@
         }
       }
     },
-    "/api/v2/networks/schemas": {
+    "/api/v1/networks/schemas": {
       "get": {
         "tags": [
-          "networks-v2"
+          "networks"
         ],
         "summary": "Get Schemas",
         "description": "Export schemas for networks domain",
-        "operationId": "get_schemas_api_v2_networks_schemas_get",
+        "operationId": "get_schemas_api_v1_networks_schemas_get",
         "responses": {
           "200": {
             "description": "Successful Response",
@@ -12270,7 +12270,7 @@
                 "schema": {
                   "additionalProperties": true,
                   "type": "object",
-                  "title": "Response Get Schemas Api V2 Networks Schemas Get"
+                  "title": "Response Get Schemas Api V1 Networks Schemas Get"
                 }
               }
             }
@@ -12278,14 +12278,14 @@
         }
       }
     },
-    "/api/v2/networks/status": {
+    "/api/v1/networks/status": {
       "get": {
         "tags": [
-          "networks-v2"
+          "networks"
         ],
         "summary": "Get network status",
         "description": "Return configured CAN interface mappings, service-level CAN health, and real cumulative per-interface SocketCAN telemetry when available.",
-        "operationId": "get_network_status_api_v2_networks_status_get",
+        "operationId": "get_network_status_api_v1_networks_status_get",
         "responses": {
           "200": {
             "description": "Truthful network summary from CAN facade and SocketCAN telemetry",
@@ -12300,14 +12300,14 @@
         }
       }
     },
-    "/api/v2/networks/interfaces": {
+    "/api/v1/networks/interfaces": {
       "get": {
         "tags": [
-          "networks-v2"
+          "networks"
         ],
         "summary": "Get configured network interfaces",
         "description": "Return configured logical-to-physical CAN interface mappings with telemetry.",
-        "operationId": "get_network_interfaces_api_v2_networks_interfaces_get",
+        "operationId": "get_network_interfaces_api_v1_networks_interfaces_get",
         "responses": {
           "200": {
             "description": "List of configured CAN interface mappings with telemetry",
@@ -12318,7 +12318,7 @@
                     "$ref": "#/components/schemas/NetworkStatus"
                   },
                   "type": "array",
-                  "title": "Response Get Network Interfaces Api V2 Networks Interfaces Get"
+                  "title": "Response Get Network Interfaces Api V1 Networks Interfaces Get"
                 }
               }
             }
@@ -12326,14 +12326,14 @@
         }
       }
     },
-    "/api/v2/networks/statistics": {
+    "/api/v1/networks/statistics": {
       "get": {
         "tags": [
-          "networks-v2"
+          "networks"
         ],
         "summary": "Get CAN network statistics",
         "description": "Return facade-reported queue status plus bus statistics derived from real cumulative SocketCAN counters. Queue status is not real TX queue telemetry.",
-        "operationId": "get_network_statistics_api_v2_networks_statistics_get",
+        "operationId": "get_network_statistics_api_v1_networks_statistics_get",
         "responses": {
           "200": {
             "description": "CAN queue status and cumulative bus statistics",
@@ -12348,14 +12348,14 @@
         }
       }
     },
-    "/api/v2/system/health": {
+    "/api/v1/system/health": {
       "get": {
         "tags": [
-          "system-v2"
+          "system"
         ],
         "summary": "Health Check",
         "description": "Health check endpoint for system domain API",
-        "operationId": "health_check_api_v2_system_health_get",
+        "operationId": "health_check_api_v1_system_health_get",
         "responses": {
           "200": {
             "description": "Successful Response",
@@ -12370,14 +12370,14 @@
         }
       }
     },
-    "/api/v2/system/schemas": {
+    "/api/v1/system/schemas": {
       "get": {
         "tags": [
-          "system-v2"
+          "system"
         ],
         "summary": "Get Schemas",
         "description": "Export schemas for system domain",
-        "operationId": "get_schemas_api_v2_system_schemas_get",
+        "operationId": "get_schemas_api_v1_system_schemas_get",
         "responses": {
           "200": {
             "description": "Successful Response",
@@ -12386,7 +12386,7 @@
                 "schema": {
                   "additionalProperties": true,
                   "type": "object",
-                  "title": "Response Get Schemas Api V2 System Schemas Get"
+                  "title": "Response Get Schemas Api V1 System Schemas Get"
                 }
               }
             }
@@ -12394,14 +12394,14 @@
         }
       }
     },
-    "/api/v2/system/info": {
+    "/api/v1/system/info": {
       "get": {
         "tags": [
-          "system-v2"
+          "system"
         ],
         "summary": "Get System Info",
         "description": "Get system information",
-        "operationId": "get_system_info_api_v2_system_info_get",
+        "operationId": "get_system_info_api_v1_system_info_get",
         "responses": {
           "200": {
             "description": "Successful Response",
@@ -12416,14 +12416,14 @@
         }
       }
     },
-    "/api/v2/system/status": {
+    "/api/v1/system/status": {
       "get": {
         "tags": [
-          "system-v2"
+          "system"
         ],
         "summary": "Get System Status",
         "description": "Get overall system status with enhanced metadata\n\nSupports multiple formats:\n- default: Standard SystemStatus response\n- ietf: IETF health+json compliant format",
-        "operationId": "get_system_status_api_v2_system_status_get",
+        "operationId": "get_system_status_api_v1_system_status_get",
         "parameters": [
           {
             "name": "format",
@@ -12450,7 +12450,7 @@
                       "$ref": "#/components/schemas/IETFHealthStatusResponse"
                     }
                   ],
-                  "title": "Response Get System Status Api V2 System Status Get"
+                  "title": "Response Get System Status Api V1 System Status Get"
                 }
               }
             }
@@ -12468,14 +12468,14 @@
         }
       }
     },
-    "/api/v2/system/services": {
+    "/api/v1/system/services": {
       "get": {
         "tags": [
-          "system-v2"
+          "system"
         ],
         "summary": "Get Services",
         "description": "Get detailed service information",
-        "operationId": "get_services_api_v2_system_services_get",
+        "operationId": "get_services_api_v1_system_services_get",
         "responses": {
           "200": {
             "description": "Successful Response",
@@ -12486,7 +12486,7 @@
                     "$ref": "#/components/schemas/backend__api__domains__system__ServiceStatus"
                   },
                   "type": "array",
-                  "title": "Response Get Services Api V2 System Services Get"
+                  "title": "Response Get Services Api V1 System Services Get"
                 }
               }
             }
@@ -12494,14 +12494,14 @@
         }
       }
     },
-    "/api/v2/system/components/health": {
+    "/api/v1/system/components/health": {
       "get": {
         "tags": [
-          "system-v2"
+          "system"
         ],
         "summary": "Get Component Health",
         "description": "Get detailed health status for all system components\n\nReturns health information for individual system components,\norganized by category (core, network, storage, external).",
-        "operationId": "get_component_health_api_v2_system_components_health_get",
+        "operationId": "get_component_health_api_v1_system_components_health_get",
         "responses": {
           "200": {
             "description": "Successful Response",
@@ -12516,14 +12516,14 @@
         }
       }
     },
-    "/api/v2/system/events": {
+    "/api/v1/system/events": {
       "get": {
         "tags": [
-          "system-v2"
+          "system"
         ],
         "summary": "Get Event Logs",
         "description": "Get system event logs with filtering\n\nReturns recent system events that can be filtered by:\n- Log level (debug, info, warning, error, critical)\n- Component name\n- Time range",
-        "operationId": "get_event_logs_api_v2_system_events_get",
+        "operationId": "get_event_logs_api_v1_system_events_get",
         "parameters": [
           {
             "name": "limit",
@@ -14902,7 +14902,7 @@
           "command"
         ],
         "title": "ControlCommandV2",
-        "description": "Enhanced control command schema for v2 API"
+        "description": "Enhanced control command schema for v1 API"
       },
       "CustomMetricRequest": {
         "properties": {
@@ -15739,7 +15739,7 @@
           "last_updated"
         ],
         "title": "EntitySchemaV2",
-        "description": "Enhanced entity schema for v2 API"
+        "description": "Enhanced entity schema for v1 API"
       },
       "EntitySummary": {
         "properties": {

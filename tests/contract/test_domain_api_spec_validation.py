@@ -1,5 +1,5 @@
 """
-Contract Testing for Domain API v2 - Simplified OpenAPI Validation
+Contract Testing for Domain API v1 - Simplified OpenAPI Validation
 
 This module provides basic contract testing that validates the generated OpenAPI
 specification matches our documented API design patterns.
@@ -18,10 +18,10 @@ def test_openapi_spec_generation():
     """Test that FastAPI generates a valid OpenAPI specification.
 
     Updated 2026-05-13: the legacy ``/api/entities`` route was retired
-    in favor of ``/api/v2/entities`` (see PR #126); assert against the
+    in favor of ``/api/v1/entities`` (see PR #126); assert against the
     v2 path instead. The route comes from
     ``backend/api/domains/entities.py`` mounted under
-    ``/api/v2/entities`` by ``register_all_domain_routers``.
+    ``/api/v1/entities`` by ``register_all_domain_routers``.
     """
     app = create_app()
 
@@ -40,14 +40,14 @@ def test_openapi_spec_generation():
 
     # Check that we have the v2 entity routes (legacy /api/entities is gone).
     paths = openapi_schema["paths"]
-    assert any("/api/v2/entities" in path for path in paths), "Should have v2 entity routes"
+    assert any("/api/v1/entities" in path for path in paths), "Should have v2 entity routes"
 
 
 def test_domain_api_route_structure():
     """Test that domain API routes follow expected patterns.
 
     Updated 2026-05-13: legacy ``/api/entities`` is gone; the v2 entity
-    routes live under ``/api/v2/entities``. See PR #126.
+    routes live under ``/api/v1/entities``. See PR #126.
     """
     app = create_app()
 
@@ -57,8 +57,8 @@ def test_domain_api_route_structure():
             routes.append(route.path)
 
     # Should have v2 entity routes
-    v2_entity_routes = [r for r in routes if r.startswith("/api/v2/entities")]
-    assert len(v2_entity_routes) > 0, "Should have /api/v2/entities routes"
+    v2_entity_routes = [r for r in routes if r.startswith("/api/v1/entities")]
+    assert len(v2_entity_routes) > 0, "Should have /api/v1/entities routes"
 
     # Check that route patterns match expected structure
     api_routes = [r for r in routes if r.startswith("/api/")]
@@ -70,7 +70,7 @@ def test_legacy_entities_endpoint():
 
     Renamed 2026-05-13 (was ``test_legacy_entities_endpoint``): the
     legacy ``/api/entities`` path no longer exists. We point at
-    ``/api/v2/entities`` and accept either 200 (full success) or 500
+    ``/api/v1/entities`` and accept either 200 (full success) or 500
     (expected when the EntityService can't fully start in this minimal
     test app). 404 specifically must NOT happen -- if it does, the
     domain router registration is broken (see PR #126 cluster context).
@@ -78,11 +78,11 @@ def test_legacy_entities_endpoint():
     app = create_app()
     client = TestClient(app)
 
-    response = client.get("/api/v2/entities")
+    response = client.get("/api/v1/entities")
 
     assert response.status_code in [200, 500], (
         f"Unexpected status: {response.status_code} -- 404 means the"
-        " /api/v2/entities router is no longer registered"
+        " /api/v1/entities router is no longer registered"
     )
 
 
@@ -126,7 +126,7 @@ def test_response_schema_patterns():
         data = response.json()
         assert "status" in data, "Health response should have status"
 
-    response = client.get("/api/v2/entities")
+    response = client.get("/api/v1/entities")
     if response.status_code == 200:
         data = response.json()
         assert isinstance(data, (list, dict)), "Entities response should be list or dict"
@@ -192,15 +192,15 @@ class TestContractBaseline:
         # WebSocket routes may be 0 in test environment, that's OK
 
     def test_domain_routes_detection(self):
-        """Detect if domain API v2 routes are available"""
+        """Detect if domain API v1 routes are available"""
         app = create_app()
 
         domain_routes = []
         for route in app.routes:
-            if hasattr(route, "path") and "/api/v2/" in route.path:
+            if hasattr(route, "path") and "/api/v1/" in route.path:
                 domain_routes.append(route.path)
 
-        print(f"\\nDomain API v2 routes found: {len(domain_routes)}")
+        print(f"\\nDomain API v1 routes found: {len(domain_routes)}")
         for route in sorted(domain_routes):
             print(f"  {route}")
 

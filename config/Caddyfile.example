@@ -116,7 +116,7 @@ coachiq.your-domain.com {
         }
     }
 
-    handle_path /api/v2/entities/control/* {
+    handle_path /api/v1/entities/control/* {
         rate_limit zone control_critical
         reverse_proxy localhost:8000 {
             header_up X-Request-ID {http.request.uuid}

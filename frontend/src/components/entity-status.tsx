@@ -1,9 +1,9 @@
 /**
  * Entity Status Component
  *
- * Demonstrates the enhanced state management system with Domain API v2 progressive enhancement.
+ * Demonstrates the enhanced state management system with Domain API v1 progressive enhancement.
  * This component serves as an example of how to use the enhanced React Query hooks that
- * automatically use Domain API v2 when available and fall back to legacy API.
+ * automatically use Domain API v1 when available and fall back to legacy API.
  */
 
 import type { ReactNode } from "react";
@@ -227,8 +227,8 @@ function EntityOverviewCard() {
 }
 
 /**
- * Domain API v2 Status Component
- * Demonstrates the enhanced Domain API v2 progressive enhancement features
+ * Domain API v1 Status Component
+ * Demonstrates the enhanced Domain API v1 progressive enhancement features
  */
 function DomainAPIStatusCard() {
   const { data: isDomainAPIAvailable, isLoading, error } = useEntitiesDomainAPIAvailability();
@@ -257,14 +257,14 @@ function DomainAPIStatusCard() {
   return (
     <Card>
       <CardHeader>
-        <CardTitle>Domain API v2 Status</CardTitle>
+        <CardTitle>Domain API v1 Status</CardTitle>
         <CardDescription>Progressive enhancement with fallback support</CardDescription>
       </CardHeader>
       <CardContent>
         <div className="flex flex-col gap-3">
           {/* API Status */}
           <div className="flex justify-between items-center">
-            <span>Domain API v2</span>
+            <span>Domain API v1</span>
             <Badge variant={isDomainAPIAvailable ? 'default' : 'secondary'}>
               {isDomainAPIAvailable ? 'Available' : 'Legacy Fallback'}
             </Badge>
@@ -302,7 +302,7 @@ function DomainAPIStatusCard() {
               </div>
               <span className="text-xs text-muted-foreground">
                 {isDomainAPIAvailable
-                  ? 'Using Domain API v2 with validation and safety-aware optimistic updates'
+                  ? 'Using Domain API v1 with validation and safety-aware optimistic updates'
                   : 'Using legacy API with individual calls fallback'}
               </span>
             </div>

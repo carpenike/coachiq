@@ -76,7 +76,7 @@ async def test_unprotected_endpoint_bypasses_authentication(
     middleware: SecureAuthenticationMiddleware,
 ) -> None:
     """Non-protected paths continue without auth even when services exist."""
-    response = await middleware.dispatch(make_request("/api/v2/entities"), call_next)
+    response = await middleware.dispatch(make_request("/api/v1/entities"), call_next)
 
     assert response.status_code == 200
     middleware.token_service.extract_access_token.assert_not_called()
@@ -90,7 +90,7 @@ async def test_protected_endpoint_without_tokens_returns_auth_error(
     middleware.token_service.extract_access_token.return_value = None
 
     auth_result = await middleware._authenticate_request(
-        make_request("/api/v2/entities/bulk-control")
+        make_request("/api/v1/entities/bulk-control")
     )
     response = middleware._create_auth_error_response(
         auth_result["error"], auth_result["status_code"]
@@ -112,7 +112,7 @@ async def test_bearer_access_token_authenticates_request(
     middleware.auth_manager.validate_token.return_value = {"sub": "user-1", "username": "ryan"}
 
     auth_result = await middleware._authenticate_request(
-        make_request("/api/v2/entities/bulk-control", authorization="Bearer access-token")
+        make_request("/api/v1/entities/bulk-control", authorization="Bearer access-token")
     )
 
     assert auth_result["authenticated"] is True
@@ -141,7 +141,7 @@ async def test_invalid_access_token_falls_back_to_refresh_cookie(
 
     auth_result = await middleware._authenticate_request(
         make_request(
-            "/api/v2/entities/bulk-control",
+            "/api/v1/entities/bulk-control",
             authorization="Bearer bad-access",
             cookie="refresh_token=refresh-1",
         )
@@ -166,7 +166,7 @@ async def test_refresh_failure_returns_auth_error(
     )
 
     auth_result = await middleware._authenticate_request(
-        make_request("/api/v2/entities/bulk-control", cookie="refresh_token=bad")
+        make_request("/api/v1/entities/bulk-control", cookie="refresh_token=bad")
     )
     response = middleware._create_auth_error_response(
         auth_result["error"], auth_result["status_code"]

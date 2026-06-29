@@ -99,11 +99,11 @@ nix run .#ci
 
 # API Endpoint Design Decision
 
-All light-related API operations are consolidated under `/api/v2/entities` endpoints (e.g., `/api/v2/entities?device_type=light`). Legacy per-type and v1 entity endpoints are not used. This ensures a unified, type-safe, and extensible API surface for all entity types.
+All light-related API operations are consolidated under `/api/v1/entities` endpoints (e.g., `/api/v1/entities?device_type=light`). Legacy per-type and v1 entity endpoints are not used. This ensures a unified, type-safe, and extensible API surface for all entity types.
 
 ## Entity Control Command Structure
 
-When controlling entities via the `/api/v2/entities/{id}/control` endpoint, the request body must use the standardized command format:
+When controlling entities via the `/api/v1/entities/{id}/control` endpoint, the request body must use the standardized command format:
 
 ```json
 // Turn light on

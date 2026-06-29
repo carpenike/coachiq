@@ -3721,7 +3721,7 @@ export interface paths {
          * Get all available schemas
          * @description Export all Zod-compatible schemas for frontend validation.
          *
-         *     Provides comprehensive schema definitions for Domain API v2 with
+         *     Provides comprehensive schema definitions for Domain API v1 with
          *     safety-critical validation requirements.
          */
         get: operations["get_all_schemas_api_schemas__get"];
@@ -5957,7 +5957,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/v2/diagnostics/health": {
+    "/api/v1/diagnostics/health": {
         parameters: {
             query?: never;
             header?: never;
@@ -5968,7 +5968,7 @@ export interface paths {
          * Health Check
          * @description Health check endpoint for diagnostics domain API
          */
-        get: operations["health_check_api_v2_diagnostics_health_get"];
+        get: operations["health_check_api_v1_diagnostics_health_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -5977,7 +5977,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/v2/diagnostics/schemas": {
+    "/api/v1/diagnostics/schemas": {
         parameters: {
             query?: never;
             header?: never;
@@ -5988,7 +5988,7 @@ export interface paths {
          * Get Schemas
          * @description Export schemas for diagnostics domain
          */
-        get: operations["get_schemas_api_v2_diagnostics_schemas_get"];
+        get: operations["get_schemas_api_v1_diagnostics_schemas_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -5997,7 +5997,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/v2/diagnostics/metrics": {
+    "/api/v1/diagnostics/metrics": {
         parameters: {
             query?: never;
             header?: never;
@@ -6008,7 +6008,7 @@ export interface paths {
          * Get System Metrics
          * @description Get real-time system performance metrics
          */
-        get: operations["get_system_metrics_api_v2_diagnostics_metrics_get"];
+        get: operations["get_system_metrics_api_v1_diagnostics_metrics_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -6017,7 +6017,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/v2/diagnostics/faults": {
+    "/api/v1/diagnostics/faults": {
         parameters: {
             query?: never;
             header?: never;
@@ -6028,7 +6028,7 @@ export interface paths {
          * Get Fault Summary
          * @description Get fault summary with domain-specific aggregations
          */
-        get: operations["get_fault_summary_api_v2_diagnostics_faults_get"];
+        get: operations["get_fault_summary_api_v1_diagnostics_faults_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -6037,7 +6037,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/v2/diagnostics/system-status": {
+    "/api/v1/diagnostics/system-status": {
         parameters: {
             query?: never;
             header?: never;
@@ -6048,7 +6048,7 @@ export interface paths {
          * Get System Status
          * @description Get overall system health status
          */
-        get: operations["get_system_status_api_v2_diagnostics_system_status_get"];
+        get: operations["get_system_status_api_v1_diagnostics_system_status_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -6057,7 +6057,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/v2/diagnostics/dtcs": {
+    "/api/v1/diagnostics/dtcs": {
         parameters: {
             query?: never;
             header?: never;
@@ -6068,7 +6068,7 @@ export interface paths {
          * Get Dtcs
          * @description Get diagnostic trouble codes
          */
-        get: operations["get_dtcs_api_v2_diagnostics_dtcs_get"];
+        get: operations["get_dtcs_api_v1_diagnostics_dtcs_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -6077,7 +6077,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/v2/diagnostics/dtcs/resolve": {
+    "/api/v1/diagnostics/dtcs/resolve": {
         parameters: {
             query?: never;
             header?: never;
@@ -6090,14 +6090,14 @@ export interface paths {
          * Resolve Dtc
          * @description Resolve a diagnostic trouble code
          */
-        post: operations["resolve_dtc_api_v2_diagnostics_dtcs_resolve_post"];
+        post: operations["resolve_dtc_api_v1_diagnostics_dtcs_resolve_post"];
         delete?: never;
         options?: never;
         head?: never;
         patch?: never;
         trace?: never;
     };
-    "/api/v2/diagnostics/statistics": {
+    "/api/v1/diagnostics/statistics": {
         parameters: {
             query?: never;
             header?: never;
@@ -6108,7 +6108,7 @@ export interface paths {
          * Get Statistics
          * @description Get diagnostic statistics
          */
-        get: operations["get_statistics_api_v2_diagnostics_statistics_get"];
+        get: operations["get_statistics_api_v1_diagnostics_statistics_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -6117,7 +6117,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/v2/diagnostics/correlations": {
+    "/api/v1/diagnostics/correlations": {
         parameters: {
             query?: never;
             header?: never;
@@ -6128,7 +6128,7 @@ export interface paths {
          * Get Correlations
          * @description Get fault correlations
          */
-        get: operations["get_correlations_api_v2_diagnostics_correlations_get"];
+        get: operations["get_correlations_api_v1_diagnostics_correlations_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -6137,7 +6137,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/v2/diagnostics/predictions": {
+    "/api/v1/diagnostics/predictions": {
         parameters: {
             query?: never;
             header?: never;
@@ -6148,7 +6148,7 @@ export interface paths {
          * Get Predictions
          * @description Get maintenance predictions
          */
-        get: operations["get_predictions_api_v2_diagnostics_predictions_get"];
+        get: operations["get_predictions_api_v1_diagnostics_predictions_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -6157,7 +6157,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/v2/entities/health": {
+    "/api/v1/entities/health": {
         parameters: {
             query?: never;
             header?: never;
@@ -6168,7 +6168,7 @@ export interface paths {
          * Health Check
          * @description Comprehensive health check for Pi RV deployment debugging
          */
-        get: operations["health_check_api_v2_entities_health_get"];
+        get: operations["health_check_api_v1_entities_health_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -6177,7 +6177,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/v2/entities/schemas": {
+    "/api/v1/entities/schemas": {
         parameters: {
             query?: never;
             header?: never;
@@ -6188,7 +6188,7 @@ export interface paths {
          * Get Schemas
          * @description Export Pydantic schemas as JSON Schema for frontend validation
          */
-        get: operations["get_schemas_api_v2_entities_schemas_get"];
+        get: operations["get_schemas_api_v1_entities_schemas_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -6197,7 +6197,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/v2/entities/debug/system-info": {
+    "/api/v1/entities/debug/system-info": {
         parameters: {
             query?: never;
             header?: never;
@@ -6208,7 +6208,7 @@ export interface paths {
          * Get Debug Info
          * @description Comprehensive debug information for RV Pi troubleshooting
          */
-        get: operations["get_debug_info_api_v2_entities_debug_system_info_get"];
+        get: operations["get_debug_info_api_v1_entities_debug_system_info_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -6217,7 +6217,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/v2/entities": {
+    "/api/v1/entities": {
         parameters: {
             query?: never;
             header?: never;
@@ -6228,7 +6228,7 @@ export interface paths {
          * Get Entities
          * @description Get entities with filtering and pagination (v2) - optimized for Pi deployment
          */
-        get: operations["get_entities_api_v2_entities_get"];
+        get: operations["get_entities_api_v1_entities_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -6237,7 +6237,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/v2/entities/safety-status": {
+    "/api/v1/entities/safety-status": {
         parameters: {
             query?: never;
             header?: never;
@@ -6248,7 +6248,7 @@ export interface paths {
          * Get Safety Status
          * @description Get current safety system status
          */
-        get: operations["get_safety_status_api_v2_entities_safety_status_get"];
+        get: operations["get_safety_status_api_v1_entities_safety_status_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -6257,7 +6257,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/v2/entities/metadata": {
+    "/api/v1/entities/metadata": {
         parameters: {
             query?: never;
             header?: never;
@@ -6268,7 +6268,7 @@ export interface paths {
          * Get Entity Metadata
          * @description Get metadata about entity types, areas, and capabilities
          */
-        get: operations["get_entity_metadata_api_v2_entities_metadata_get"];
+        get: operations["get_entity_metadata_api_v1_entities_metadata_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -6277,7 +6277,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/v2/entities/protocol-summary": {
+    "/api/v1/entities/protocol-summary": {
         parameters: {
             query?: never;
             header?: never;
@@ -6288,7 +6288,7 @@ export interface paths {
          * Get Protocol Summary
          * @description Get summary of entity distribution across protocols
          */
-        get: operations["get_protocol_summary_api_v2_entities_protocol_summary_get"];
+        get: operations["get_protocol_summary_api_v1_entities_protocol_summary_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -6297,7 +6297,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/v2/entities/debug/unmapped": {
+    "/api/v1/entities/debug/unmapped": {
         parameters: {
             query?: never;
             header?: never;
@@ -6308,7 +6308,7 @@ export interface paths {
          * Get Unmapped Entries
          * @description Get unmapped DGN/instance pairs observed on CAN bus
          */
-        get: operations["get_unmapped_entries_api_v2_entities_debug_unmapped_get"];
+        get: operations["get_unmapped_entries_api_v1_entities_debug_unmapped_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -6317,7 +6317,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/v2/entities/debug/unknown-pgns": {
+    "/api/v1/entities/debug/unknown-pgns": {
         parameters: {
             query?: never;
             header?: never;
@@ -6328,7 +6328,7 @@ export interface paths {
          * Get Unknown Pgns
          * @description Get unknown PGNs observed on CAN bus
          */
-        get: operations["get_unknown_pgns_api_v2_entities_debug_unknown_pgns_get"];
+        get: operations["get_unknown_pgns_api_v1_entities_debug_unknown_pgns_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -6337,7 +6337,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/v2/entities/debug/missing-dgns": {
+    "/api/v1/entities/debug/missing-dgns": {
         parameters: {
             query?: never;
             header?: never;
@@ -6348,7 +6348,7 @@ export interface paths {
          * Get Missing Dgns
          * @description Get DGNs encountered but not in specification
          */
-        get: operations["get_missing_dgns_api_v2_entities_debug_missing_dgns_get"];
+        get: operations["get_missing_dgns_api_v1_entities_debug_missing_dgns_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -6357,7 +6357,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/v2/entities/mappings": {
+    "/api/v1/entities/mappings": {
         parameters: {
             query?: never;
             header?: never;
@@ -6374,14 +6374,14 @@ export interface paths {
          *     require admin role; the service layer also re-validates as
          *     defense in depth.
          */
-        post: operations["create_entity_mapping_api_v2_entities_mappings_post"];
+        post: operations["create_entity_mapping_api_v1_entities_mappings_post"];
         delete?: never;
         options?: never;
         head?: never;
         patch?: never;
         trace?: never;
     };
-    "/api/v2/entities/{entity_id}": {
+    "/api/v1/entities/{entity_id}": {
         parameters: {
             query?: never;
             header?: never;
@@ -6392,7 +6392,7 @@ export interface paths {
          * Get Entity
          * @description Get a specific entity by ID (v2)
          */
-        get: operations["get_entity_api_v2_entities__entity_id__get"];
+        get: operations["get_entity_api_v1_entities__entity_id__get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -6401,7 +6401,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/v2/entities/{entity_id}/control": {
+    "/api/v1/entities/{entity_id}/control": {
         parameters: {
             query?: never;
             header?: never;
@@ -6414,14 +6414,14 @@ export interface paths {
          * Control Entity
          * @description Control a single entity with safety validation (v2) - Pi optimized
          */
-        post: operations["control_entity_api_v2_entities__entity_id__control_post"];
+        post: operations["control_entity_api_v1_entities__entity_id__control_post"];
         delete?: never;
         options?: never;
         head?: never;
         patch?: never;
         trace?: never;
     };
-    "/api/v2/entities/bulk-control": {
+    "/api/v1/entities/bulk-control": {
         parameters: {
             query?: never;
             header?: never;
@@ -6434,14 +6434,14 @@ export interface paths {
          * Bulk Control Entities
          * @description Execute bulk control operations with safety validation (v2) - Pi optimized
          */
-        post: operations["bulk_control_entities_api_v2_entities_bulk_control_post"];
+        post: operations["bulk_control_entities_api_v1_entities_bulk_control_post"];
         delete?: never;
         options?: never;
         head?: never;
         patch?: never;
         trace?: never;
     };
-    "/api/v2/entities/emergency-stop": {
+    "/api/v1/entities/emergency-stop": {
         parameters: {
             query?: never;
             header?: never;
@@ -6454,14 +6454,14 @@ export interface paths {
          * Emergency Stop
          * @description Emergency stop - immediately halt all entity operations (Admin Only)
          */
-        post: operations["emergency_stop_api_v2_entities_emergency_stop_post"];
+        post: operations["emergency_stop_api_v1_entities_emergency_stop_post"];
         delete?: never;
         options?: never;
         head?: never;
         patch?: never;
         trace?: never;
     };
-    "/api/v2/entities/clear-emergency-stop": {
+    "/api/v1/entities/clear-emergency-stop": {
         parameters: {
             query?: never;
             header?: never;
@@ -6474,14 +6474,14 @@ export interface paths {
          * Clear Emergency Stop
          * @description Clear emergency stop condition (Admin Only)
          */
-        post: operations["clear_emergency_stop_api_v2_entities_clear_emergency_stop_post"];
+        post: operations["clear_emergency_stop_api_v1_entities_clear_emergency_stop_post"];
         delete?: never;
         options?: never;
         head?: never;
         patch?: never;
         trace?: never;
     };
-    "/api/v2/entities/reconcile-state": {
+    "/api/v1/entities/reconcile-state": {
         parameters: {
             query?: never;
             header?: never;
@@ -6494,14 +6494,14 @@ export interface paths {
          * Reconcile State With Rvc Bus
          * @description Reconcile application state with RV-C bus state
          */
-        post: operations["reconcile_state_with_rvc_bus_api_v2_entities_reconcile_state_post"];
+        post: operations["reconcile_state_with_rvc_bus_api_v1_entities_reconcile_state_post"];
         delete?: never;
         options?: never;
         head?: never;
         patch?: never;
         trace?: never;
     };
-    "/api/v2/entities/{entity_id}/history": {
+    "/api/v1/entities/{entity_id}/history": {
         parameters: {
             query?: never;
             header?: never;
@@ -6512,7 +6512,7 @@ export interface paths {
          * Get Entity History
          * @description Get entity state change history
          */
-        get: operations["get_entity_history_api_v2_entities__entity_id__history_get"];
+        get: operations["get_entity_history_api_v1_entities__entity_id__history_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -6521,7 +6521,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/v2/networks/health": {
+    "/api/v1/networks/health": {
         parameters: {
             query?: never;
             header?: never;
@@ -6532,7 +6532,7 @@ export interface paths {
          * Health Check
          * @description Health check endpoint for networks domain API
          */
-        get: operations["health_check_api_v2_networks_health_get"];
+        get: operations["health_check_api_v1_networks_health_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -6541,7 +6541,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/v2/networks/schemas": {
+    "/api/v1/networks/schemas": {
         parameters: {
             query?: never;
             header?: never;
@@ -6552,7 +6552,7 @@ export interface paths {
          * Get Schemas
          * @description Export schemas for networks domain
          */
-        get: operations["get_schemas_api_v2_networks_schemas_get"];
+        get: operations["get_schemas_api_v1_networks_schemas_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -6561,7 +6561,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/v2/networks/status": {
+    "/api/v1/networks/status": {
         parameters: {
             query?: never;
             header?: never;
@@ -6572,7 +6572,7 @@ export interface paths {
          * Get network status
          * @description Return configured CAN interface mappings, service-level CAN health, and real cumulative per-interface SocketCAN telemetry when available.
          */
-        get: operations["get_network_status_api_v2_networks_status_get"];
+        get: operations["get_network_status_api_v1_networks_status_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -6581,7 +6581,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/v2/networks/interfaces": {
+    "/api/v1/networks/interfaces": {
         parameters: {
             query?: never;
             header?: never;
@@ -6592,7 +6592,7 @@ export interface paths {
          * Get configured network interfaces
          * @description Return configured logical-to-physical CAN interface mappings with telemetry.
          */
-        get: operations["get_network_interfaces_api_v2_networks_interfaces_get"];
+        get: operations["get_network_interfaces_api_v1_networks_interfaces_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -6601,7 +6601,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/v2/networks/statistics": {
+    "/api/v1/networks/statistics": {
         parameters: {
             query?: never;
             header?: never;
@@ -6612,7 +6612,7 @@ export interface paths {
          * Get CAN network statistics
          * @description Return facade-reported queue status plus bus statistics derived from real cumulative SocketCAN counters. Queue status is not real TX queue telemetry.
          */
-        get: operations["get_network_statistics_api_v2_networks_statistics_get"];
+        get: operations["get_network_statistics_api_v1_networks_statistics_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -6621,7 +6621,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/v2/system/health": {
+    "/api/v1/system/health": {
         parameters: {
             query?: never;
             header?: never;
@@ -6632,7 +6632,7 @@ export interface paths {
          * Health Check
          * @description Health check endpoint for system domain API
          */
-        get: operations["health_check_api_v2_system_health_get"];
+        get: operations["health_check_api_v1_system_health_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -6641,7 +6641,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/v2/system/schemas": {
+    "/api/v1/system/schemas": {
         parameters: {
             query?: never;
             header?: never;
@@ -6652,7 +6652,7 @@ export interface paths {
          * Get Schemas
          * @description Export schemas for system domain
          */
-        get: operations["get_schemas_api_v2_system_schemas_get"];
+        get: operations["get_schemas_api_v1_system_schemas_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -6661,7 +6661,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/v2/system/info": {
+    "/api/v1/system/info": {
         parameters: {
             query?: never;
             header?: never;
@@ -6672,7 +6672,7 @@ export interface paths {
          * Get System Info
          * @description Get system information
          */
-        get: operations["get_system_info_api_v2_system_info_get"];
+        get: operations["get_system_info_api_v1_system_info_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -6681,7 +6681,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/v2/system/status": {
+    "/api/v1/system/status": {
         parameters: {
             query?: never;
             header?: never;
@@ -6696,7 +6696,7 @@ export interface paths {
          *     - default: Standard SystemStatus response
          *     - ietf: IETF health+json compliant format
          */
-        get: operations["get_system_status_api_v2_system_status_get"];
+        get: operations["get_system_status_api_v1_system_status_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -6705,7 +6705,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/v2/system/services": {
+    "/api/v1/system/services": {
         parameters: {
             query?: never;
             header?: never;
@@ -6716,7 +6716,7 @@ export interface paths {
          * Get Services
          * @description Get detailed service information
          */
-        get: operations["get_services_api_v2_system_services_get"];
+        get: operations["get_services_api_v1_system_services_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -6725,7 +6725,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/v2/system/components/health": {
+    "/api/v1/system/components/health": {
         parameters: {
             query?: never;
             header?: never;
@@ -6739,7 +6739,7 @@ export interface paths {
          *     Returns health information for individual system components,
          *     organized by category (core, network, storage, external).
          */
-        get: operations["get_component_health_api_v2_system_components_health_get"];
+        get: operations["get_component_health_api_v1_system_components_health_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -6748,7 +6748,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/v2/system/events": {
+    "/api/v1/system/events": {
         parameters: {
             query?: never;
             header?: never;
@@ -6764,7 +6764,7 @@ export interface paths {
          *     - Component name
          *     - Time range
          */
-        get: operations["get_event_logs_api_v2_system_events_get"];
+        get: operations["get_event_logs_api_v1_system_events_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -8066,7 +8066,7 @@ export interface components {
         };
         /**
          * ControlCommandV2
-         * @description Enhanced control command schema for v2 API
+         * @description Enhanced control command schema for v1 API
          */
         ControlCommandV2: {
             /**
@@ -8572,7 +8572,7 @@ export interface components {
         };
         /**
          * EntitySchemaV2
-         * @description Enhanced entity schema for v2 API
+         * @description Enhanced entity schema for v1 API
          */
         EntitySchemaV2: {
             /**
@@ -19597,7 +19597,7 @@ export interface operations {
             };
         };
     };
-    health_check_api_v2_diagnostics_health_get: {
+    health_check_api_v1_diagnostics_health_get: {
         parameters: {
             query?: never;
             header?: never;
@@ -19617,7 +19617,7 @@ export interface operations {
             };
         };
     };
-    get_schemas_api_v2_diagnostics_schemas_get: {
+    get_schemas_api_v1_diagnostics_schemas_get: {
         parameters: {
             query?: never;
             header?: never;
@@ -19639,7 +19639,7 @@ export interface operations {
             };
         };
     };
-    get_system_metrics_api_v2_diagnostics_metrics_get: {
+    get_system_metrics_api_v1_diagnostics_metrics_get: {
         parameters: {
             query?: never;
             header?: never;
@@ -19659,7 +19659,7 @@ export interface operations {
             };
         };
     };
-    get_fault_summary_api_v2_diagnostics_faults_get: {
+    get_fault_summary_api_v1_diagnostics_faults_get: {
         parameters: {
             query?: {
                 /** @description Filter by system type */
@@ -19693,7 +19693,7 @@ export interface operations {
             };
         };
     };
-    get_system_status_api_v2_diagnostics_system_status_get: {
+    get_system_status_api_v1_diagnostics_system_status_get: {
         parameters: {
             query?: never;
             header?: never;
@@ -19713,7 +19713,7 @@ export interface operations {
             };
         };
     };
-    get_dtcs_api_v2_diagnostics_dtcs_get: {
+    get_dtcs_api_v1_diagnostics_dtcs_get: {
         parameters: {
             query?: {
                 /** @description Filter by system type */
@@ -19749,7 +19749,7 @@ export interface operations {
             };
         };
     };
-    resolve_dtc_api_v2_diagnostics_dtcs_resolve_post: {
+    resolve_dtc_api_v1_diagnostics_dtcs_resolve_post: {
         parameters: {
             query?: never;
             header?: never;
@@ -19786,7 +19786,7 @@ export interface operations {
             };
         };
     };
-    get_statistics_api_v2_diagnostics_statistics_get: {
+    get_statistics_api_v1_diagnostics_statistics_get: {
         parameters: {
             query?: never;
             header?: never;
@@ -19806,7 +19806,7 @@ export interface operations {
             };
         };
     };
-    get_correlations_api_v2_diagnostics_correlations_get: {
+    get_correlations_api_v1_diagnostics_correlations_get: {
         parameters: {
             query?: {
                 /** @description Time window for correlation analysis */
@@ -19840,7 +19840,7 @@ export interface operations {
             };
         };
     };
-    get_predictions_api_v2_diagnostics_predictions_get: {
+    get_predictions_api_v1_diagnostics_predictions_get: {
         parameters: {
             query?: {
                 /** @description Time horizon for predictions in days */
@@ -19874,7 +19874,7 @@ export interface operations {
             };
         };
     };
-    health_check_api_v2_entities_health_get: {
+    health_check_api_v1_entities_health_get: {
         parameters: {
             query?: never;
             header?: never;
@@ -19896,7 +19896,7 @@ export interface operations {
             };
         };
     };
-    get_schemas_api_v2_entities_schemas_get: {
+    get_schemas_api_v1_entities_schemas_get: {
         parameters: {
             query?: never;
             header?: never;
@@ -19918,7 +19918,7 @@ export interface operations {
             };
         };
     };
-    get_debug_info_api_v2_entities_debug_system_info_get: {
+    get_debug_info_api_v1_entities_debug_system_info_get: {
         parameters: {
             query?: never;
             header?: never;
@@ -19940,7 +19940,7 @@ export interface operations {
             };
         };
     };
-    get_entities_api_v2_entities_get: {
+    get_entities_api_v1_entities_get: {
         parameters: {
             query?: {
                 /** @description Filter by device type */
@@ -19980,7 +19980,7 @@ export interface operations {
             };
         };
     };
-    get_safety_status_api_v2_entities_safety_status_get: {
+    get_safety_status_api_v1_entities_safety_status_get: {
         parameters: {
             query?: never;
             header?: never;
@@ -20002,7 +20002,7 @@ export interface operations {
             };
         };
     };
-    get_entity_metadata_api_v2_entities_metadata_get: {
+    get_entity_metadata_api_v1_entities_metadata_get: {
         parameters: {
             query?: never;
             header?: never;
@@ -20024,7 +20024,7 @@ export interface operations {
             };
         };
     };
-    get_protocol_summary_api_v2_entities_protocol_summary_get: {
+    get_protocol_summary_api_v1_entities_protocol_summary_get: {
         parameters: {
             query?: never;
             header?: never;
@@ -20046,7 +20046,7 @@ export interface operations {
             };
         };
     };
-    get_unmapped_entries_api_v2_entities_debug_unmapped_get: {
+    get_unmapped_entries_api_v1_entities_debug_unmapped_get: {
         parameters: {
             query?: never;
             header?: never;
@@ -20068,7 +20068,7 @@ export interface operations {
             };
         };
     };
-    get_unknown_pgns_api_v2_entities_debug_unknown_pgns_get: {
+    get_unknown_pgns_api_v1_entities_debug_unknown_pgns_get: {
         parameters: {
             query?: never;
             header?: never;
@@ -20090,7 +20090,7 @@ export interface operations {
             };
         };
     };
-    get_missing_dgns_api_v2_entities_debug_missing_dgns_get: {
+    get_missing_dgns_api_v1_entities_debug_missing_dgns_get: {
         parameters: {
             query?: never;
             header?: never;
@@ -20112,7 +20112,7 @@ export interface operations {
             };
         };
     };
-    create_entity_mapping_api_v2_entities_mappings_post: {
+    create_entity_mapping_api_v1_entities_mappings_post: {
         parameters: {
             query?: never;
             header?: {
@@ -20151,7 +20151,7 @@ export interface operations {
             };
         };
     };
-    get_entity_api_v2_entities__entity_id__get: {
+    get_entity_api_v1_entities__entity_id__get: {
         parameters: {
             query?: never;
             header?: never;
@@ -20182,7 +20182,7 @@ export interface operations {
             };
         };
     };
-    control_entity_api_v2_entities__entity_id__control_post: {
+    control_entity_api_v1_entities__entity_id__control_post: {
         parameters: {
             query?: never;
             header?: {
@@ -20219,7 +20219,7 @@ export interface operations {
             };
         };
     };
-    bulk_control_entities_api_v2_entities_bulk_control_post: {
+    bulk_control_entities_api_v1_entities_bulk_control_post: {
         parameters: {
             query?: never;
             header?: {
@@ -20254,7 +20254,7 @@ export interface operations {
             };
         };
     };
-    emergency_stop_api_v2_entities_emergency_stop_post: {
+    emergency_stop_api_v1_entities_emergency_stop_post: {
         parameters: {
             query?: never;
             header?: {
@@ -20287,7 +20287,7 @@ export interface operations {
             };
         };
     };
-    clear_emergency_stop_api_v2_entities_clear_emergency_stop_post: {
+    clear_emergency_stop_api_v1_entities_clear_emergency_stop_post: {
         parameters: {
             query?: never;
             header?: {
@@ -20320,7 +20320,7 @@ export interface operations {
             };
         };
     };
-    reconcile_state_with_rvc_bus_api_v2_entities_reconcile_state_post: {
+    reconcile_state_with_rvc_bus_api_v1_entities_reconcile_state_post: {
         parameters: {
             query?: never;
             header?: never;
@@ -20342,7 +20342,7 @@ export interface operations {
             };
         };
     };
-    get_entity_history_api_v2_entities__entity_id__history_get: {
+    get_entity_history_api_v1_entities__entity_id__history_get: {
         parameters: {
             query?: {
                 /** @description Maximum number of history entries */
@@ -20380,7 +20380,7 @@ export interface operations {
             };
         };
     };
-    health_check_api_v2_networks_health_get: {
+    health_check_api_v1_networks_health_get: {
         parameters: {
             query?: never;
             header?: never;
@@ -20402,7 +20402,7 @@ export interface operations {
             };
         };
     };
-    get_schemas_api_v2_networks_schemas_get: {
+    get_schemas_api_v1_networks_schemas_get: {
         parameters: {
             query?: never;
             header?: never;
@@ -20424,7 +20424,7 @@ export interface operations {
             };
         };
     };
-    get_network_status_api_v2_networks_status_get: {
+    get_network_status_api_v1_networks_status_get: {
         parameters: {
             query?: never;
             header?: never;
@@ -20444,7 +20444,7 @@ export interface operations {
             };
         };
     };
-    get_network_interfaces_api_v2_networks_interfaces_get: {
+    get_network_interfaces_api_v1_networks_interfaces_get: {
         parameters: {
             query?: never;
             header?: never;
@@ -20464,7 +20464,7 @@ export interface operations {
             };
         };
     };
-    get_network_statistics_api_v2_networks_statistics_get: {
+    get_network_statistics_api_v1_networks_statistics_get: {
         parameters: {
             query?: never;
             header?: never;
@@ -20484,7 +20484,7 @@ export interface operations {
             };
         };
     };
-    health_check_api_v2_system_health_get: {
+    health_check_api_v1_system_health_get: {
         parameters: {
             query?: never;
             header?: never;
@@ -20504,7 +20504,7 @@ export interface operations {
             };
         };
     };
-    get_schemas_api_v2_system_schemas_get: {
+    get_schemas_api_v1_system_schemas_get: {
         parameters: {
             query?: never;
             header?: never;
@@ -20526,7 +20526,7 @@ export interface operations {
             };
         };
     };
-    get_system_info_api_v2_system_info_get: {
+    get_system_info_api_v1_system_info_get: {
         parameters: {
             query?: never;
             header?: never;
@@ -20546,7 +20546,7 @@ export interface operations {
             };
         };
     };
-    get_system_status_api_v2_system_status_get: {
+    get_system_status_api_v1_system_status_get: {
         parameters: {
             query?: {
                 format?: string;
@@ -20577,7 +20577,7 @@ export interface operations {
             };
         };
     };
-    get_services_api_v2_system_services_get: {
+    get_services_api_v1_system_services_get: {
         parameters: {
             query?: never;
             header?: never;
@@ -20597,7 +20597,7 @@ export interface operations {
             };
         };
     };
-    get_component_health_api_v2_system_components_health_get: {
+    get_component_health_api_v1_system_components_health_get: {
         parameters: {
             query?: never;
             header?: never;
@@ -20617,7 +20617,7 @@ export interface operations {
             };
         };
     };
-    get_event_logs_api_v2_system_events_get: {
+    get_event_logs_api_v1_system_events_get: {
         parameters: {
             query?: {
                 limit?: number;

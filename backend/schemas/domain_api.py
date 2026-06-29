@@ -1,4 +1,4 @@
-"""Shared response schemas for Domain API v2 endpoints."""
+"""Shared response schemas for Domain API v1 endpoints."""
 
 from typing import Any, Literal
 

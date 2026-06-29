@@ -89,7 +89,7 @@ Example:
 ```typescript
 export async function fetchLights(): Promise<LightStatus[]> {
   // Note: the legacy /api/entities path was retired during the
-  // 2026-05 refactor; only /api/v2/entities remains.
+  // 2026-05 refactor; only /api/v1/entities remains.
   const response = await fetch(
     `${API_BASE}/v2/entities?device_type=light`,
     defaultOptions

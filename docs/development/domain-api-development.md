@@ -1,12 +1,12 @@
-# Domain API v2 Development Guide
+# Domain API v1 Development Guide
 
-This guide provides comprehensive information for developers working on the Domain API v2 implementation, including architecture decisions, development patterns, and contribution guidelines.
+This guide provides comprehensive information for developers working on the Domain API v1 implementation, including architecture decisions, development patterns, and contribution guidelines.
 
 ## Architecture Overview
 
 ### Domain-Driven Design (DDD)
 
-The Domain API v2 follows Domain-Driven Design principles:
+The Domain API v1 follows Domain-Driven Design principles:
 
 ```
 backend/
@@ -188,7 +188,7 @@ def register_domain_routers(app: FastAPI, feature_manager):
         new_domain_router = create_new_domain_router()
         app.include_router(
             new_domain_router,
-            prefix="/api/v2",
+            prefix="/api/v1",
             tags=["domains", "new-domain"]
         )
 ```
@@ -224,12 +224,12 @@ export async function fetchNewDomainItems(
   params?: { page?: number; page_size?: number }
 ): Promise<NewDomainCollectionSchema> {
   const queryString = params ? buildQueryString(params) : '';
-  const url = queryString ? `/api/v2/new-domain?${queryString}` : '/api/v2/new-domain';
+  const url = queryString ? `/api/v1/new-domain?${queryString}` : '/api/v1/new-domain';
   return apiGet<NewDomainCollectionSchema>(url);
 }
 
 export async function fetchNewDomainItem(itemId: string): Promise<NewDomainItemSchema> {
-  return apiGet<NewDomainItemSchema>(`/api/v2/new-domain/${itemId}`);
+  return apiGet<NewDomainItemSchema>(`/api/v1/new-domain/${itemId}`);
 }
 ```
 
@@ -299,7 +299,7 @@ class TestNewDomainAPI:
     def test_list_items_success(self):
         """Test successful item listing."""
         with TestClient(app) as client:
-            response = client.get("/api/v2/new-domain")
+            response = client.get("/api/v1/new-domain")
 
             assert response.status_code == 200
             data = response.json()
@@ -309,7 +309,7 @@ class TestNewDomainAPI:
     def test_list_items_with_pagination(self):
         """Test item listing with pagination."""
         with TestClient(app) as client:
-            response = client.get("/api/v2/new-domain?page=1&page_size=10")
+            response = client.get("/api/v1/new-domain?page=1&page_size=10")
 
             assert response.status_code == 200
 ```

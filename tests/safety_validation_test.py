@@ -2,7 +2,7 @@
 Phase 1 Safety System Validation Tests
 
 Tests emergency stop, state reconciliation, safety interlocks, and integration
-with existing services for the Domain API v2 system.
+with existing services for the Domain API v1 system.
 
 CRITICAL: These tests validate safety-critical vehicle control functionality.
 All tests must pass before Phase 2 deployment.
@@ -27,7 +27,7 @@ class TestSafetySystemValidation:
     @pytest.fixture
     async def service_registry(self):
         """Create service registry for testing."""
-        # Force enable Domain API v2 for testing by setting environment variable
+        # Force enable Domain API v1 for testing by setting environment variable
         import os
 
         os.environ["COACHIQ_FEATURES__DOMAIN_API_V2"] = "true"
@@ -161,7 +161,7 @@ class TestSafetySystemValidation:
         """Test that runtime validation middleware enforces safety constraints."""
         # Create mock request and call_next
         mock_request = Mock()
-        mock_request.url.path = "/api/v2/entities/emergency-stop"
+        mock_request.url.path = "/api/v1/entities/emergency-stop"
         mock_request.method = "POST"
 
         mock_call_next = AsyncMock()
@@ -172,9 +172,9 @@ class TestSafetySystemValidation:
 
         # Test that critical endpoints are in validation list
         critical_endpoints = [
-            "/api/v2/entities/control",
-            "/api/v2/entities/bulk-control",
-            "/api/v2/entities/control-safe",
+            "/api/v1/entities/control",
+            "/api/v1/entities/bulk-control",
+            "/api/v1/entities/control-safe",
         ]
 
         for endpoint in critical_endpoints:

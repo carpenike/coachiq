@@ -1,7 +1,7 @@
 """
 Secure Token Management Service
 
-Provides secure token management with HttpOnly cookies for Domain API v2.
+Provides secure token management with HttpOnly cookies for Domain API v1.
 Implements token rotation, secure storage, and automatic refresh patterns
 for safety-critical vehicle control applications.
 
@@ -47,7 +47,7 @@ class TokenRefreshResult(BaseModel):
 
 class SecureTokenService:
     """
-    Secure token management service for Domain API v2.
+    Secure token management service for Domain API v1.
 
     Provides secure token storage using HttpOnly cookies and implements
     token rotation patterns for enhanced security in vehicle control systems.
