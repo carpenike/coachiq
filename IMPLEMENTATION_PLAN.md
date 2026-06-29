@@ -92,6 +92,26 @@ retirements follow the HOF-016 plan.
 
 ## Build Log
 
+### HOF-010 — Release Please PR-Creation Permission
+
+- [shipped] same commit as this entry · 2026-06-29
+- [component] ci
+- [handoff] HOF-010
+
+The Release Please workflow failed at the PR-creation step with "GitHub Actions
+is not permitted to create or approve pull requests." Root cause, confirmed from
+live run 28273361282 rather than config (L-04), was that the repo setting
+Settings -> Actions -> General -> Workflow permissions -> "Allow GitHub Actions
+to create and approve pull requests" was disabled. That setting gates the
+default GITHUB_TOKEN regardless of the workflow's `pull-requests: write`
+permission.
+
+Fix: the repo owner enabled the setting. Run 28273361282 attempt 2 then
+succeeded and opened release PR #178 (`chore(main): release coachiq 0.1.0`). No
+PAT or GitHub App workaround was needed; both were considered and rejected as
+heavier. Because a repo setting is not captured in git, the dependency is
+documented in `.github/workflows/release-please.yml` and here so it survives.
+
 ### HOF-023 — Canonical Frontend Entity Hook Migration
 
 - [shipped] same commit as this entry · 2026-06-29

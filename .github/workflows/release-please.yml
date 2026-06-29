@@ -5,6 +5,14 @@ on:
     branches:
       - main
 
+# Release-PR creation depends on the repo setting:
+#   Settings -> Actions -> General -> Workflow permissions ->
+#   "Allow GitHub Actions to create and approve pull requests" (must be ENABLED).
+# If OFF, the default GITHUB_TOKEN is blocked from opening the release PR even
+# though `permissions: pull-requests: write` is set below.
+# Diagnosed via run 28273361282 ("GitHub Actions is not permitted to create or
+# approve pull requests"); enabling the setting fixed it (opened release PR #178).
+# A repo setting isn't in git -- see IMPLEMENTATION_PLAN.md (HOF-010).
 permissions:
   contents: write
   pull-requests: write
