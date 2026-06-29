@@ -29,7 +29,7 @@ from backend.core.service_dependency_resolver import DependencyType, ServiceDepe
 # the half-finished "Phase 3 constructor injection" TODO documented
 # in `audit-2026-05-12.md`.
 from backend.integrations.can.message_injector import CANMessageInjector, SafetyLevel
-from backend.services.analytics_dashboard_service import AnalyticsDashboardService
+from backend.services.analytics.analytics_dashboard_service import AnalyticsDashboardService
 from backend.services.auth.service import AuthService
 from backend.services.can_bus_service import CANBusService
 from backend.services.can_interface_service import CANInterfaceService

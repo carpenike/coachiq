@@ -46,7 +46,7 @@ class AnalyticsDashboardService:
         # Initialize storage service with repository pattern
         from backend.core.performance import PerformanceMonitor
         from backend.repositories.analytics_repository import AnalyticsRepository
-        from backend.services.analytics_storage_service import AnalyticsStorageService
+        from backend.services.analytics.analytics_storage_service import AnalyticsStorageService
 
         # Create performance monitor if not provided
         if not performance_monitor:

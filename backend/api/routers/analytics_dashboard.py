@@ -13,7 +13,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
 
 from backend.core.dependencies import get_analytics_dashboard_service
-from backend.services.analytics_dashboard_service import AnalyticsDashboardService
+from backend.services.analytics.analytics_dashboard_service import AnalyticsDashboardService
 
 logger = logging.getLogger(__name__)
 

@@ -50,7 +50,7 @@ from backend.repositories.system_state_repository import (
 # matches what the rest of the codebase already uses. The runtime
 # ServiceRegistry lookup remains string-keyed; these imports exist
 # purely so pyright + IDEs see real return types.
-from backend.services.analytics_dashboard_service import (
+from backend.services.analytics.analytics_dashboard_service import (
     AnalyticsDashboardService as _AnalyticsDashboardService,
 )
 
