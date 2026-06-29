@@ -65,8 +65,11 @@ One repo, two halves. A single feature commonly spans both.
   `safety_state_engine.py`, `safety_interfaces.py`), structured logging,
   exception handlers, input validation, and the `registrations/` startup
   modules.
-- **`backend/services/`** — domain + management services (see §3). This is the
-  largest surface; most business logic lives here.
+- **`backend/services/`** — domain + management services (see §3). Services are
+  grouped by package: `auth/`, `analytics/`, `can/`, `database/`, `discovery/`,
+  `entities/`, `knowledge/`, `logging/`, `maintenance/`, `notifications/`,
+  `persistence/`, `protocols/`, `rvc/`, `safety/`, `security/`, `system/`, and
+  `updates/`. The root package intentionally keeps no eager re-exports.
 - **`backend/repositories/`** — repository pattern for data access. Replaces the
   old monolithic `AppState` (removed in the ServiceRegistry refactor).
 - **`backend/integrations/`** — protocol integrations, each self-registering

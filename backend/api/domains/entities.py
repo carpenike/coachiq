@@ -29,7 +29,7 @@ from backend.core.dependencies import (
     get_authenticated_user,
     get_entity_service,
 )
-from backend.services.entity_domain_service import (
+from backend.services.entities.entity_domain_service import (
     BulkSafetyOperationRequestV2,
     BulkSafetyOperationResultV2,
     SafetyControlCommandV2,

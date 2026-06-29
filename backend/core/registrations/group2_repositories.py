@@ -40,7 +40,7 @@ from backend.repositories.security_event_repository import (
     SecurityEventRepository,
     SecurityListenerRepository,
 )
-from backend.services.entity_initialization_service import EntityInitializationService
+from backend.services.entities.entity_initialization_service import EntityInitializationService
 
 logger = logging.getLogger(__name__)
 

@@ -363,7 +363,7 @@ Each phase of migration requires validation to ensure functionality is preserved
 - **AFTER**: Clear separation of concerns with modular imports:
   ```python
   # Service-oriented approach
-  from backend.services.entity_service import update_entity
+  from backend.services.entities.entity_service import update_entity
   ```
 
 ### 5.2. Deprecation Path
@@ -901,7 +901,7 @@ from backend.models.maintenance import (
     MaintenanceItemType
 )
 from backend.core.state import get_state_value
-from backend.services.entity_service import get_entity_value
+from backend.services.entities.entity_service import get_entity_value
 
 class MaintenanceScheduleService:
     """Service for managing maintenance schedules."""

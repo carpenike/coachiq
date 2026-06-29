@@ -145,7 +145,9 @@ class EntityManagerService:
     async def _initialize_persistence(self) -> None:
         """Initialize entity persistence service."""
         try:
-            from backend.services.entity_persistence_service import EntityPersistenceService
+            from backend.services.entities.entity_persistence_service import (
+                EntityPersistenceService,
+            )
 
             self._persistence_service = EntityPersistenceService(
                 entity_manager=self._entity_manager,

@@ -218,7 +218,7 @@ from backend.core.dependencies import (
     get_rvc_service,
     get_multi_network_manager,
 )
-from backend.services.entity_services import EntityService
+from backend.services.entities.entity_services import EntityService
 
 router = APIRouter()
 

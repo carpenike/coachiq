@@ -21,7 +21,7 @@ from __future__ import annotations
 import pytest
 
 from backend.models.entity import ControlCommand
-from backend.services.entity_service import EntityService, _LightCommandDecision
+from backend.services.entities.entity_service import EntityService, _LightCommandDecision
 
 # ---------------------------------------------------------------------------
 # Helpers

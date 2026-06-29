@@ -31,7 +31,7 @@ from backend.services.database.database_services import (
     DatabaseMigrationService,
     DatabaseSessionService,
 )
-from backend.services.entity_service import EntityService
+from backend.services.entities.entity_service import EntityService
 from backend.services.security.security_event_service import SecurityEventService
 
 logger = logging.getLogger(__name__)
@@ -276,7 +276,7 @@ def register(service_registry: SafetyServiceRegistry) -> None:
     # EntityDomainService - operationally-critical entity domain operations.
     # CRITICAL classification means startup priority + emergency-stop
     # participation, not vehicle safety -- see ADR-0004.
-    from backend.services.entity_domain_service import EntityDomainService
+    from backend.services.entities.entity_domain_service import EntityDomainService
 
     service_registry.register_service(
         name="entity_domain_service",

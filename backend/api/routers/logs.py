@@ -11,7 +11,7 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
 
-from backend.services import log_history
+from backend.services.logging import log_history
 
 logger = logging.getLogger(__name__)
 

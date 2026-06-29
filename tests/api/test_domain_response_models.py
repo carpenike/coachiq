@@ -17,7 +17,7 @@ from backend.schemas.domain_api import (
     IETFHealthStatusResponse,
     SystemHealthResponse,
 )
-from backend.services.entity_domain_service import (
+from backend.services.entities.entity_domain_service import (
     BulkSafetyOperationResultV2,
     SafetyOperationResultV2,
 )

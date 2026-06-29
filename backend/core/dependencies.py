@@ -19,8 +19,12 @@ from backend.core.service_registry import ServiceRegistry as _ServiceRegistryCla
 # imports exist purely so pyright + IDEs see real return types.
 from backend.integrations.can.can_bus_recorder import CANBusRecorder as _CANBusRecorder
 from backend.integrations.can.message_filter import MessageFilter as _MessageFilter
-from backend.integrations.can.message_injector import CANMessageInjector as _CANMessageInjector
-from backend.integrations.can.protocol_analyzer import ProtocolAnalyzer as _ProtocolAnalyzer
+from backend.integrations.can.message_injector import (
+    CANMessageInjector as _CANMessageInjector,
+)
+from backend.integrations.can.protocol_analyzer import (
+    ProtocolAnalyzer as _ProtocolAnalyzer,
+)
 
 # Real repository classes for typed DI aliases (ADR-0006).
 # Imported under underscore-prefixed names so the public alias name
@@ -40,7 +44,9 @@ from backend.integrations.can.protocol_analyzer import ProtocolAnalyzer as _Prot
 from backend.repositories.entity_state_repository import (
     EntityStateRepository as _EntityStateRepository,
 )
-from backend.repositories.rvc_config_repository import RVCConfigRepository as _RVCConfigRepository
+from backend.repositories.rvc_config_repository import (
+    RVCConfigRepository as _RVCConfigRepository,
+)
 from backend.repositories.system_state_repository import (
     SystemStateRepository as _SystemStateRepository,
 )
@@ -66,11 +72,12 @@ from backend.services.analytics.analytics_dashboard_service import (
 # purely so pyright + IDEs see real return types.
 #
 # NOTE: ``EntityService`` is intentionally NOT typed here -- importing
-# ``backend.services.entity_service`` triggers a circular import via
+# ``backend.services.entities.entity_service`` triggers a circular import via
 # ``backend.websocket.handlers`` -> ``backend.websocket.routes`` ->
 # ``backend.core.dependencies.WebSocketManager``. Tracked separately;
 # fix likely requires making entity_service's websocket import lazy.
 from backend.services.auth.manager import AuthManager as _AuthManager
+from backend.services.auth.pin_manager import PINManager as _PINManager
 from backend.services.can.can_facade import CANFacade as _CANFacade
 from backend.services.can.can_network_telemetry_service import (
     CANNetworkTelemetryService as _CANNetworkTelemetryService,
@@ -78,11 +85,11 @@ from backend.services.can.can_network_telemetry_service import (
 from backend.services.database.database_update_service import (
     DatabaseUpdateService as _DatabaseUpdateService,
 )
-from backend.services.updates.edge_proxy_monitor_service import (
-    EdgeProxyMonitorService as _EdgeProxyMonitorService,
-)
 from backend.services.database.migration_safety_validator import (
     MigrationSafetyValidator as _MigrationSafetyValidator,
+)
+from backend.services.maintenance.predictive_maintenance_service import (
+    PredictiveMaintenanceService as _PredictiveMaintenanceService,
 )
 from backend.services.notifications.notification_analytics_service import (
     NotificationAnalyticsService as _NotificationAnalyticsService,
@@ -92,10 +99,6 @@ from backend.services.notifications.notification_manager import (
 )
 from backend.services.notifications.notification_reporting_service import (
     NotificationReportingService as _NotificationReportingService,
-)
-from backend.services.auth.pin_manager import PINManager as _PINManager
-from backend.services.maintenance.predictive_maintenance_service import (
-    PredictiveMaintenanceService as _PredictiveMaintenanceService,
 )
 from backend.services.rvc.rvc_config_facade import RVCConfigFacade as _RVCConfigFacade
 from backend.services.rvc.rvc_service import RVCService as _RVCService
@@ -108,6 +111,9 @@ from backend.services.security.security_config_service import (
 )
 from backend.services.security.security_event_manager import (
     SecurityEventManager as _SecurityEventManager,
+)
+from backend.services.updates.edge_proxy_monitor_service import (
+    EdgeProxyMonitorService as _EdgeProxyMonitorService,
 )
 
 logger = logging.getLogger(__name__)
