@@ -37,7 +37,7 @@ Same playbook as PR #111 (entity_service vs entity_services).
 
 ```bash
 # All v1 consumers
-grep -rln "from backend.services.security_event_manager import\|from backend\\.services\\.security_event_manager " backend/ --include="*.py" | grep -v __pycache__
+grep -rln "from backend.services.security.security_event_manager import\|from backend\\.services\\.security_event_manager " backend/ --include="*.py" | grep -v __pycache__
 
 # All v2 consumers
 grep -rln "security_event_manager_v2\|EnhancedSecurityEventManager" backend/ --include="*.py" | grep -v __pycache__

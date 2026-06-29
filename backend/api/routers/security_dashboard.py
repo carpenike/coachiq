@@ -12,7 +12,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
 
 from backend.core.dependencies import get_security_event_manager
-from backend.services.security_persistence_service import get_security_persistence_service
+from backend.services.security.security_persistence_service import get_security_persistence_service
 from backend.websocket.security_handler import get_security_websocket_handler
 
 logger = logging.getLogger(__name__)

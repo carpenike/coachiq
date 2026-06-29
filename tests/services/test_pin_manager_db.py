@@ -18,7 +18,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 from sqlalchemy.orm import sessionmaker
 
 from backend.models.auth import Base, PINAttempt, PINSession, User, UserPIN
-from backend.services.pin_manager import PINConfig, PINManager
+from backend.services.auth.pin_manager import PINConfig, PINManager
 
 
 @pytest.fixture

@@ -18,7 +18,7 @@ from backend.middleware.validation import RuntimeValidationMiddleware, SchemaVal
 from backend.schemas import BulkOperationSchemaV2, ControlCommandSchemaV2, EntitySchemaV2
 from backend.schemas.schema_exporter import ZodSchemaExporter
 from backend.services.auth.manager import AuthManager
-from backend.services.secure_token_service import SecureTokenService, TokenPair
+from backend.services.auth.secure_token_service import SecureTokenService, TokenPair
 
 
 class TestSafetySystemValidation:

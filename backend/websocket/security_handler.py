@@ -19,7 +19,7 @@ from typing import Any, Dict, Set
 from fastapi import WebSocket, WebSocketDisconnect
 
 from backend.models.security_events import SecurityEvent
-from backend.services.security_event_manager import SecurityEventManager
+from backend.services.security.security_event_manager import SecurityEventManager
 
 logger = logging.getLogger(__name__)
 

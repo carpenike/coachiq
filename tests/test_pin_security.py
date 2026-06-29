@@ -19,9 +19,9 @@ import pytest
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.models.auth import PINAttempt, PINSession, User, UserPIN
-from backend.services.pin_manager import PINConfig, PINManager
+from backend.services.auth.pin_manager import PINConfig, PINManager
 from backend.services.safety_service import SafetyService, SystemOperationalMode
-from backend.services.security_audit_service import SecurityAuditService
+from backend.services.security.security_audit_service import SecurityAuditService
 
 
 @pytest.fixture

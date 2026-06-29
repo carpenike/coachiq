@@ -225,7 +225,7 @@ async def list_users(
 
 ### Security Event Logging
 ```python
-from backend.services.security_audit_service import SecurityAuditService
+from backend.services.security.security_audit_service import SecurityAuditService
 
 # Log security events
 await security_audit.log_event(

@@ -19,7 +19,7 @@ from typing import TYPE_CHECKING, Any, Deque, Dict, List, Optional, Set
 from backend.repositories.base import MonitoredRepository
 
 if TYPE_CHECKING:
-    from backend.services.security_audit_service import (
+    from backend.services.security.security_audit_service import (
         RateLimitEntry,
         SecurityAuditEvent,
         SecurityEventSeverity,

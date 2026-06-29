@@ -33,7 +33,7 @@ from datetime import UTC, datetime
 from typing import Any
 
 from backend.models.security_events import SecurityEvent, SecurityEventStats
-from backend.services.attempt_tracker_service import (
+from backend.services.auth.attempt_tracker_service import (
     AttemptAnalysis,
     AttemptStatus,
     AttemptSummary,

@@ -24,7 +24,7 @@ from backend.core.dependencies import (
     get_pin_manager,
     get_security_audit_service,
 )
-from backend.services.pin_manager import PINManager
+from backend.services.auth.pin_manager import PINManager
 
 logger = logging.getLogger(__name__)
 

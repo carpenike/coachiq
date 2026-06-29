@@ -32,10 +32,10 @@ from backend.core.performance import PerformanceMonitor
 from backend.core.safety_registry import SafetyServiceRegistry
 from backend.core.service_dependency_resolver import DependencyType, ServiceDependency
 from backend.services.edge_proxy_monitor_service import EdgeProxyMonitorService
-from backend.services.pin_manager import PINConfig, PINManager
+from backend.services.auth.pin_manager import PINConfig, PINManager
 from backend.services.rvc.rvc_config_facade import RVCConfigFacade
-from backend.services.security_audit_service import RateLimitConfig, SecurityAuditService
-from backend.services.security_config_service import SecurityConfigService
+from backend.services.security.security_audit_service import RateLimitConfig, SecurityAuditService
+from backend.services.security.security_config_service import SecurityConfigService
 
 logger = logging.getLogger(__name__)
 
@@ -330,7 +330,7 @@ def _init_security_event_manager(
     performance_monitor=None,
 ):
     """Initialize enhanced security event manager as orchestration facade."""
-    from backend.services.security_event_manager import SecurityEventManager
+    from backend.services.security.security_event_manager import SecurityEventManager
 
     # Create enhanced orchestration facade
     manager = SecurityEventManager(

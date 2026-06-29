@@ -116,7 +116,7 @@ class LockoutService:
         if self._attempt_tracker:
             try:
                 # Import here to avoid circular dependency
-                from backend.services.attempt_tracker_service import (
+                from backend.services.auth.attempt_tracker_service import (
                     AttemptStatus,
                     AttemptType,
                     SecurityAttempt,
@@ -160,7 +160,7 @@ class LockoutService:
         if self._attempt_tracker:
             try:
                 # Import here to avoid circular dependency
-                from backend.services.attempt_tracker_service import (
+                from backend.services.auth.attempt_tracker_service import (
                     AttemptStatus,
                     AttemptType,
                     SecurityAttempt,

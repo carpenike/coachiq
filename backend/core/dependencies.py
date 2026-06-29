@@ -93,18 +93,22 @@ from backend.services.notifications.notification_manager import (
 from backend.services.notifications.notification_reporting_service import (
     NotificationReportingService as _NotificationReportingService,
 )
-from backend.services.pin_manager import PINManager as _PINManager
+from backend.services.auth.pin_manager import PINManager as _PINManager
 from backend.services.predictive_maintenance_service import (
     PredictiveMaintenanceService as _PredictiveMaintenanceService,
 )
 from backend.services.rvc.rvc_config_facade import RVCConfigFacade as _RVCConfigFacade
 from backend.services.rvc.rvc_service import RVCService as _RVCService
 from backend.services.safety_service import SafetyService as _SafetyService
-from backend.services.security_audit_service import SecurityAuditService as _SecurityAuditService
-from backend.services.security_config_service import (
+from backend.services.security.security_audit_service import (
+    SecurityAuditService as _SecurityAuditService,
+)
+from backend.services.security.security_config_service import (
     SecurityConfigService as _SecurityConfigService,
 )
-from backend.services.security_event_manager import SecurityEventManager as _SecurityEventManager
+from backend.services.security.security_event_manager import (
+    SecurityEventManager as _SecurityEventManager,
+)
 
 logger = logging.getLogger(__name__)
 

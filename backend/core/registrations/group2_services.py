@@ -32,7 +32,7 @@ from backend.services.database.database_services import (
     DatabaseSessionService,
 )
 from backend.services.entity_service import EntityService
-from backend.services.security_event_service import SecurityEventService
+from backend.services.security.security_event_service import SecurityEventService
 
 logger = logging.getLogger(__name__)
 
@@ -77,7 +77,7 @@ def register(service_registry: SafetyServiceRegistry) -> None:
     )
 
     # Attempt Tracker Service
-    from backend.services.attempt_tracker_service import AttemptTrackerService
+    from backend.services.auth.attempt_tracker_service import AttemptTrackerService
 
     service_registry.register_service(
         name="attempt_tracker_service",

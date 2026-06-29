@@ -23,7 +23,7 @@ from backend.core.dependencies import (
     get_security_audit_service,
     get_security_config_service,
 )
-from backend.services.security_config_service import (
+from backend.services.security.security_config_service import (
     AuditPolicy,
     AuthenticationPolicy,
     NetworkSecurityPolicy,

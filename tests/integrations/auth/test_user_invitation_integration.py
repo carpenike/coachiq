@@ -16,7 +16,7 @@ import pytest
 
 from backend.core.config import AuthenticationSettings
 from backend.services.auth.manager import AuthManager
-from backend.services.user_invitation_service import UserInvitationService
+from backend.services.auth.user_invitation_service import UserInvitationService
 
 
 class TestUserInvitationService:
