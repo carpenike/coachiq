@@ -34,7 +34,7 @@ from backend.models.github_update import GitHubUpdateStatus
 from backend.repositories.can_tracking_repository import CANTrackingRepository
 from backend.repositories.entity_state_repository import EntityStateRepository
 from backend.services.github_update_checker import GitHubUpdateChecker
-from backend.services.rvc_config_facade import RVCConfigFacade
+from backend.services.rvc.rvc_config_facade import RVCConfigFacade
 
 # Create missing dependencies
 get_can_interface_service = create_service_dependency("can_interface_service")

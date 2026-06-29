@@ -15,5 +15,5 @@ A7.0--A7.3).
 
 Use the fully-qualified module path instead:
     from backend.services.entity_service import EntityService
-    from backend.services.rvc_config_facade import RVCConfigFacade
+    from backend.services.rvc.rvc_config_facade import RVCConfigFacade
 """

@@ -13,7 +13,7 @@ import pytest
 
 from backend.models.common import CoachInfo
 from backend.repositories import RVCConfigRepository
-from backend.services.rvc_config_facade import RVCConfigFacade
+from backend.services.rvc.rvc_config_facade import RVCConfigFacade
 
 
 @pytest.fixture
@@ -186,7 +186,7 @@ class TestCreateConfigServiceFactory:
     """The factory function is documented as not-yet-wired."""
 
     def test_factory_raises_until_wired_to_service_registry(self):
-        from backend.services.rvc_config_facade import create_rvc_config_facade
+        from backend.services.rvc.rvc_config_facade import create_rvc_config_facade
 
         with pytest.raises(NotImplementedError, match="ServiceRegistry"):
             create_rvc_config_facade()

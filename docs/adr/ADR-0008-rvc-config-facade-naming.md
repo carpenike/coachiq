@@ -40,7 +40,7 @@ correct, only the names were lying.
    | Tier | Class | New module | Role |
    |---|---|---|---|
    | App config | `Settings` | `backend.core.config` | Canonical app configuration, read via `get_settings()`. **No rename** -- this layer was already right. |
-   | RV-C metadata facade | `RVCConfigFacade` (was `ConfigService`) | `backend.services.rvc_config_facade` | Thin request-time read API over `RVCConfigRepository` for PGN names and coach info. |
+   | RV-C metadata facade | `RVCConfigFacade` (was `ConfigService`) | `backend.services.rvc.rvc_config_facade` | Thin request-time read API over `RVCConfigRepository` for PGN names and coach info. |
    | Spec-file loader | `RVCSpecLoader` (was `ConfigurationService`) | `backend.integrations.rvc.spec_loader` | TTL-cached loader for `rvc.json` / `coach_mapping.yml` / DGN spec files. Internal to the RV-C decoder; not a public service. |
 
 2. **Renames are mechanical**: every call site moved from

@@ -33,7 +33,7 @@ from backend.core.safety_registry import SafetyServiceRegistry
 from backend.core.service_dependency_resolver import DependencyType, ServiceDependency
 from backend.services.edge_proxy_monitor_service import EdgeProxyMonitorService
 from backend.services.pin_manager import PINConfig, PINManager
-from backend.services.rvc_config_facade import RVCConfigFacade
+from backend.services.rvc.rvc_config_facade import RVCConfigFacade
 from backend.services.security_audit_service import RateLimitConfig, SecurityAuditService
 from backend.services.security_config_service import SecurityConfigService
 
