@@ -31,7 +31,7 @@ from backend.core.config import get_settings
 from backend.core.performance import PerformanceMonitor
 from backend.core.safety_registry import SafetyServiceRegistry
 from backend.core.service_dependency_resolver import DependencyType, ServiceDependency
-from backend.services.edge_proxy_monitor_service import EdgeProxyMonitorService
+from backend.services.updates.edge_proxy_monitor_service import EdgeProxyMonitorService
 from backend.services.auth.pin_manager import PINConfig, PINManager
 from backend.services.rvc.rvc_config_facade import RVCConfigFacade
 from backend.services.security.security_audit_service import RateLimitConfig, SecurityAuditService
@@ -349,7 +349,7 @@ def _init_security_event_manager(
 
 async def _init_device_discovery_service(rvc_config, can_facade=None):
     """Initialize device discovery service with RVC config and optional CANFacade dependencies."""
-    from backend.services.device_discovery_service import DeviceDiscoveryService
+    from backend.services.discovery.device_discovery_service import DeviceDiscoveryService
 
     service = DeviceDiscoveryService(can_facade=can_facade, config=rvc_config)
     logger.info(

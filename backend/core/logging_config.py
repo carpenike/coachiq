@@ -202,7 +202,7 @@ def configure_logging(
         try:
             import asyncio
 
-            from backend.services.websocket_service import WebSocketLogHandler
+            from backend.services.system.websocket_service import WebSocketLogHandler
 
             # Get the current event loop or create a new one
             try:
@@ -336,7 +336,7 @@ def update_websocket_logging(websocket_service) -> None:
     root_logger = logging.getLogger()
 
     # Check if WebSocket handler already exists
-    from backend.services.websocket_service import WebSocketLogHandler
+    from backend.services.system.websocket_service import WebSocketLogHandler
 
     has_ws_handler = any(
         isinstance(handler, WebSocketLogHandler) for handler in root_logger.handlers
@@ -346,7 +346,7 @@ def update_websocket_logging(websocket_service) -> None:
         try:
             import asyncio
 
-            from backend.services.websocket_service import WebSocketLogHandler
+            from backend.services.system.websocket_service import WebSocketLogHandler
 
             # Get the current event loop
             try:
@@ -529,7 +529,7 @@ def configure_unified_logging(
         try:
             import asyncio
 
-            from backend.services.websocket_service import WebSocketLogHandler
+            from backend.services.system.websocket_service import WebSocketLogHandler
 
             # Get the current event loop or create a new one
             try:

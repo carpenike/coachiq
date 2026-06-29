@@ -34,10 +34,10 @@ from backend.services.auth.service import AuthService
 from backend.services.can.can_bus_service import CANBusService
 from backend.services.can.can_interface_service import CANInterfaceService
 from backend.services.can.can_network_telemetry_service import CANNetworkTelemetryService
-from backend.services.entity_manager_service import EntityManagerService
-from backend.services.protocol_manager import ProtocolManager
-from backend.services.safety_service import SafetyService
-from backend.services.websocket_service import WebSocketService
+from backend.services.entities.entity_manager_service import EntityManagerService
+from backend.services.protocols.protocol_manager import ProtocolManager
+from backend.services.safety.safety_service import SafetyService
+from backend.services.system.websocket_service import WebSocketService
 
 logger = logging.getLogger(__name__)
 
@@ -573,7 +573,7 @@ def register(service_registry: SafetyServiceRegistry) -> None:
     )
 
     # DashboardService - Frontend dashboard aggregation service
-    from backend.services.dashboard_service import DashboardService
+    from backend.services.system.dashboard_service import DashboardService
 
     def _init_dashboard_service(
         entity_state_repository=None,

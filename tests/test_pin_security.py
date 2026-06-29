@@ -20,7 +20,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.models.auth import PINAttempt, PINSession, User, UserPIN
 from backend.services.auth.pin_manager import PINConfig, PINManager
-from backend.services.safety_service import SafetyService, SystemOperationalMode
+from backend.services.safety.safety_service import SafetyService, SystemOperationalMode
 from backend.services.security.security_audit_service import SecurityAuditService
 
 
@@ -366,7 +366,7 @@ class TestInterlockOverrideWithPIN:
     async def test_override_interlock_with_pin_success(self, safety_service, pin_manager):
         """Test successful interlock override with PIN."""
         # Add a test interlock
-        from backend.services.safety_service import SafetyInterlock
+        from backend.services.safety.safety_service import SafetyInterlock
 
         test_interlock = SafetyInterlock(
             name="test_interlock",
@@ -412,7 +412,7 @@ class TestInterlockOverrideWithPIN:
     async def test_clear_interlock_override(self, safety_service):
         """Test clearing an interlock override."""
         # Add a test interlock with override
-        from backend.services.safety_service import SafetyInterlock
+        from backend.services.safety.safety_service import SafetyInterlock
 
         test_interlock = SafetyInterlock(
             name="test_interlock",

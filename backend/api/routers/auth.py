@@ -35,7 +35,7 @@ from backend.services.auth.manager import (  # noqa: E402  # pre-existing layout
     AuthMode,
     InvalidTokenError,
 )
-from backend.services.auth.user_invitation_service import (
+from backend.services.auth.user_invitation_service import (  # noqa: E402  # pre-existing layout
     UserInvitationRequest,
     UserInvitationResponse,
     UserInvitationService,

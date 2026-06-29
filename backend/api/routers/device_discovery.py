@@ -15,7 +15,7 @@ from backend.core.dependencies import create_service_dependency
 
 # Create device discovery service dependency
 get_device_discovery_service = create_service_dependency("device_discovery_service")
-from backend.services.device_discovery_service import DeviceDiscoveryService
+from backend.services.discovery.device_discovery_service import DeviceDiscoveryService  # noqa: E402
 
 logger = logging.getLogger(__name__)
 

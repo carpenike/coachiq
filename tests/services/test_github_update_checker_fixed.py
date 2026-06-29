@@ -15,7 +15,7 @@ from unittest.mock import AsyncMock, Mock, patch
 import httpx
 import pytest
 
-from backend.services.github_update_checker import (
+from backend.services.updates.github_update_checker import (
     GitHubUpdateChecker,
     build_github_api_url,
     get_github_repo,
@@ -172,7 +172,7 @@ class TestServiceLifecycle:
 class TestUpdateChecking:
     """Test update checking functionality."""
 
-    @patch("backend.services.github_update_checker.httpx.AsyncClient")
+    @patch("backend.services.updates.github_update_checker.httpx.AsyncClient")
     async def test_check_now_success(self, mock_client_class, update_checker, mock_httpx_response):
         """Test successful update check."""
         mock_client = AsyncMock()
@@ -186,7 +186,7 @@ class TestUpdateChecking:
         assert update_checker.last_success > 0
         assert update_checker.latest_release_info is not None
 
-    @patch("backend.services.github_update_checker.httpx.AsyncClient")
+    @patch("backend.services.updates.github_update_checker.httpx.AsyncClient")
     async def test_check_now_http_error(self, mock_client_class, update_checker):
         """Test update check with HTTP error."""
         mock_client = AsyncMock()
@@ -266,7 +266,9 @@ class TestServiceIntegration:
 
     async def test_complete_update_workflow(self, update_checker):
         """Test complete update checking workflow."""
-        with patch("backend.services.github_update_checker.httpx.AsyncClient") as mock_client_class:
+        with patch(
+            "backend.services.updates.github_update_checker.httpx.AsyncClient"
+        ) as mock_client_class:
             mock_client = AsyncMock()
             mock_client_class.return_value.__aenter__.return_value = mock_client
 
@@ -317,7 +319,9 @@ class TestServiceIntegration:
         # Patch the AsyncClient so check_now's internal try/except
         # actually exercises (vs. mocking check_now itself, which
         # bypasses the resilience layer).
-        with patch("backend.services.github_update_checker.httpx.AsyncClient") as mock_client_class:
+        with patch(
+            "backend.services.updates.github_update_checker.httpx.AsyncClient"
+        ) as mock_client_class:
             mock_client = AsyncMock()
             mock_client_class.return_value.__aenter__ = AsyncMock(return_value=mock_client)
             mock_client_class.return_value.__aexit__ = AsyncMock(return_value=None)

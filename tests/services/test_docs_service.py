@@ -13,7 +13,7 @@ from unittest.mock import AsyncMock, MagicMock, Mock
 import pytest
 
 from backend.core.performance import PerformanceMonitor
-from backend.services.docs_service import DocsService
+from backend.services.system.docs_service import DocsService
 
 # ================================
 # Test Fixtures

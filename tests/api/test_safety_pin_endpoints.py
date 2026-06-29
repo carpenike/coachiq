@@ -22,7 +22,7 @@ from backend.core.dependencies import (
     get_authenticated_user,
     get_safety_service,
 )
-from backend.services.safety_service import SafetyInterlock, SystemOperationalMode
+from backend.services.safety.safety_service import SafetyInterlock, SystemOperationalMode
 
 
 @pytest.fixture

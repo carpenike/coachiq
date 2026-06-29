@@ -11,7 +11,7 @@ This service extracts documentation-related business logic from the API router l
 """
 
 import logging
-from typing import Any, Optional
+from typing import Any
 
 from backend.core.performance import PerformanceMonitor
 from backend.repositories.docs_repository import DocsRepository

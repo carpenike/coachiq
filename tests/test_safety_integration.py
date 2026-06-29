@@ -17,7 +17,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from backend.core.service_registry import ServiceRegistry, ServiceStatus
-from backend.services.safety_service import SafetyInterlock, SafetyService
+from backend.services.safety.safety_service import SafetyService
 
 
 class RealWorldService:

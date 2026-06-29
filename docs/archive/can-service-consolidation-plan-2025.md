@@ -1008,7 +1008,7 @@ After implementation, conduct:
   ```python
   async def _init_device_discovery_service(rvc_config, can_facade=None):
       """Initialize device discovery service with RVC config and optional CANFacade dependencies."""
-      from backend.services.device_discovery_service import DeviceDiscoveryService
+      from backend.services.discovery.device_discovery_service import DeviceDiscoveryService
 
       service = DeviceDiscoveryService(can_facade=can_facade, config=rvc_config)
       logger.info("DeviceDiscoveryService initialized via ServiceRegistry with RVC config and CANFacade (available: %s)", can_facade is not None)

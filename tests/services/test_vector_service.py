@@ -12,7 +12,7 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 
 from backend.core.performance import PerformanceMonitor
-from backend.services.vector_service import VectorService
+from backend.services.knowledge.vector_service import VectorService
 
 
 @pytest.fixture

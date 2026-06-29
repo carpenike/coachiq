@@ -13,7 +13,7 @@ from unittest.mock import AsyncMock
 import pytest
 
 from backend.core.service_registry import ServiceStatus
-from backend.services.safety_service import SafetyService
+from backend.services.safety.safety_service import SafetyService
 
 
 class MockService:

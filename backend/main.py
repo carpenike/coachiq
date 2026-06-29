@@ -54,14 +54,6 @@ from backend.monitoring import get_health_monitoring_summary, record_health_prob
 
 # CANService import removed - not used in this file
 
-# from backend.services.docs_service import DocsService  # Not used
-
-# EntityService import removed - not used in this file
-# from backend.services.predictive_maintenance_service import PredictiveMaintenanceService  # Not migrated yet
-# RVCService import removed - not used in this file
-
-# from backend.services.vector_service import VectorService  # Not used
-
 # Set up early logging before anything else
 setup_early_logging()
 

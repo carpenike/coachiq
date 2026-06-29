@@ -5,7 +5,11 @@ from unittest.mock import AsyncMock
 
 import pytest
 
-from backend.services.safety_service import SafetyInterlock, SafetyService, SystemOperationalMode
+from backend.services.safety.safety_service import (
+    SafetyInterlock,
+    SafetyService,
+    SystemOperationalMode,
+)
 
 pytestmark = [pytest.mark.unit, pytest.mark.safety]
 

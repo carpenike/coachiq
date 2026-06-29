@@ -37,7 +37,7 @@ from backend.models.dashboard import (
     SystemAnalytics,
     SystemMetrics,
 )
-from backend.services.dashboard_service import DashboardService
+from backend.services.system.dashboard_service import DashboardService  # noqa: E402
 
 logger = logging.getLogger(__name__)
 
