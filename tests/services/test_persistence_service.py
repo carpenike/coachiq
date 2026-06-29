@@ -17,7 +17,7 @@ import pytest
 from backend.core.config import PersistenceSettings
 from backend.core.performance import PerformanceMonitor
 from backend.repositories.persistence_repository import PersistenceRepository
-from backend.services.persistence_service import PersistenceService
+from backend.services.persistence.persistence_service import PersistenceService
 
 
 def _build_persistence_service(settings: PersistenceSettings) -> PersistenceService:
@@ -308,7 +308,7 @@ class TestPersistenceService:
 
         assert persistence_service._initialized is False
 
-    @patch("backend.services.persistence_service.logger")
+    @patch("backend.services.persistence.persistence_service.logger")
     async def test_initialization_error_handling(self, mock_logger, temp_data_dir):
         """Test error handling during initialization."""
         # Create settings with invalid directory (read-only)

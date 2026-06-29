@@ -303,7 +303,7 @@ async def _init_database_manager(
 
 async def _init_persistence_service(persistence_repository=None, performance_monitor=None):
     """Initialize persistence service."""
-    from backend.services.persistence_service import PersistenceService
+    from backend.services.persistence.persistence_service import PersistenceService
 
     # Always use the new pattern
     if not persistence_repository or not performance_monitor:

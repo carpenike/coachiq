@@ -17,7 +17,7 @@ from backend.core.dependencies import (
     get_persistence_service,
 )
 from backend.models.persistence import BackupInfo, StorageInfo
-from backend.services.persistence_service import PersistenceService
+from backend.services.persistence.persistence_service import PersistenceService
 from backend.services.database.repositories import ConfigRepository, DashboardRepository
 
 logger = logging.getLogger(__name__)

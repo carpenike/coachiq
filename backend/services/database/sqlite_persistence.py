@@ -10,7 +10,7 @@ import logging
 from backend.models.persistence import DashboardConfiguration
 from backend.models.unmapped import UnmappedEntryModel
 from backend.services.database.database_engine import DatabaseEngine, DatabaseSettings
-from backend.services.persistence_interface import (
+from backend.services.persistence.persistence_interface import (
     ConfigRepositoryInterface,
     DashboardRepositoryInterface,
     PersistenceServiceInterface,

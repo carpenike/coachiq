@@ -237,7 +237,7 @@ config = loader.load()
 
 ### 3. Accessing Persistence Directories
 ```python
-from backend.services.persistence_service import PersistenceService
+from backend.services.persistence.persistence_service import PersistenceService
 
 persistence = PersistenceService()
 await persistence.initialize()
