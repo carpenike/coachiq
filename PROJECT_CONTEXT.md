@@ -207,7 +207,8 @@ proposing anything that touches the area.
 | ADR-0006 | Typed dependency injection            | Typed aliases in `dependencies.py` map to concrete classes; registry is string-keyed       |
 | ADR-0007 | Auth service namespace                | Auth consolidated into `backend/services/auth/`; `AuthManager` ≠ `AuthService` by design   |
 | ADR-0008 | RVC config facade naming              | `Settings` (app) vs `RVCConfigFacade` (metadata) vs `RVCSpecLoader` (spec files)           |
-| ADR-0009 | Nix module hybrid options             | `services.coachiq` keeps a small typed surface; long-tail config flows through env vars     |
+| ADR-0009 | Nix module hybrid options             | `services.coachiq` keeps a small typed surface; long-tail config flows through env vars    |
+| ADR-0010 | Pre-1.0 no backward compatibility     | No external-compat obligation before 1.0; ADR-0003/0005 compat pacing is relaxed           |
 
 ---
 

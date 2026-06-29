@@ -67,7 +67,7 @@ Always use `@context7` first for any React or library-related questions to get c
 
 - **Project-specific**:
   - Get WebSocket message formats: `@context7 WebSocket message format entities`
-  - Find API endpoint schemas: `@context7 /api/entities schema`
+  - Find API endpoint schemas: `@context7 /api/v2/entities schema`
   - Review component implementations: `@context7 Lights.tsx component`
   - Find backend state models: `@context7 entity state model`
 
@@ -89,7 +89,7 @@ Only use `@perplexity` for general concepts not related to specific library APIs
 // Fetch entities from the API
 const fetchEntities = async () => {
   try {
-    const response = await fetch("/api/entities");
+    const response = await fetch("/api/v2/entities");
     if (!response.ok) throw new Error("Network response was not ok");
     const data = await response.json();
     return data;

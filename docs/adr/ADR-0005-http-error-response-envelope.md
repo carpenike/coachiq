@@ -5,6 +5,15 @@
 **Accepted**, 2026-05-13. Architectural-audit cycle 2026-05-13, PR A5
 (closes #150).
 
+### Status update (pre-1.0)
+
+[ADR-0010](ADR-0010-pre-1.0-no-backward-compat.md) supersedes this ADR's
+backward-compatibility rationale until the 1.0 / first public release. Pre-1.0,
+the dual `detail` plus `error.{code,message}` envelope is compatibility with
+this repo's own frontend and tests, not with an external consumer. The envelope
+may collapse to one shape under a future reviewed hand-off once in-repo callers
+and tests are migrated. This HOF does not change the wire format.
+
 ## Context
 
 `backend/core/exception_handlers.py` wraps every HTTP error response in

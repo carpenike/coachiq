@@ -6,6 +6,16 @@
 several recent PRs (notably #126 retiring `/api/entities`, #124
 retiring `/api/missing-dgns`, and the contract-test rewrite in #130).
 
+### Status update (pre-1.0)
+
+[ADR-0010](ADR-0010-pre-1.0-no-backward-compat.md) relaxes this ADR's
+incremental-retirement pacing until the 1.0 / first public release. Pre-1.0,
+legacy `/api/*` routers with v2 equivalents may be retired decisively and in
+bulk once the v2 replacement covers the capability, this repo's own callers are
+updated, and tests pass. The original v2-only decision remains in force; only
+backward-compatibility-driven caution around retirement pacing is superseded by
+ADR-0010.
+
 ## Context
 
 The backend has historically grown two API namespaces:

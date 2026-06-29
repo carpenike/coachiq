@@ -73,6 +73,12 @@ Keep ADRs short -- 50-150 lines is typical. If you find yourself writing
   `RVCSpecLoader` so the three "configuration" tiers (Pydantic
   `Settings`, RV-C metadata facade, RV-C spec-file loader) have
   distinct names.
+- [ADR-0009](ADR-0009-nix-module-hybrid-options.md) -- Keep the
+  `services.coachiq` NixOS module surface small and typed, with
+  long-tail configuration passed through environment variables.
+- [ADR-0010](ADR-0010-pre-1.0-no-backward-compat.md) -- Carry no
+  backward-compatibility obligation before 1.0; retire legacy surfaces
+  decisively once replacements, in-repo callers, and tests are covered.
 
 ## Status
 

@@ -39,7 +39,7 @@ poetry run pyright backend && poetry run ruff check . && poetry run ruff format 
 ## Core Requirements
 
 - All build, cache, and output files (e.g., dist, dist-ssr, .vite, .vite-temp, node*modules, *.tsbuildinfo, .cache, \_.log) are excluded from linting and type checking in both root and frontend ESLint configs.
-- All API calls are made via /api/entities endpoints, not /api/lights, /api/locks, etc. to ensure a unified and extensible API design.
+- All entity API calls are made via /api/v2/entities endpoints, not legacy per-type or v1 entity endpoints, to ensure a unified and extensible API design.
 - All API endpoints require comprehensive documentation with examples, descriptions, and response schemas to maintain the OpenAPI specification.
 - **All Python scripts must be run using Poetry.** Use `poetry run python <script>.py` or `poetry run <command>`, never `python <script>.py` directly.
 
