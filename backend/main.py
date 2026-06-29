@@ -333,7 +333,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
 
             service_registry = get_service_registry()
             logger.info("Using ServiceRegistry for orchestrated shutdown")
-            await service_registry.shutdown()
+            await service_registry.shutdown_all()
         except Exception as e:
             logger.error(f"Error during ServiceRegistry shutdown: {e}")
             logger.info("Using legacy shutdown (ServiceRegistry not available)")

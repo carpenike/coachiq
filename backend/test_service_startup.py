@@ -41,7 +41,7 @@ async def test_basic_startup():
     service = registry.get_service("simple_service")
     print(f"Retrieved service: {service}")
 
-    await registry.shutdown()
+    await registry.shutdown_all()
 
 
 async def test_app_state_service():
@@ -145,7 +145,7 @@ async def test_app_state_service():
         service = registry.get_service("app_state_service")
         print(f"App state service dependencies: {list(service.dependencies.keys())}")
 
-    await registry.shutdown()
+    await registry.shutdown_all()
 
 
 async def main():
