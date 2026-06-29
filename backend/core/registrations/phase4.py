@@ -31,9 +31,9 @@ from backend.core.service_dependency_resolver import DependencyType, ServiceDepe
 from backend.integrations.can.message_injector import CANMessageInjector, SafetyLevel
 from backend.services.analytics.analytics_dashboard_service import AnalyticsDashboardService
 from backend.services.auth.service import AuthService
-from backend.services.can_bus_service import CANBusService
-from backend.services.can_interface_service import CANInterfaceService
-from backend.services.can_network_telemetry_service import CANNetworkTelemetryService
+from backend.services.can.can_bus_service import CANBusService
+from backend.services.can.can_interface_service import CANInterfaceService
+from backend.services.can.can_network_telemetry_service import CANNetworkTelemetryService
 from backend.services.entity_manager_service import EntityManagerService
 from backend.services.protocol_manager import ProtocolManager
 from backend.services.safety_service import SafetyService
@@ -499,7 +499,7 @@ def register(service_registry: SafetyServiceRegistry) -> None:
         performance_monitor,
     ):
         """Initialize CANFacade with all CAN-related services."""
-        from backend.services.can_facade import CANFacade
+        from backend.services.can.can_facade import CANFacade
 
         return CANFacade(
             bus_service=can_bus_service,

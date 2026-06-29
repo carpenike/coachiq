@@ -12,7 +12,7 @@ from backend.integrations.diagnostics.handler import DiagnosticHandler
 from backend.integrations.diagnostics.models import DTCSeverity, ProtocolType, SystemType
 from backend.integrations.rvc import load_config_data_v2
 from backend.main import app
-from backend.services.can_bus_service import CANBusService
+from backend.services.can.can_bus_service import CANBusService
 
 pytestmark = [pytest.mark.api, pytest.mark.can]
 

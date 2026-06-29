@@ -8,7 +8,7 @@ import pytest
 from backend.integrations.can.protocol_router import CANFrame, ProtocolRouter
 from backend.integrations.rvc import BAMHandler
 from backend.integrations.rvc.decoder_core import decode_component_id
-from backend.services.can_bus_service import CANBusService
+from backend.services.can.can_bus_service import CANBusService
 from backend.services.device_discovery_service import DeviceDiscoveryService
 
 pytestmark = [pytest.mark.can, pytest.mark.rvc]

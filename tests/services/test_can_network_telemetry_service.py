@@ -6,7 +6,7 @@ from typing import Any
 import pytest
 
 from backend.core.service_registry import ServiceRegistry
-from backend.services.can_network_telemetry_service import CANNetworkTelemetryService
+from backend.services.can.can_network_telemetry_service import CANNetworkTelemetryService
 
 pytestmark = pytest.mark.can
 

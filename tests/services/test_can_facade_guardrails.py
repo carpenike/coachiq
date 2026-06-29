@@ -6,7 +6,7 @@ from unittest.mock import AsyncMock, Mock
 import pytest
 
 from backend.core.safety_interfaces import SafetyStatus
-from backend.services.can_facade import CANFacade
+from backend.services.can.can_facade import CANFacade
 
 pytestmark = [pytest.mark.unit, pytest.mark.can]
 

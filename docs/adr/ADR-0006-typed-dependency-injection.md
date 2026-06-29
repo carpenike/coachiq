@@ -59,7 +59,7 @@ Pattern:
 ```python
 # Import the real class under an underscore-prefixed name so the
 # type alias keeps the public, ergonomic name routers already use.
-from backend.services.can_facade import CANFacade as _CANFacade
+from backend.services.can.can_facade import CANFacade as _CANFacade
 
 def get_can_facade() -> _CANFacade | None:
     """Get the CANFacade from ServiceRegistry."""

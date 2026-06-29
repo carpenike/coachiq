@@ -71,8 +71,8 @@ from backend.services.analytics.analytics_dashboard_service import (
 # ``backend.core.dependencies.WebSocketManager``. Tracked separately;
 # fix likely requires making entity_service's websocket import lazy.
 from backend.services.auth.manager import AuthManager as _AuthManager
-from backend.services.can_facade import CANFacade as _CANFacade
-from backend.services.can_network_telemetry_service import (
+from backend.services.can.can_facade import CANFacade as _CANFacade
+from backend.services.can.can_network_telemetry_service import (
     CANNetworkTelemetryService as _CANNetworkTelemetryService,
 )
 from backend.services.database_update_service import DatabaseUpdateService as _DatabaseUpdateService

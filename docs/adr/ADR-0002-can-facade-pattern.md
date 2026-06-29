@@ -55,7 +55,7 @@ Routers receive the facade via:
 from typing import Annotated
 from fastapi import APIRouter, Depends
 from backend.core.dependencies import get_can_facade
-from backend.services.can_facade import CANFacade
+from backend.services.can.can_facade import CANFacade
 
 router = APIRouter()
 

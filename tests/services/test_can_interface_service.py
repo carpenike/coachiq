@@ -4,8 +4,8 @@ from typing import Any
 
 import pytest
 
-import backend.services.can_interface_service as can_interface_module
-from backend.services.can_interface_service import CANInterfaceService
+import backend.services.can.can_interface_service as can_interface_module
+from backend.services.can.can_interface_service import CANInterfaceService
 
 pytestmark = pytest.mark.can
 

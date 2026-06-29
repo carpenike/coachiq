@@ -535,7 +535,7 @@ The CANFacade backend successfully maintains full compatibility with the existin
 ```python
 import pytest
 from unittest.mock import AsyncMock, Mock
-from backend.services.can_facade import CANFacade
+from backend.services.can.can_facade import CANFacade
 from backend.services.feature_models import SafetyClassification
 
 @pytest.fixture
@@ -961,7 +961,7 @@ After implementation, conduct:
 - `backend/main.py`: Added CANInterfaceService import and registration
   ```python
   # Import restored
-  from backend.services.can_interface_service import CANInterfaceService
+  from backend.services.can.can_interface_service import CANInterfaceService
 
   # Service registration added
   service_registry.register_service(
