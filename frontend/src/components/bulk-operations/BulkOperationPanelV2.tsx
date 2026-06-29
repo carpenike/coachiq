@@ -14,7 +14,7 @@ import { Separator } from "@/components/ui/separator";
 import { Slider } from "@/components/ui/slider";
 import { Switch } from "@/components/ui/switch";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
-import { useEntitySelection } from "@/hooks/domains/useEntitiesV2";
+import { useEntitySelection } from "@/hooks/useEntities";
 import {
   IconBulb,
   IconCheck,

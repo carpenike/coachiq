@@ -17,10 +17,10 @@ import { Separator } from "@/components/ui/separator";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import {
-  useEntitiesV2,
+  useEntities,
   useEntityFilters,
   useEntityPagination
-} from "@/hooks/domains/useEntitiesV2";
+} from "@/hooks/useEntities";
 import {
   IconBulb,
   IconCheck,
@@ -69,7 +69,7 @@ export function EntitySelectorV2({
   }), [filters, searchQuery]);
 
   // Fetch entities with pagination and filtering
-  const { data: entityCollection, isLoading, error } = useEntitiesV2({
+  const { data: entityCollection, isLoading, error } = useEntities({
     ...searchFilters,
     ...paginationParams
   });

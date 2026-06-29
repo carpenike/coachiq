@@ -15,6 +15,7 @@ import { Skeleton } from "@/components/ui/skeleton"
 import { useDashboardState, useSystemAnalytics } from "@/hooks/useDashboard"
 import { useEntities } from "@/hooks/useEntities"
 import { useHealthStatus } from "@/hooks/useSystem"
+import { isEntityRecentlyUpdated } from "@/utils/entity-display"
 import {
     IconActivity,
     IconAlertCircle,
@@ -144,7 +145,7 @@ function DeviceOverviewCard() {
     )
   }
 
-  const entityArray = entities ? Object.values(entities) : []
+  const entityArray = entities?.entities ?? []
   const totalEntities = entityArray.length
   const lightCount = entityArray.filter(e => e.device_type === 'light').length
   const sensorCount = entityArray.filter(e =>
@@ -153,9 +154,7 @@ function DeviceOverviewCard() {
   ).length
 
   // Calculate online devices (devices seen in last 5 minutes)
-  const onlineDevices = entityArray.filter(e =>
-    e.timestamp && (Date.now() - e.timestamp) < 300000
-  ).length
+  const onlineDevices = entityArray.filter(e => isEntityRecentlyUpdated(e)).length
 
   // Mock trend calculation (in real app, compare with previous data)
   const deviceTrend: 'up' | 'down' | 'neutral' = totalEntities > 0 ? 'up' : 'neutral'

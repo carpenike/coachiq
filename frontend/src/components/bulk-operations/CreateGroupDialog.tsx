@@ -14,6 +14,7 @@ import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
 import { useDeviceGroups, type DeviceGroupRequest } from "@/hooks/useBulkOperations"
 import { useEntities } from "@/hooks/useEntities"
+import { getEntityDisplayName } from "@/utils/entity-display"
 import { IconDevices, IconUsers } from "@tabler/icons-react"
 import { useState } from "react"
 import { toast } from "sonner"
@@ -98,13 +99,13 @@ export function CreateGroupDialog({
 
   const getDeviceName = (deviceId: string) => {
     if (!entities) return deviceId
-    const entity = entities[deviceId]
-    return entity?.friendly_name || entity?.entity_id || deviceId
+    const entity = entities.entities.find((item) => item.entity_id === deviceId)
+    return entity ? getEntityDisplayName(entity) : deviceId
   }
 
   const getDeviceType = (deviceId: string) => {
     if (!entities) return "device"
-    const entity = entities[deviceId]
+    const entity = entities.entities.find((item) => item.entity_id === deviceId)
     return entity?.device_type || "device"
   }
 

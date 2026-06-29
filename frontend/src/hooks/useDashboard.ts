@@ -8,9 +8,9 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
 
+import { bulkControlEntitiesV2 } from '@/api/domains/entities'
 import {
   acknowledgeAlert,
-  bulkControlEntities,
   fetchActivityFeed,
   fetchCANBusSummary,
   fetchDashboardSummary,
@@ -20,14 +20,14 @@ import {
 } from '@/api/endpoints'
 import type {
   ActivityFeed,
-  BulkControlRequest,
-  BulkControlResponse,
   CANBusSummary,
   DashboardSummary,
   EntitySummary,
   SystemAnalytics,
   SystemMetrics
 } from '@/api/types'
+import type { BulkControlRequestSchema, BulkOperationResultSchema } from '@/api/types/domains'
+import { entitiesQueryKeys } from '@/hooks/useEntities'
 
 // Query keys for caching
 const DASHBOARD_KEYS = {
@@ -125,19 +125,19 @@ export function useSystemAnalytics() {
 export function useBulkControl() {
   const queryClient = useQueryClient()
 
-  return useMutation<BulkControlResponse, Error, BulkControlRequest>({
-    mutationFn: bulkControlEntities,
+  return useMutation<BulkOperationResultSchema, Error, BulkControlRequestSchema>({
+    mutationFn: bulkControlEntitiesV2,
     onSuccess: (data) => {
       // Invalidate related queries to refresh data
       void queryClient.invalidateQueries({ queryKey: DASHBOARD_KEYS.summary })
       void queryClient.invalidateQueries({ queryKey: DASHBOARD_KEYS.entities })
       void queryClient.invalidateQueries({ queryKey: DASHBOARD_KEYS.activity })
-      void queryClient.invalidateQueries({ queryKey: ['entities'] }) // Also invalidate main entities query
+      void queryClient.invalidateQueries({ queryKey: entitiesQueryKeys.collections() })
 
       // Show success toast
-      const successMessage = data.failed === 0
-        ? `Successfully controlled ${data.successful} entities`
-        : `Controlled ${data.successful} entities, ${data.failed} failed`
+      const successMessage = data.failed_count === 0
+        ? `Successfully controlled ${data.success_count} entities`
+        : `Controlled ${data.success_count} entities, ${data.failed_count} failed`
 
       toast.success('Bulk Operation Complete', {
         description: successMessage,

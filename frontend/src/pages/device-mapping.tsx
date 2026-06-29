@@ -14,6 +14,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Skeleton } from "@/components/ui/skeleton"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { useEntities } from "@/hooks/useEntities"
+import { collectionToDisplayEntities } from "@/utils/entity-display"
 import {
   IconAlertCircle,
   IconDeviceDesktop,
@@ -287,7 +288,7 @@ function DeviceTypeBreakdown({ entities }: { entities: EntityData[] }) {
 export default function DeviceMapping() {
   const { data: entities, isLoading, error, refetch } = useEntities()
 
-  const entitiesArray = entities ? Object.values(entities) : []
+  const entitiesArray = collectionToDisplayEntities(entities)
 
   if (isLoading) {
     return (

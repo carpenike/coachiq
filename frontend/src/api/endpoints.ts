@@ -20,8 +20,6 @@ import type {
     ActivityFeed,
     AllCANStats,
     BaselineDeviation,
-    BulkControlRequest,
-    BulkControlResponse,
     BulkOperationPayload,
     BulkOperationRequest,
     BulkOperationResponse,
@@ -54,21 +52,15 @@ import type {
     DTCCollection,
     DTCFilters,
     DTCResolutionResponse,
-    EntitiesQueryParams,
-    Entity,
-    EntityCollection,
     EntitySummary,
     FaultCorrelation,
     FeatureManagementResponse,
     FeatureStatusResponse,
     HealthStatus,
-    HistoryEntry,
-    HistoryQueryParams,
     LockoutStatus,
     // Auth Types
     LoginResponse,
     MaintenancePrediction,
-    MetadataResponse,
     NetworkTopology,
     OptimizationSuggestion,
     PerformanceAnalyticsStats,
@@ -95,8 +87,6 @@ import type {
 // Import Domain API v1 types for enhanced functionality
 import type {
   DiagnosticFaultSummarySchema,
-    EntityCollectionSchema,
-    EntitySchema,
   DiagnosticsSystemStatusSchema,
     OperationResultSchema
 } from './types/domains';
@@ -107,66 +97,6 @@ export * from './pin-auth';
 //
 // ===== ENTITIES API (/api/v1/entities) =====
 //
-
-/**
- * Fetch all entities with optional filtering
- * Now uses Domain API v1 for enhanced functionality and performance
- * Returns data in legacy format for backward compatibility
- *
- * @param params - Optional query parameters for filtering
- * @returns Promise resolving to entity collection in legacy format
- */
-export async function fetchEntities(params?: EntitiesQueryParams): Promise<Record<string, any>> {
-  const queryString = params ? buildQueryString(params) : '';
-  const url = queryString ? `/api/v1/entities?${queryString}` : '/api/v1/entities';
-
-  logApiRequest('GET', url, params);
-  const result = await apiGet<EntityCollectionSchema>(url);
-  logApiResponse(url, result);
-
-  // Convert to legacy format for backward compatibility
-  const legacyEntities: Record<string, any> = {};
-  result.entities.forEach((entity) => {
-    legacyEntities[entity.entity_id] = {
-      entity_id: entity.entity_id,
-      name: entity.name,
-      friendly_name: entity.name,
-      device_type: entity.device_type,
-      suggested_area: entity.area || '',
-      state: entity.state?.state || 'unknown',
-      raw: entity.state || {},
-      capabilities: [], // Could be extracted from state if needed
-      timestamp: new Date(entity.last_updated).getTime(),
-      value: entity.state || {},
-      groups: [],
-      // Legacy fields
-      id: entity.entity_id,
-      last_updated: entity.last_updated,
-      current_state: entity.state?.state || 'unknown',
-      available: entity.available,
-      protocol: entity.protocol,
-    };
-  });
-
-  return legacyEntities;
-}
-
-/**
- * Fetch a specific entity by ID
- * Now uses Domain API v1 for enhanced entity data format
- *
- * @param entityId - The entity ID to fetch
- * @returns Promise resolving to the entity data
- */
-export async function fetchEntity(entityId: string): Promise<EntitySchema> {
-  const url = `/api/v1/entities/${entityId}`;
-
-  logApiRequest('GET', url);
-  const result = await apiGet<EntitySchema>(url);
-  logApiResponse(url, result);
-
-  return result;
-}
 
 /**
  * Control an entity (turn on/off, set brightness, etc.)
@@ -199,30 +129,6 @@ export async function controlEntity(
   };
 
   return legacyResponse;
-}
-
-/**
- * Fetch entity history
- * Now uses Domain API v1 for enhanced history data and pagination
- *
- * @param entityId - The entity ID to get history for
- * @param params - Optional query parameters (limit, since)
- * @returns Promise resolving to history entries
- */
-export async function fetchEntityHistory(
-  entityId: string,
-  params?: HistoryQueryParams
-): Promise<HistoryEntry[]> {
-  const queryString = params ? buildQueryString(params) : '';
-  const url = queryString
-    ? `/api/v1/entities/${entityId}/history?${queryString}`
-    : `/api/v1/entities/${entityId}/history`;
-
-  logApiRequest('GET', url, params);
-  const result = await apiGet<HistoryEntry[]>(url);
-  logApiResponse(url, result);
-
-  return result;
 }
 
 /**
@@ -271,22 +177,6 @@ export async function fetchUnknownPGNs(): Promise<UnknownPGNResponse> {
 
   logApiRequest('GET', url);
   const result = await apiGet<UnknownPGNResponse>(url);
-  logApiResponse(url, result);
-
-  return result;
-}
-
-/**
- * Get entity metadata (device types, areas, etc.)
- * Now uses Domain API v1 for enhanced metadata format and validation
- *
- * @returns Promise resolving to metadata response
- */
-export async function fetchEntityMetadata(): Promise<MetadataResponse> {
-  const url = '/api/v1/entities/metadata';
-
-  logApiRequest('GET', url);
-  const result = await apiGet<MetadataResponse>(url);
   logApiResponse(url, result);
 
   return result;
@@ -642,23 +532,6 @@ export async function fetchActivityFeed(params?: { limit?: number; since?: strin
 
   logApiRequest('GET', url, params);
   const result = await apiGet<ActivityFeed>(url);
-  logApiResponse(url, result);
-
-  return result;
-}
-
-/**
- * Perform bulk control operations on multiple entities
- * Now uses Domain API v1 for enhanced bulk operations with safety controls
- *
- * @param request - Bulk control request with entity IDs and command
- * @returns Promise resolving to bulk control response
- */
-export async function bulkControlEntities(request: BulkControlRequest): Promise<BulkControlResponse> {
-  const url = '/api/v1/entities/bulk-control';
-
-  logApiRequest('POST', url, request);
-  const result = await apiPost<BulkControlResponse>(url, request);
   logApiResponse(url, result);
 
   return result;
@@ -1156,37 +1029,6 @@ export async function generatePerformanceReport(timeWindowSeconds = 3600): Promi
   return result;
 }
 
-//
-// ===== MULTI-PROTOCOL API (/api/entities with protocol filtering) =====
-//
-
-/**
- * Fetch J1939 protocol entities
- *
- * @returns Promise resolving to J1939 entity collection in legacy format
- */
-export async function fetchJ1939Entities(): Promise<Record<string, any>> {
-  return fetchEntities({ protocol: 'j1939' } as EntitiesQueryParams);
-}
-
-/**
- * Fetch Firefly protocol entities
- *
- * @returns Promise resolving to Firefly entity collection in legacy format
- */
-export async function fetchFireflyEntities(): Promise<Record<string, any>> {
-  return fetchEntities({ protocol: 'firefly' } as EntitiesQueryParams);
-}
-
-/**
- * Fetch Spartan K2 protocol entities
- *
- * @returns Promise resolving to Spartan K2 entity collection in legacy format
- */
-export async function fetchSpartanK2Entities(): Promise<Record<string, any>> {
-  return fetchEntities({ protocol: 'spartan_k2' } as EntitiesQueryParams);
-}
-
 /**
  * Get cross-protocol bridge status
  *
@@ -1200,122 +1042,6 @@ export async function fetchProtocolBridgeStatus(): Promise<ProtocolBridgeStatus>
   logApiResponse(url, result);
 
   return result;
-}
-
-//
-// ===== CONVENIENCE FUNCTIONS =====
-//
-
-/**
- * Fetch only light entities
- * Convenience function that filters entities by device_type=light
- *
- * @returns Promise resolving to light entities in legacy format
- */
-export async function fetchLights(): Promise<Record<string, any>> {
-  return fetchEntities({ device_type: 'light' });
-}
-
-/**
- * Fetch only lock entities
- * Convenience function that filters entities by device_type=lock
- *
- * @returns Promise resolving to lock entities in legacy format
- */
-export async function fetchLocks(): Promise<Record<string, any>> {
-  return fetchEntities({ device_type: 'lock' });
-}
-
-/**
- * Fetch only temperature sensor entities
- * Convenience function that filters entities by device_type=temperature_sensor
- *
- * @returns Promise resolving to temperature sensor entities in legacy format
- */
-export async function fetchTemperatureSensors(): Promise<Record<string, any>> {
-  return fetchEntities({ device_type: 'temperature_sensor' });
-}
-
-/**
- * Fetch only tank sensor entities
- * Convenience function that filters entities by device_type=tank_sensor
- *
- * @returns Promise resolving to tank sensor entities in legacy format
- */
-export async function fetchTankSensors(): Promise<Record<string, any>> {
-  return fetchEntities({ device_type: 'tank_sensor' });
-}
-
-//
-// ===== LIGHT CONTROL CONVENIENCE FUNCTIONS =====
-//
-
-/**
- * Turn a light on
- *
- * @param entityId - The light entity ID
- * @returns Promise resolving to control response
- */
-export async function turnLightOn(entityId: string): Promise<ControlEntityResponse> {
-  return controlEntity(entityId, { command: 'set', state: true });
-}
-
-/**
- * Turn a light off
- *
- * @param entityId - The light entity ID
- * @returns Promise resolving to control response
- */
-export async function turnLightOff(entityId: string): Promise<ControlEntityResponse> {
-  return controlEntity(entityId, { command: 'set', state: false });
-}
-
-/**
- * Toggle a light on/off
- *
- * @param entityId - The light entity ID
- * @returns Promise resolving to control response
- */
-export async function toggleLight(entityId: string): Promise<ControlEntityResponse> {
-  return controlEntity(entityId, { command: 'toggle', parameters: {} });
-}
-
-/**
- * Set light brightness
- *
- * @param entityId - The light entity ID
- * @param brightness - Brightness level (0-100)
- * @returns Promise resolving to control response
- */
-export async function setLightBrightness(
-  entityId: string,
-  brightness: number
-): Promise<ControlEntityResponse> {
-  return controlEntity(entityId, {
-    command: 'set',
-    state: true, // Setting brightness usually implies turning the light on
-    brightness: Math.max(0, Math.min(100, brightness))
-  });
-}
-
-/**
- * Increase light brightness by 10%
- *
- * @param entityId - The light entity ID
- * @returns Promise resolving to control response
- */
-export async function brightnessUp(entityId: string): Promise<ControlEntityResponse> {
-  return controlEntity(entityId, { command: 'brightness_up', parameters: {} });
-}
-
-/**
- * Decrease light brightness by 10%
- *
- * @param entityId - The light entity ID
- * @returns Promise resolving to control response
- */
-export async function brightnessDown(entityId: string): Promise<ControlEntityResponse> {
-  return controlEntity(entityId, { command: 'brightness_down', parameters: {} });
 }
 
 //

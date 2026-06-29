@@ -1,5 +1,5 @@
 /**
- * Tests for useEntitiesV2 Domain Hooks
+ * Tests for useEntities Domain Hooks
  *
  * Comprehensive tests for the entities domain React hooks including
  * optimistic updates, bulk operations, error handling, and state management.
@@ -12,15 +12,15 @@ import type { ReactNode } from 'react';
 import { vi, describe, it, expect, beforeEach, afterEach } from 'vitest';
 
 import {
-  useEntitiesV2,
-  useEntityV2,
-  useControlEntityV2,
-  useBulkControlEntitiesV2,
+  useEntities,
+  useEntity,
+  useControlEntity,
+  useBulkControlEntities,
   useEntitySelection,
   useEntityPagination,
   useEntityFilters,
-  entitiesV2QueryKeys,
-} from '../useEntitiesV2';
+  entitiesQueryKeys,
+} from '../../useEntities';
 
 // Import mocked functions
 import {
@@ -126,16 +126,16 @@ function createTestWrapper() {
   return TestQueryProvider;
 }
 
-describe('entitiesV2QueryKeys', () => {
+describe('entitiesQueryKeys', () => {
   it('should generate correct query keys', () => {
-    expect(entitiesV2QueryKeys.all).toEqual(['entities']);
-    expect(entitiesV2QueryKeys.collections()).toEqual(['entities', 'collections']);
-    expect(entitiesV2QueryKeys.collection({ device_type: 'light' })).toEqual([
+    expect(entitiesQueryKeys.all).toEqual(['entities']);
+    expect(entitiesQueryKeys.collections()).toEqual(['entities', 'collections']);
+    expect(entitiesQueryKeys.collection({ device_type: 'light' })).toEqual([
       'entities',
       'collections',
       { device_type: 'light' },
     ]);
-    expect(entitiesV2QueryKeys.entity('light_001')).toEqual([
+    expect(entitiesQueryKeys.entity('light_001')).toEqual([
       'entities',
       'entity',
       'light_001',
@@ -143,7 +143,7 @@ describe('entitiesV2QueryKeys', () => {
   });
 });
 
-describe('useEntitiesV2', () => {
+describe('useEntities', () => {
   beforeEach(() => {
     vi.mocked(fetchEntitiesV2).mockResolvedValue(mockEntityCollection);
   });
@@ -153,7 +153,7 @@ describe('useEntitiesV2', () => {
   });
 
   it('should fetch entities successfully', async () => {
-    const { result } = renderHook(() => useEntitiesV2(), {
+    const { result } = renderHook(() => useEntities(), {
       wrapper: createTestWrapper(),
     });
 
@@ -168,7 +168,7 @@ describe('useEntitiesV2', () => {
   it('should fetch entities with parameters', async () => {
     const params = { device_type: 'light', page: 1, page_size: 10 };
 
-    const { result } = renderHook(() => useEntitiesV2(params), {
+    const { result } = renderHook(() => useEntities(params), {
       wrapper: createTestWrapper(),
     });
 
@@ -183,7 +183,7 @@ describe('useEntitiesV2', () => {
     const error = new Error('Network error');
     vi.mocked(fetchEntitiesV2).mockRejectedValue(error);
 
-    const { result } = renderHook(() => useEntitiesV2(), {
+    const { result } = renderHook(() => useEntities(), {
       wrapper: createTestWrapper(),
     });
 
@@ -195,7 +195,7 @@ describe('useEntitiesV2', () => {
   });
 });
 
-describe('useEntityV2', () => {
+describe('useEntity', () => {
   beforeEach(() => {
     vi.mocked(fetchEntityV2).mockResolvedValue(mockEntity);
   });
@@ -205,7 +205,7 @@ describe('useEntityV2', () => {
   });
 
   it('should fetch single entity successfully', async () => {
-    const { result } = renderHook(() => useEntityV2('light_001'), {
+    const { result } = renderHook(() => useEntity('light_001'), {
       wrapper: createTestWrapper(),
     });
 
@@ -218,7 +218,7 @@ describe('useEntityV2', () => {
   });
 
   it('should not fetch when disabled', () => {
-    renderHook(() => useEntityV2('light_001', false), {
+    renderHook(() => useEntity('light_001', false), {
       wrapper: createTestWrapper(),
     });
 
@@ -226,7 +226,7 @@ describe('useEntityV2', () => {
   });
 
   it('should not fetch when entity ID is empty', () => {
-    renderHook(() => useEntityV2(''), {
+    renderHook(() => useEntity(''), {
       wrapper: createTestWrapper(),
     });
 
@@ -234,7 +234,7 @@ describe('useEntityV2', () => {
   });
 });
 
-describe('useControlEntityV2', () => {
+describe('useControlEntity', () => {
   beforeEach(() => {
     const mockResult: OperationResultSchema = {
       operation_id: 'op_light_001',
@@ -250,7 +250,7 @@ describe('useControlEntityV2', () => {
   });
 
   it('should control entity successfully', async () => {
-    const { result } = renderHook(() => useControlEntityV2(), {
+    const { result } = renderHook(() => useControlEntity(), {
       wrapper: createTestWrapper(),
     });
 
@@ -271,7 +271,7 @@ describe('useControlEntityV2', () => {
     const error = new Error('Control failed');
     vi.mocked(controlEntityV2).mockRejectedValue(error);
 
-    const { result } = renderHook(() => useControlEntityV2(), {
+    const { result } = renderHook(() => useControlEntity(), {
       wrapper: createTestWrapper(),
     });
 
@@ -292,7 +292,7 @@ describe('useControlEntityV2', () => {
   it('should perform optimistic updates', async () => {
     // This test would require mocking QueryClient and testing optimistic updates
     // For now, we'll just ensure the mutation works
-    const { result } = renderHook(() => useControlEntityV2(), {
+    const { result } = renderHook(() => useControlEntity(), {
       wrapper: createTestWrapper(),
     });
 
@@ -300,7 +300,7 @@ describe('useControlEntityV2', () => {
   });
 });
 
-describe('useBulkControlEntitiesV2', () => {
+describe('useBulkControlEntities', () => {
   beforeEach(() => {
     vi.mocked(bulkControlEntitiesV2).mockResolvedValue(mockBulkOperationResult);
   });
@@ -310,7 +310,7 @@ describe('useBulkControlEntitiesV2', () => {
   });
 
   it('should execute bulk control successfully', async () => {
-    const { result } = renderHook(() => useBulkControlEntitiesV2(), {
+    const { result } = renderHook(() => useBulkControlEntities(), {
       wrapper: createTestWrapper(),
     });
 
@@ -336,7 +336,7 @@ describe('useBulkControlEntitiesV2', () => {
     const error = new Error('Bulk operation failed');
     vi.mocked(bulkControlEntitiesV2).mockRejectedValue(error);
 
-    const { result } = renderHook(() => useBulkControlEntitiesV2(), {
+    const { result } = renderHook(() => useBulkControlEntities(), {
       wrapper: createTestWrapper(),
     });
 

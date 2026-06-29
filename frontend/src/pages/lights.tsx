@@ -12,9 +12,10 @@ import { Button } from "@/components/ui/button"
 import { Card, CardAction, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Skeleton } from "@/components/ui/skeleton"
 import { Slider } from "@/components/ui/slider"
-import { useLights } from "@/hooks/useEntities"
+import { useEntities } from "@/hooks/useEntities"
 import { useOptimisticLightControl } from "@/hooks/useOptimisticMutations"
 import { cn } from "@/lib/utils"
+import { collectionToDisplayEntities } from "@/utils/entity-display"
 import {
   IconBulb,
   IconBulbOff,
@@ -470,7 +471,7 @@ function LightGroup({ title, lights }: LightGroupProps) {
  * Lights Management Page Component
  */
 export default function Lights() {
-  const { data: lights, isLoading, error } = useLights()
+  const { data: lights, isLoading, error } = useEntities({ device_type: "light" })
 
   if (isLoading) {
     return (
@@ -521,7 +522,7 @@ export default function Lights() {
     )
   }
 
-  const lightArray = lights ? Object.values(lights) as EntityData[] : []
+  const lightArray = collectionToDisplayEntities(lights)
 
   if (lightArray.length === 0) {
     return (

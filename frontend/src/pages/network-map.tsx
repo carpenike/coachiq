@@ -9,13 +9,11 @@ import {
     discoverDevices,
     fetchDeviceAvailability,
     fetchDeviceDiscoveryStatus,
-    fetchFireflyEntities,
-    fetchJ1939Entities,
     fetchNetworkTopology,
     fetchProtocolBridgeStatus,
     fetchProtocolThroughput,
-    fetchSpartanK2Entities
 } from "@/api/endpoints"
+import { fetchEntitiesV2 } from "@/api/domains/entities"
 import type { DeviceAvailability, EntityData, ProtocolBridgeStatus, SpartanK2Entity } from "@/api/types"
 import { AppLayout } from "@/components/app-layout"
 import { DeviceDiscoveryTable } from "@/components/network/DeviceDiscoveryTable"
@@ -27,6 +25,7 @@ import { Progress } from "@/components/ui/progress"
 import { Skeleton } from "@/components/ui/skeleton"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { useEntities } from "@/hooks/useEntities"
+import { collectionToDisplayEntities } from "@/utils/entity-display"
 import {
     IconActivity,
     IconAlertTriangle,
@@ -473,21 +472,21 @@ export default function NetworkMap() {
   // Multi-protocol entity queries
   const { data: j1939Entities } = useQuery({
     queryKey: ['j1939-entities'],
-    queryFn: fetchJ1939Entities,
+    queryFn: () => fetchEntitiesV2({ protocol: 'j1939' }),
     refetchInterval: 30000,
     staleTime: 15000,
   })
 
   const { data: fireflyEntities } = useQuery({
     queryKey: ['firefly-entities'],
-    queryFn: fetchFireflyEntities,
+    queryFn: () => fetchEntitiesV2({ protocol: 'firefly' }),
     refetchInterval: 30000,
     staleTime: 15000,
   })
 
   const { data: spartanK2Entities } = useQuery({
     queryKey: ['spartan-k2-entities'],
-    queryFn: fetchSpartanK2Entities,
+    queryFn: () => fetchEntitiesV2({ protocol: 'spartan_k2' }),
     refetchInterval: 30000,
     staleTime: 15000,
   })
@@ -508,20 +507,20 @@ export default function NetworkMap() {
 
   // Combine all entities
   const allEntities = useMemo(() => {
-    const rvcEntities = entities ? Object.values(entities) : []
-    const j1939Array = ((j1939Entities as { entities?: unknown[] })?.entities || []) as EntityData[]
-    const fireflyArray = ((fireflyEntities as { entities?: unknown[] })?.entities || []) as EntityData[]
-    const spartanK2Array = ((spartanK2Entities as { entities?: unknown[] })?.entities || []) as EntityData[]
+    const rvcEntities = collectionToDisplayEntities(entities).map(entity => ({ ...entity, protocol: 'rvc' }))
+    const j1939Array = collectionToDisplayEntities(j1939Entities)
+    const fireflyArray = collectionToDisplayEntities(fireflyEntities)
+    const spartanK2Array = collectionToDisplayEntities(spartanK2Entities)
 
     return [
-      ...rvcEntities.map(e => ({ ...e, protocol: 'rvc' })) as EntityData[],
+      ...rvcEntities,
       ...j1939Array,
       ...fireflyArray,
       ...spartanK2Array,
     ] as EntityData[]
   }, [entities, j1939Entities, fireflyEntities, spartanK2Entities])
 
-  const entitiesArray = entities ? Object.values(entities) : []
+  const entitiesArray = collectionToDisplayEntities(entities)
 
   if (isLoading) {
     return (

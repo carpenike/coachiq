@@ -12,8 +12,8 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
-import { useEntities, useHealthStatus, useLightControl, useLights, useBulkEntityControl } from "@/hooks";
-import { useEntitiesDomainAPIAvailability } from "@/hooks/domains/useEntitiesV2";
+import { useBulkControlEntities, useControlEntity, useEntities, useEntitiesDomainAPIAvailability, useHealthStatus } from "@/hooks";
+import { collectionToDisplayEntities } from "@/utils/entity-display";
 
 /**
  * Simple loading skeleton for entity cards
@@ -41,11 +41,10 @@ function EntityCardSkeleton() {
  * Demonstrates entity control with optimistic updates
  */
 function LightControlCard() {
-  const { data: lightsData, isLoading, error } = useLights();
-  const lightControl = useLightControl();
+  const { data: lightsData, isLoading, error } = useEntities({ device_type: "light" });
+  const lightControl = useControlEntity();
 
-  // Convert EntityCollection to array
-  const lights = lightsData ? Object.values(lightsData) as LightEntity[] : [];
+  const lights = collectionToDisplayEntities(lightsData) as LightEntity[];
 
   if (isLoading) {
     return <EntityCardSkeleton />;
@@ -66,7 +65,7 @@ function LightControlCard() {
   }
 
   const handleLightToggle = (light: LightEntity) => {
-    lightControl.toggle.mutate({ entityId: light.entity_id });
+    lightControl.mutate({ entityId: light.entity_id, command: { command: "toggle" } });
   };
 
   return (
@@ -85,7 +84,7 @@ function LightControlCard() {
                 key={light.entity_id}
                 variant={light.state === 'on' ? 'default' : 'outline'}
                 onClick={() => handleLightToggle(light)}
-                disabled={lightControl.toggle.isPending}
+                disabled={lightControl.isPending}
                 className="justify-between"
               >
                 <span>{light.name || light.entity_id}</span>
@@ -174,8 +173,7 @@ function SystemStatusCard() {
 function EntityOverviewCard() {
   const { data: entitiesData, isLoading, error } = useEntities();
 
-  // Convert EntityCollection to array
-  const entities = entitiesData ? Object.values(entitiesData) : [];
+  const entities = entitiesData?.entities ?? [];
 
   if (isLoading) {
     return <EntityCardSkeleton />;
@@ -233,14 +231,14 @@ function EntityOverviewCard() {
 function DomainAPIStatusCard() {
   const { data: isDomainAPIAvailable, isLoading, error } = useEntitiesDomainAPIAvailability();
   const { data: entities } = useEntities(); // Uses enhanced hook with progressive enhancement
-  const bulkControl = useBulkEntityControl(); // Enhanced bulk operations
+  const bulkControl = useBulkControlEntities(); // Enhanced bulk operations
 
   if (isLoading) {
     return <EntityCardSkeleton />;
   }
 
   // Convert entities to array for bulk operations demo
-  const entitiesArray = entities ? Object.values(entities) : [];
+  const entitiesArray = entities?.entities ?? [];
   const lightEntities = entitiesArray.filter(entity => entity.device_type === 'light');
 
   const handleBulkLightControl = (action: 'on' | 'off') => {
@@ -248,9 +246,9 @@ function DomainAPIStatusCard() {
     if (lightIds.length === 0) return;
 
     bulkControl.mutate({
-      entityIds: lightIds.slice(0, 5), // Limit to first 5 for demo
+      entity_ids: lightIds.slice(0, 5), // Limit to first 5 for demo
       command: { command: 'set', state: action === 'on' },
-      ignoreErrors: true,
+      ignore_errors: true,
     });
   };
 

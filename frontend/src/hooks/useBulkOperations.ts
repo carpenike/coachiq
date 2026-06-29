@@ -18,6 +18,7 @@ import {
   fetchDeviceGroups,
   updateDeviceGroup,
 } from "@/api/endpoints"
+import { entitiesQueryKeys } from "@/hooks/useEntities"
 // import type { Entity } from "@/api/types" // Currently unused but may be needed for future type constraints
 
 // Types
@@ -89,7 +90,7 @@ export function useBulkOperations() {
     mutationFn: createBulkOperation,
     onSuccess: () => {
       // Invalidate entity queries to refresh state after bulk operation
-      void queryClient.invalidateQueries({ queryKey: ["entities"] })
+      void queryClient.invalidateQueries({ queryKey: entitiesQueryKeys.collections() })
     },
   })
 
@@ -145,7 +146,7 @@ export function useDeviceGroups() {
     mutationFn: ({ groupId, payload }: { groupId: string; payload: BulkOperationPayload }) =>
       executeGroupOperation(groupId, payload),
     onSuccess: () => {
-      void queryClient.invalidateQueries({ queryKey: ["entities"] })
+      void queryClient.invalidateQueries({ queryKey: entitiesQueryKeys.collections() })
     },
   })
 

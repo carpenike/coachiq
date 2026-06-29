@@ -12,13 +12,13 @@ import { vi, describe, it, expect, beforeEach } from 'vitest';
 import React from 'react';
 
 import {
-  useEntitiesV2WithValidation,
-  useEntityV2WithValidation,
-  useControlEntityV2WithValidation,
-  useBulkControlEntitiesV2WithValidation,
+  useEntitiesWithValidation,
+  useEntityWithValidation,
+  useControlEntityWithValidation,
+  useBulkControlEntitiesWithValidation,
   useBulkLightControlWithValidation,
   useEntitySelectionWithValidation,
-} from '../useEntitiesV2';
+} from '../../useEntities';
 
 // Mock the API functions
 vi.mock('../../../api/domains/entities', () => ({
@@ -30,7 +30,7 @@ vi.mock('../../../api/domains/entities', () => ({
 }));
 
 // Mock the validation functions
-vi.mock('../../../api/validation/zod-schemas', () => ({
+vi.mock('../api/validation/zod-schemas', () => ({
   validateEntity: vi.fn(),
   validateControlCommand: vi.fn(),
   validateBulkControlRequest: vi.fn(),
@@ -54,7 +54,7 @@ const createWrapper = () => {
   );
 };
 
-describe('useEntitiesV2WithValidation', () => {
+describe('useEntitiesWithValidation', () => {
   beforeEach(() => {
     vi.clearAllMocks();
   });
@@ -82,7 +82,7 @@ describe('useEntitiesV2WithValidation', () => {
     const { fetchEntitiesV2WithValidation } = await import('../../../api/domains/entities');
     vi.mocked(fetchEntitiesV2WithValidation).mockResolvedValue(mockData);
 
-    const { result } = renderHook(() => useEntitiesV2WithValidation(), {
+    const { result } = renderHook(() => useEntitiesWithValidation(), {
       wrapper: createWrapper(),
     });
 
@@ -106,7 +106,7 @@ describe('useEntitiesV2WithValidation', () => {
       filters_applied: { device_type: 'light' },
     });
 
-    renderHook(() => useEntitiesV2WithValidation(params), {
+    renderHook(() => useEntitiesWithValidation(params), {
       wrapper: createWrapper(),
     });
 
@@ -116,7 +116,7 @@ describe('useEntitiesV2WithValidation', () => {
   });
 });
 
-describe('useEntityV2WithValidation', () => {
+describe('useEntityWithValidation', () => {
   beforeEach(() => {
     vi.clearAllMocks();
   });
@@ -135,7 +135,7 @@ describe('useEntityV2WithValidation', () => {
     const { fetchEntityV2WithValidation } = await import('../../../api/domains/entities');
     vi.mocked(fetchEntityV2WithValidation).mockResolvedValue(mockEntity);
 
-    const { result } = renderHook(() => useEntityV2WithValidation('light1'), {
+    const { result } = renderHook(() => useEntityWithValidation('light1'), {
       wrapper: createWrapper(),
     });
 
@@ -150,7 +150,7 @@ describe('useEntityV2WithValidation', () => {
   it('should not fetch when entity ID is empty', async () => {
     const { fetchEntityV2WithValidation } = await import('../../../api/domains/entities');
 
-    renderHook(() => useEntityV2WithValidation(''), {
+    renderHook(() => useEntityWithValidation(''), {
       wrapper: createWrapper(),
     });
 
@@ -160,7 +160,7 @@ describe('useEntityV2WithValidation', () => {
   it('should not fetch when disabled', async () => {
     const { fetchEntityV2WithValidation } = await import('../../../api/domains/entities');
 
-    renderHook(() => useEntityV2WithValidation('light1', false), {
+    renderHook(() => useEntityWithValidation('light1', false), {
       wrapper: createWrapper(),
     });
 
@@ -168,7 +168,7 @@ describe('useEntityV2WithValidation', () => {
   });
 });
 
-describe('useControlEntityV2WithValidation', () => {
+describe('useControlEntityWithValidation', () => {
   beforeEach(() => {
     vi.clearAllMocks();
   });
@@ -184,7 +184,7 @@ describe('useControlEntityV2WithValidation', () => {
     const { controlEntityV2WithValidation } = await import('../../../api/domains/entities');
     vi.mocked(controlEntityV2WithValidation).mockResolvedValue(mockResult);
 
-    const { result } = renderHook(() => useControlEntityV2WithValidation(), {
+    const { result } = renderHook(() => useControlEntityWithValidation(), {
       wrapper: createWrapper(),
     });
 
@@ -207,7 +207,7 @@ describe('useControlEntityV2WithValidation', () => {
       new Error('Invalid control command: brightness must be between 0 and 100')
     );
 
-    const { result } = renderHook(() => useControlEntityV2WithValidation(), {
+    const { result } = renderHook(() => useControlEntityWithValidation(), {
       wrapper: createWrapper(),
     });
 

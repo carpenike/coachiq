@@ -632,7 +632,7 @@ function EntityStatisticsCard() {
     )
   }
 
-  const entityArray = entities ? Object.values(entities) : []
+  const entityArray = entities?.entities ?? []
   const totalEntities = entityArray.length
 
   // Count entities by type

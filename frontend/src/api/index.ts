@@ -19,24 +19,18 @@ export {
 
 // Export all endpoint functions
 export {
-    brightnessDown, brightnessUp, controlEntity,
+    controlEntity,
     // CAN bus endpoints
     fetchCANInterfaces,
     fetchCANMessages,
     fetchCANMetrics,
     fetchCANStatistics,
-    // Entity endpoints
-    fetchEntities,
-    fetchEntity, fetchEntityHistory, fetchEntityMetadata, fetchFeatureStatus,
+    fetchFeatureStatus,
     // Configuration endpoints
     fetchHealthStatus,
-    // Convenience functions
-    fetchLights,
-    fetchLocks, fetchQueueStatus, fetchTankSensors, fetchTemperatureSensors, fetchUnknownPGNs, fetchUnmappedEntries,
+    fetchQueueStatus, fetchUnknownPGNs, fetchUnmappedEntries,
     // Lock control convenience functions
-    lockEntity, sendCANMessage, setLightBrightness, toggleLight, turnLightOff,
-    // Light control convenience functions
-    turnLightOn, unlockEntity
+    lockEntity, sendCANMessage, unlockEntity
 } from './endpoints';
 
 // Export domain APIs - avoid conflicts with main types

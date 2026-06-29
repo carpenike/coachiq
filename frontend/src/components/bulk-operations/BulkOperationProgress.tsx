@@ -11,6 +11,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Progress } from "@/components/ui/progress"
 import { useBulkOperationProgress, useBulkOperationStatus } from "@/hooks/useBulkOperations"
 import { useEntities } from "@/hooks/useEntities"
+import { getEntityDisplayName } from "@/utils/entity-display"
 import {
   IconAlertTriangle,
   IconCheck,
@@ -83,8 +84,8 @@ export function BulkOperationProgress({ operationId, onComplete }: BulkOperation
 
   const getDeviceName = (deviceId: string) => {
     if (!entities) return deviceId
-    const entity = entities[deviceId]
-    return entity?.friendly_name || entity?.entity_id || deviceId
+    const entity = entities.entities.find((item) => item.entity_id === deviceId)
+    return entity ? getEntityDisplayName(entity) : deviceId
   }
 
   const getStatusIcon = (deviceStatus: string) => {

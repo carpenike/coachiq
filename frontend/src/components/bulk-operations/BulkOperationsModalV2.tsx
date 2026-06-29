@@ -9,7 +9,7 @@ import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Separator } from "@/components/ui/separator";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { useEntitySelection } from "@/hooks/domains/useEntitiesV2";
+import { useEntitySelection } from "@/hooks/useEntities";
 import { useState, useCallback, useEffect } from "react";
 import { EntitySelectorV2 } from "./EntitySelectorV2";
 import { BulkOperationPanelV2 } from "./BulkOperationPanelV2";

@@ -6,7 +6,8 @@
  * controls following professional diagnostic tool patterns.
  */
 
-import { fetchEntities, fetchProtocolBridgeStatus } from "@/api/endpoints"
+import { fetchProtocolBridgeStatus } from "@/api/endpoints"
+import { fetchEntitiesV2 } from "@/api/domains/entities"
 import type { Entity } from "@/api/types"
 import { AppLayout } from "@/components/app-layout"
 import { SelectionModeBar } from "@/components/bulk-operations/SelectionModeBar"
@@ -19,6 +20,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Skeleton } from "@/components/ui/skeleton"
 import { useSelectionMode } from "@/hooks/useBulkOperations"
 import { useOptimisticBulkControl } from "@/hooks/useOptimisticMutations"
+import { collectionToDisplayEntities } from "@/utils/entity-display"
 import {
   IconAlertTriangle,
   IconBulb,
@@ -221,14 +223,14 @@ function useMultiProtocolEntities(selectedProtocol: ProtocolType) {
   // Use unified entities API with protocol filtering (backend handles deduplication)
   const { data: unifiedEntities, isLoading: unifiedLoading } = useQuery({
     queryKey: ['entities', selectedProtocol === 'all' ? undefined : selectedProtocol, selectedProtocol],
-    queryFn: () => fetchEntities({ protocol: selectedProtocol === 'all' ? undefined : selectedProtocol }),
+    queryFn: () => fetchEntitiesV2(selectedProtocol === 'all' ? undefined : { protocol: selectedProtocol }),
     refetchInterval: 5000
   })
 
   // Get protocol stats for each individual protocol (for selector counts)
   const { data: allEntities } = useQuery({
     queryKey: ['entities', 'all'],
-    queryFn: () => fetchEntities(),
+    queryFn: () => fetchEntitiesV2(),
     refetchInterval: 30000
   })
 
@@ -240,12 +242,12 @@ function useMultiProtocolEntities(selectedProtocol: ProtocolType) {
 
   // Convert EntityCollection to Entity[] array for component consumption
   const entities = useMemo(() => {
-    return unifiedEntities ? Object.values(unifiedEntities) : []
+    return collectionToDisplayEntities(unifiedEntities)
   }, [unifiedEntities])
 
   // Calculate protocol stats for selector
   const protocolStats = useMemo(() => {
-    const allEntitiesArray = allEntities ? Object.values(allEntities) : [];
+    const allEntitiesArray = collectionToDisplayEntities(allEntities);
 
     // Helper type guards
     function hasProtocol(entity: unknown): entity is { protocol: string } {

@@ -8,11 +8,12 @@
 
 import { useEffect, useRef, useState, useContext, useCallback, useMemo } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
-import { RVCWebSocketClient, type WebSocketConfig, type WebSocketHandlers, type WebSocketState } from '@/api/websocket';
+import type { RVCWebSocketClient, WebSocketConfig, WebSocketHandlers, WebSocketState } from '@/api/websocket';
 import { connectionManager } from '@/api/websocket-connection-manager';
 import { WebSocketContext } from '@/contexts/websocket-context';
 import { env } from '@/api/client';
 import { queryKeys } from '@/lib/query-client';
+import { entitiesQueryKeys } from '@/hooks/useEntities';
 
 /**
  * Generic WebSocket message handler type
@@ -402,11 +403,11 @@ export function useEntityWebSocket(options?: { autoConnect?: boolean }) {
         const data = (message as Record<string, any>).data as Record<string, any>;
         // Update the specific entity in the cache
         queryClientRef.current.setQueryData(
-          queryKeys.entities.detail(data.entity_id),
+          entitiesQueryKeys.entity(data.entity_id),
           data.entity_data
         );
         // Invalidate entity lists to trigger re-render
-        void queryClientRef.current.invalidateQueries({ queryKey: queryKeys.entities.lists() });
+        void queryClientRef.current.invalidateQueries({ queryKey: entitiesQueryKeys.collections() });
       }
     }]
   });

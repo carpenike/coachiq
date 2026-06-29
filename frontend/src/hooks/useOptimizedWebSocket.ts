@@ -10,6 +10,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import type { RVCWebSocketClient, WebSocketHandlers } from '../api';
 import type { EntityUpdateMessage } from '../api/types';
 import { queryKeys } from '@/lib/query-client';
+import { entitiesQueryKeys } from '@/hooks/useEntities';
 
 interface UseOptimizedWebSocketOptions {
   autoConnect?: boolean;
@@ -110,7 +111,7 @@ export function useOptimizedEntityWebSocket(options: UseOptimizedWebSocketOption
         }
 
         currentQueryClient.setQueryData(
-          queryKeys.entities.detail(update.entityId),
+          entitiesQueryKeys.entity(update.entityId),
           update.data.entity_data
         );
 
@@ -128,7 +129,7 @@ export function useOptimizedEntityWebSocket(options: UseOptimizedWebSocketOption
       });
 
       // Invalidate entity lists once for all updates
-      void currentQueryClient.invalidateQueries({ queryKey: queryKeys.entities.lists() });
+      void currentQueryClient.invalidateQueries({ queryKey: entitiesQueryKeys.collections() });
 
       throttleTimerRef.current = null;
     }, throttleDelayRef.current);

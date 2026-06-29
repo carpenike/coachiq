@@ -92,6 +92,42 @@ retirements follow the HOF-016 plan.
 
 ## Build Log
 
+### HOF-023 — Canonical Frontend Entity Hook Migration
+
+- [shipped] same commit as this entry · 2026-06-29
+- [component] frontend
+- [handoff] HOF-023
+- [adr] ADR-0003, ADR-0010, ADR-0011
+
+**What changed.** Migrated the frontend entity UI off the legacy-shaped
+`useEntities` adapter and moved the domain entities hook into the canonical
+`frontend/src/hooks/useEntities.ts` path. The stale `useEntitiesV2` hook name and
+module path are gone, direct/barrel callers now consume the `/api/v1` entity
+collection shape with explicit display mapping, protocol-specific network-map
+entity queries use the domain API directly, and optimistic mutations update
+domain entity collections by query-key prefix. The approved dead entity helpers
+were removed from `frontend/src/api/endpoints.ts` and `frontend/src/api/index.ts`;
+`controlEntity`, `lockEntity`, and `unlockEntity` remain as the deferred lock
+wrapper path.
+
+**Why.** HOF-017 removed the harmful fake fallback but intentionally left a
+legacy record-shape adapter for UI callers. HOF-023 finishes that cleanup under
+the pre-1.0 decisive-migration stance: one canonical entity hook, no v1 adapter,
+no stale v2 hook name after the public API was renamed to `/api/v1`, and no
+deleted endpoint helpers left for non-lock entity control paths.
+
+**Validation.** `npm run typecheck`; `npm run test:run --
+src/hooks/domains/__tests__/useEntities.test.tsx
+src/hooks/domains/__tests__/useEntitiesValidation.test.tsx`; `npm run build`;
+`npm run check:api-types`; HOF greps for `useEntitiesV2`, deleted entity helper
+names, and the preserved lock wrapper path.
+
+**Files.** `frontend/src/hooks/useEntities.ts`,
+`frontend/src/hooks/useOptimisticMutations.ts`, `frontend/src/api/endpoints.ts`,
+`frontend/src/api/index.ts`, migrated entity callers under `frontend/src/pages/`,
+`frontend/src/components/`, and `frontend/src/hooks/`, plus
+`frontend/src/utils/entity-display.ts`.
+
 ### HOF-029 — Component-ID BAM Into Device Discovery
 
 - [shipped] same commit as this entry · 2026-06-27

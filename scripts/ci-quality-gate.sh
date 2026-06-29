@@ -21,7 +21,7 @@ RESET="\033[0m"
 # nudging you to update the baseline downward.
 EXPECTED_PYRIGHT_ERRORS=1367  # Ratcheted 2026-06-29 after HOF-033 service packaging cleanup (1368 -> 1367).
 EXPECTED_FRONTEND_TS_ERRORS=0  # Ratcheted 2026-05-12 to 0 by PR #110 (DatabaseManagementTab + can-sniffer + useCANScanWebSocket generic). Any new TS error is a hard fail.
-EXPECTED_FRONTEND_ESLINT_ERRORS=602  # Ratcheted 2026-06-29 after HOF-032 diff-line cleanup (603 -> 602).
+EXPECTED_FRONTEND_ESLINT_ERRORS=554  # Ratcheted 2026-06-29 after HOF-023 entity hook migration (602 -> 554).
 
 # Determine target branch (for GitHub Actions or local testing)
 if [ -n "${GITHUB_BASE_REF:-}" ]; then
