@@ -23,6 +23,15 @@ from sqlalchemy.ext.asyncio import (
 )
 
 logger = logging.getLogger(__name__)
+PROJECT_ROOT = Path(__file__).resolve().parents[2]
+
+
+def _resolve_project_path(path: Path | str) -> Path:
+    """Resolve a path relative to the repository root, not the process cwd."""
+    candidate = Path(path).expanduser()
+    if candidate.is_absolute():
+        return candidate
+    return (PROJECT_ROOT / candidate).resolve()
 
 
 def _setup_sqlite_performance_pragmas(
@@ -108,7 +117,8 @@ class DatabaseSettings(BaseSettings):
 
     # SQLite settings - integrate with persistence system
     sqlite_path: str = Field(
-        default="backend/data/coachiq.db", description="Path to SQLite database file"
+        default_factory=lambda: str(_resolve_project_path("backend/data/databases/coachiq.db")),
+        description="Fallback absolute path to SQLite database file",
     )
     sqlite_timeout: int = Field(default=30, description="SQLite connection timeout in seconds")
 
@@ -154,7 +164,7 @@ class DatabaseSettings(BaseSettings):
             Resolved database file path
         """
         if self.backend != DatabaseBackend.SQLITE:
-            return self.sqlite_path
+            return str(_resolve_project_path(self.sqlite_path))
 
         # Get persistence settings to resolve the proper path
         try:
@@ -162,21 +172,13 @@ class DatabaseSettings(BaseSettings):
 
             settings = get_settings()
             persistence_settings = settings.persistence
-
-            # In development mode, use a development-friendly path
-            if settings.is_development():
-                # Use project-relative path for development
-                dev_data_dir = Path("backend/data/persistent")
-                db_dir = dev_data_dir / "database"
-                return str(db_dir / "coachiq.db")
-            # Use the configured persistent data directory for production
             db_dir = persistence_settings.get_database_dir()
             return str(db_dir / "coachiq.db")
         except Exception:
             # Fall back to configured path if persistence system is unavailable
             pass
 
-        return self.sqlite_path
+        return str(_resolve_project_path(self.sqlite_path))
 
     @field_validator("postgres_password", mode="before")
     @classmethod

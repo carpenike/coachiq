@@ -44,6 +44,12 @@ applyTo: "**/*.py"
 - Use first-class module options only for deployment knobs (`host`, `port`, `dataDir`, `environmentFile`, `openFirewall`, `logLevel`, `tlsTerminationIsExternal`). Put other non-secret config in `services.coachiq.settings` using current `COACHIQ_*` env-var names from `backend/core/config.py`.
 - Freeform settings accept Nix strings, ints, and bools. Floats must be quoted strings. Lists and dictionaries should be JSON strings unless the specific Pydantic field parser is known to accept comma-separated text.
 
+## Persistence Data Root
+
+- The persistence data root must resolve to an absolute path independent of the process working directory. Relative `COACHIQ_PERSISTENCE__DATA_DIR` values are interpreted relative to the project root, not `cwd`.
+- The canonical SQLite database path is `<COACHIQ_PERSISTENCE__DATA_DIR>/databases/coachiq.db`. Do not introduce new defaults under `persistent/database`, `database`, or cwd-relative `backend/data` paths.
+- Prefer the NixOS `services.coachiq.dataDir` option or an absolute `COACHIQ_PERSISTENCE__DATA_DIR` in deployment env files. Leave `COACHIQ_DATABASE__SQLITE_PATH` unset unless a test or specialized tool intentionally bypasses the persistence data root.
+
 ## Misc
 
 - `LOG_LEVEL`: Logging verbosity

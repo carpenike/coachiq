@@ -238,6 +238,38 @@ class TestGetSettings:
         # Reset cache so other tests in the run aren't polluted.
         get_settings.cache_clear()
 
+    def test_database_path_is_cwd_independent(self, monkeypatch):
+        """Effective SQLite paths are anchored to the project/config root, not cwd."""
+        from backend.services.database_engine import DatabaseSettings
+
+        repo_root = Path(__file__).resolve().parents[2]
+        snapshots = []
+
+        try:
+            for cwd in (repo_root, repo_root / "backend"):
+                monkeypatch.chdir(cwd)
+                get_settings.cache_clear()
+                settings = get_settings()
+                db_settings = DatabaseSettings()
+                db_path = Path(db_settings.get_database_path())
+                snapshots.append(
+                    (
+                        settings.persistence.data_dir,
+                        db_path,
+                        db_settings.get_database_url(),
+                    )
+                )
+        finally:
+            get_settings.cache_clear()
+
+        assert snapshots[0] == snapshots[1]
+        data_dir, db_path, db_url = snapshots[0]
+        assert data_dir.is_absolute()
+        assert db_path.is_absolute()
+        assert db_path.parent == data_dir / "databases"
+        assert db_path.name == "coachiq.db"
+        assert db_url == f"sqlite+aiosqlite:///{db_path}"
+
 
 # ----------------------------------------------------------------------------
 # Integration: real filesystem paths

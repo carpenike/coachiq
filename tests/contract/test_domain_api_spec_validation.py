@@ -5,8 +5,6 @@ This module provides basic contract testing that validates the generated OpenAPI
 specification matches our documented API design patterns.
 """
 
-import json
-
 import pytest
 from fastapi.openapi.utils import get_openapi
 from fastapi.testclient import TestClient
@@ -195,16 +193,14 @@ class TestContractBaseline:
         """Detect if domain API v1 routes are available"""
         app = create_app()
 
-        domain_routes = []
-        for route in app.routes:
-            if hasattr(route, "path") and "/api/v1/" in route.path:
-                domain_routes.append(route.path)
-
-        print(f"\\nDomain API v1 routes found: {len(domain_routes)}")
-        for route in sorted(domain_routes):
-            print(f"  {route}")
+        domain_routes = [
+            route.path
+            for route in app.routes
+            if hasattr(route, "path") and "/api/v1/" in route.path
+        ]
 
         # This is informational - domain routes may or may not be enabled
+        assert isinstance(domain_routes, list)
 
 
 if __name__ == "__main__":

@@ -99,7 +99,7 @@ class RuntimeValidationMiddleware(BaseHTTPMiddleware):
 
     async def _validate_request(self, request: Request) -> dict[str, Any]:
         """Validate request body against appropriate schema"""
-        validation_result = {"errors": [], "schema_used": None}
+        validation_result: dict[str, Any] = {"errors": [], "schema_used": None}
 
         # Check if this endpoint requires validation
         endpoint_path = request.url.path
@@ -108,7 +108,7 @@ class RuntimeValidationMiddleware(BaseHTTPMiddleware):
         # Find matching schema for endpoint
         for pattern, schema in self.CRITICAL_ENDPOINTS.items():
             legacy_pattern = pattern.replace("/api/v1", "/api")
-            if endpoint_path.startswith(pattern) or endpoint_path.startswith(legacy_pattern):
+            if endpoint_path.startswith((pattern, legacy_pattern)):
                 schema_class = schema
                 validation_result["schema_used"] = schema.__name__
                 break

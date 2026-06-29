@@ -248,6 +248,7 @@ data/*.db
 data/*.sqlite*
 backend/data/*.db
 backend/data/*.sqlite*
+backend/backend/
 
 # Production data directory content
 /var/lib/coachiq/

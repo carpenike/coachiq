@@ -31,6 +31,15 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 DEVELOPMENT_SECURITY_SECRET = "development-only-secret-key-do-not-use-in-production"  # noqa: S105
 PLACEHOLDER_SECRET_MARKERS = ("do-not-use-in-production", "change-in-production")
+PROJECT_ROOT = Path(__file__).resolve().parents[2]
+
+
+def resolve_project_path(path: Path | str) -> Path:
+    """Resolve a path relative to the repository root, not the process cwd."""
+    candidate = Path(path).expanduser()
+    if candidate.is_absolute():
+        return candidate
+    return (PROJECT_ROOT / candidate).resolve()
 
 
 def get_secret_value(secret: SecretStr | str | None) -> str:
@@ -523,10 +532,12 @@ class PersistenceSettings(BaseSettings):
 
     @field_validator("data_dir", mode="before")
     @classmethod
-    def parse_data_dir(cls, v):
-        """Parse data directory path from string."""
+    def parse_data_dir(cls, v: Any) -> Any:
+        """Parse and absolutize data directory paths."""
         if isinstance(v, str) and v.strip():
-            return Path(v.strip())
+            return resolve_project_path(v.strip())
+        if isinstance(v, Path):
+            return resolve_project_path(v)
         return v
 
     def get_database_dir(self) -> Path:
@@ -1625,7 +1636,7 @@ class Settings(BaseSettings):
     """
 
     model_config = SettingsConfigDict(
-        env_file=".env",
+        env_file=PROJECT_ROOT / ".env",
         env_file_encoding="utf-8",
         env_prefix="COACHIQ_",
         case_sensitive=False,
@@ -1718,10 +1729,10 @@ class Settings(BaseSettings):
             # Create a minimal class if needed
             class MinimalDatabaseSettings:
                 def get_database_url(self):
-                    return "sqlite:///backend/data/coachiq.db"
+                    return f"sqlite:///{self.get_database_path()}"
 
                 def get_database_path(self):
-                    return "backend/data/coachiq.db"
+                    return str(resolve_project_path("backend/data/databases/coachiq.db"))
 
             if "database" not in data:
                 data["database"] = MinimalDatabaseSettings()

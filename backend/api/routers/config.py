@@ -473,11 +473,12 @@ async def get_database_configuration():
 
     # Check if database settings exist
     if not hasattr(settings, "database") or settings.database is None:
+        default_database_path = settings.persistence.get_database_dir() / "coachiq.db"
         # Return default SQLite configuration
         return {
             "backend": "sqlite",
             "sqlite": {
-                "path": "backend/data/coachiq.db",
+                "path": str(default_database_path),
                 "timeout": 30,
                 "optimizations_enabled": True,
                 "cache_size": 4000,
@@ -519,12 +520,10 @@ async def get_database_configuration():
     response = {
         "backend": backend,
         "sqlite": {
-            "path": getattr(
-                db_settings,
-                "sqlite_path",
+            "path": (
                 db_settings.get_database_path()
                 if hasattr(db_settings, "get_database_path")
-                else "backend/data/coachiq.db",
+                else str(settings.persistence.get_database_dir() / "coachiq.db")
             ),
             "timeout": getattr(db_settings, "sqlite_timeout", 30),
             "optimizations_enabled": getattr(db_settings, "sqlite_enable_optimizations", True),
