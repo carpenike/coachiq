@@ -1,8 +1,9 @@
 """
 Modern dependencies for dependency injection.
 
-This module provides clean service access patterns using ServiceRegistry
-and FastAPI's dependency injection system with no legacy fallbacks.
+This module provides FastAPI dependency access through the Phase-A composition
+root when initialized. The existing ServiceRegistry remains as a compatibility
+source only before CompositionRoot startup and for legacy tests.
 """
 
 import logging
@@ -10,6 +11,7 @@ from typing import Annotated, Any, TypeVar
 
 from fastapi import Depends, Header, HTTPException, status
 
+from backend.core.composition_root import CompositionRoot as _CompositionRootClass
 from backend.core.service_registry import ServiceRegistry as _ServiceRegistryClass
 
 # Real service classes for typed DI aliases (ADR-0006).
@@ -125,6 +127,7 @@ T = TypeVar("T")
 
 # Module-level service registry instance
 _service_registry: _ServiceRegistryClass | None = None
+_composition_root: _CompositionRootClass | None = None
 
 
 def initialize_service_registry(registry: _ServiceRegistryClass) -> None:
@@ -136,9 +139,34 @@ def initialize_service_registry(registry: _ServiceRegistryClass) -> None:
     Args:
         registry: The service registry instance to use
     """
+    if _composition_root is not None and registry is not _composition_root.compat_registry:
+        msg = "Cannot initialize a divergent ServiceRegistry after CompositionRoot startup."
+        raise RuntimeError(msg)
+
     global _service_registry  # noqa: PLW0603 - intentional module-level state
     _service_registry = registry
     logger.info("Service registry initialized for dependency injection")
+
+
+def initialize_composition_root(composition_root: _CompositionRootClass) -> None:
+    """Initialize the module-level composition root."""
+    global _composition_root  # noqa: PLW0603 - intentional module-level state
+    if _composition_root is not None and composition_root is not _composition_root:
+        msg = "Composition root already initialized."
+        raise RuntimeError(msg)
+
+    _composition_root = composition_root
+    initialize_service_registry(composition_root.compat_registry)
+    logger.info("Composition root initialized for dependency injection")
+
+
+def get_composition_root() -> _CompositionRootClass:
+    """Get the composition root instance."""
+    if _composition_root is None:
+        msg = "Composition root not initialized. Call initialize_composition_root() during startup."
+        raise RuntimeError(msg)
+
+    return _composition_root
 
 
 def get_service_registry() -> _ServiceRegistryClass:
@@ -154,6 +182,9 @@ def get_service_registry() -> _ServiceRegistryClass:
     Raises:
         RuntimeError: If the service registry is not initialized
     """
+    if _composition_root is not None:
+        return _composition_root.compat_registry
+
     if _service_registry is None:
         msg = "Service registry not initialized. Call initialize_service_registry() during startup."
         raise RuntimeError(msg)
@@ -175,6 +206,12 @@ def create_service_dependency(service_name: str):
     """
 
     def dependency() -> Any:
+        if _composition_root is not None:
+            if not _composition_root.has_service(service_name):
+                msg = f"Service '{service_name}' not available in CompositionRoot"
+                raise RuntimeError(msg)
+            return _composition_root.get_service(service_name)
+
         service_registry = get_service_registry()
         if not service_registry.has_service(service_name):
             msg = f"Service '{service_name}' not available in ServiceRegistry"
@@ -200,6 +237,9 @@ def create_optional_service_dependency(service_name: str):
     """
 
     def dependency() -> Any | None:
+        if _composition_root is not None:
+            return _composition_root.get_optional_service(service_name)
+
         service_registry = get_service_registry()
         if not service_registry.has_service(service_name):
             return None
@@ -552,6 +592,7 @@ PredictiveMaintenanceService = Annotated[
 ]
 
 ServiceRegistry = Annotated[_ServiceRegistryClass, Depends(get_service_registry)]
+CompositionRoot = Annotated[_CompositionRootClass, Depends(get_composition_root)]
 
 
 # ==================================================================================

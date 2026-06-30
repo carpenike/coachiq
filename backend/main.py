@@ -26,6 +26,7 @@ from slowapi.errors import RateLimitExceeded
 from slowapi.middleware import SlowAPIMiddleware
 
 from backend.api.router_config import configure_routers
+from backend.core.composition_root import CompositionRoot
 from backend.core.config import Settings, get_settings, is_real_secret
 from backend.core.dependencies import ServiceRegistry
 from backend.core.guardrail_coordinator import GuardrailCoordinator
@@ -151,36 +152,33 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     """
     logger.info("Starting coachiq backend application")
 
-    # Initialize ServiceRegistry for advanced dependency management.
-    # Use GuardrailCoordinator for guardrail-tier classification + emergency
-    # stop ("safety" naming is historical -- see ADR-0004).
-    service_registry = GuardrailCoordinator()
+    # Initialize the Phase-A composition root. It owns typed service handles
+    # while preserving the GuardrailCoordinator registry as a compatibility layer.
+    composition_root = CompositionRoot()
+    compat_registry = composition_root.compat_registry
 
-    # Initialize the module-level service registry for dependency injection
-    from backend.core.dependencies import initialize_service_registry
+    # Initialize the module-level composition root for dependency injection.
+    from backend.core.dependencies import initialize_composition_root
 
-    initialize_service_registry(service_registry)
+    initialize_composition_root(composition_root)
 
     # Initialize backend metrics FIRST to avoid collisions
     initialize_backend_metrics()
 
     try:
-        # Configure service startup stages with explicit dependencies
-        await _configure_service_startup_stages(service_registry)
-
-        # Execute orchestrated startup via ServiceRegistry
-        await service_registry.startup_all()
+        # Configure and execute orchestrated startup through the composition root.
+        await composition_root.startup(_configure_service_startup_stages)
 
         # CRITICAL: Inject service_registry into command_guardrail_service after startup to avoid circular dependency
-        command_guardrail_service = service_registry.get_service("command_guardrail_service")
+        command_guardrail_service = compat_registry.get_service("command_guardrail_service")
         if command_guardrail_service and hasattr(command_guardrail_service, "set_service_registry"):
-            command_guardrail_service.set_service_registry(service_registry)
+            command_guardrail_service.set_service_registry(compat_registry)
             logger.info(
                 "ServiceRegistry injected into CommandGuardrailService for emergency stop coordination"
             )
         elif command_guardrail_service:
             # If CommandGuardrailService doesn't have set_service_registry method, set directly
-            command_guardrail_service._service_registry = service_registry
+            command_guardrail_service._service_registry = compat_registry
             logger.info(
                 "ServiceRegistry directly assigned to CommandGuardrailService._service_registry"
             )
@@ -190,9 +188,11 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
             )
 
         # Get services from registry
-        settings = service_registry.get_service("app_settings")
-        rvc_config_provider = service_registry.get_service("rvc_config")
-        security_event_manager = service_registry.get_service("security_event_manager")
+        settings = composition_root.services.settings or compat_registry.get_service("app_settings")
+        rvc_config_provider = composition_root.services.rvc_config or compat_registry.get_service(
+            "rvc_config"
+        )
+        security_event_manager = compat_registry.get_service("security_event_manager")
 
         # Validate security configuration
         if not settings.is_development():
@@ -202,9 +202,12 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
                 # In production, we should fail fast on security misconfigurations
                 # For now, just log the error and continue
 
-        device_discovery_service = service_registry.get_service("device_discovery_service")
-        persistence_service = service_registry.get_service("persistence_service")
-        database_manager = service_registry.get_service("database_manager")
+        device_discovery_service = compat_registry.get_service("device_discovery_service")
+        persistence_service = compat_registry.get_service("persistence_service")
+        database_manager = (
+            composition_root.services.database_manager
+            or compat_registry.get_service("database_manager")
+        )
 
         logger.info("ServiceRegistry startup completed successfully")
         logger.info(f"RVC Config Summary: {rvc_config_provider.get_configuration_summary()}")
@@ -212,11 +215,11 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         # Phase 0: Add dependency visualization
         try:
             # Get dependency diagram
-            diagram = service_registry.export_dependency_diagram()
+            diagram = compat_registry.export_dependency_diagram()
             logger.info("ServiceRegistry Dependency Diagram:\n%s", diagram)
 
             # Get startup metrics
-            metrics = service_registry.get_enhanced_metrics()
+            metrics = compat_registry.get_enhanced_metrics()
             logger.info("ServiceRegistry Startup Metrics:")
             logger.info(f"  Total startup time: {metrics.get('total_startup_time_ms', 0):.2f}ms")
             logger.info(f"  Service count: {metrics.get('service_count', 0)}")
@@ -234,8 +237,8 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
             logger.warning(f"Could not generate dependency visualization: {e}")
 
         # Get services from ServiceRegistry
-        websocket_manager = service_registry.get_service("websocket_manager")
-        entity_manager_service = service_registry.get_service("entity_manager_service")
+        websocket_manager = compat_registry.get_service("websocket_manager")
+        entity_manager_service = compat_registry.get_service("entity_manager_service")
 
         if not websocket_manager or not entity_manager_service:
             msg = "Required services (websocket, entity_manager) failed to initialize"
@@ -254,7 +257,10 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         vector_service = None  # VectorService() - needs vector_repository, performance_monitor
         can_interface_service = None  # CANInterfaceService() - needs performance_monitor
         # Get database_manager from ServiceRegistry
-        database_manager = service_registry.get_service("database_manager")
+        database_manager = (
+            composition_root.services.database_manager
+            or compat_registry.get_service("database_manager")
+        )
         # TODO: Migrate these services to ServiceRegistry
         # For now, create with None until properly migrated
         predictive_maintenance_service = (
@@ -263,18 +269,18 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         # analytics_dashboard_service now registered in ServiceRegistry
 
         # Get security services from ServiceRegistry (already initialized)
-        security_config_service = service_registry.get_service("security_config_service")
-        pin_manager = service_registry.get_service("pin_manager")
-        security_audit_service = service_registry.get_service("security_audit_service")
+        security_config_service = compat_registry.get_service("security_config_service")
+        pin_manager = compat_registry.get_service("pin_manager")
+        security_audit_service = compat_registry.get_service("security_audit_service")
 
         logger.info("Security services retrieved from ServiceRegistry")
 
         # Get services from ServiceRegistry
-        pin_manager = service_registry.get_service("pin_manager")
-        security_audit_service = service_registry.get_service("security_audit_service")
+        pin_manager = compat_registry.get_service("pin_manager")
+        security_audit_service = compat_registry.get_service("security_audit_service")
 
         # CommandGuardrailService is now registered in ServiceRegistry
-        command_guardrail_service = service_registry.get_service("command_guardrail_service")
+        command_guardrail_service = compat_registry.get_service("command_guardrail_service")
         logger.info("Backend services initialized")
 
         # Authentication middleware will be configured dynamically via the middleware itself
@@ -323,11 +329,8 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         # Shutdown Security WebSocket handler
         # Use ServiceRegistry for orchestrated shutdown
         try:
-            from backend.core.dependencies import get_service_registry
-
-            service_registry = get_service_registry()
-            logger.info("Using ServiceRegistry for orchestrated shutdown")
-            await service_registry.shutdown_all()
+            logger.info("Using CompositionRoot for orchestrated shutdown")
+            await composition_root.shutdown()
         except Exception as e:
             logger.error(f"Error during ServiceRegistry shutdown: {e}")
             logger.info("Using legacy shutdown (ServiceRegistry not available)")
