@@ -14,7 +14,7 @@ Key Features:
 - Write batching to minimize flash storage wear
 
 Example:
-    >>> queue = NotificationQueue("data/notifications.db")
+    >>> queue = NotificationQueue()
     >>> await queue.initialize()
     >>> notification_id = await queue.enqueue(notification_payload)
     >>> batch = await queue.dequeue_batch(size=10)
@@ -55,14 +55,19 @@ class NotificationQueue:
     - Background cleanup and maintenance
     """
 
-    def __init__(self, db_path: str = "data/notifications.db"):
+    def __init__(self, db_path: str | Path | None = None):
         """
         Initialize notification queue.
 
         Args:
-            db_path: Path to SQLite database file
+            db_path: Path to SQLite database file, or ':memory:' for tests
         """
-        self.db_path = Path(db_path)
+        if db_path is None:
+            from backend.core.config import get_settings
+
+            db_path = get_settings().notifications.queue_db_path
+
+        self.db_path: Path | str = ":memory:" if db_path == ":memory:" else Path(db_path)
         self.logger = logging.getLogger(f"{__name__}.NotificationQueue")
 
         # Write batching for flash storage protection
@@ -89,7 +94,8 @@ class NotificationQueue:
         """Initialize database schema and configuration."""
         try:
             # Ensure directory exists
-            self.db_path.parent.mkdir(parents=True, exist_ok=True)
+            if isinstance(self.db_path, Path):
+                self.db_path.parent.mkdir(parents=True, exist_ok=True)
 
             # Initialize database schema
             await self._init_schema()
@@ -448,7 +454,11 @@ class NotificationQueue:
                         stats.last_success = datetime.fromisoformat(row[0])
 
                 # Database size
-                db_size = self.db_path.stat().st_size if self.db_path.exists() else 0
+                db_size = (
+                    self.db_path.stat().st_size
+                    if isinstance(self.db_path, Path) and self.db_path.exists()
+                    else 0
+                )
                 stats.queue_size_bytes = db_size
 
                 # Cache results for 30 seconds

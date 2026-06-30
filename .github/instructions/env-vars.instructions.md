@@ -48,6 +48,9 @@ applyTo: "**/*.py"
 
 - The persistence data root must resolve to an absolute path independent of the process working directory. Relative `COACHIQ_PERSISTENCE__DATA_DIR` values are interpreted relative to the project root, not `cwd`.
 - The canonical SQLite database path is `<COACHIQ_PERSISTENCE__DATA_DIR>/databases/coachiq.db`. Do not introduce new defaults under `persistent/database`, `database`, or cwd-relative `backend/data` paths.
+- All runtime write paths must self-anchor under `COACHIQ_PERSISTENCE__DATA_DIR` unless an explicit absolute override is provided. Deployment hardening such as systemd `WorkingDirectory` is allowed, but it must never be required for path correctness.
+- CAN recorder storage defaults to `<COACHIQ_PERSISTENCE__DATA_DIR>/recordings` and can be overridden with `COACHIQ_CAN_RECORDER__STORAGE_PATH`; relative overrides are interpreted under the persistence data root.
+- Notification report output defaults to `<COACHIQ_PERSISTENCE__DATA_DIR>/reports`, and the notification queue DB defaults to `<COACHIQ_PERSISTENCE__DATA_DIR>/databases/notifications.db`. Preserve `:memory:` notification queue paths for tests.
 - Prefer the NixOS `services.coachiq.dataDir` option or an absolute `COACHIQ_PERSISTENCE__DATA_DIR` in deployment env files. Leave `COACHIQ_DATABASE__SQLITE_PATH` unset unless a test or specialized tool intentionally bypasses the persistence data root.
 
 ## Misc

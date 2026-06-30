@@ -567,6 +567,18 @@ class PersistenceSettings(BaseSettings):
         """Get the persistent logs directory."""
         return self.data_dir / "logs"
 
+    def get_recordings_dir(self) -> Path:
+        """Get the CAN recording storage directory."""
+        return self.data_dir / "recordings"
+
+    def get_reports_dir(self) -> Path:
+        """Get the generated reports storage directory."""
+        return self.data_dir / "reports"
+
+    def get_notification_queue_db_path(self) -> Path:
+        """Get the persistent notification queue database path."""
+        return self.get_database_dir() / "notifications.db"
+
     def ensure_directories(self) -> list[Path]:
         """
         Ensure all required directories exist.
@@ -585,6 +597,8 @@ class PersistenceSettings(BaseSettings):
             self.get_themes_dir(),
             self.get_dashboards_dir(),
             self.get_logs_dir(),
+            self.get_recordings_dir(),
+            self.get_reports_dir(),
         ]
 
         created = []
@@ -600,6 +614,28 @@ class PersistenceSettings(BaseSettings):
                 logger.warning(f"Failed to create directory {directory}: {e}")
 
         return created
+
+
+class CANRecorderSettings(BaseSettings):
+    """CAN bus recorder storage configuration."""
+
+    model_config = SettingsConfigDict(
+        env_prefix="COACHIQ_CAN_RECORDER__", case_sensitive=False, env_parse_none_str=""
+    )
+
+    storage_path: Path | None = Field(
+        default=None,
+        description=(
+            "CAN recording storage directory. Relative values are anchored under "
+            "COACHIQ_PERSISTENCE__DATA_DIR."
+        ),
+    )
+
+    @field_validator("storage_path", mode="before")
+    @classmethod
+    def parse_storage_path(cls, v: Any) -> Path | None:
+        """Parse optional recorder storage path settings."""
+        return parse_optional_path(v)
 
 
 class SMTPChannelConfig(BaseSettings):
@@ -783,6 +819,21 @@ class NotificationSettings(BaseSettings):
     discord: DiscordChannelConfig = Field(default_factory=DiscordChannelConfig)
     pushover: PushoverChannelConfig = Field(default_factory=PushoverChannelConfig)
     webhook: WebhookChannelConfig = Field(default_factory=WebhookChannelConfig)
+
+    def resolve_queue_db_path(self, persistence: PersistenceSettings | None = None) -> str:
+        """Resolve the notification queue DB path without depending on process cwd."""
+        if self.queue_db_path == ":memory:":
+            return self.queue_db_path
+
+        candidate = Path(self.queue_db_path).expanduser()
+        if candidate.is_absolute():
+            return str(candidate)
+
+        persistence_settings = persistence or PersistenceSettings()
+        if candidate == Path("data/notifications.db"):
+            return str(persistence_settings.get_notification_queue_db_path())
+
+        return str((persistence_settings.data_dir / candidate).resolve())
 
     def get_enabled_channels(self) -> list[tuple[str, str]]:
         """Get list of enabled notification channels with their Apprise URLs."""
@@ -1684,6 +1735,7 @@ class Settings(BaseSettings):
     security: SecuritySettings = Field(default_factory=SecuritySettings)
     logging: LoggingSettings = Field(default_factory=LoggingSettings)
     can: CANSettings = Field(default_factory=CANSettings)
+    can_recorder: CANRecorderSettings = Field(default_factory=CANRecorderSettings)
     rvc: RVCSettings = Field(default_factory=RVCSettings)
     j1939: J1939Settings = Field(default_factory=J1939Settings)
     firefly: FireflySettings = Field(default_factory=FireflySettings)
@@ -1738,6 +1790,7 @@ class Settings(BaseSettings):
                 data["database"] = MinimalDatabaseSettings()
 
         super().__init__(**data)
+        self._anchor_runtime_write_paths()
 
     # Add the fields with defaults
     advanced_diagnostics: Any = Field(
@@ -1752,6 +1805,36 @@ class Settings(BaseSettings):
     def data_dir(self) -> Path:
         """Convenience property to access persistence.data_dir."""
         return self.persistence.data_dir
+
+    def _resolve_runtime_write_path(self, configured_path: Path | None, default_path: Path) -> Path:
+        """Resolve runtime write paths under the data root unless explicitly absolute."""
+        if configured_path is None:
+            return default_path
+
+        candidate = configured_path.expanduser()
+        if candidate.is_absolute():
+            return candidate
+
+        return (self.persistence.data_dir / candidate).resolve()
+
+    def _anchor_runtime_write_paths(self) -> None:
+        """Anchor runtime write paths so service startup is independent of cwd."""
+        object.__setattr__(
+            self.can_recorder,
+            "storage_path",
+            self._resolve_runtime_write_path(
+                self.can_recorder.storage_path, self.persistence.get_recordings_dir()
+            ),
+        )
+        object.__setattr__(
+            self.notifications,
+            "queue_db_path",
+            self.notifications.resolve_queue_db_path(self.persistence),
+        )
+
+    def get_can_recorder_storage_path(self) -> Path:
+        """Get the anchored CAN recorder storage path."""
+        return self.can_recorder.storage_path or self.persistence.get_recordings_dir()
 
     @field_validator("environment", mode="before")
     @classmethod

@@ -251,7 +251,7 @@ lower them without a reviewed handoff.
 **RV-C decode validation harness (HOF-028).** `scripts/validate_rvc_spec.py`
 checks the curated `config/rvc.json` against structural rules, coach-mapping
 references, duplicate-PGN variant classification, and the trimmed live fixture
-at `recordings/recon004_decode_sanity.candump`. The full RECON-004 Pi capture is
+at `tests/fixtures/recon004_decode_sanity.candump`. The full RECON-004 Pi capture is
 provenance only; CI uses the committed fixture so builds are reproducible.
 Per-signal `unavailable_raw_values` metadata is the only mechanism for masking
 not-available values; do not add blanket max-value masking.

@@ -10,6 +10,7 @@ This refactored version provides backward compatibility while using the new arch
 
 import logging
 from datetime import UTC, datetime, timedelta
+from pathlib import Path
 from typing import Any
 
 from sqlalchemy import and_, case, func, select
@@ -79,6 +80,7 @@ class NotificationAnalyticsService:
         self,
         database_manager: DatabaseManager,
         performance_monitor: PerformanceMonitor | None = None,
+        reports_dir: Path | None = None,
     ):
         """Initialize the analytics service with new architecture.
 
@@ -112,7 +114,12 @@ class NotificationAnalyticsService:
         # ``get_queue_health`` (defined directly on this class, below)
         # while keeping reporting's own concerns (template rendering,
         # scheduling, file formats) separate.
-        self._reporting_service = NotificationReportingService(database_manager, self)
+        if reports_dir is None:
+            from backend.core.config import get_settings
+
+            reports_dir = get_settings().persistence.get_reports_dir()
+
+        self._reporting_service = NotificationReportingService(database_manager, self, reports_dir)
 
         # Background task management
         self._task_manager = BackgroundTaskManager()

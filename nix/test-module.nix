@@ -88,6 +88,10 @@ let
       ok = serviceConfig.EnvironmentFile == envFile;
     }
     {
+      name = "working directory is the configured data dir";
+      ok = serviceConfig.WorkingDirectory == "/var/lib/coachiq-test";
+    }
+    {
       name = "first-class log level reaches environment";
       ok = env.COACHIQ_LOGGING__LEVEL == "WARNING";
     }

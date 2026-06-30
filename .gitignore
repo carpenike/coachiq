@@ -185,6 +185,9 @@ resources/rv-c-spec.pdf
 resources/vector_store/
 resources/rvc_spec_chunks_with_overlap.json
 
+# Runtime data directories
+/recordings/
+
 # Node.js
 node_modules/
 npm-debug.log*

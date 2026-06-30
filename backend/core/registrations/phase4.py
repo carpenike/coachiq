@@ -389,13 +389,12 @@ def register(service_registry: SafetyServiceRegistry) -> None:
     # Register CAN Bus Recorder Service
     def _init_can_bus_recorder(websocket_manager=None):
         """Initialize CAN bus recorder service."""
-        from pathlib import Path
-
+        from backend.core.config import get_settings
         from backend.integrations.can.can_bus_recorder import CANBusRecorder
 
         # Use default configuration - feature flags have been removed per CLAUDE.md
         buffer_size = 100000
-        storage_path = Path("./recordings")
+        storage_path = get_settings().get_can_recorder_storage_path()
         auto_save_interval = 60.0
         max_file_size_mb = 100.0
 

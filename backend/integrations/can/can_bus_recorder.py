@@ -147,7 +147,7 @@ class CANBusRecorder(SafetyAware):
     def __init__(
         self,
         buffer_size: int = 100000,  # Maximum messages in memory buffer
-        storage_path: Path = Path("./recordings"),
+        storage_path: Path | None = None,
         auto_save_interval: float = 60.0,  # Auto-save every 60 seconds
         max_file_size_mb: float = 100.0,  # Max file size before rotation
     ):
@@ -156,6 +156,11 @@ class CANBusRecorder(SafetyAware):
             safety_classification=SafetyClassification.OPERATIONAL,
             safe_state_action=SafeStateAction.DISABLE,
         )
+
+        if storage_path is None:
+            from backend.core.config import get_settings
+
+            storage_path = get_settings().get_can_recorder_storage_path()
 
         self.buffer_size = buffer_size
         self.storage_path = storage_path

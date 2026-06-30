@@ -194,6 +194,7 @@ in
         RestartSec = 5;
         User = "coachiq";
         Group = "coachiq";
+        WorkingDirectory = cfg.dataDir;
         SupplementaryGroups = [ "dialout" ];
 
         NoNewPrivileges = true;

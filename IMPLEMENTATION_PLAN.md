@@ -92,6 +92,46 @@ retirements follow the HOF-016 plan.
 
 ## Build Log
 
+### HOF-039 — Runtime Write Path Self-Anchoring
+
+- [shipped] same commit as this entry · 2026-06-29
+- [component] backend (+ deploy-facing)
+- [handoff] HOF-039
+
+**What changed.** Runtime write paths now anchor to the configured persistence
+data root instead of the process cwd. `PersistenceSettings` owns `recordings`,
+`reports`, and notification queue DB locations and creates the new runtime dirs
+centrally. The CAN recorder has a typed `COACHIQ_CAN_RECORDER__STORAGE_PATH`
+setting, relative recorder overrides resolve under `COACHIQ_PERSISTENCE__DATA_DIR`,
+notification queue `:memory:` remains intact for tests, and notification reports
+write under the data root. The NixOS module now sets `WorkingDirectory = cfg.dataDir`
+as hardening, while path correctness remains code-owned.
+
+**Why.** The nixpi deployment with `ProtectSystem=strict` exposed cwd-relative
+`./recordings`, `reports`, and `data/notifications.db` writes as startup/runtime
+failures unless the deployment carried path-workarounds. HOF-039 retires those
+workarounds by making repo root, `backend/`, `/`, and systemd cwd launches resolve
+the same absolute runtime paths. Health-check timing was split to a follow-on
+robustness HOF so this change stays focused on path anchoring.
+
+**Validation.** `nix develop --command poetry run pytest --no-cov
+tests/core/test_runtime_write_paths.py`; `nix develop --command poetry run
+python scripts/validate_rvc_spec.py`; touched-module compile check;
+`nix develop --command bash scripts/ci-quality-gate.sh`. A local Darwin-side
+Nix module eval was attempted separately but blocked by local Nix disk space
+while writing eval artifacts.
+
+**Files.** `.github/instructions/env-vars.instructions.md`, `.gitignore`,
+`backend/core/config.py`, `backend/core/registrations/phase4.py`,
+`backend/integrations/can/can_bus_recorder.py`,
+`backend/services/notifications/notification_analytics_service.py`,
+`backend/services/notifications/notification_queue.py`,
+`backend/services/notifications/notification_reporting_service.py`,
+`nix/module.nix`, `nix/test-module.nix`, `scripts/validate_rvc_spec.py`,
+`tests/core/test_runtime_write_paths.py`,
+`tests/fixtures/recon004_decode_sanity.candump`,
+`tests/test_rvc_decoder_comprehensive.py`, `PROJECT_CONTEXT.md`.
+
 ### HOF-040 — SecurityConfigValidator Auth Schema Fix
 
 - [shipped] same commit as this entry · 2026-06-29
@@ -313,7 +353,7 @@ yet mapped are roadmap candidates rather than validation failures.
 
 **Files.** .github/workflows/nix-ci.yml, flake.nix, config/rvc.json,
 backend/integrations/rvc/decoder_core.py, backend/integrations/rvc/decode.py,
-scripts/validate_rvc_spec.py, recordings/recon004_decode_sanity.candump,
+scripts/validate_rvc_spec.py, tests/fixtures/recon004_decode_sanity.candump,
 tests/test_rvc_decoder_comprehensive.py, PROJECT_CONTEXT.md
 
 ### HOF-015 — Guardrail Coverage Ratchet

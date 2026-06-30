@@ -39,7 +39,7 @@ from backend.integrations.rvc.decoder_core import DecodedValue
 # and are resolved by RVCSettings.get_config_dir() in production.
 _REPO_CONFIG_DIR = Path(__file__).resolve().parents[1] / "config"
 _REPO_ROOT = Path(__file__).resolve().parents[1]
-_RECORDINGS_DIR = _REPO_ROOT / "recordings"
+_FIXTURES_DIR = _REPO_ROOT / "tests" / "fixtures"
 
 
 def discover_coach_mapping_files():
@@ -551,7 +551,7 @@ class TestSignalDecoding:
 
     def test_recon004_fixture_masks_live_not_available_values(self):
         """Representative live frames mask no-data sentinels and scale physical values."""
-        fixture_path = _RECORDINGS_DIR / "recon004_decode_sanity.candump"
+        fixture_path = _FIXTURES_DIR / "recon004_decode_sanity.candump"
         assert fixture_path.exists()
 
         ats_status_2 = self._decode_fixture_frame("0DFFAC4F", "910000007DFFFF32")

@@ -19,7 +19,7 @@ import yaml
 REPO_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO_ROOT))
 RVC_SPEC_PATH = REPO_ROOT / "config" / "rvc.json"
-DEFAULT_CORPUS_PATH = REPO_ROOT / "recordings" / "recon004_decode_sanity.candump"
+DEFAULT_CORPUS_PATH = REPO_ROOT / "tests" / "fixtures" / "recon004_decode_sanity.candump"
 
 MAPPING_METADATA_SECTIONS = {
     "coach_info",

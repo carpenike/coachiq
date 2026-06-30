@@ -280,6 +280,7 @@ class NotificationReportingService:
         self,
         database_manager: DatabaseManager,
         analytics_service: "NotificationAnalyticsService",
+        reports_dir: Path | None = None,
     ):
         """
         Initialize the reporting service.
@@ -287,6 +288,7 @@ class NotificationReportingService:
         Args:
             database_manager: Database manager for persistence
             analytics_service: Analytics service for data collection
+            reports_dir: Directory for generated report files
         """
         self.db_manager = database_manager
         self.analytics_service = analytics_service
@@ -304,8 +306,13 @@ class NotificationReportingService:
         self._running = False
 
         # Report storage
-        self.reports_dir = Path("reports")
-        self.reports_dir.mkdir(exist_ok=True)
+        if reports_dir is None:
+            from backend.core.config import get_settings
+
+            reports_dir = get_settings().persistence.get_reports_dir()
+
+        self.reports_dir = reports_dir
+        self.reports_dir.mkdir(parents=True, exist_ok=True)
 
         # Template environment for HTML generation
         try:
