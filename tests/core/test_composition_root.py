@@ -1,5 +1,7 @@
 """Tests for the Phase A composition-root compatibility seam."""
 
+from pathlib import Path
+
 import pytest
 
 from backend.core import dependencies
@@ -12,6 +14,14 @@ from backend.core.service_dependency_resolver import DependencyType, ServiceDepe
 from backend.repositories.security_config_repository import SecurityConfigRepository
 from backend.services.persistence.persistence_service import PersistenceService
 from backend.services.rvc.rvc_config_facade import RVCConfigFacade
+
+
+@pytest.mark.xfail(strict=True, reason="HOF-053 B1-B4 removes the remaining bridge")
+def test_composition_root_has_no_registry_bridge_tokens() -> None:
+    """Permanent ratchet: composition root must not regress to registry bridge construction."""
+    source = Path("backend/core/composition_root.py").read_text(encoding="utf-8")
+    forbidden_tokens = ["inspect.signature", "definition.init_func", "_service_definitions"]
+    assert not any(token in source for token in forbidden_tokens)
 
 
 def _reset_dependency_globals() -> None:
