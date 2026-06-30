@@ -1,12 +1,5 @@
-"""Typed composition root for backend service construction.
+"""Typed composition root for backend service construction."""
 
-Phase A keeps the existing GuardrailCoordinator-backed registry as a temporary
-compatibility layer while introducing a typed container that future clusters can
-populate through constructor injection.
-"""
-
-import asyncio
-import inspect
 import logging
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
@@ -17,7 +10,6 @@ from backend.core.config_provider import RVCConfigProvider
 from backend.core.guardrail_coordinator import GuardrailCoordinator
 from backend.core.guardrail_runtime_coordinator import GuardrailRuntimeCoordinator
 from backend.core.performance import PerformanceMonitor
-from backend.core.service_dependency_resolver import DependencyType
 from backend.services.database.database_manager import DatabaseManager
 from backend.services.persistence.persistence_service import PersistenceService
 from backend.services.rvc.rvc_config_facade import RVCConfigFacade
@@ -168,6 +160,7 @@ class CompositionRoot:
         await self._construct_a3_services()
         await self._construct_a4_services()
         await self.compat_registry.startup_all()
+        self._mirror_remaining_guardrail_services()
         self._capture_registry_services()
         self._started = True
 
@@ -423,32 +416,429 @@ class CompositionRoot:
             await persistence_service.initialize()
             self._set_root_constructed_service("persistence_service", persistence_service)
 
-    async def _construct_a2_services(self) -> None:
-        """Construct A2 through the HOF-053 compatibility bridge.
+    async def _construct_a2_services(self) -> None:  # noqa: C901
+        """Construct A2 protocol/facade/database services with typed constructors."""
+        from backend.services.database.database_engine import DatabaseEngine
+        from backend.services.database.database_services import (
+            DatabaseConnectionService,
+            DatabaseMigrationService,
+            DatabaseSessionService,
+        )
+        from backend.services.database.database_update_service import DatabaseUpdateService
+        from backend.services.database.migration_safety_validator import MigrationSafetyValidator
+        from backend.services.discovery.device_discovery_service import DeviceDiscoveryService
+        from backend.services.protocols.protocol_manager import ProtocolManager
+        from backend.services.rvc.rvc_service import RVCService
 
-        TODO(HOF-053): replace this bridge with typed constructor calls before
-        deleting the registry/resolver.
-        """
-        for service_name in self._A2_SERVICE_ORDER:
-            await self._construct_registered_service(service_name)
+        performance_monitor = self.get_service("performance_monitor")
 
-    async def _construct_a3_services(self) -> None:
-        """Construct A3 through the HOF-053 compatibility bridge.
+        if self._should_construct("database_connection_service"):
+            self._set_root_constructed_service(
+                "database_connection_service",
+                DatabaseConnectionService(
+                    database_engine=DatabaseEngine(self.get_service("app_settings")),
+                    connection_repository=self.get_service("database_connection_repository"),
+                    performance_monitor=performance_monitor,
+                ),
+            )
 
-        TODO(HOF-053): replace this bridge with typed constructor calls before
-        deleting the registry/resolver.
-        """
-        for service_name in self._A3_SERVICE_ORDER:
-            await self._construct_registered_service(service_name)
+        if self._should_construct("database_session_service"):
+            self._set_root_constructed_service(
+                "database_session_service",
+                DatabaseSessionService(
+                    database_engine=DatabaseEngine(self.get_service("app_settings")),
+                    session_repository=self.get_service("database_session_repository"),
+                    performance_monitor=performance_monitor,
+                ),
+            )
+
+        if self._should_construct("database_migration_service"):
+            self._set_root_constructed_service(
+                "database_migration_service",
+                DatabaseMigrationService(
+                    database_engine=DatabaseEngine(self.get_service("app_settings")),
+                    migration_repository=self.get_service("migration_repository"),
+                    performance_monitor=performance_monitor,
+                ),
+            )
+
+        if self._should_construct("migration_safety_validator"):
+            migration_safety_validator = MigrationSafetyValidator(
+                safety_repository=self.get_service("safety_repository"),
+                connection_repository=self.get_service("database_connection_repository"),
+                performance_monitor=performance_monitor,
+            )
+            await migration_safety_validator.initialize()
+            self._set_root_constructed_service(
+                "migration_safety_validator", migration_safety_validator
+            )
+
+        if self._should_construct("database_update_service"):
+            database_update_service = DatabaseUpdateService(
+                connection_repository=self.get_service("database_connection_repository"),
+                migration_repository=self.get_service("database_migration_repository"),
+                safety_validator=self.get_service("migration_safety_validator"),
+                backup_repository=self.get_service("database_backup_repository"),
+                history_repository=self.get_service("migration_history_repository"),
+                websocket_repository=None,
+                performance_monitor=performance_monitor,
+                backup_dir=self.get_service("app_settings").persistence.get_backup_dir(),
+            )
+            await database_update_service.initialize()
+            self._set_root_constructed_service("database_update_service", database_update_service)
+
+        if self._should_construct("protocol_manager"):
+            protocol_manager = ProtocolManager()
+            await protocol_manager.start()
+            self._set_root_constructed_service("protocol_manager", protocol_manager)
+
+        if self._should_construct("rvc_service"):
+            rvc_service = RVCService(
+                rvc_config_repository=self.get_service("rvc_config_repository"),
+                can_tracking_repository=self.get_service("can_tracking_repository"),
+            )
+            await rvc_service.start()
+            self._set_root_constructed_service("rvc_service", rvc_service)
+
+        # Preserve resolver behavior: device discovery's optional can_facade edge is None
+        # until can_facade is constructed later in the same cluster.
+        if self._should_construct("device_discovery_service"):
+            self._set_root_constructed_service(
+                "device_discovery_service",
+                DeviceDiscoveryService(can_facade=None, config=self.get_service("rvc_config")),
+            )
+
+        if self.compat_registry.has_service_definition("can_facade"):
+            await self._construct_lower_can_services()
+
+        if self._should_construct("can_facade"):
+            from backend.services.can.can_facade import CANFacade
+
+            self._set_root_constructed_service(
+                "can_facade",
+                CANFacade(
+                    bus_service=self.get_service("can_bus_service"),
+                    injector=self.get_service("can_message_injector"),
+                    message_filter=self.get_service("can_message_filter"),
+                    recorder=self.get_service("can_bus_recorder"),
+                    analyzer=self.get_service("can_protocol_analyzer"),
+                    anomaly_detector=self.get_service("can_anomaly_detector"),
+                    interface_service=self.get_service("can_interface_service"),
+                    performance_monitor=performance_monitor,
+                ),
+            )
+
+    async def _construct_a3_services(self) -> None:  # noqa: C901
+        """Construct A3 auth/security/guardrail services with typed constructors."""
+        from backend.services.auth.attempt_tracker_service import AttemptTrackerService
+        from backend.services.auth.lockout import LockoutService
+        from backend.services.auth.mfa import MfaService
+        from backend.services.auth.pin_manager import PINConfig, PINManager
+        from backend.services.auth.service import AuthService
+        from backend.services.auth.sessions import SessionService
+        from backend.services.guardrails.command_guardrail_service import CommandGuardrailService
+        from backend.services.security.security_audit_service import (
+            RateLimitConfig,
+            SecurityAuditService,
+        )
+        from backend.services.security.security_config_service import SecurityConfigService
+        from backend.services.security.security_event_manager import SecurityEventManager
+        from backend.services.security.security_event_service import SecurityEventService
+
+        performance_monitor = self.get_service("performance_monitor")
+
+        if self._should_construct("security_event_service"):
+            self._set_root_constructed_service(
+                "security_event_service",
+                SecurityEventService(
+                    event_repository=self.get_service("security_event_repository"),
+                    listener_repository=self.get_service("security_listener_repository"),
+                    performance_monitor=performance_monitor,
+                ),
+            )
+
+        if self._should_construct("attempt_tracker_service"):
+            self._set_root_constructed_service(
+                "attempt_tracker_service",
+                AttemptTrackerService(
+                    auth_event_repository=self.get_service("auth_event_repository"),
+                    security_audit_repository=self.get_service("security_audit_repository"),
+                    performance_monitor=performance_monitor,
+                    security_event_service=self.get_service("security_event_service"),
+                ),
+            )
+
+        if self._should_construct("mfa_service"):
+            self._set_root_constructed_service(
+                "mfa_service",
+                MfaService(
+                    mfa_repository=self.get_service("mfa_repository"),
+                    performance_monitor=performance_monitor,
+                ),
+            )
+
+        if self._should_construct("session_service"):
+            self._set_root_constructed_service(
+                "session_service",
+                SessionService(
+                    session_repository=self.get_service("session_repository"),
+                    token_service=self.get_service("token_service"),
+                    performance_monitor=performance_monitor,
+                ),
+            )
+
+        if self._should_construct("security_config_service"):
+            self._set_root_constructed_service(
+                "security_config_service",
+                SecurityConfigService(
+                    self.get_service("security_config_repository"), performance_monitor
+                ),
+            )
+
+        if self._should_construct("lockout_service"):
+            auth_config = await self.get_service("security_config_service").get_auth_config()
+            self._set_root_constructed_service(
+                "lockout_service",
+                LockoutService(
+                    auth_event_repository=self.get_service("auth_event_repository"),
+                    performance_monitor=performance_monitor,
+                    max_failed_attempts=auth_config.get("max_login_attempts", 5),
+                    lockout_window_minutes=auth_config.get("login_attempt_window_minutes", 15),
+                    lockout_duration_minutes=auth_config.get("login_lockout_minutes", 30),
+                    attempt_tracker_service=self.get_service("attempt_tracker_service"),
+                ),
+            )
+
+        if self._should_construct("pin_manager"):
+            pin_config = PINConfig(
+                **await self.get_service("security_config_service").get_pin_config()
+            )
+            self._set_root_constructed_service("pin_manager", PINManager(pin_config))
+
+        if self._should_construct("security_audit_service"):
+            rate_limit_config = RateLimitConfig(
+                **await self.get_service("security_config_service").get_rate_limit_config()
+            )
+            self._set_root_constructed_service(
+                "security_audit_service",
+                SecurityAuditService(
+                    security_audit_repository=self.get_service("security_audit_repository"),
+                    performance_monitor=performance_monitor,
+                    config=rate_limit_config,
+                ),
+            )
+
+        if self._should_construct("auth_manager"):
+            from backend.services.auth.repository import AuthRepository
+
+            auth_service = AuthService(
+                credential_repository=self.get_service("credential_repository"),
+                session_repository=self.get_service("session_repository"),
+                auth_event_repository=self.get_service("auth_event_repository"),
+                mfa_repository=self.get_service("mfa_repository"),
+                notification_service=None,
+                performance_monitor=performance_monitor,
+                auth_repository=AuthRepository(self.get_service("database_manager")),
+                token_service=self.get_service("token_service"),
+                session_service=self.get_service("session_service"),
+                mfa_service=self.get_service("mfa_service"),
+                lockout_service=self.get_service("lockout_service"),
+                auth_settings=self.get_service("app_settings").auth,
+            )
+            await auth_service.start()
+            self._set_root_constructed_service("auth_manager", auth_service)
+
+        if self._should_construct("security_event_manager"):
+            self._set_root_constructed_service(
+                "security_event_manager",
+                SecurityEventManager(
+                    security_event_service=self.get_service("security_event_service"),
+                    attempt_tracker_service=self.get_service("attempt_tracker_service"),
+                    security_config_service=self.get_service("security_config_service"),
+                    security_audit_service=self.get_service("security_audit_service"),
+                    auth_manager=self.get_service("auth_manager"),
+                    pin_manager=self.get_service("pin_manager"),
+                    lockout_service=self.get_service("lockout_service"),
+                    performance_monitor=performance_monitor,
+                ),
+            )
+
+        if self._should_construct("command_guardrail_service"):
+            command_guardrail_service = CommandGuardrailService(
+                service_registry=self.guardrail_coordinator,
+                health_check_interval=5.0,
+                watchdog_timeout=15.0,
+                pin_manager=self.get_service("pin_manager"),
+                security_audit_service=self.get_service("security_audit_service"),
+            )
+            await command_guardrail_service.start_monitoring()
+            self._set_root_constructed_service(
+                "command_guardrail_service", command_guardrail_service
+            )
 
     async def _construct_a4_services(self) -> None:
-        """Construct A4 through the HOF-053 compatibility bridge.
+        """Construct A4 websocket/entity/dashboard services with typed constructors."""
+        from backend.services.analytics.analytics_dashboard_service import (
+            AnalyticsDashboardService,
+        )
+        from backend.services.entities.entity_domain_service import EntityDomainService
+        from backend.services.entities.entity_initialization_service import (
+            EntityInitializationService,
+        )
+        from backend.services.entities.entity_service import EntityService
+        from backend.services.system.dashboard_service import DashboardService
+        from backend.services.system.websocket_service import WebSocketService
 
-        TODO(HOF-053): replace this bridge with typed constructor calls before
-        deleting the registry/resolver.
-        """
-        for service_name in self._A4_SERVICE_ORDER:
-            await self._construct_registered_service(service_name)
+        performance_monitor = self.get_service("performance_monitor")
+
+        if self._should_construct("websocket_manager"):
+            websocket_manager = WebSocketService(
+                can_tracking_repository=self.get_service("can_tracking_repository"),
+                system_state_repository=self.get_service("system_state_repository"),
+                service_registry=None,
+            )
+            await websocket_manager.start()
+            self._set_root_constructed_service("websocket_manager", websocket_manager)
+
+        if self._should_construct("analytics_dashboard_service"):
+            self._set_root_constructed_service(
+                "analytics_dashboard_service",
+                AnalyticsDashboardService(
+                    performance_monitor=performance_monitor,
+                    database_manager=self.get_service("database_manager"),
+                    analytics_repository=self.get_service("analytics_repository"),
+                ),
+            )
+
+        if self._should_construct("dashboard_service"):
+            self._set_root_constructed_service(
+                "dashboard_service",
+                DashboardService(
+                    dashboard_repository=None,
+                    entity_repository=self.get_service("entity_state_repository"),
+                    performance_monitor=performance_monitor,
+                    websocket_manager=self.get_service("websocket_manager"),
+                ),
+            )
+
+        if self._should_construct("entity_initialization_service"):
+            self._set_root_constructed_service(
+                "entity_initialization_service",
+                EntityInitializationService(
+                    entity_state_repository=self.get_service("entity_state_repository"),
+                    rvc_config_repository=self.get_service("rvc_config_repository"),
+                    entity_manager=self.get_service("entity_manager_service").get_entity_manager(),
+                ),
+            )
+
+        if self._should_construct("entity_service"):
+            self._set_root_constructed_service(
+                "entity_service",
+                EntityService(
+                    websocket_manager=self.get_service("websocket_manager"),
+                    entity_state_repository=self.get_service("entity_state_repository"),
+                    rvc_config_repository=self.get_service("rvc_config_repository"),
+                    diagnostics_repository=self.get_service("diagnostics_repository"),
+                ),
+            )
+
+        if self._should_construct("entity_domain_service"):
+            self._set_root_constructed_service(
+                "entity_domain_service",
+                EntityDomainService(
+                    config_service=self.get_service("rvc_config_facade"),
+                    auth_manager=self.get_service("auth_manager"),
+                    entity_service=self.get_service("entity_service"),
+                    websocket_manager=self.get_service("websocket_manager"),
+                    entity_manager=self.get_service("entity_manager_service"),
+                ),
+            )
+
+    async def _construct_lower_can_services(self) -> None:  # noqa: C901
+        """Construct lower-CAN prerequisites before CANFacade."""
+        from backend.integrations.can.anomaly_detector import CANAnomalyDetector
+        from backend.integrations.can.can_bus_recorder import CANBusRecorder
+        from backend.integrations.can.message_filter import MessageFilter
+        from backend.integrations.can.message_injector import CANMessageInjector, SafetyLevel
+        from backend.integrations.can.protocol_analyzer import ProtocolAnalyzer
+        from backend.integrations.diagnostics.handler import DiagnosticHandler
+        from backend.services.can.can_bus_service import CANBusService
+        from backend.services.can.can_interface_service import CANInterfaceService
+        from backend.services.can.can_network_telemetry_service import CANNetworkTelemetryService
+
+        if self._should_construct("can_anomaly_detector"):
+            self._set_root_constructed_service("can_anomaly_detector", CANAnomalyDetector())
+
+        if self._should_construct("diagnostic_handler"):
+            diagnostic_handler = DiagnosticHandler(self.get_service("app_settings"))
+            await diagnostic_handler.startup()
+            self._set_root_constructed_service("diagnostic_handler", diagnostic_handler)
+
+        if self._should_construct("can_interface_service"):
+            self._set_root_constructed_service("can_interface_service", CANInterfaceService())
+
+        if self._should_construct("can_bus_service"):
+            can_bus_service = CANBusService(
+                can_tracking_repository=self.get_service("can_tracking_repository"),
+                system_state_repository=self.get_service("system_state_repository"),
+                can_anomaly_detector=self.get_service("can_anomaly_detector"),
+                diagnostic_handler=self.get_service("diagnostic_handler"),
+            )
+            await can_bus_service.start()
+            self._set_root_constructed_service("can_bus_service", can_bus_service)
+
+        if self._should_construct("can_message_injector"):
+
+            async def audit_injection(request: Any, result: Any) -> None:
+                security_audit = self.get_optional_service("security_audit_service")
+                if security_audit and hasattr(security_audit, "log_injection"):
+                    await security_audit.log_injection(request, result)
+
+            self._set_root_constructed_service(
+                "can_message_injector",
+                CANMessageInjector(
+                    safety_level=SafetyLevel.MODERATE, audit_callback=audit_injection
+                ),
+            )
+
+        if self._should_construct("can_message_filter"):
+
+            async def alert_callback(alert_data: Any) -> None:
+                websocket_manager = self.get_optional_service("websocket_manager")
+                if websocket_manager:
+                    await websocket_manager.broadcast_can_filter_update("filter_alert", alert_data)
+
+            self._set_root_constructed_service(
+                "can_message_filter",
+                MessageFilter(
+                    max_rules=100,
+                    alert_callback=alert_callback,
+                    capture_buffer_size=10000,
+                ),
+            )
+
+        if self._should_construct("can_bus_recorder"):
+            recorder = CANBusRecorder(
+                buffer_size=100000,
+                storage_path=self.get_service("app_settings").get_can_recorder_storage_path(),
+                auto_save_interval=60.0,
+                max_file_size_mb=100.0,
+            )
+            self._set_root_constructed_service("can_bus_recorder", recorder)
+
+        if self._should_construct("can_protocol_analyzer"):
+            self._set_root_constructed_service(
+                "can_protocol_analyzer",
+                ProtocolAnalyzer(buffer_size=10000, pattern_window_ms=5000.0),
+            )
+
+        if self._should_construct("can_network_telemetry_service"):
+            self._set_root_constructed_service(
+                "can_network_telemetry_service",
+                CANNetworkTelemetryService(
+                    can_interface_service=self.get_service("can_interface_service")
+                ),
+            )
 
     def _set_root_constructed_service(self, service_name: str, service: Any) -> None:
         """Store a root-constructed service and mirror it for compatibility startup."""
@@ -456,71 +846,12 @@ class CompositionRoot:
         self._replace_compat_init_func(service_name, service)
         self._mirror_guardrail_service(service_name, service)
 
-    async def _construct_registered_service(self, service_name: str) -> None:
-        """Construct one A2-A4 bridge service and mirror it into compatibility startup.
-
-        TODO(HOF-053): replace this registry-definition bridge before deleting
-        the registry/resolver. A0/A1 must not call this path.
-        """
-        if service_name in self._constructed_services:
-            self._replace_compat_init_func(service_name, self._constructed_services[service_name])
-            self._mirror_guardrail_service(service_name, self._constructed_services[service_name])
-            return
-        if service_name in self._constructing_services:
-            msg = f"Circular root construction detected for service '{service_name}'"
-            raise RuntimeError(msg)
-
-        definition = self.compat_registry._service_definitions.get(service_name)  # noqa: SLF001
-        if definition is None:
-            return
-
-        self._constructing_services.add(service_name)
-        try:
-            await self._construct_required_dependencies(definition)
-            service = await self._construct_from_definition(definition)
-            self.set_constructed_service(service_name, service)
-            self._replace_compat_init_func(service_name, service)
-            self._mirror_guardrail_service(service_name, service)
-        finally:
-            self._constructing_services.discard(service_name)
-
-    async def _construct_required_dependencies(self, definition: Any) -> None:
-        """Construct required dependencies that are still registered only in compatibility."""
-        for dependency in definition.dependencies:
-            if dependency.type != DependencyType.REQUIRED:
-                continue
-            if dependency.name in self._constructed_services:
-                continue
-            await self._construct_registered_service(dependency.name)
-
-    async def _construct_from_definition(self, definition: Any) -> Any:
-        """Construct an A2-A4 compatibility service from a registered definition.
-
-        TODO(HOF-053): remove this bridge after the remaining services move to
-        explicit constructor calls.
-        """
-        dependency_kwargs: dict[str, Any] = {}
-        for dependency in definition.dependencies:
-            if dependency.name in self._constructed_services:
-                param_name = dependency.inject_as or dependency.name.replace("-", "_")
-                dependency_kwargs[param_name] = self._constructed_services[dependency.name]
-
-        try:
-            signature = inspect.signature(definition.init_func)
-            accepted_params = set(signature.parameters.keys())
-            dependency_kwargs = {
-                name: value for name, value in dependency_kwargs.items() if name in accepted_params
-            }
-        except (TypeError, ValueError) as exc:
-            msg = (
-                "Cannot inspect compatibility factory for service "
-                f"'{getattr(definition, 'name', '<unknown>')}'"
-            )
-            raise RuntimeError(msg) from exc
-
-        if asyncio.iscoroutinefunction(definition.init_func):
-            return await definition.init_func(**dependency_kwargs)
-        return definition.init_func(**dependency_kwargs)
+    def _should_construct(self, service_name: str) -> bool:
+        """Return whether a service should be constructed for the current graph."""
+        return (
+            service_name not in self._constructed_services
+            and self.compat_registry.has_service_definition(service_name)
+        )
 
     def _replace_compat_init_func(self, service_name: str, service: Any) -> None:
         """Make the compatibility registry return a root-constructed service."""
@@ -543,6 +874,17 @@ class CompositionRoot:
         )
         if service_name == "command_guardrail_service":
             service.service_registry = self.guardrail_coordinator
+
+    def _mirror_remaining_guardrail_services(self) -> None:
+        """Mirror guardrail services outside the normal construction order."""
+        for service_name in self.compat_registry.list_guardrail_services():
+            if service_name in self._constructed_services:
+                continue
+            if not self.compat_registry.has_service(service_name):
+                continue
+            service = self.compat_registry.get_service(service_name)
+            self.set_constructed_service(service_name, service)
+            self._mirror_guardrail_service(service_name, service)
 
     def _apply_constructed_service_handle(self, service_name: str, service: Any) -> None:
         """Update typed handles for services that have migrated to root construction."""

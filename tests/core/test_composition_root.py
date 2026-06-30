@@ -16,7 +16,6 @@ from backend.services.persistence.persistence_service import PersistenceService
 from backend.services.rvc.rvc_config_facade import RVCConfigFacade
 
 
-@pytest.mark.xfail(strict=True, reason="HOF-053 B1-B4 removes the remaining bridge")
 def test_composition_root_has_no_registry_bridge_tokens() -> None:
     """Permanent ratchet: composition root must not regress to registry bridge construction."""
     source = Path("backend/core/composition_root.py").read_text(encoding="utf-8")
@@ -243,23 +242,23 @@ async def test_guardrail_metadata_reads_from_runtime_coordinator() -> None:
 
     async def configure(registry: GuardrailCoordinator) -> None:
         registry.register_guardrail_service(
-            name="can_facade",
+            name="test_halt_target",
             init_func=lambda: target,
             guardrail_tier=GuardrailTier.CRITICAL,
             command_halt_participant=True,
             dependencies=[],
-            description="Test CAN facade",
+            description="Test command halt target",
         )
 
     await root.startup(configure)
     try:
-        assert root.guardrail_coordinator.get_command_halt_targets() == ["can_facade"]
-        metadata = root.guardrail_coordinator.get_guardrail_metadata("can_facade")
+        assert root.guardrail_coordinator.get_command_halt_targets() == ["test_halt_target"]
+        metadata = root.guardrail_coordinator.get_guardrail_metadata("test_halt_target")
         assert metadata is not None
         assert metadata["command_halt_participant"] is True
 
         result = await root.guardrail_coordinator.halt_command_emission("test", "pytest")
-        assert result == {"can_facade": True}
+        assert result == {"test_halt_target": True}
         assert target.reasons == ["test"]
     finally:
         await root.shutdown()
