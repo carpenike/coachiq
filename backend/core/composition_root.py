@@ -16,6 +16,7 @@ from backend.core.config import Settings
 from backend.core.config_provider import RVCConfigProvider
 from backend.core.guardrail_coordinator import GuardrailCoordinator
 from backend.core.performance import PerformanceMonitor
+from backend.core.service_dependency_resolver import DependencyType
 from backend.services.database.database_manager import DatabaseManager
 from backend.services.persistence.persistence_service import PersistenceService
 from backend.services.rvc.rvc_config_facade import RVCConfigFacade
@@ -79,10 +80,22 @@ class CompositionRoot:
         "rvc_config_facade",
         "persistence_service",
     )
+    _A2_SERVICE_ORDER = (
+        "database_connection_service",
+        "database_session_service",
+        "database_migration_service",
+        "migration_safety_validator",
+        "database_update_service",
+        "protocol_manager",
+        "rvc_service",
+        "device_discovery_service",
+        "can_facade",
+    )
 
     def __init__(self, compat_registry: GuardrailCoordinator | None = None) -> None:
         self.compat_registry = compat_registry or GuardrailCoordinator()
         self._constructed_services: dict[str, Any] = {}
+        self._constructing_services: set[str] = set()
         self.services = CompositionServices(
             settings=cast("Settings", None),
             rvc_config=cast("RVCConfigProvider", None),
@@ -115,6 +128,7 @@ class CompositionRoot:
         await self._construct_foundation_services()
         await self._construct_repository_substrate_services()
         await self._construct_facade_services()
+        await self._construct_a2_services()
         await self.compat_registry.startup_all()
         self._capture_registry_services()
         self._started = True
@@ -184,19 +198,41 @@ class CompositionRoot:
         for service_name in self._FACADE_SERVICE_ORDER:
             await self._construct_registered_service(service_name)
 
+    async def _construct_a2_services(self) -> None:
+        """Construct the A2 protocol/facade/database services before compatibility startup."""
+        for service_name in self._A2_SERVICE_ORDER:
+            await self._construct_registered_service(service_name)
+
     async def _construct_registered_service(self, service_name: str) -> None:
         """Construct a registered service once and mirror it into compatibility startup."""
         if service_name in self._constructed_services:
             self._replace_compat_init_func(service_name, self._constructed_services[service_name])
             return
+        if service_name in self._constructing_services:
+            msg = f"Circular root construction detected for service '{service_name}'"
+            raise RuntimeError(msg)
 
         definition = self.compat_registry._service_definitions.get(service_name)  # noqa: SLF001
         if definition is None:
             return
 
-        service = await self._construct_from_definition(definition)
-        self.set_constructed_service(service_name, service)
-        self._replace_compat_init_func(service_name, service)
+        self._constructing_services.add(service_name)
+        try:
+            await self._construct_required_dependencies(definition)
+            service = await self._construct_from_definition(definition)
+            self.set_constructed_service(service_name, service)
+            self._replace_compat_init_func(service_name, service)
+        finally:
+            self._constructing_services.discard(service_name)
+
+    async def _construct_required_dependencies(self, definition: Any) -> None:
+        """Construct required dependencies that are still registered only in compatibility."""
+        for dependency in definition.dependencies:
+            if dependency.type != DependencyType.REQUIRED:
+                continue
+            if dependency.name in self._constructed_services:
+                continue
+            await self._construct_registered_service(dependency.name)
 
     async def _construct_from_definition(self, definition: Any) -> Any:
         """Construct a registered service definition using root-owned dependencies."""
