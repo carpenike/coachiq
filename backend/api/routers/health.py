@@ -1,7 +1,7 @@
 """
 Enhanced Health Check API Router
 
-Provides comprehensive health monitoring endpoints that expose ServiceRegistry
+Provides comprehensive health monitoring endpoints that expose composition-root
 health information and aggregate service status across the application.
 
 Part of Phase 2D: Health Check System Enhancement
@@ -15,16 +15,16 @@ The OEM Firefly MIRA panel owns the actual vehicle safety case. See
 import time
 from datetime import UTC, datetime
 from enum import Enum
-from typing import Annotated, Any, Dict, List, Optional
+from typing import Any
 
-from fastapi import APIRouter, Depends, Query, Request
+from fastapi import APIRouter, Query, Request
 from fastapi.responses import Response
 from pydantic import BaseModel
 
 from backend.core.config import get_settings
 from backend.core.dependencies import (
     CommandGuardrailService,
-    get_service_registry,
+    CompositionRoot,
 )
 from backend.core.service_status import ServiceStatus
 
@@ -100,20 +100,20 @@ def service_status_to_health(status: ServiceStatus) -> HealthStatus:
 @router.get(
     "",
     summary="Comprehensive health check",
-    description="Returns detailed health status including ServiceRegistry information",
+    description="Returns detailed health status including composition-root information",
     response_class=Response,
 )
 async def health_check(
-    service_registry: Annotated[Any, Depends(get_service_registry)],
+    composition_root: CompositionRoot,
     command_guardrail_service: CommandGuardrailService,
-    include_registry: bool = Query(True, description="Include ServiceRegistry details"),
+    include_registry: bool = Query(True, description="Include composition-root service details"),
     include_metrics: bool = Query(True, description="Include startup metrics"),
     include_components: bool = Query(True, description="Include component health details"),
     request: Request = None,
 ) -> Response:
     """
     Comprehensive health check endpoint that aggregates health status from:
-    - ServiceRegistry (all registered services)
+    - CompositionRoot (all constructed services)
     - Core infrastructure components
     - Safety-critical systems
 
@@ -131,29 +131,28 @@ async def health_check(
         notes = []
         checks = {}
 
-        # 1. Check ServiceRegistry health
         if include_registry:
-            registry_health = await check_service_registry_health(service_registry)
-            if registry_health["status"] != HealthStatus.PASS:
-                overall_status = max_health_status(overall_status, registry_health["status"])
-                notes.append(f"ServiceRegistry: {registry_health['message']}")
+            root_health = await check_composition_root_health(composition_root)
+            if root_health["status"] != HealthStatus.PASS:
+                overall_status = max_health_status(overall_status, root_health["status"])
+                notes.append(f"CompositionRoot: {root_health['message']}")
 
             if include_components:
                 checks["service_registry"] = ComponentHealth(
                     component_name="service_registry",
                     component_type="core",
-                    status=registry_health["status"],
-                    message=registry_health["message"],
-                    observed_value=registry_health["healthy_count"],
+                    status=root_health["status"],
+                    message=root_health["message"],
+                    observed_value=root_health["healthy_count"],
                     observed_unit="services",
-                    checks=registry_health.get("service_details"),
+                    checks=root_health.get("service_details"),
                 )
 
         # 3. Check critical services
         critical_services = ["persistence_service", "database_manager", "entity_service"]
         for service_name in critical_services:
-            if service_registry.has_service(service_name):
-                service = service_registry.get_service(service_name)
+            if composition_root.has_service(service_name):
+                service = composition_root.get_service(service_name)
                 if hasattr(service, "check_health"):
                     try:
                         await service.check_health()
@@ -199,14 +198,13 @@ async def health_check(
             checks=checks if include_components else None,
         )
 
-        # Add ServiceRegistry details if requested
         if include_registry:
-            registry_status = await service_registry.get_health_status()
+            root_status = await composition_root.get_health_status()
             response.service_registry = {
-                "total_services": len(service_registry.list_services()),
+                "total_services": len(composition_root.list_services()),
                 "service_counts": {
                     status.value: count
-                    for status, count in service_registry.get_service_count_by_status().items()
+                    for status, count in composition_root.get_service_count_by_status().items()
                 },
                 "services": [
                     {
@@ -214,13 +212,13 @@ async def health_check(
                         "status": status.value,
                         "health": service_status_to_health(status).value,
                     }
-                    for name, status in registry_status.items()
+                    for name, status in root_status.items()
                 ],
             }
 
         # Add startup metrics if requested
         if include_metrics:
-            metrics = service_registry.get_startup_metrics()
+            metrics = composition_root.get_startup_metrics()
             if metrics:
                 metrics["health_check_duration_ms"] = round((time.time() - start_time) * 1000, 2)
                 response.startup_metrics = metrics
@@ -267,19 +265,19 @@ async def health_check(
     description="Returns health status for all registered services",
 )
 async def service_health_status(
-    service_registry: Annotated[Any, Depends(get_service_registry)],
+    composition_root: CompositionRoot,
     service_name: str | None = Query(None, description="Filter by service name"),
-    status: ServiceStatus | None = Query(None, description="Filter by status"),
+    status: ServiceStatus | None = Query(None, description="Filter by status"),  # noqa: B008
 ) -> list[ServiceHealthDetail]:
     """
     Get detailed health status for individual services.
 
     This endpoint provides granular health information for each service
-    registered with the ServiceRegistry, including their current status
+    constructed by the composition root, including their current status
     and any health check results.
     """
     # Get all service statuses
-    health_status = await service_registry.get_health_status()
+    health_status = await composition_root.get_health_status()
 
     services = []
     for name, svc_status in health_status.items():
@@ -298,9 +296,9 @@ async def service_health_status(
         )
 
         # Try to get additional health metadata
-        if service_registry.has_service(name):
+        if composition_root.has_service(name):
             try:
-                service = service_registry.get_service(name)
+                service = composition_root.get_service(name)
 
                 # Check for health_details property
                 if hasattr(service, "health_details"):
@@ -320,15 +318,15 @@ async def service_health_status(
 
 @router.get(
     "/ready",
-    summary="Readiness check with ServiceRegistry",
-    description="Lightweight readiness check based on ServiceRegistry status",
+    summary="Readiness check with composition root",
+    description="Lightweight readiness check based on composition-root status",
 )
 async def readiness_check(
-    service_registry: Annotated[Any, Depends(get_service_registry)],
+    composition_root: CompositionRoot,
     min_healthy_services: int = Query(3, description="Minimum number of healthy services required"),
 ) -> dict[str, Any]:
     """
-    Lightweight readiness check that uses ServiceRegistry to determine
+    Lightweight readiness check that uses CompositionRoot to determine
     if the application is ready to serve traffic.
 
     This is more efficient than the comprehensive health check and is
@@ -336,7 +334,7 @@ async def readiness_check(
     """
     try:
         # Get service counts
-        status_counts = service_registry.get_service_count_by_status()
+        status_counts = composition_root.get_service_count_by_status()
         healthy_count = status_counts.get(ServiceStatus.HEALTHY, 0)
         total_count = sum(status_counts.values())
 
@@ -365,40 +363,25 @@ async def readiness_check(
 @router.get(
     "/startup",
     summary="Startup metrics and timing",
-    description="Returns detailed startup performance metrics from ServiceRegistry",
+    description="Returns detailed startup performance metrics from the composition root",
 )
 async def startup_metrics(
-    service_registry: Annotated[Any, Depends(get_service_registry)], request: Request = None
+    composition_root: CompositionRoot, _request: Request = None
 ) -> dict[str, Any]:
     """
     Get detailed startup metrics and timing information.
 
-    This endpoint exposes the ServiceRegistry's startup performance data,
+    This endpoint exposes the composition root's startup performance data,
     useful for optimizing startup time and debugging initialization issues.
     """
-    metrics = service_registry.get_startup_metrics()
+    metrics = composition_root.get_startup_metrics()
 
-    # Add current uptime (use service registry's start time if available)
-    if hasattr(service_registry, "_startup_start_time") and service_registry._startup_start_time:
-        metrics["uptime_seconds"] = time.time() - service_registry._startup_start_time
-    else:
-        # Fallback: use module-level SERVER_START_TIME if available
-        try:
-            from backend.main import SERVER_START_TIME
+    try:
+        from backend.main import SERVER_START_TIME
 
-            metrics["uptime_seconds"] = time.time() - SERVER_START_TIME
-        except ImportError:
-            pass
-
-    # Add initialization order if available
-    if hasattr(service_registry, "_startup_stages"):
-        metrics["startup_stages"] = [
-            {
-                "stage": stage,
-                "services": list(services),
-            }
-            for stage, services in service_registry._startup_stages.items()
-        ]
+        metrics["uptime_seconds"] = time.time() - SERVER_START_TIME
+    except ImportError:
+        pass
 
     return metrics
 
@@ -406,12 +389,12 @@ async def startup_metrics(
 # Helper functions
 
 
-async def check_service_registry_health(
-    service_registry,
+async def check_composition_root_health(
+    composition_root,
 ) -> dict[str, Any]:
-    """Check ServiceRegistry health and return standardized result."""
+    """Check composition-root health and return standardized result."""
     try:
-        status_counts = service_registry.get_service_count_by_status()
+        status_counts = composition_root.get_service_count_by_status()
         healthy_count = status_counts.get(ServiceStatus.HEALTHY, 0)
         total_count = sum(status_counts.values())
 
@@ -427,7 +410,7 @@ async def check_service_registry_health(
             message = f"No healthy services (0/{total_count})"
 
         # Get individual service details
-        health_status = await service_registry.get_health_status()
+        health_status = await composition_root.get_health_status()
         service_details = {}
 
         for name, svc_status in health_status.items():
@@ -447,7 +430,7 @@ async def check_service_registry_health(
     except Exception as e:
         return {
             "status": HealthStatus.FAIL,
-            "message": f"ServiceRegistry check failed: {e!s}",
+            "message": f"CompositionRoot check failed: {e!s}",
             "healthy_count": 0,
         }
 

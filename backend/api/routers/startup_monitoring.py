@@ -7,14 +7,13 @@ health validation results, and performance baseline comparisons.
 """
 
 import logging
-from typing import Annotated, Any, Dict
+from typing import Any
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
 from starlette.requests import Request
 
-from backend.core.dependencies import get_service_registry
-from backend.core.service_registry import ServiceRegistry
+from backend.core.dependencies import CompositionRoot
 from backend.middleware.startup_monitoring import get_startup_monitor
 
 logger = logging.getLogger(__name__)
@@ -52,7 +51,7 @@ class StartupPerformanceReport(BaseModel):
     """Comprehensive startup performance report."""
 
     total_startup_time_ms: float = Field(..., description="Total startup time")
-    service_registry_time_ms: float = Field(..., description="ServiceRegistry initialization time")
+    service_registry_time_ms: float = Field(..., description="Startup initialization time")
     service_count: int = Field(..., description="Number of services")
     average_service_time_ms: float = Field(..., description="Average service startup time")
     slowest_services: list[ServiceTimingInfo] = Field(..., description="5 slowest services")
@@ -91,7 +90,7 @@ def _calculate_performance_grade(startup_time_ms: float, baseline_ms: float = 50
     description="Get overall startup health validation status and basic metrics.",
 )
 async def get_startup_health(
-    service_registry: Annotated[ServiceRegistry, Depends(get_service_registry)],
+    composition_root: CompositionRoot,
     request: Request,
 ) -> StartupHealthStatus:
     """
@@ -105,11 +104,7 @@ async def get_startup_health(
     """
 
     try:
-        # Get startup monitor data
-        monitor = get_startup_monitor()
-
-        # Get service registry metrics
-        registry_metrics = service_registry.get_startup_metrics()
+        root_metrics = composition_root.get_startup_metrics()
 
         # Get startup report if available
         startup_report = (
@@ -117,10 +112,9 @@ async def get_startup_health(
         )
 
         # Calculate health metrics
-        # Get service count from registry metrics
-        services_started = registry_metrics.get("service_count", 0)
-        services_failed = len(registry_metrics.get("startup_errors", {}))
-        total_time = registry_metrics.get("total_startup_time_ms", 0)
+        services_started = root_metrics.get("service_count", 0)
+        services_failed = len(root_metrics.get("startup_errors", {}))
+        total_time = root_metrics.get("total_startup_time_ms", 0)
 
         # Determine overall health
         healthy = (
@@ -170,7 +164,7 @@ async def get_startup_health(
     description="Get comprehensive startup performance metrics and analysis.",
 )
 async def get_startup_metrics(
-    service_registry: Annotated[ServiceRegistry, Depends(get_service_registry)],
+    composition_root: CompositionRoot,
     request: Request,
 ) -> StartupPerformanceReport:
     """
@@ -184,44 +178,34 @@ async def get_startup_metrics(
     """
 
     try:
-        # Get startup monitor and registry data
-        monitor = get_startup_monitor()
-        registry_metrics = service_registry.get_startup_metrics()
+        # Get composition-root data
+        root_metrics = composition_root.get_startup_metrics()
         startup_report = _get_startup_report_from_request(request)
 
         # Get service timings with metadata
-        service_timings = service_registry.get_service_timings()
+        service_timings = composition_root.get_service_timings()
         slowest_services = []
 
         for service_name, timing in sorted(
             service_timings.items(), key=lambda x: x[1], reverse=True
         )[:5]:
-            # Get service definition for metadata
-            service_def = service_registry._service_definitions.get(service_name)
-            dependencies = []
-            tags = []
-
-            if service_def:
-                dependencies = [dep.name for dep in service_def.dependencies]
-                tags = list(service_def.tags) if service_def.tags else []
-
             slowest_services.append(
                 ServiceTimingInfo(
                     name=service_name,
                     startup_time_ms=timing,
-                    success=service_registry.has_service(service_name),
-                    dependencies=dependencies,
-                    tags=tags,
+                    success=composition_root.has_service(service_name),
+                    dependencies=[],
+                    tags=[],
                 )
             )
 
         # Performance baseline comparison
         baseline_comparison = {
             "target_total_ms": 500.0,
-            "actual_total_ms": registry_metrics.get("total_startup_time_ms", 0),
+            "actual_total_ms": root_metrics.get("total_startup_time_ms", 0),
             "target_service_registry_ms": 120.0,
-            "actual_service_registry_ms": getattr(service_registry, "_startup_time", 0) * 1000,
-            "meets_target": registry_metrics.get("total_startup_time_ms", 0) <= 500.0,
+            "actual_service_registry_ms": root_metrics.get("total_startup_time_ms", 0),
+            "meets_target": root_metrics.get("total_startup_time_ms", 0) <= 500.0,
         }
 
         # Health checks from startup report
@@ -229,12 +213,12 @@ async def get_startup_metrics(
         if startup_report:
             health_checks = startup_report.health_check_results
 
-        # Add service registry health
-        health_checks["service_registry"] = len(registry_metrics.get("startup_errors", {})) == 0
+        # Preserve response key for existing clients.
+        health_checks["service_registry"] = len(root_metrics.get("startup_errors", {})) == 0
 
         # Performance analysis
-        total_time = registry_metrics.get("total_startup_time_ms", 0)
-        service_count = registry_metrics.get("service_count", 0)
+        total_time = root_metrics.get("total_startup_time_ms", 0)
+        service_count = root_metrics.get("service_count", 0)
 
         performance_analysis = {
             "performance_grade": _calculate_performance_grade(total_time),
@@ -264,7 +248,7 @@ async def get_startup_metrics(
             total_startup_time_ms=total_time,
             service_registry_time_ms=baseline_comparison["actual_service_registry_ms"],
             service_count=service_count,
-            average_service_time_ms=registry_metrics.get("average_service_time_ms", 0),
+            average_service_time_ms=root_metrics.get("average_service_time_ms", 0),
             slowest_services=slowest_services,
             baseline_comparison=baseline_comparison,
             health_checks=health_checks,
@@ -285,8 +269,8 @@ async def get_startup_metrics(
     description="Get detailed timing information for all services.",
 )
 async def get_service_timings(
-    service_registry: Annotated[ServiceRegistry, Depends(get_service_registry)],
-    request: Request,
+    composition_root: CompositionRoot,
+    _request: Request,
 ) -> list[ServiceTimingInfo]:
     """
     Get detailed service startup timing information.
@@ -299,27 +283,18 @@ async def get_service_timings(
     """
 
     try:
-        service_timings = service_registry.get_service_timings()
+        service_timings = composition_root.get_service_timings()
 
         timing_info = []
 
         for service_name, timing in service_timings.items():
-            # Get service definition for metadata
-            service_def = service_registry._service_definitions.get(service_name)
-            dependencies = []
-            tags = []
-
-            if service_def:
-                dependencies = [dep.name for dep in service_def.dependencies]
-                tags = list(service_def.tags) if service_def.tags else []
-
             timing_info.append(
                 ServiceTimingInfo(
                     name=service_name,
                     startup_time_ms=timing,
-                    success=service_registry.has_service(service_name),
-                    dependencies=dependencies,
-                    tags=tags,
+                    success=composition_root.has_service(service_name),
+                    dependencies=[],
+                    tags=[],
                 )
             )
 
