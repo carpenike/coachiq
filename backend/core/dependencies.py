@@ -163,7 +163,7 @@ def get_service_registry() -> _CompositionRootClass:
     return get_composition_root()
 
 
-def create_service_dependency(service_name: str):
+def root_service_dependency(service_name: str):
     """
     Factory function to create service dependencies.
 
@@ -224,7 +224,7 @@ def get_websocket_manager() -> Any:
     Returns:
         The WebSocket manager instance
     """
-    return create_service_dependency("websocket_manager")()
+    return root_service_dependency("websocket_manager")()
 
 
 def get_entity_service() -> Any:
@@ -234,7 +234,7 @@ def get_entity_service() -> Any:
     Returns:
         The entity service instance
     """
-    return create_service_dependency("entity_service")()
+    return root_service_dependency("entity_service")()
 
 
 def get_rvc_config_facade() -> _RVCConfigFacade:
@@ -243,7 +243,7 @@ def get_rvc_config_facade() -> _RVCConfigFacade:
     Returns:
         The RVCConfigFacade instance
     """
-    return create_service_dependency("rvc_config_facade")()
+    return root_service_dependency("rvc_config_facade")()
 
 
 def get_can_facade() -> _CANFacade | None:
@@ -285,7 +285,7 @@ VerifiedCANFacade = Annotated[_CANFacade, Depends(get_verified_can_facade)]
 
 def get_can_network_telemetry_service() -> _CANNetworkTelemetryService:
     """Get the rolling CAN network telemetry service from ServiceRegistry."""
-    return create_service_dependency("can_network_telemetry_service")()
+    return root_service_dependency("can_network_telemetry_service")()
 
 
 CANNetworkTelemetryService = Annotated[
@@ -303,7 +303,7 @@ def get_can_message_injector() -> _CANMessageInjector:
     Returns:
         The CAN message injector service instance
     """
-    return create_service_dependency("can_message_injector")()
+    return root_service_dependency("can_message_injector")()
 
 
 def get_can_message_filter() -> _MessageFilter:
@@ -321,7 +321,7 @@ def get_can_message_filter() -> _MessageFilter:
     Returns:
         The CAN message filter service instance
     """
-    return create_service_dependency("can_message_filter")()
+    return root_service_dependency("can_message_filter")()
 
 
 def get_can_bus_recorder() -> _CANBusRecorder:
@@ -334,7 +334,7 @@ def get_can_bus_recorder() -> _CANBusRecorder:
     Returns:
         The CAN bus recorder service instance
     """
-    return create_service_dependency("can_bus_recorder")()
+    return root_service_dependency("can_bus_recorder")()
 
 
 def get_can_protocol_analyzer() -> _ProtocolAnalyzer:
@@ -347,7 +347,7 @@ def get_can_protocol_analyzer() -> _ProtocolAnalyzer:
     Returns:
         The CAN protocol analyzer service instance
     """
-    return create_service_dependency("can_protocol_analyzer")()
+    return root_service_dependency("can_protocol_analyzer")()
 
 
 def get_command_guardrail_service() -> _CommandGuardrailService:
@@ -366,7 +366,7 @@ def get_command_guardrail_service() -> _CommandGuardrailService:
         RuntimeError: If the service is not available (orchestration tier
             cannot accept commands without it).
     """
-    return create_service_dependency("command_guardrail_service")()
+    return root_service_dependency("command_guardrail_service")()
 
 
 def get_rvc_service() -> _RVCService:
@@ -376,12 +376,12 @@ def get_rvc_service() -> _RVCService:
     Returns:
         The RVC service instance
     """
-    return create_service_dependency("rvc_service")()
+    return root_service_dependency("rvc_service")()
 
 
 def get_protocol_manager() -> Any:
     """Get the protocol manager from the composition root."""
-    return create_service_dependency("protocol_manager")()
+    return root_service_dependency("protocol_manager")()
 
 
 # ==================================================================================
@@ -396,7 +396,7 @@ def get_entity_state_repository() -> _EntityStateRepository:
     Returns:
         The entity state repository instance
     """
-    return create_service_dependency("entity_state_repository")()
+    return root_service_dependency("entity_state_repository")()
 
 
 def get_rvc_config_repository() -> _RVCConfigRepository:
@@ -406,7 +406,7 @@ def get_rvc_config_repository() -> _RVCConfigRepository:
     Returns:
         The RVC config repository instance
     """
-    return create_service_dependency("rvc_config_repository")()
+    return root_service_dependency("rvc_config_repository")()
 
 
 def get_system_state_repository() -> _SystemStateRepository:
@@ -416,7 +416,7 @@ def get_system_state_repository() -> _SystemStateRepository:
     Returns:
         The system state repository instance
     """
-    return create_service_dependency("system_state_repository")()
+    return root_service_dependency("system_state_repository")()
 
 
 def get_analytics_dashboard_service() -> _AnalyticsDashboardService:
@@ -430,7 +430,7 @@ def get_analytics_dashboard_service() -> _AnalyticsDashboardService:
     Returns:
         The analytics dashboard service instance
     """
-    return create_service_dependency("analytics_dashboard_service")()
+    return root_service_dependency("analytics_dashboard_service")()
 
 
 def get_edge_proxy_monitor_service() -> _EdgeProxyMonitorService:
@@ -443,7 +443,7 @@ def get_edge_proxy_monitor_service() -> _EdgeProxyMonitorService:
     Returns:
         The EdgeProxyMonitorService instance
     """
-    return create_service_dependency("edge_proxy_monitor")()
+    return root_service_dependency("edge_proxy_monitor")()
 
 
 # ==================================================================================
@@ -463,7 +463,7 @@ def get_database_update_service() -> _DatabaseUpdateService:
     Raises:
         RuntimeError: If the service is not initialized
     """
-    return create_service_dependency("database_update_service")()
+    return root_service_dependency("database_update_service")()
 
 
 def get_migration_safety_validator() -> _MigrationSafetyValidator:
@@ -478,7 +478,7 @@ def get_migration_safety_validator() -> _MigrationSafetyValidator:
     Raises:
         RuntimeError: If the service is not initialized
     """
-    return create_service_dependency("migration_safety_validator")()
+    return root_service_dependency("migration_safety_validator")()
 
 
 def get_reporting_service() -> _NotificationReportingService:
@@ -488,7 +488,7 @@ def get_reporting_service() -> _NotificationReportingService:
     Returns:
         The NotificationReportingService instance
     """
-    return create_service_dependency("notification_reporting_service")()
+    return root_service_dependency("notification_reporting_service")()
 
 
 def get_predictive_maintenance_service() -> _PredictiveMaintenanceService:
@@ -498,7 +498,7 @@ def get_predictive_maintenance_service() -> _PredictiveMaintenanceService:
     Returns:
         The PredictiveMaintenanceService instance
     """
-    return create_service_dependency("predictive_maintenance_service")()
+    return root_service_dependency("predictive_maintenance_service")()
 
 
 # ==================================================================================
@@ -546,7 +546,7 @@ def get_analytics_service() -> _NotificationAnalyticsService:
     already promise, so the contract is explicit until the registration
     is fixed in main.py.
     """
-    return create_service_dependency("analytics_service")()
+    return root_service_dependency("analytics_service")()
 
 
 AnalyticsService = Annotated[_NotificationAnalyticsService, Depends(get_analytics_service)]
@@ -582,7 +582,7 @@ def get_auth_manager() -> _AuthManager:
     Returns:
         The AuthManager instance
     """
-    auth_service = create_service_dependency("auth_manager")()
+    auth_service = root_service_dependency("auth_manager")()
     # AuthService has a get_auth_manager() method that returns the actual AuthManager
     if hasattr(auth_service, "get_auth_manager"):
         manager = auth_service.get_auth_manager()
@@ -598,27 +598,27 @@ def get_auth_manager() -> _AuthManager:
 
 def get_pin_manager() -> _PINManager:
     """Get the PIN manager from ServiceRegistry."""
-    return create_service_dependency("pin_manager")()
+    return root_service_dependency("pin_manager")()
 
 
 async def get_security_audit_service() -> _SecurityAuditService:
     """Get the security audit service from ServiceRegistry."""
-    return create_service_dependency("security_audit_service")()
+    return root_service_dependency("security_audit_service")()
 
 
 def get_notification_manager() -> _NotificationManager:
     """Get the notification manager from ServiceRegistry."""
-    return create_service_dependency("notification_manager")()
+    return root_service_dependency("notification_manager")()
 
 
 def get_security_config_service() -> _SecurityConfigService:
     """Get the security config service from ServiceRegistry."""
-    return create_service_dependency("security_config_service")()
+    return root_service_dependency("security_config_service")()
 
 
 def get_security_event_manager() -> _SecurityEventManager:
     """Get the security event manager from ServiceRegistry."""
-    return create_service_dependency("security_event_manager")()
+    return root_service_dependency("security_event_manager")()
 
 
 # Authentication dependencies with proper JWT validation

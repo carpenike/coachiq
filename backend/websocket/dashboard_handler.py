@@ -261,17 +261,13 @@ class DashboardWebSocketManager:
     async def _send_initial_data(self, websocket: WebSocket) -> None:
         """Send initial dashboard data to newly connected client."""
         try:
-            # For WebSocket context, we need to get notification manager through dependency injection
-            # WebSocket handlers have limited access to FastAPI's DI system
             manager = None
             try:
-                from backend.core.dependencies import get_service_registry
+                from backend.core.dependencies import get_notification_manager
 
-                service_registry = get_service_registry()
-                if service_registry.has_service("notification_manager"):
-                    manager = service_registry.get_service("notification_manager")
+                manager = get_notification_manager()
             except Exception as e:
-                self.logger.debug(f"Could not get notification manager from ServiceRegistry: {e}")
+                self.logger.debug(f"Could not get notification manager from composition root: {e}")
 
             if not manager:
                 self.logger.warning("No notification manager available for WebSocket dashboard")

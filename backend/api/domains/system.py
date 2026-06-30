@@ -267,41 +267,21 @@ def create_system_router() -> APIRouter:
         """Get detailed service information"""
 
         try:
-            # Get services from ServiceRegistry
-            from backend.core.dependencies import get_service_registry
+            from backend.core.dependencies import get_composition_root
 
-            service_registry = get_service_registry()
+            root_services = get_composition_root().services
             services = []
 
-            # Get all services and check their health individually
-            try:
-                metrics = (
-                    service_registry.get_startup_metrics()
-                    if hasattr(service_registry, "get_startup_metrics")
-                    else {}
-                )
-                all_services = (
-                    list(metrics.get("services", {}).keys()) if "services" in metrics else []
-                )
-            except Exception:
-                all_services = []
-
-            for service_name in all_services:
-                try:
-                    service_status = await service_registry.check_service_health(service_name)
-
-                    # Map ServiceStatus enum to string status
-                    if service_status.value == "healthy":
-                        status = "healthy"
-                    elif service_status.value == "degraded":
-                        status = "degraded"
-                    elif service_status.value == "failed":
-                        status = "failed"
-                    else:
-                        status = "unknown"
-                except Exception:
-                    # If health check fails, mark as unknown
-                    status = "unknown"
+            for service_name in [
+                "database_manager",
+                "persistence_service",
+                "websocket_manager",
+                "entity_service",
+                "can_facade",
+                "auth_manager",
+            ]:
+                service = getattr(root_services, service_name, None)
+                status = "healthy" if service is not None else "unknown"
 
                 services.append(
                     ServiceStatus(
@@ -324,10 +304,9 @@ def create_system_router() -> APIRouter:
         """
 
         try:
-            # Get services from ServiceRegistry
-            from backend.core.dependencies import get_service_registry
+            from backend.core.dependencies import get_composition_root
 
-            service_registry = get_service_registry()
+            root_services = get_composition_root().services
             components = []
 
             # Map services to component categories
@@ -351,40 +330,10 @@ def create_system_router() -> APIRouter:
                 "predictive_maintenance_service": "external",
             }
 
-            # Get all services
-            try:
-                metrics = (
-                    service_registry.get_startup_metrics()
-                    if hasattr(service_registry, "get_startup_metrics")
-                    else {}
-                )
-                all_services = (
-                    list(metrics.get("services", {}).keys()) if "services" in metrics else []
-                )
-            except Exception:
-                all_services = []
-
-            for service_name in all_services:
-                # Check individual service health
-                try:
-                    service_status = await service_registry.check_service_health(service_name)
-
-                    # Determine health status from service status
-                    if service_status.value == "healthy":
-                        status = "healthy"
-                    elif service_status.value == "degraded":
-                        status = "degraded"
-                    elif service_status.value == "failed":
-                        status = "unhealthy"
-                    else:
-                        status = "unknown"
-
-                    # Get any health message
-                    message = f"Service is {service_status.value}"
-                except Exception as e:
-                    # If health check fails, mark as unknown
-                    status = "unknown"
-                    message = f"Health check failed: {e!s}"
+            for service_name in category_mapping:
+                service = getattr(root_services, service_name, None)
+                status = "healthy" if service is not None else "unknown"
+                message = "Service is available" if service is not None else "Service not available"
 
                 # Determine category
                 category = category_mapping.get(service_name, "external")

@@ -195,7 +195,7 @@ class WebSocketLogHandler(logging.Handler):
             self.handleError(record)
 
 
-# Global instance removed - use ServiceRegistry dependency injection
+# Global instance removed - use composition-root dependency injection
 
 
 def initialize_websocket_manager(
@@ -205,17 +205,15 @@ def initialize_websocket_manager(
     """
     Initialize the WebSocket manager.
 
-    This now creates a facade over the modern WebSocketService from ServiceRegistry.
+    This now creates a facade over the modern WebSocketService from the composition root.
     """
-    # Get the modern service from ServiceRegistry
-    from backend.core.dependencies import get_service_registry
+    from backend.core.dependencies import get_websocket_manager
 
     try:
-        service_registry = get_service_registry()
-        websocket_service = service_registry.get_service("websocket_service")
+        websocket_service = get_websocket_manager()
 
         if not websocket_service:
-            raise RuntimeError("WebSocketService not available in ServiceRegistry")
+            raise RuntimeError("WebSocketService not available in composition root")
 
         manager = WebSocketManager(websocket_service=websocket_service)
         logger.info("WebSocket manager initialized with modern WebSocketService")

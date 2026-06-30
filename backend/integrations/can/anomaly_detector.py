@@ -373,13 +373,11 @@ class CANAnomalyDetector:
             return
 
         try:
-            from backend.core.dependencies import get_service_registry
+            from backend.core.dependencies import get_composition_root
 
-            service_registry = get_service_registry()
-            if service_registry.has_service("security_event_manager"):
-                self._security_event_manager = service_registry.get_service(
-                    "security_event_manager"
-                )
+            security_event_manager = get_composition_root().services.security_event_manager
+            if security_event_manager is not None:
+                self._security_event_manager = security_event_manager
                 logger.info("Connected to SecurityEventManager for event publishing")
             else:
                 logger.info(
@@ -387,9 +385,9 @@ class CANAnomalyDetector:
                 )
                 self._security_event_manager = None
         except RuntimeError:
-            # ServiceRegistry not initialized yet
+            # CompositionRoot not initialized yet
             logger.info(
-                "ServiceRegistry not initialized - will attempt to connect to "
+                "CompositionRoot not initialized - will attempt to connect to "
                 "SecurityEventManager later"
             )
             self._security_event_manager = None

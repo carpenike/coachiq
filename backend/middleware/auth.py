@@ -105,38 +105,11 @@ class AuthenticationMiddleware(BaseHTTPMiddleware):
             hasattr(auth_manager, "get_auth_manager") and not isinstance(auth_manager, AuthManager)
         ):
             try:
-                from backend.core.dependencies import get_service_registry
+                from backend.core.dependencies import get_auth_manager
 
-                service_registry = get_service_registry()
-                if service_registry.has_service("auth_manager"):
-                    # Get the service from registry
-                    auth_service = service_registry.get_service("auth_manager")
-
-                    # Try to get the actual AuthManager from AuthService
-                    if hasattr(auth_service, "get_auth_manager"):
-                        auth_mgr = auth_service.get_auth_manager()
-                        if auth_mgr:
-                            auth_manager = auth_mgr
-                            self.auth_manager = auth_mgr  # Cache for next time
-                            self.logger.debug("Got AuthManager from AuthService")
-                        else:
-                            # Service not started yet, skip auth for now
-                            auth_manager = None
-                            self.logger.debug(
-                                "AuthService.get_auth_manager() returned None - service may not be started yet"
-                            )
-                    elif hasattr(auth_service, "auth_mode"):
-                        # It's already an AuthManager
-                        auth_manager = auth_service
-                        self.auth_manager = auth_service
-                        self.logger.debug("Using service directly as auth_manager")
-                    else:
-                        auth_manager = None
-                        self.logger.debug("Service does not appear to be an AuthManager")
-                else:
-                    # No auth manager available
-                    auth_manager = None
-                    self.logger.debug("Auth manager service not found in ServiceRegistry")
+                auth_manager = get_auth_manager()
+                self.auth_manager = auth_manager
+                self.logger.debug("Got AuthManager from composition root")
             except Exception as e:
                 auth_manager = None
                 self.logger.debug(f"Could not get auth manager: {e}")
@@ -276,38 +249,11 @@ class OptionalAuthenticationMiddleware(AuthenticationMiddleware):
             hasattr(auth_manager, "get_auth_manager") and not isinstance(auth_manager, AuthManager)
         ):
             try:
-                from backend.core.dependencies import get_service_registry
+                from backend.core.dependencies import get_auth_manager
 
-                service_registry = get_service_registry()
-                if service_registry.has_service("auth_manager"):
-                    # Get the service from registry
-                    auth_service = service_registry.get_service("auth_manager")
-
-                    # Try to get the actual AuthManager from AuthService
-                    if hasattr(auth_service, "get_auth_manager"):
-                        auth_mgr = auth_service.get_auth_manager()
-                        if auth_mgr:
-                            auth_manager = auth_mgr
-                            self.auth_manager = auth_mgr  # Cache for next time
-                            self.logger.debug("Got AuthManager from AuthService (optional)")
-                        else:
-                            # Service not started yet, skip auth for now
-                            auth_manager = None
-                            self.logger.debug(
-                                "AuthService.get_auth_manager() returned None - service may not be started yet (optional)"
-                            )
-                    elif hasattr(auth_service, "auth_mode"):
-                        # It's already an AuthManager
-                        auth_manager = auth_service
-                        self.auth_manager = auth_service
-                        self.logger.debug("Using service directly as auth_manager (optional)")
-                    else:
-                        auth_manager = None
-                        self.logger.debug("Service does not appear to be an AuthManager (optional)")
-                else:
-                    # No auth manager available
-                    auth_manager = None
-                    self.logger.debug("Auth manager service not found in ServiceRegistry")
+                auth_manager = get_auth_manager()
+                self.auth_manager = auth_manager
+                self.logger.debug("Got AuthManager from composition root (optional)")
             except Exception as e:
                 auth_manager = None
                 self.logger.debug(f"Could not get auth manager: {e}")

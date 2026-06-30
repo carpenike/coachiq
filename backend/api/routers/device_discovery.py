@@ -11,10 +11,10 @@ from typing import Annotated, Any
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
 
-from backend.core.dependencies import create_service_dependency
+from backend.core.dependencies import root_service_dependency
 
 # Create device discovery service dependency
-get_device_discovery_service = create_service_dependency("device_discovery_service")
+get_device_discovery_service = root_service_dependency("device_discovery_service")
 from backend.services.discovery.device_discovery_service import DeviceDiscoveryService  # noqa: E402
 
 logger = logging.getLogger(__name__)

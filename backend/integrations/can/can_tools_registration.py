@@ -64,14 +64,11 @@ def create_audit_callback() -> Callable[[InjectionRequest, InjectionResult], Non
     def audit_injection(request: InjectionRequest, result: InjectionResult) -> None:
         """Log injection attempt for audit trail."""
         try:
-            # Get security audit service if available from ServiceRegistry
             security_audit = None
             try:
-                from backend.core.dependencies import get_service_registry
+                from backend.core.dependencies import get_security_audit_service
 
-                service_registry = get_service_registry()
-                if service_registry.has_service("security_audit_service"):
-                    security_audit = service_registry.get_service("security_audit_service")
+                security_audit = get_security_audit_service()
             except Exception as e:
                 logger.debug("Could not get security audit service: %s", e)
 
@@ -166,14 +163,11 @@ def create_alert_callback() -> Callable[[dict[str, Any]], Any] | None:
                 message.get("interface", "unknown"),
             )
 
-            # Get notification service if available from ServiceRegistry
             notifications = None
             try:
-                from backend.core.dependencies import get_service_registry
+                from backend.core.dependencies import get_notification_manager
 
-                service_registry = get_service_registry()
-                if service_registry.has_service("notifications"):
-                    notifications = service_registry.get_service("notifications")
+                notifications = get_notification_manager()
             except Exception as e:
                 logger.debug("Could not get notifications service: %s", e)
 
@@ -199,14 +193,11 @@ def create_alert_callback() -> Callable[[dict[str, Any]], Any] | None:
                 # TODO: Call notification service when method is available
                 # await notifications.send_notification(notification_data)
 
-            # Update WebSocket clients if available from ServiceRegistry
             websocket = None
             try:
-                from backend.core.dependencies import get_service_registry
+                from backend.core.dependencies import get_websocket_manager
 
-                service_registry = get_service_registry()
-                if service_registry.has_service("websocket_manager"):
-                    websocket = service_registry.get_service("websocket_manager")
+                websocket = get_websocket_manager()
             except Exception as e:
                 logger.debug("Could not get websocket service: %s", e)
             if websocket:

@@ -24,7 +24,7 @@ from pydantic import BaseModel, Field
 
 from backend.api.domains import register_domain_router
 from backend.core.dependencies import (
-    create_service_dependency,
+    root_service_dependency,
     get_authenticated_admin,
     get_authenticated_user,
     get_entity_service,
@@ -37,7 +37,7 @@ from backend.services.entities.entity_domain_service import (
 )
 
 # Create missing dependencies
-get_entity_domain_service = create_service_dependency("entity_domain_service")
+get_entity_domain_service = root_service_dependency("entity_domain_service")
 
 # ControlCommand import removed - not used in this file
 

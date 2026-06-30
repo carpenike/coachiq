@@ -22,11 +22,11 @@ from typing import Annotated, Any
 from fastapi import APIRouter, Depends, HTTPException, Query
 
 from backend.core.dependencies import (
-    create_service_dependency,
+    root_service_dependency,
 )
 
 # Create dashboard service dependency
-get_dashboard_service = create_service_dependency("dashboard_service")
+get_dashboard_service = root_service_dependency("dashboard_service")
 from backend.models.dashboard import (
     ActivityFeed,
     BulkControlRequest,

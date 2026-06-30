@@ -18,8 +18,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
 
 from backend.api.domains import register_domain_router
-from backend.core.dependencies import get_service_registry
-from backend.core.service_registry import ServiceRegistry, ServiceStatus
+from backend.core.dependencies import get_composition_root
 from backend.integrations.diagnostics.handler import DiagnosticHandler
 from backend.integrations.diagnostics.models import ProtocolType
 from backend.schemas.domain_api import (
@@ -41,20 +40,13 @@ POOR_HEALTH_THRESHOLD = 40.0
 DEGRADED_HEALTH_THRESHOLD = 75.0
 
 
-def _get_optional_registry() -> ServiceRegistry | None:
-    """Return the ServiceRegistry when available for request-time diagnostics."""
+def _get_optional_service(service_name: str) -> Any | None:
+    """Return an optional composition-root service without failing the endpoint."""
     try:
-        return get_service_registry()
+        root = get_composition_root()
     except RuntimeError:
         return None
-
-
-def _get_optional_service(service_name: str) -> Any | None:
-    """Return an optional ServiceRegistry service without failing the endpoint."""
-    service_registry = _get_optional_registry()
-    if service_registry is None or not service_registry.has_service(service_name):
-        return None
-    return service_registry.get_service(service_name)
+    return getattr(root.services, service_name, None)
 
 
 def get_diagnostics_handler() -> DiagnosticHandler | None:
@@ -113,18 +105,16 @@ def _count_by(dtcs: list[dict[str, Any]], field_name: str) -> dict[str, int]:
     return counts
 
 
-async def _service_score(service_registry: ServiceRegistry, service_name: str) -> float | None:
-    """Return a health score for a registered service, or None when absent."""
-    if not service_registry.has_service(service_name):
+async def _service_score(service_name: str) -> float | None:
+    """Return a health score for a root service, or None when absent."""
+    service = _get_optional_service(service_name)
+    if service is None:
         return None
-    status = await service_registry.check_service_health(service_name)
-    if status == ServiceStatus.HEALTHY:
-        return 100.0
-    if status == ServiceStatus.DEGRADED:
-        return 65.0
-    if status == ServiceStatus.FAILED:
-        return 0.0
-    return 40.0
+    if hasattr(service, "get_health_status"):
+        status = service.get_health_status()
+        if isinstance(status, dict) and status.get("healthy") is False:
+            return 40.0
+    return 100.0
 
 
 def _can_health_score(can_facade: Any | None) -> tuple[float | None, bool]:
@@ -145,7 +135,6 @@ async def _compute_system_status(
     diagnostics_handler: DiagnosticHandler | None, can_facade: Any | None
 ) -> "SystemStatus":
     """Compute v2 diagnostics system status from registered services and DTCs."""
-    service_registry = _get_optional_registry()
     active_systems: list[str] = []
     degraded_systems: list[str] = []
     scores: list[float] = []
@@ -165,19 +154,18 @@ async def _compute_system_status(
         if active_dtcs:
             degraded_systems.append("diagnostics")
 
-    if service_registry is not None:
-        for service_name, system_name in [
-            ("entity_service", "entities"),
-            ("websocket_manager", "websocket"),
-            ("persistence_service", "persistence"),
-        ]:
-            score = await _service_score(service_registry, service_name)
-            if score is None:
-                continue
-            active_systems.append(system_name)
-            scores.append(score)
-            if score < DEGRADED_HEALTH_THRESHOLD:
-                degraded_systems.append(system_name)
+    for service_name, system_name in [
+        ("entity_service", "entities"),
+        ("websocket_manager", "websocket"),
+        ("persistence_service", "persistence"),
+    ]:
+        score = await _service_score(service_name)
+        if score is None:
+            continue
+        active_systems.append(system_name)
+        scores.append(score)
+        if score < DEGRADED_HEALTH_THRESHOLD:
+            degraded_systems.append(system_name)
 
     if not scores:
         degraded_systems.append("service_registry")

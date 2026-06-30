@@ -121,10 +121,10 @@ class SessionSecurityMiddleware(BaseHTTPMiddleware):
     async def _get_session_fingerprint(self, session_id: str) -> str | None:
         """Get stored fingerprint for a session."""
         try:
-            from backend.core.dependencies import get_service
+            from backend.core.dependencies import get_composition_root
 
-            # Get session service to retrieve session data
-            session_service = get_service("session_service")
+            services = get_composition_root().services
+            session_service = services.session_service
             if not session_service:
                 logger.warning("Session service not available for fingerprint validation")
                 return None
@@ -134,7 +134,7 @@ class SessionSecurityMiddleware(BaseHTTPMiddleware):
             # This assumes the session_id is actually a refresh token or session identifier
 
             # Get the session repository directly for now
-            session_repository = get_service("session_repository")
+            session_repository = services.session_repository
             if not session_repository:
                 return None
 
@@ -154,10 +154,10 @@ class SessionSecurityMiddleware(BaseHTTPMiddleware):
     async def _invalidate_session(self, session_id: str) -> None:
         """Invalidate a compromised session."""
         try:
-            from backend.core.dependencies import get_service
+            from backend.core.dependencies import get_composition_root
 
             # Get session repository to revoke the session
-            session_repository = get_service("session_repository")
+            session_repository = get_composition_root().services.session_repository
             if session_repository:
                 await session_repository.revoke_user_session(session_id)
                 logger.warning(f"Session {session_id} invalidated due to fingerprint mismatch")

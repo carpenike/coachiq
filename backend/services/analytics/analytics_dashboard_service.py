@@ -32,16 +32,24 @@ class AnalyticsDashboardService:
     - Comprehensive metrics aggregation and reporting
     """
 
-    def __init__(self, performance_monitor=None, database_manager=None, analytics_repository=None):
+    def __init__(
+        self,
+        performance_monitor=None,
+        database_manager=None,
+        analytics_repository=None,
+        performance_analytics_service=None,
+    ):
         """Initialize the analytics dashboard service.
 
         Args:
             performance_monitor: Optional PerformanceMonitor instance
             database_manager: Optional DatabaseManager instance
             analytics_repository: Optional AnalyticsRepository instance
+            performance_analytics_service: Optional performance analytics collaborator
         """
         self.config = get_settings()
         self.analytics_settings = AnalyticsDashboardSettings()
+        self.performance_analytics_service = performance_analytics_service
 
         # Initialize storage service with repository pattern
         from backend.core.performance import PerformanceMonitor
@@ -144,10 +152,7 @@ class AnalyticsDashboardService:
 
         cutoff_time = time.time() - (time_window_hours * 3600)
 
-        # Get performance analytics service from ServiceRegistry
-        perf_service = None
-        if self.service_registry and self.service_registry.has_service("performance_analytics"):
-            perf_service = self.service_registry.get_service("performance_analytics")
+        perf_service = self.performance_analytics_service
 
         if not perf_service:
             return self._empty_trends_response()
@@ -431,10 +436,7 @@ class AnalyticsDashboardService:
         metrics = {}
 
         try:
-            # Get metrics from performance analytics service
-            perf_service = None
-            if self.service_registry and self.service_registry.has_service("performance_analytics"):
-                perf_service = self.service_registry.get_service("performance_analytics")
+            perf_service = self.performance_analytics_service
 
             if perf_service and hasattr(perf_service, "get_current_metrics"):
                 current_metrics = await perf_service.get_current_metrics()
@@ -442,15 +444,6 @@ class AnalyticsDashboardService:
 
             # Add system-level metrics
             active_services_count = 0
-            if self.service_registry:
-                # Count active services in ServiceRegistry
-                active_services_count = len(
-                    [
-                        name
-                        for name in self.service_registry.list_services()
-                        if self.service_registry.get_service_status(name).status == "running"
-                    ]
-                )
 
             metrics.update(
                 {

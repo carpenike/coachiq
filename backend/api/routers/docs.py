@@ -16,12 +16,12 @@ from typing import Annotated, Any
 from fastapi import APIRouter, Depends, HTTPException, Query
 
 from backend.core.dependencies import (
-    create_service_dependency,
+    root_service_dependency,
 )
 
 # Create service dependencies
-get_docs_service = create_service_dependency("docs_service")
-get_vector_service = create_service_dependency("vector_service")
+get_docs_service = root_service_dependency("docs_service")
+get_vector_service = root_service_dependency("vector_service")
 
 logger = logging.getLogger(__name__)
 

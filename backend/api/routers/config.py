@@ -26,7 +26,7 @@ from fastapi.responses import PlainTextResponse
 
 from backend.core.config import get_settings
 from backend.core.dependencies import (
-    create_service_dependency,
+    root_service_dependency,
     get_entity_state_repository,
     get_rvc_config_facade,
 )
@@ -37,9 +37,9 @@ from backend.services.updates.github_update_checker import GitHubUpdateChecker
 from backend.services.rvc.rvc_config_facade import RVCConfigFacade
 
 # Create missing dependencies
-get_can_interface_service = create_service_dependency("can_interface_service")
-get_github_update_checker = create_service_dependency("github_update_checker")
-get_can_tracking_repository = create_service_dependency("can_tracking_repository")
+get_can_interface_service = root_service_dependency("can_interface_service")
+get_github_update_checker = root_service_dependency("github_update_checker")
+get_can_tracking_repository = root_service_dependency("can_tracking_repository")
 
 logger = logging.getLogger(__name__)
 

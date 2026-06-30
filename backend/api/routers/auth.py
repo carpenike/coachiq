@@ -18,10 +18,10 @@ from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 from pydantic import BaseModel, EmailStr
 from starlette import status
 
-from backend.core.dependencies import create_service_dependency, get_auth_manager
+from backend.core.dependencies import get_auth_manager, root_service_dependency
 
 # Create notification manager dependency
-get_notification_manager = create_service_dependency("notification_manager")
+get_notification_manager = root_service_dependency("notification_manager")
 from backend.middleware.rate_limiting import (
     admin_api_rate_limit,
     check_auth_rate_limit,

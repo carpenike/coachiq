@@ -620,26 +620,21 @@ def get_multi_network_manager() -> MultiNetworkManager:
     Get the multi-network manager instance.
 
     This function follows the enhanced singleton pattern that checks the
-    ServiceRegistry before falling back to the global instance for backward
+    composition root before falling back to the global instance for backward
     compatibility.
-
-    NOTE: This global singleton pattern is deprecated. New code should register
-    MultiNetworkManager with ServiceRegistry for proper lifecycle management.
 
     Returns:
         MultiNetworkManager: The multi-network manager instance
     """
-    # Try to get from ServiceRegistry first (modern pattern)
+    # Try to get from CompositionRoot first (modern pattern)
     try:
-        from backend.core.dependencies import get_service_registry
+        from backend.core.dependencies import get_composition_root
 
-        service_registry = get_service_registry()
-        if service_registry.has_service("multi_network_manager"):
-            service = service_registry.get_service("multi_network_manager")
-            if isinstance(service, MultiNetworkManager):
-                return service
+        service = getattr(get_composition_root().services, "multi_network_manager", None)
+        if isinstance(service, MultiNetworkManager):
+            return service
     except Exception:
-        # ServiceRegistry not available yet
+        # CompositionRoot not available yet
         pass
 
     # Fall back to global singleton for backward compatibility
@@ -647,7 +642,7 @@ def get_multi_network_manager() -> MultiNetworkManager:
     if _multi_network_manager is None:
         logger.warning(
             "MultiNetworkManager accessed via global singleton (deprecated). "
-            "Consider registering with ServiceRegistry for proper lifecycle management."
+            "Consider wiring it through CompositionRoot for proper lifecycle management."
         )
         _multi_network_manager = MultiNetworkManager()
     return _multi_network_manager

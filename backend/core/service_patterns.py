@@ -56,18 +56,16 @@ class ServiceProxy(Generic[T]):
             except Exception as e:
                 logger.debug(f"Failed to get {self.service_name} via custom getter: {e}")
 
-        # Try ServiceRegistry
+        # Try CompositionRoot
         try:
-            from backend.core.dependencies import get_service_registry
+            from backend.core.dependencies import get_composition_root
 
-            registry = get_service_registry()
-            if registry.has_service(self.service_name):
-                service = registry.get_service(self.service_name)
-                if service:
-                    self._cached_service = service
-                    return service
+            service = getattr(get_composition_root().services, self.service_name, None)
+            if service:
+                self._cached_service = service
+                return service
         except Exception as e:
-            logger.debug(f"Failed to get {self.service_name} from ServiceRegistry: {e}")
+            logger.debug(f"Failed to get {self.service_name} from CompositionRoot: {e}")
 
         return None
 
@@ -278,16 +276,16 @@ _lifecycle_manager: ServiceLifecycleManager | None = None
 def get_lifecycle_manager() -> ServiceLifecycleManager:
     """Get the lifecycle manager instance.
 
-    This should be registered with ServiceRegistry during application startup.
+    This should be wired through CompositionRoot during application startup.
     The global instance is maintained for backward compatibility only.
     """
-    # Try to get from ServiceRegistry first
+    # Try to get from CompositionRoot first
     try:
-        from backend.core.dependencies import get_service_registry
+        from backend.core.dependencies import get_composition_root
 
-        registry = get_service_registry()
-        if registry.has_service("service_lifecycle_manager"):
-            return registry.get_service("service_lifecycle_manager")
+        manager = getattr(get_composition_root().services, "service_lifecycle_manager", None)
+        if isinstance(manager, ServiceLifecycleManager):
+            return manager
     except (ImportError, AttributeError, RuntimeError):
         pass
 

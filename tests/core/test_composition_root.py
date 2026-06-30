@@ -283,7 +283,7 @@ async def test_service_dependency_delegates_to_composition_root() -> None:
     await root.startup(configure)
     dependencies.initialize_composition_root(root)
     try:
-        provider = dependencies.create_service_dependency("app_settings")
+        provider = dependencies.root_service_dependency("app_settings")
         assert isinstance(provider(), Settings)
         assert provider().app_name == settings.app_name
     finally:
@@ -300,7 +300,7 @@ def test_root_constructed_service_is_settable_without_registry_capture() -> None
     root.set_constructed_service("app_settings", settings)
     dependencies.initialize_composition_root(root)
     try:
-        provider = dependencies.create_service_dependency("app_settings")
+        provider = dependencies.root_service_dependency("app_settings")
         assert provider() is settings
         assert root.services.settings is settings
     finally:

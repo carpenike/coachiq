@@ -71,13 +71,11 @@ class SecureAuthenticationMiddleware(BaseHTTPMiddleware):
         # Initialize services from ServiceRegistry if not already done
         if not self.auth_manager:
             try:
-                from backend.core.dependencies import get_service_registry
+                from backend.core.dependencies import get_auth_manager
 
-                service_registry = get_service_registry()
-                if service_registry.has_service("auth_manager"):
-                    self.auth_manager = service_registry.get_service("auth_manager")
-                    self.token_service = SecureTokenService(self.auth_manager)
-                    logger.info("Secure authentication middleware initialized from ServiceRegistry")
+                self.auth_manager = get_auth_manager()
+                self.token_service = SecureTokenService(self.auth_manager)
+                logger.info("Secure authentication middleware initialized from composition root")
             except Exception as e:
                 logger.warning(f"Could not initialize secure auth middleware: {e}")
 

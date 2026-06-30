@@ -26,28 +26,14 @@ class WebSocketAuthHandler:
 
     @property
     def auth_manager(self):
-        """Lazily get the auth manager from ServiceRegistry to avoid initialization issues."""
+        """Lazily get the auth manager to avoid initialization issues."""
         if self._auth_manager is None:
             try:
-                from backend.core.dependencies import get_service_registry
+                from backend.core.dependencies import get_auth_manager
 
-                service_registry = get_service_registry()
-                if service_registry.has_service("auth_manager"):
-                    auth_service = service_registry.get_service("auth_manager")
-                    # AuthService has a get_auth_manager() method that returns the actual AuthManager
-                    if hasattr(auth_service, "get_auth_manager"):
-                        self._auth_manager = auth_service.get_auth_manager()
-                        if not self._auth_manager:
-                            logger.debug(
-                                "AuthService.get_auth_manager() returned None - service may not be started yet"
-                            )
-                    else:
-                        # Fallback if it's already an AuthManager
-                        self._auth_manager = auth_service
-                else:
-                    logger.debug("Auth manager service not found in ServiceRegistry")
+                self._auth_manager = get_auth_manager()
             except Exception as e:
-                logger.debug("Could not get auth manager from ServiceRegistry: %s", e)
+                logger.debug("Could not get auth manager from composition root: %s", e)
         return self._auth_manager
 
     async def authenticate_connection(  # noqa: C901
