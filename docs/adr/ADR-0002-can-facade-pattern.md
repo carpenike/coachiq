@@ -39,9 +39,9 @@ cross-cutting concern a facade pattern is designed for.
 
 All CAN operations go through a single **`CANFacade`** service that:
 
-- Implements the `SafetyAware` interface (so it participates in the
-  `SafetyService`'s emergency-stop coordination).
-- Has `safety_classification = SafetyClassification.CRITICAL` (for
+- Implements the `GuardrailParticipant` interface (so it participates in the
+  `CommandGuardrailService`'s emergency-stop coordination).
+- Has `guardrail_tier = GuardrailTier.CRITICAL` (for
   the audit-trail / shutdown-ordering machinery).
 - Owns references to the underlying CAN services (CANBusService,
   CANMessageInjector, CANMessageFilter, CANBusRecorder,
@@ -125,8 +125,8 @@ focused services) is clearer.
 - `backend/integrations/can/` -- the lower-level integrations (message
   factories, interface adapters, multi-network manager) that the
   underlying services in turn use.
-- `backend/services/safety_service.py` -- the consumer of the
-  `SafetyAware` interface, which the facade implements for
+- `backend/services/command_guardrail_service.py` -- the consumer of the
+  `GuardrailParticipant` interface, which the facade implements for
   emergency-stop coordination.
 - `docs/archive/can-service-consolidation-plan-2025.md` -- the
   original implementation plan (preserved for the FMEA-style rationale).

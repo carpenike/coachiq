@@ -40,7 +40,7 @@ class AuditEventType(str, Enum):
     PIN_LOCKOUT = "pin.lockout"
 
     # Safety Operation Events
-    SAFETY_EMERGENCY_STOP = "safety.emergency_stop"
+    SAFETY_EMERGENCY_STOP = "safety.halt_command_emission"
     SAFETY_EMERGENCY_RESET = "safety.emergency_reset"
     SAFETY_INTERLOCK_VIOLATION = "safety.interlock.violation"
     SAFETY_OVERRIDE_USED = "safety.override.used"

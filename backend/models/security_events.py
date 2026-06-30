@@ -34,7 +34,7 @@ class SecurityEventType(str, Enum):
     AUTH_BRUTE_FORCE_ATTEMPT = "auth_brute_force_attempt"
 
     # System Security Events
-    SYSTEM_EMERGENCY_STOP = "system_emergency_stop"
+    SYSTEM_EMERGENCY_STOP = "system_halt_command_emission"
     SYSTEM_SAFETY_VIOLATION = "system_safety_violation"
     SYSTEM_CONFIG_CHANGE = "system_config_change"
     SYSTEM_SERVICE_FAILURE = "system_service_failure"
@@ -216,7 +216,7 @@ class SecurityEvent(BaseModel):
         payload = {"component": component, **payload_data}
 
         return cls(
-            source_component="safety_service",
+            source_component="command_guardrail_service",
             event_type=event_type,
             severity=severity,
             title=title,

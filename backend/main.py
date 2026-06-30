@@ -28,9 +28,9 @@ from slowapi.middleware import SlowAPIMiddleware
 from backend.api.router_config import configure_routers
 from backend.core.config import Settings, get_settings, is_real_secret
 from backend.core.dependencies import ServiceRegistry
+from backend.core.guardrail_coordinator import GuardrailCoordinator
 from backend.core.logging_config import configure_unified_logging, setup_early_logging
 from backend.core.metrics import initialize_backend_metrics
-from backend.core.safety_registry import SafetyServiceRegistry
 from backend.core.security_config_validator import validate_security_config
 from backend.core.security_hardening import configure_security_hardening
 from backend.core.service_registry import ServiceStatus
@@ -87,7 +87,7 @@ def _resolve_csrf_secret(settings: Settings) -> str:
     raise RuntimeError(msg)
 
 
-async def _configure_service_startup_stages(service_registry: SafetyServiceRegistry) -> None:
+async def _configure_service_startup_stages(service_registry: GuardrailCoordinator) -> None:
     """Core service-startup-stage configuration.
 
     Extracted to ``backend/core/registrations/core_startup`` in
@@ -98,7 +98,7 @@ async def _configure_service_startup_stages(service_registry: SafetyServiceRegis
     await configure(service_registry)
 
 
-def _register_group2_repositories(service_registry: SafetyServiceRegistry) -> None:
+def _register_group2_repositories(service_registry: GuardrailCoordinator) -> None:
     """Group-2 repository registrations.
 
     Extracted to ``backend/core/registrations/group2_repositories``
@@ -109,7 +109,7 @@ def _register_group2_repositories(service_registry: SafetyServiceRegistry) -> No
     register(service_registry)
 
 
-def _register_group2_services(service_registry: SafetyServiceRegistry) -> None:
+def _register_group2_services(service_registry: GuardrailCoordinator) -> None:
     """Group-2 service registrations.
 
     Extracted to ``backend/core/registrations/group2_services`` in
@@ -129,7 +129,7 @@ def _create_database_engine():
     return DatabaseEngine(settings)
 
 
-def _register_phase4_services(service_registry: SafetyServiceRegistry) -> None:
+def _register_phase4_services(service_registry: GuardrailCoordinator) -> None:
     """Phase-4 service registrations.
 
     Extracted to ``backend/core/registrations/phase4`` in audit
@@ -152,9 +152,9 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     logger.info("Starting coachiq backend application")
 
     # Initialize ServiceRegistry for advanced dependency management.
-    # Use SafetyServiceRegistry for guardrail-tier classification + emergency
+    # Use GuardrailCoordinator for guardrail-tier classification + emergency
     # stop ("safety" naming is historical -- see ADR-0004).
-    service_registry = SafetyServiceRegistry()
+    service_registry = GuardrailCoordinator()
 
     # Initialize the module-level service registry for dependency injection
     from backend.core.dependencies import initialize_service_registry
@@ -171,20 +171,22 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         # Execute orchestrated startup via ServiceRegistry
         await service_registry.startup_all()
 
-        # CRITICAL: Inject service_registry into safety_service after startup to avoid circular dependency
-        safety_service = service_registry.get_service("safety_service")
-        if safety_service and hasattr(safety_service, "set_service_registry"):
-            safety_service.set_service_registry(service_registry)
+        # CRITICAL: Inject service_registry into command_guardrail_service after startup to avoid circular dependency
+        command_guardrail_service = service_registry.get_service("command_guardrail_service")
+        if command_guardrail_service and hasattr(command_guardrail_service, "set_service_registry"):
+            command_guardrail_service.set_service_registry(service_registry)
             logger.info(
-                "ServiceRegistry injected into SafetyService for emergency stop coordination"
+                "ServiceRegistry injected into CommandGuardrailService for emergency stop coordination"
             )
-        elif safety_service:
-            # If SafetyService doesn't have set_service_registry method, set directly
-            safety_service._service_registry = service_registry
-            logger.info("ServiceRegistry directly assigned to SafetyService._service_registry")
+        elif command_guardrail_service:
+            # If CommandGuardrailService doesn't have set_service_registry method, set directly
+            command_guardrail_service._service_registry = service_registry
+            logger.info(
+                "ServiceRegistry directly assigned to CommandGuardrailService._service_registry"
+            )
         else:
             logger.error(
-                "SafetyService not found in ServiceRegistry - emergency stop coordination unavailable"
+                "CommandGuardrailService not found in ServiceRegistry - emergency stop coordination unavailable"
             )
 
         # Get services from registry
@@ -271,8 +273,8 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         pin_manager = service_registry.get_service("pin_manager")
         security_audit_service = service_registry.get_service("security_audit_service")
 
-        # SafetyService is now registered in ServiceRegistry
-        safety_service = service_registry.get_service("safety_service")
+        # CommandGuardrailService is now registered in ServiceRegistry
+        command_guardrail_service = service_registry.get_service("command_guardrail_service")
         logger.info("Backend services initialized")
 
         # Authentication middleware will be configured dynamically via the middleware itself
@@ -919,20 +921,21 @@ async def readyz(request: Request, details: bool = False) -> Response:
 
         # 5. Safety-critical systems
         # Check safety service and auth service from ServiceRegistry
-        safety_service_ready = (
-            service_registry.has_service("safety_service")
-            and service_registry.get_service_status("safety_service") == ServiceStatus.HEALTHY
+        command_guardrail_service_ready = (
+            service_registry.has_service("command_guardrail_service")
+            and service_registry.get_service_status("command_guardrail_service")
+            == ServiceStatus.HEALTHY
         )
         auth_ready = (
             service_registry.has_service("auth_manager")
             and service_registry.get_service_status("auth_manager") == ServiceStatus.HEALTHY
         )
 
-        safety_systems_ready = safety_service_ready and auth_ready
+        safety_systems_ready = command_guardrail_service_ready and auth_ready
         readiness_checks["safety_systems"] = {
             "status": "pass" if safety_systems_ready else "fail",
             "details": {
-                "safety_service": safety_service_ready,
+                "command_guardrail_service": command_guardrail_service_ready,
                 "authentication": auth_ready,
             },
         }

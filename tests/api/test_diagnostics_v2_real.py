@@ -65,7 +65,7 @@ def diagnostics_client(diagnostic_handler: DiagnosticHandler) -> Generator[TestC
     )
     app.dependency_overrides[diagnostics_domain.get_optional_can_facade] = (  # type: ignore[attr-defined]
         lambda: FakeCANFacade(
-            {"healthy": True, "safety_status": "safe", "emergency_stop_active": False}
+            {"healthy": True, "guardrail_status": "safe", "command_halt_active": False}
         )
     )
 

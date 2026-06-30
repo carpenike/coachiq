@@ -268,7 +268,7 @@ class SafetyStateEngine:
         # Notify observers if transitioning to unsafe state
         if new_state == VehicleState.UNSAFE:
             command = SafetyCommand(
-                command_type="emergency_stop",
+                command_type="halt_command_emission",
                 target_entity="all",
                 allowed=False,
                 reason=f"Vehicle transitioned to unsafe state from {old_state.value}",

@@ -465,7 +465,7 @@ class TestSafetyEndpointsParity:
     """Test safety-critical endpoint parity"""
 
     @pytest.mark.asyncio
-    async def test_emergency_stop_availability(self, comparison_framework):
+    async def test_halt_command_emission_availability(self, comparison_framework):
         """Test emergency stop functionality availability"""
         # Test v2 emergency stop endpoint
         result = await comparison_framework.make_api_request(
@@ -478,7 +478,7 @@ class TestSafetyEndpointsParity:
         )
 
     @pytest.mark.asyncio
-    async def test_safety_status_availability(self, comparison_framework):
+    async def test_guardrail_status_availability(self, comparison_framework):
         """Test safety status endpoint availability"""
         result = await comparison_framework.make_api_request("/api/v1/entities/safety-status")
 

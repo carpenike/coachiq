@@ -95,7 +95,7 @@ Suggested cluster order (low risk → high risk):
 | A7.0 | CAN services (facade + injector + filter + recorder + analyzer) | This PR. Smallest, well-isolated. |
 | A7.1 | Repositories (entity_state, rvc_config, system_state, etc.) | Mechanical -- repositories are simple data-access. |
 | A7.2 | Notifications + analytics | Larger surface; touches the 3-tier manager split. |
-| A7.3 | Entity + safety | Touches the live entity services + the `SafetyService` guardrail. |
+| A7.3 | Entity + safety | Touches the live entity services + the `CommandGuardrailService` guardrail. |
 | A7.4 | Auth + security | **Land AFTER PR A9** (auth namespace consolidation) so typed aliases don't lie about what comes back. |
 | A7.5 | Misc cleanup (cleanup of any orphans surfaced by A7.0--A7.4) | Final pass. |
 

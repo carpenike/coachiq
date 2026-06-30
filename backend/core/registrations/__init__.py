@@ -12,6 +12,6 @@ Splitting into per-domain modules:
   declares exactly which `ServiceRegistry.register_service` calls it
   contributes.
 
-Convention: each module exports a `register(service_registry: SafetyServiceRegistry) -> None`
+Convention: each module exports a `register(service_registry: GuardrailCoordinator) -> None`
 function that `main.py.lifespan()` calls in dependency order.
 """

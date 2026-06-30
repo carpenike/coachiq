@@ -16,7 +16,7 @@ Behavior is bit-identical to the original.
 
 import logging
 
-from backend.core.safety_registry import SafetyServiceRegistry
+from backend.core.guardrail_coordinator import GuardrailCoordinator
 from backend.core.service_dependency_resolver import DependencyType, ServiceDependency
 from backend.repositories.auth_repository import (
     AuthEventRepository,
@@ -45,7 +45,7 @@ from backend.services.entities.entity_initialization_service import EntityInitia
 logger = logging.getLogger(__name__)
 
 
-def register(service_registry: SafetyServiceRegistry) -> None:
+def register(service_registry: GuardrailCoordinator) -> None:
     """
     Register all Group 2 repositories with the ServiceRegistry (Phase 3).
 

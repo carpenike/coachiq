@@ -20,7 +20,7 @@ ADR (forthcoming) for the per-domain split rationale.
 
 import logging
 
-from backend.core.safety_registry import SafetyServiceRegistry
+from backend.core.guardrail_coordinator import GuardrailCoordinator
 from backend.core.service_dependency_resolver import DependencyType, ServiceDependency
 
 # Module-level symbols referenced inside the registration bodies. The
@@ -35,14 +35,14 @@ from backend.services.can.can_bus_service import CANBusService
 from backend.services.can.can_interface_service import CANInterfaceService
 from backend.services.can.can_network_telemetry_service import CANNetworkTelemetryService
 from backend.services.entities.entity_manager_service import EntityManagerService
+from backend.services.guardrails.command_guardrail_service import CommandGuardrailService
 from backend.services.protocols.protocol_manager import ProtocolManager
-from backend.services.safety.safety_service import SafetyService
 from backend.services.system.websocket_service import WebSocketService
 
 logger = logging.getLogger(__name__)
 
 
-def register(service_registry: SafetyServiceRegistry) -> None:
+def register(service_registry: GuardrailCoordinator) -> None:
     """
     Register Phase 4 migrated features as services (Phase 4).
 
@@ -67,10 +67,10 @@ def register(service_registry: SafetyServiceRegistry) -> None:
         else {"healthy": m is not None},
     )
 
-    # SafetyService - API command-validation guardrail (CRITICAL classification, see ADR-0004)
-    async def _init_safety_service(pin_manager, security_audit_service):
-        """Initialize SafetyService - service_registry will be injected after registration."""
-        service = SafetyService(
+    # CommandGuardrailService - API command-validation guardrail (CRITICAL classification, see ADR-0004)
+    async def _init_command_guardrail_service(pin_manager, security_audit_service):
+        """Initialize CommandGuardrailService - service_registry will be injected after registration."""
+        service = CommandGuardrailService(
             service_registry=None,  # Will be set after registration to avoid circular dependency
             health_check_interval=5.0,  # Check health every 5 seconds
             watchdog_timeout=15.0,  # Watchdog timeout at 15 seconds
@@ -78,16 +78,19 @@ def register(service_registry: SafetyServiceRegistry) -> None:
             security_audit_service=security_audit_service,
         )
         await service.start_monitoring()
-        logger.info("SafetyService started - will set service_registry after registration")
+        logger.info(
+            "CommandGuardrailService started - will set service_registry after registration"
+        )
         return service
 
     # Import safety classification for proper registration
-    from backend.core.safety_interfaces import SafetyClassification
+    from backend.core.guardrail_interfaces import GuardrailTier
 
-    service_registry.register_safety_service(
-        name="safety_service",
-        init_func=_init_safety_service,
-        safety_classification=SafetyClassification.CRITICAL,
+    service_registry.register_guardrail_service(
+        name="command_guardrail_service",
+        init_func=_init_command_guardrail_service,
+        guardrail_tier=GuardrailTier.CRITICAL,
+        command_halt_participant=False,
         dependencies=[
             ServiceDependency("pin_manager", DependencyType.REQUIRED),
             ServiceDependency("security_audit_service", DependencyType.REQUIRED),
@@ -97,7 +100,7 @@ def register(service_registry: SafetyServiceRegistry) -> None:
             "API command-validation guardrails and emergency stop on the "
             "orchestration loop (see ADR-0004)"
         ),
-        tags={"service", "safety", "critical", "api-guardrail"},
+        tags={"service", "guardrail", "critical", "api-guardrail"},
         health_check=lambda s: s.get_health_status(),
     )
 
@@ -112,11 +115,12 @@ def register(service_registry: SafetyServiceRegistry) -> None:
         await service.start()
         return service
 
-    service_registry.register_safety_service(
+    service_registry.register_guardrail_service(
         name="websocket_manager",
         init_func=_init_websocket_service,
         # Real-time communication is important for operation.
-        safety_classification=SafetyClassification.OPERATIONAL,
+        guardrail_tier=GuardrailTier.OPERATIONAL,
+        command_halt_participant=False,
         dependencies=[
             ServiceDependency("can_tracking_repository", DependencyType.OPTIONAL),
             ServiceDependency("system_state_repository", DependencyType.OPTIONAL),
@@ -184,11 +188,12 @@ def register(service_registry: SafetyServiceRegistry) -> None:
         await service.start()
         return service
 
-    service_registry.register_safety_service(
+    service_registry.register_guardrail_service(
         name="auth_manager",
         init_func=_init_auth_service,
         # Access control is operationally critical (see ADR-0004).
-        safety_classification=SafetyClassification.CRITICAL,
+        guardrail_tier=GuardrailTier.CRITICAL,
+        command_halt_participant=False,
         dependencies=[
             ServiceDependency("credential_repository", DependencyType.REQUIRED),
             ServiceDependency("session_repository", DependencyType.REQUIRED),
@@ -267,11 +272,12 @@ def register(service_registry: SafetyServiceRegistry) -> None:
         await service.start()
         return service
 
-    service_registry.register_safety_service(
+    service_registry.register_guardrail_service(
         name="can_bus_service",
         init_func=_init_can_bus_service,
         # CAN bus orchestration is operationally critical (see ADR-0004).
-        safety_classification=SafetyClassification.CRITICAL,
+        guardrail_tier=GuardrailTier.CRITICAL,
+        command_halt_participant=False,
         dependencies=[
             ServiceDependency("can_tracking_repository", DependencyType.REQUIRED),
             ServiceDependency("system_state_repository", DependencyType.REQUIRED),
@@ -323,18 +329,19 @@ def register(service_registry: SafetyServiceRegistry) -> None:
         service = CANMessageInjector(safety_level=safety_level, audit_callback=audit_injection)
         return service
 
-    service_registry.register_safety_service(
+    service_registry.register_guardrail_service(
         name="can_message_injector",
         init_func=_init_can_message_injector,
         # CAN message injection requires guardrail oversight (see ADR-0004).
-        safety_classification=SafetyClassification.CRITICAL,
+        guardrail_tier=GuardrailTier.CRITICAL,
+        command_halt_participant=False,
         dependencies=[
             ServiceDependency("security_audit_service", DependencyType.OPTIONAL),
         ],
         description="Safe CAN message injection service for testing and diagnostics",
         tags={"service", "can", "testing", "diagnostics", "safety-critical"},
-        health_check=lambda s: {"healthy": s is not None and not s._emergency_stop_active}
-        if hasattr(s, "_emergency_stop_active")
+        health_check=lambda s: {"healthy": s is not None and not s._command_halt_active}
+        if hasattr(s, "_command_halt_active")
         else {"healthy": s is not None},
     )
 
@@ -369,17 +376,18 @@ def register(service_registry: SafetyServiceRegistry) -> None:
             capture_buffer_size=capture_buffer_size,
         )
 
-    service_registry.register_safety_service(
+    service_registry.register_guardrail_service(
         name="can_message_filter",
         init_func=_init_can_message_filter,
-        safety_classification=SafetyClassification.CRITICAL,
+        guardrail_tier=GuardrailTier.OPERATIONAL,
+        command_halt_participant=False,
         dependencies=[
             ServiceDependency("websocket_manager", DependencyType.OPTIONAL),
         ],
         description="CAN message filtering system with real-time monitoring and alerting",
         tags={"service", "can", "filtering", "monitoring", "safety"},
-        health_check=lambda s: {"healthy": s is not None and not s._emergency_stop_active}
-        if hasattr(s, "_emergency_stop_active")
+        health_check=lambda s: {"healthy": s is not None and not s._command_halt_active}
+        if hasattr(s, "_command_halt_active")
         else {"healthy": s is not None},
     )
 
@@ -408,17 +416,18 @@ def register(service_registry: SafetyServiceRegistry) -> None:
 
         return recorder
 
-    service_registry.register_safety_service(
+    service_registry.register_guardrail_service(
         name="can_bus_recorder",
         init_func=_init_can_bus_recorder,
-        safety_classification=SafetyClassification.OPERATIONAL,
+        guardrail_tier=GuardrailTier.OPERATIONAL,
+        command_halt_participant=False,
         dependencies=[
             ServiceDependency("websocket_manager", DependencyType.OPTIONAL),
         ],
         description="CAN bus traffic recorder with replay capabilities",
         tags={"service", "can", "recording", "replay", "diagnostics"},
-        health_check=lambda s: {"healthy": s is not None and not s._emergency_stop_active}
-        if hasattr(s, "_emergency_stop_active")
+        health_check=lambda s: {"healthy": s is not None and not s._command_halt_active}
+        if hasattr(s, "_command_halt_active")
         else {"healthy": s is not None},
     )
 
@@ -439,17 +448,18 @@ def register(service_registry: SafetyServiceRegistry) -> None:
 
         return analyzer
 
-    service_registry.register_safety_service(
+    service_registry.register_guardrail_service(
         name="can_protocol_analyzer",
         init_func=_init_can_protocol_analyzer,
-        safety_classification=SafetyClassification.OPERATIONAL,
+        guardrail_tier=GuardrailTier.OPERATIONAL,
+        command_halt_participant=False,
         dependencies=[
             ServiceDependency("websocket_manager", DependencyType.OPTIONAL),
         ],
         description="CAN protocol analyzer for deep packet inspection and protocol detection",
         tags={"service", "can", "analysis", "protocol", "diagnostics"},
-        health_check=lambda s: {"healthy": s is not None and not s._emergency_stop_active}
-        if hasattr(s, "_emergency_stop_active")
+        health_check=lambda s: {"healthy": s is not None and not s._command_halt_active}
+        if hasattr(s, "_command_halt_active")
         else {"healthy": s is not None},
     )
 
@@ -508,10 +518,11 @@ def register(service_registry: SafetyServiceRegistry) -> None:
             performance_monitor=performance_monitor,
         )
 
-    service_registry.register_safety_service(
+    service_registry.register_guardrail_service(
         name="can_facade",
         init_func=_init_can_facade,
-        safety_classification=SafetyClassification.CRITICAL,
+        guardrail_tier=GuardrailTier.CRITICAL,
+        command_halt_participant=True,
         dependencies=[
             ServiceDependency("can_bus_service", DependencyType.REQUIRED),
             ServiceDependency("can_message_injector", DependencyType.REQUIRED),

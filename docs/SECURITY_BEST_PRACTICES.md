@@ -245,12 +245,12 @@ await security_audit.log_event(
 
 ### Emergency Stop Implementation
 ```python
-from backend.core.safety_registry import SafetyServiceRegistry
+from backend.core.guardrail_coordinator import GuardrailCoordinator
 
 # Emergency stop affects all safety-critical services
-async def emergency_stop():
-    safety_registry = SafetyServiceRegistry.get_instance()
-    await safety_registry.execute_emergency_stop()
+async def halt_command_emission():
+    guardrail_coordinator = GuardrailCoordinator.get_instance()
+    await guardrail_coordinator.halt_command_emission()
 ```
 
 ### Incident Response Plan

@@ -78,9 +78,7 @@ class ComponentHealth(BaseModel):
     message: str | None = Field(None, description="Status message or error details")
     category: str = Field(..., description="Component category: core/network/storage/external")
     last_checked: float = Field(..., description="Last health check timestamp")
-    safety_classification: str | None = Field(
-        None, description="Safety classification if applicable"
-    )
+    guardrail_tier: str | None = Field(None, description="Safety classification if applicable")
 
 
 class ComponentHealthResponse(BaseModel):
@@ -400,7 +398,7 @@ def create_system_router() -> APIRouter:
                         message=message,
                         category=category,
                         last_checked=time.time(),
-                        safety_classification=None,  # Safety classification was part of feature flags
+                        guardrail_tier=None,  # Safety classification was part of feature flags
                     )
                 )
 

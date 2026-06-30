@@ -75,7 +75,7 @@ class FakeDomainService:
             results=results,
             total_execution_time_ms=50.0,
             safety_summary={
-                "emergency_stop_active": False,
+                "command_halt_active": False,
                 "safety_interlocks_enabled": True,
                 "acknowledgment_rate": 1.0,
                 "average_execution_time": 20.0,

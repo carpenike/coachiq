@@ -781,8 +781,8 @@ class ServiceRegistry:
             raise
 
     # ------------------------------------------------------------------ #
-    # Lifecycle + health surface used by SafetyService and external
-    # health-probe consumers (``SafetyService._health_monitoring_loop``
+    # Lifecycle + health surface used by CommandGuardrailService and external
+    # health-probe consumers (``CommandGuardrailService._health_monitoring_loop``
     # calls ``service_registry.get_health_summary()`` on every tick).
     # ------------------------------------------------------------------ #
 
@@ -883,7 +883,7 @@ class ServiceRegistry:
     def get_health_summary(self) -> dict[str, dict[str, str]]:
         """Synchronous snapshot of cached service status.
 
-        Used by ``SafetyService._health_monitoring_loop`` to avoid an
+        Used by ``CommandGuardrailService._health_monitoring_loop`` to avoid an
         async fan-out on every watchdog tick. Returns the most recently
         observed status per service in the shape that loop expects:
         ``{name: {"status": "<STATUS_NAME>"}}`` (uppercase enum name,

@@ -18,11 +18,11 @@ from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any, Dict, List, Optional, Set, Tuple
 
-from backend.core.safety_interfaces import (
-    SafeStateAction,
-    SafetyAware,
-    SafetyClassification,
-    SafetyStatus,
+from backend.core.guardrail_interfaces import (
+    CommandHaltAction,
+    GuardrailParticipant,
+    GuardrailStatus,
+    GuardrailTier,
 )
 
 logger = logging.getLogger(__name__)
@@ -115,7 +115,7 @@ class CommunicationPattern:
     confidence: float = 0.0
 
 
-class ProtocolAnalyzer(SafetyAware):
+class ProtocolAnalyzer(GuardrailParticipant):
     """
     CAN protocol analyzer for deep packet inspection.
 
@@ -134,8 +134,8 @@ class ProtocolAnalyzer(SafetyAware):
     ):
         # Initialize as safety-aware service
         super().__init__(
-            safety_classification=SafetyClassification.OPERATIONAL,
-            safe_state_action=SafeStateAction.DISABLE,
+            guardrail_tier=GuardrailTier.OPERATIONAL,
+            command_halt_action=CommandHaltAction.DISABLE_COMMANDS,
         )
 
         self.buffer_size = buffer_size
@@ -190,18 +190,18 @@ class ProtocolAnalyzer(SafetyAware):
         logger.info("Starting CAN protocol analyzer")
         self._is_running = True
         self.start_time = time.time()
-        self._set_safety_status(SafetyStatus.SAFE)
+        self._set_guardrail_status(GuardrailStatus.SAFE)
 
     async def stop(self) -> None:
         """Stop the analyzer."""
         logger.info("Stopping CAN protocol analyzer")
         self._is_running = False
 
-    async def emergency_stop(self, reason: str) -> None:
+    async def halt_command_emission(self, reason: str) -> None:
         """
         Emergency stop all protocol analysis operations.
 
-        This method implements the SafetyAware emergency stop interface
+        This method implements the GuardrailParticipant emergency stop interface
         for immediate cessation of analysis activities.
 
         Args:
@@ -210,7 +210,7 @@ class ProtocolAnalyzer(SafetyAware):
         logger.critical("CAN protocol analyzer emergency stop: %s", reason)
 
         # Set emergency stop state
-        self._set_emergency_stop_active(True)
+        self._set_command_halt_active(True)
 
         # Immediately stop all operations
         self._is_running = False
@@ -237,19 +237,19 @@ class ProtocolAnalyzer(SafetyAware):
 
         logger.critical("CAN protocol analyzer emergency stop completed")
 
-    async def get_safety_status(self) -> SafetyStatus:
+    async def get_guardrail_status(self) -> GuardrailStatus:
         """Get current safety status of the analyzer."""
-        if self._emergency_stop_active:
-            return SafetyStatus.EMERGENCY_STOP
+        if self._command_halt_active:
+            return GuardrailStatus.COMMAND_HALTED
         if not self._is_running:
-            return SafetyStatus.SAFE
+            return GuardrailStatus.SAFE
         # Check buffer usage
         buffer_usage = len(self.message_buffer) / self.buffer_size
         if buffer_usage > 0.9:
-            return SafetyStatus.DEGRADED
-        return SafetyStatus.SAFE
+            return GuardrailStatus.DEGRADED
+        return GuardrailStatus.SAFE
 
-    async def validate_safety_interlock(self, operation: str) -> bool:
+    async def validate_command_precondition(self, operation: str) -> bool:
         """
         Validate if analyzer operation is safe to perform.
 
@@ -260,8 +260,8 @@ class ProtocolAnalyzer(SafetyAware):
             True if operation is safe to perform
         """
         # Check basic safety status
-        safety_status = await self.get_safety_status()
-        if safety_status == SafetyStatus.EMERGENCY_STOP:
+        guardrail_status = await self.get_guardrail_status()
+        if guardrail_status == GuardrailStatus.COMMAND_HALTED:
             logger.warning("Analyzer operation %s blocked: emergency stop active", operation)
             return False
 
@@ -300,7 +300,7 @@ class ProtocolAnalyzer(SafetyAware):
             Analyzed message with protocol information
         """
         # Check safety interlock
-        if not await self.validate_safety_interlock("analyze_message"):
+        if not await self.validate_command_precondition("analyze_message"):
             # Return minimal analyzed message if safety check fails
             return AnalyzedMessage(
                 timestamp=timestamp or time.time(),

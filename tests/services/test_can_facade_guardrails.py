@@ -5,7 +5,7 @@ from unittest.mock import AsyncMock, Mock
 
 import pytest
 
-from backend.core.safety_interfaces import SafetyStatus
+from backend.core.guardrail_interfaces import GuardrailStatus
 from backend.services.can.can_facade import CANFacade
 
 pytestmark = [pytest.mark.unit, pytest.mark.can]
@@ -17,23 +17,23 @@ def can_facade_dependencies() -> dict[str, Any]:
     bus_service = AsyncMock()
     bus_service.start = AsyncMock()
     bus_service.stop = AsyncMock()
-    bus_service.emergency_stop = AsyncMock()
+    bus_service.halt_command_emission = AsyncMock()
     bus_service.get_health_status = Mock(return_value={"healthy": True, "status": "ok"})
 
     injector = AsyncMock()
     injector.inject_message = AsyncMock(return_value={"success": True, "tx_id": "abc"})
-    injector.emergency_stop = AsyncMock()
+    injector.halt_command_emission = AsyncMock()
 
     message_filter = AsyncMock()
     message_filter.start = AsyncMock()
     message_filter.stop = AsyncMock()
-    message_filter.emergency_stop = AsyncMock()
+    message_filter.halt_command_emission = AsyncMock()
     message_filter.get_health_status = Mock(return_value={"healthy": True})
 
     recorder = AsyncMock()
     recorder.start = AsyncMock()
     recorder.stop = AsyncMock()
-    recorder.emergency_stop = AsyncMock()
+    recorder.halt_command_emission = AsyncMock()
     recorder.get_health_status = AsyncMock(return_value={"healthy": True})
     recorder.get_queue_status = AsyncMock(return_value={"length": 3, "status": "busy"})
     recorder.get_recent_messages = AsyncMock(return_value=[{"arbitration_id": 0x123}])
@@ -126,7 +126,7 @@ async def test_send_raw_message_wraps_success_and_failure(can_facade: CANFacade)
     assert success["arbitration_id_hex"] == "0x00000123"
     assert success["data"] == "0A0B"
 
-    can_facade._set_emergency_stop_active(True)
+    can_facade._set_command_halt_active(True)
     failure = await can_facade.send_raw_message(0x123, b"\x0a", "house")
     assert failure["status"] == "error"
     assert "Safety interlock" in failure["error"]
@@ -166,7 +166,7 @@ async def test_get_comprehensive_health_collects_sync_async_and_error_states(
 
     health = await can_facade.get_comprehensive_health()
 
-    assert health["facade_status"] == SafetyStatus.SAFE.value
+    assert health["facade_status"] == GuardrailStatus.SAFE.value
     assert health["services"]["bus_service"] == {"healthy": True, "status": "ok"}
     assert health["services"]["recorder"] == {"healthy": True}
     assert health["services"]["filter"] == {"healthy": False, "error": "filter down"}
@@ -187,9 +187,9 @@ async def test_bus_statistics_includes_message_rate_from_performance_summary(
 
 async def test_health_status_reports_degraded_as_healthy(can_facade: CANFacade) -> None:
     """ServiceRegistry health treats SAFE and DEGRADED as service-healthy states."""
-    can_facade._set_safety_status(SafetyStatus.DEGRADED)
+    can_facade._set_guardrail_status(GuardrailStatus.DEGRADED)
 
     health = can_facade.get_health_status()
 
     assert health["healthy"] is True
-    assert health["safety_status"] == SafetyStatus.DEGRADED.value
+    assert health["guardrail_status"] == GuardrailStatus.DEGRADED.value

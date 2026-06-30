@@ -12,12 +12,11 @@ These tests validate end-to-end safety behavior including:
 import asyncio
 import time
 from datetime import datetime
-from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
 from backend.core.service_registry import ServiceRegistry, ServiceStatus
-from backend.services.safety.safety_service import SafetyService
+from backend.services.guardrails.command_guardrail_service import CommandGuardrailService
 
 
 class RealWorldService:
@@ -49,7 +48,7 @@ class RealWorldService:
 
         self.state = ServiceStatus.STOPPED
         self.enabled = True
-        self.safety_classification = kwargs.get("safety_classification", "operational")
+        self.guardrail_tier = kwargs.get("guardrail_tier", "operational")
         self._failed_dependencies = set()
 
     async def startup(self) -> None:
@@ -101,7 +100,7 @@ class RealWorldService:
         elif self.should_randomly_fail:
             import random
 
-            if random.random() < self.failure_probability:
+            if random.random() < self.failure_probability:  # noqa: S311 - test failure simulation
                 self.state = ServiceStatus.DEGRADED
 
         # Track performance
@@ -138,16 +137,16 @@ def rv_system_config():
         # Core infrastructure
         "persistence": {
             "enabled": True,
-            "safety_classification": "critical",
-            "safe_state_action": "continue_operation",
+            "guardrail_tier": "critical",
+            "command_halt_action": "continue_operation",
             "maintain_state_on_failure": True,
             "depends_on": [],
             "description": "Data persistence service",
         },
         "can_interface": {
             "enabled": True,
-            "safety_classification": "critical",
-            "safe_state_action": "continue_operation",
+            "guardrail_tier": "critical",
+            "command_halt_action": "continue_operation",
             "maintain_state_on_failure": True,
             "depends_on": [],
             "description": "CAN bus interface",
@@ -155,16 +154,16 @@ def rv_system_config():
         # Safety-related systems
         "rvc_protocol": {
             "enabled": True,
-            "safety_classification": "critical",
-            "safe_state_action": "continue_operation",
+            "guardrail_tier": "critical",
+            "command_halt_action": "continue_operation",
             "maintain_state_on_failure": True,
             "depends_on": ["can_interface"],
             "description": "RV-C protocol handler",
         },
         "spartan_k2": {
             "enabled": True,
-            "safety_classification": "safety_related",
-            "safe_state_action": "maintain_position",
+            "guardrail_tier": "safety_related",
+            "command_halt_action": "maintain_position",
             "maintain_state_on_failure": True,
             "depends_on": ["can_interface", "rvc_protocol"],
             "description": "Spartan K2 chassis control",
@@ -172,16 +171,16 @@ def rv_system_config():
         # Position-critical systems
         "firefly": {
             "enabled": True,
-            "safety_classification": "position_critical",
-            "safe_state_action": "maintain_position",
+            "guardrail_tier": "position_critical",
+            "command_halt_action": "maintain_position",
             "maintain_state_on_failure": True,
             "depends_on": ["rvc_protocol"],
             "description": "Firefly slide/awning control",
         },
         "leveling_system": {
             "enabled": True,
-            "safety_classification": "position_critical",
-            "safe_state_action": "maintain_position",
+            "guardrail_tier": "position_critical",
+            "command_halt_action": "maintain_position",
             "maintain_state_on_failure": True,
             "depends_on": ["spartan_k2"],
             "description": "Automatic leveling system",
@@ -189,24 +188,24 @@ def rv_system_config():
         # Operational systems
         "dashboard": {
             "enabled": True,
-            "safety_classification": "operational",
-            "safe_state_action": "continue_operation",
+            "guardrail_tier": "operational",
+            "command_halt_action": "continue_operation",
             "maintain_state_on_failure": True,
             "depends_on": ["persistence", "rvc_protocol"],
             "description": "Dashboard and UI",
         },
         "lighting_control": {
             "enabled": True,
-            "safety_classification": "operational",
-            "safe_state_action": "continue_operation",
+            "guardrail_tier": "operational",
+            "command_halt_action": "continue_operation",
             "maintain_state_on_failure": True,
             "depends_on": ["firefly"],
             "description": "Interior/exterior lighting",
         },
         "climate_control": {
             "enabled": True,
-            "safety_classification": "operational",
-            "safe_state_action": "continue_operation",
+            "guardrail_tier": "operational",
+            "command_halt_action": "continue_operation",
             "maintain_state_on_failure": True,
             "depends_on": ["rvc_protocol"],
             "description": "HVAC control system",
@@ -214,16 +213,16 @@ def rv_system_config():
         # Maintenance features
         "diagnostics": {
             "enabled": True,
-            "safety_classification": "maintenance",
-            "safe_state_action": "continue_operation",
+            "guardrail_tier": "maintenance",
+            "command_halt_action": "continue_operation",
             "maintain_state_on_failure": False,
             "depends_on": ["can_interface"],
             "description": "System diagnostics",
         },
         "logs": {
             "enabled": True,
-            "safety_classification": "maintenance",
-            "safe_state_action": "continue_operation",
+            "guardrail_tier": "maintenance",
+            "command_halt_action": "continue_operation",
             "maintain_state_on_failure": False,
             "depends_on": ["persistence"],
             "description": "Log management",
@@ -252,13 +251,13 @@ def integrated_system(rv_system_config):
     for name, config in rv_system_config.items():
         service = RealWorldService(
             name=name,
-            safety_classification=config.get("safety_classification", "operational"),
+            guardrail_tier=config.get("guardrail_tier", "operational"),
         )
         service.enabled = config.get("enabled", True)
         services[name] = service
 
         tags: set[str] = set()
-        if config.get("safety_classification") in ("critical", "safety_related"):
+        if config.get("guardrail_tier") in ("critical", "safety_related"):
             tags.add("critical")
 
         service_registry.register_service(
@@ -269,7 +268,7 @@ def integrated_system(rv_system_config):
             description=config.get("description"),
         )
 
-    safety_service = SafetyService(
+    command_guardrail_service = CommandGuardrailService(
         service_registry=service_registry,
         health_check_interval=0.1,  # Fast for testing
         watchdog_timeout=2.0,
@@ -277,7 +276,7 @@ def integrated_system(rv_system_config):
 
     return {
         "service_registry": service_registry,
-        "safety_service": safety_service,
+        "command_guardrail_service": command_guardrail_service,
         "services": services,
     }
 
@@ -305,8 +304,6 @@ class TestSystemStartupShutdown:
 
         # Performance check
         assert startup_duration < 5.0, f"Startup took too long: {startup_duration}s"
-
-        print(f"Clean startup completed in {startup_duration:.2f}s")
 
     @pytest.mark.asyncio
     async def test_startup_with_failure_recovery(self, integrated_system):
@@ -390,8 +387,6 @@ class TestSystemStartupShutdown:
         # Performance check
         assert shutdown_duration < 3.0, f"Shutdown took too long: {shutdown_duration}s"
 
-        print(f"Graceful shutdown completed in {shutdown_duration:.2f}s")
-
 
 class TestEmergencyScenarios:
     """Test emergency scenarios and safe state transitions."""
@@ -400,7 +395,6 @@ class TestEmergencyScenarios:
     async def test_critical_service_failure_cascade(self, integrated_system):
         """Test cascade of failures when critical service fails."""
         service_registry = integrated_system["service_registry"]
-        safety_service = integrated_system["safety_service"]
         services = integrated_system["services"]
 
         # Start system
@@ -414,14 +408,13 @@ class TestEmergencyScenarios:
         await service_registry.check_system_health()
 
         # Verify safety service detected the failure
-        safety_status = safety_service.get_safety_status()
         # Implementation would check for appropriate safety responses
 
     @pytest.mark.asyncio
     async def test_position_critical_failure_response(self, integrated_system):
         """Test response to position-critical system failure."""
         service_registry = integrated_system["service_registry"]
-        safety_service = integrated_system["safety_service"]
+        command_guardrail_service = integrated_system["command_guardrail_service"]
         services = integrated_system["services"]
 
         # Start system
@@ -431,47 +424,47 @@ class TestEmergencyScenarios:
         firefly = services["firefly"]
         firefly.state = ServiceStatus.FAILED
 
-        # Trigger emergency response
-        await safety_service.trigger_emergency_stop(
-            "Position-critical system failure", triggered_by="integration_test"
+        # Trigger command-halt response
+        await command_guardrail_service.halt_command_emission(
+            "Guardrail-critical system failure", triggered_by="integration_test"
         )
 
-        # Verify position-critical services entered safe shutdown
-        assert safety_service._emergency_stop_active
+        # Verify command halt was activated
+        assert command_guardrail_service._command_halt_active
 
         # Verify audit log captured the event
-        audit_log = safety_service.get_audit_log()
-        assert any("emergency" in e["event_type"] for e in audit_log)
+        audit_log = command_guardrail_service.get_audit_log()
+        assert any(e["event_type"] == "command_halt_activated" for e in audit_log)
 
     @pytest.mark.asyncio
-    async def test_emergency_stop_scenario(self, integrated_system):
+    async def test_halt_command_emission_scenario(self, integrated_system):
         """Test complete emergency stop scenario."""
         service_registry = integrated_system["service_registry"]
-        safety_service = integrated_system["safety_service"]
+        command_guardrail_service = integrated_system["command_guardrail_service"]
         services = integrated_system["services"]
 
         # Start system and safety monitoring
         await service_registry.startup_all()
-        monitor_task = asyncio.create_task(safety_service.start_monitoring())
+        monitor_task = asyncio.create_task(command_guardrail_service.start_monitoring())
 
         # Simulate emergency condition (multiple system failures)
         services["can_interface"].state = ServiceStatus.FAILED
         services["rvc_protocol"].state = ServiceStatus.FAILED
 
         # Trigger emergency stop
-        await safety_service.trigger_emergency_stop(
+        await command_guardrail_service.halt_command_emission(
             "Critical system failures detected", triggered_by="integration_test"
         )
 
         # Verify emergency stop state
-        assert safety_service._emergency_stop_active
+        assert command_guardrail_service._command_halt_active
 
         # Test emergency stop reset
-        success = await safety_service.reset_emergency_stop(
+        success = await command_guardrail_service.clear_command_halt(
             "SAFETY_OVERRIDE_ADMIN", reset_by="integration_test"
         )
         assert success
-        assert not safety_service._emergency_stop_active
+        assert not command_guardrail_service._command_halt_active
 
         # Stop monitoring
         monitor_task.cancel()
@@ -482,33 +475,33 @@ class TestEmergencyScenarios:
 
     @pytest.mark.asyncio
     async def test_watchdog_timeout_scenario(self, integrated_system):
-        """Test watchdog timeout and safe state entry.
+        """Test watchdog timeout and command-halt state entry.
 
-        On watchdog timeout, ``SafetyService._watchdog_loop`` calls
-        ``_enter_safe_state`` (which sets ``_in_safe_state = True``)
-        — it does NOT trip ``_emergency_stop_active``. The two are
-        distinct safety-state concepts:
-        - ``_emergency_stop_active``: explicit operator-driven stop
-          via ``trigger_emergency_stop`` (or detected via
+        On watchdog timeout, ``CommandGuardrailService._watchdog_loop`` calls
+        ``_enter_command_halt_state`` (which sets ``_in_command_halt_state = True``)
+        — it does NOT trip ``_command_halt_active``. The two are
+        distinct command-halt state concepts:
+        - ``_command_halt_active``: explicit operator-driven stop
+          via ``halt_command_emission`` (or detected via
           ``_check_emergency_conditions``).
-        - ``_in_safe_state``: passive defensive posture entered when
-          the safety monitor itself can't be trusted (watchdog
+                - ``_in_command_halt_state``: passive defensive posture entered when
+                    the guardrail monitor itself can't be trusted (watchdog
           timeout, monitor crash, etc.).
 
         Earlier revisions of this test asserted on the wrong field.
         """
         service_registry = integrated_system["service_registry"]
-        safety_service = integrated_system["safety_service"]
+        command_guardrail_service = integrated_system["command_guardrail_service"]
 
-        # Start system and safety monitoring.
+        # Start system and guardrail monitoring.
         await service_registry.startup_all()
         # ``start_monitoring`` is async but does no looping itself — it
         # spawns the watchdog and health-monitor as subtasks (stored on
-        # the safety_service) and returns. ``await`` it directly rather
+        # the command_guardrail_service) and returns. ``await`` it directly rather
         # than wrapping in ``asyncio.create_task`` so the kick-time
         # assignment at the end of start_monitoring lands BEFORE we
         # backdate it below.
-        await safety_service.start_monitoring()
+        await command_guardrail_service.start_monitoring()
 
         # The health-monitor loop refreshes ``_last_watchdog_kick`` on
         # every successful tick (every ``health_check_interval`` =
@@ -516,28 +509,28 @@ class TestEmergencyScenarios:
         # JUST the health monitor; the watchdog stays running.
         # This simulates the realistic failure mode the watchdog exists
         # for: "the safety monitor itself has stopped working".
-        if safety_service._health_monitor_task is not None:
-            safety_service._health_monitor_task.cancel()
+        if command_guardrail_service._health_monitor_task is not None:
+            command_guardrail_service._health_monitor_task.cancel()
             try:
-                await safety_service._health_monitor_task
+                await command_guardrail_service._health_monitor_task
             except (asyncio.CancelledError, Exception):
                 pass
-            safety_service._health_monitor_task = None
+            command_guardrail_service._health_monitor_task = None
 
         # Backdate the watchdog kick by more than the 2.0s timeout so
         # the next watchdog tick (<=1s away) trips the timeout.
-        safety_service._last_watchdog_kick = time.time() - 10.0
+        command_guardrail_service._last_watchdog_kick = time.time() - 10.0
 
         # Wait for the watchdog loop to detect the stale kick (next tick is <=1s
         # after the backdate; give it 3s to be safe across CI hosts).
         await asyncio.sleep(3.0)
 
-        # Verify safe state was entered (NOT emergency stop -- those are
+        # Verify command-halt state was entered (NOT explicit command halt -- those are
         # different states; see docstring above).
-        assert safety_service._in_safe_state
+        assert command_guardrail_service._in_command_halt_state
 
         # Clean up: stop_monitoring is the symmetric teardown.
-        await safety_service.stop_monitoring()
+        await command_guardrail_service.stop_monitoring()
 
 
 class TestRealWorldFailurePatterns:
@@ -556,7 +549,7 @@ class TestRealWorldFailurePatterns:
         can_interface = services["can_interface"]
 
         # Cycle through connectivity issues
-        for cycle in range(3):
+        for _cycle in range(3):
             # Fail
             can_interface.state = ServiceStatus.DEGRADED
             await service_registry.check_system_health()
@@ -583,7 +576,7 @@ class TestRealWorldFailurePatterns:
         # Simulate power cycle by stopping and restarting critical services
         critical_services = ["persistence", "can_interface"]
 
-        for cycle in range(2):
+        for _cycle in range(2):
             # Start system
             await service_registry.startup_all()
 
@@ -605,7 +598,7 @@ class TestRealWorldFailurePatterns:
                 await service.startup()
 
         # Verify system stability after power cycling
-        for service_name, service in services.items():
+        for _service_name, service in services.items():
             if service.enabled:
                 assert service.state == ServiceStatus.HEALTHY
 
@@ -632,20 +625,20 @@ class TestRealWorldFailurePatterns:
             assert service.state == ServiceStatus.HEALTHY
 
 
-class TestSafetyInterlockIntegration:
+class TestCommandPreconditionIntegration:
     """Test integration between safety interlocks and service management."""
 
     @pytest.mark.asyncio
     async def test_interlock_prevents_unsafe_operations(self, integrated_system):
         """Test that safety interlocks prevent unsafe operations."""
         service_registry = integrated_system["service_registry"]
-        safety_service = integrated_system["safety_service"]
+        command_guardrail_service = integrated_system["command_guardrail_service"]
 
         # Start system
         await service_registry.startup_all()
 
         # Update system state to unsafe conditions
-        safety_service.update_system_state(
+        command_guardrail_service.update_system_state(
             {
                 "vehicle_speed": 5.0,  # Vehicle moving
                 "parking_brake": False,
@@ -654,10 +647,10 @@ class TestSafetyInterlockIntegration:
         )
 
         # Check interlocks
-        interlock_results = await safety_service.check_safety_interlocks()
+        interlock_results = await command_guardrail_service.check_command_preconditions()
 
         # Verify interlocks are engaged for unsafe conditions
-        slide_safety = interlock_results.get("slide_room_safety")
+        slide_safety = interlock_results.get("slide_room_precondition")
         assert slide_safety is not None
         conditions_met, reason = slide_safety
         assert not conditions_met
@@ -667,7 +660,7 @@ class TestSafetyInterlockIntegration:
     async def test_interlock_state_synchronization(self, integrated_system):
         """Test synchronization between interlock state and service state."""
         service_registry = integrated_system["service_registry"]
-        safety_service = integrated_system["safety_service"]
+        command_guardrail_service = integrated_system["command_guardrail_service"]
         services = integrated_system["services"]
 
         # Start system
@@ -678,13 +671,13 @@ class TestSafetyInterlockIntegration:
         firefly.state = ServiceStatus.FAILED
 
         # Trigger emergency stop
-        await safety_service.trigger_emergency_stop(
+        await command_guardrail_service.halt_command_emission(
             "Service failure simulation", triggered_by="integration_test"
         )
 
         # Verify interlock state matches service state
-        safety_status = safety_service.get_safety_status()
-        assert safety_status["emergency_stop_active"]
+        guardrail_status = command_guardrail_service.get_guardrail_status()
+        assert guardrail_status["command_halt_active"]
 
 
 class TestPerformanceUnderLoad:
@@ -694,11 +687,11 @@ class TestPerformanceUnderLoad:
     async def test_health_monitoring_performance(self, integrated_system):
         """Test performance of health monitoring under load."""
         service_registry = integrated_system["service_registry"]
-        safety_service = integrated_system["safety_service"]
+        command_guardrail_service = integrated_system["command_guardrail_service"]
 
         # Start system and monitoring
         await service_registry.startup_all()
-        monitor_task = asyncio.create_task(safety_service.start_monitoring())
+        monitor_task = asyncio.create_task(command_guardrail_service.start_monitoring())
 
         # Let monitoring run for a period
         monitoring_duration = 2.0
@@ -733,15 +726,11 @@ class TestPerformanceUnderLoad:
             f"Max health check too slow: {max_health_check_time:.3f}s"
         )
 
-        print(
-            f"Health monitoring performance: avg={avg_health_check_time:.3f}s, max={max_health_check_time:.3f}s"
-        )
-
     @pytest.mark.asyncio
     async def test_memory_usage_stability(self, integrated_system):
         """Test memory usage stability during extended operation."""
         service_registry = integrated_system["service_registry"]
-        safety_service = integrated_system["safety_service"]
+        command_guardrail_service = integrated_system["command_guardrail_service"]
 
         # Start system
         await service_registry.startup_all()
@@ -753,7 +742,7 @@ class TestPerformanceUnderLoad:
             await service_registry.check_system_health()
 
             # Interlock checks
-            await safety_service.check_safety_interlocks()
+            await command_guardrail_service.check_command_preconditions()
 
             # State transitions
             if i % 10 == 0:
@@ -767,14 +756,12 @@ class TestPerformanceUnderLoad:
             await asyncio.sleep(0.01)
 
         # Verify audit logs don't grow unbounded
-        audit_log = safety_service.get_audit_log()
-        assert len(audit_log) <= safety_service._max_audit_entries
+        audit_log = command_guardrail_service.get_audit_log()
+        assert len(audit_log) <= command_guardrail_service._max_audit_entries
 
         # Verify system still responsive
         final_health = await service_registry.check_system_health()
         assert final_health["status"] in ["healthy", "degraded"]
-
-        print(f"Completed {operations} operations with stable memory usage")
 
 
 if __name__ == "__main__":

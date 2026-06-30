@@ -157,8 +157,8 @@ def create_entities_router() -> APIRouter:
             memory = psutil.virtual_memory()
             cpu_percent = psutil.cpu_percent(interval=0.1)
 
-            # Get safety status for RV debugging
-            safety_status = await domain_service.get_safety_status()
+            # Get guardrail status for RV debugging
+            guardrail_status = await domain_service.get_guardrail_status()
 
             return {
                 "status": "healthy",
@@ -178,18 +178,20 @@ def create_entities_router() -> APIRouter:
                 # RV Entity Status
                 "rv_entities": {
                     "total_count": len(await entity_service.list_entities()),
-                    "emergency_stop_active": safety_status.get("emergency_stop_active", False),
-                    "pending_operations": safety_status.get("pending_operations_count", 0),
+                    "command_halt_active": guardrail_status.get("command_halt_active", False),
+                    "pending_operations": guardrail_status.get("pending_operations_count", 0),
                 },
                 # Feature Status (all enabled per CLAUDE.md)
                 "features": {
                     "domain_api_v2": True,
                     "entities_api_v2": True,
-                    "safety_interlocks": safety_status.get("safety_interlocks_enabled", False),
+                    "guardrail_preconditions": guardrail_status.get(
+                        "guardrail_preconditions_enabled", False
+                    ),
                 },
                 # Debug Info for Solo Developer
                 "debug_urls": {
-                    "safety_status": "/api/v1/entities/safety-status",
+                    "guardrail_status": "/api/v1/entities/guardrail-status",
                     "schemas": "/api/v1/entities/schemas",
                     "unmapped_devices": "/api/v1/entities/debug/unmapped",
                     "unknown_pgns": "/api/v1/entities/debug/unknown-pgns",
@@ -238,7 +240,7 @@ def create_entities_router() -> APIRouter:
                     )
 
             # Safety and entity status
-            safety_status = await domain_service.get_safety_status()
+            guardrail_status = await domain_service.get_guardrail_status()
             entities = await entity_service.list_entities()
 
             return {
@@ -265,7 +267,7 @@ def create_entities_router() -> APIRouter:
                 },
                 "rv_status": {
                     "entities_by_type": _categorize_entities(entities),
-                    "safety_summary": safety_status,
+                    "safety_summary": guardrail_status,
                     "feature_flags": {
                         # All enabled per CLAUDE.md - no feature flags
                         "domain_api_v2": True,
@@ -286,7 +288,7 @@ def create_entities_router() -> APIRouter:
                         },
                         {
                             "issue": "Control commands failing",
-                            "check": "Check emergency stop status and CAN bus health",
+                            "check": "Check command halt status and CAN bus health",
                         },
                         {
                             "issue": "Slow responses",
@@ -295,8 +297,8 @@ def create_entities_router() -> APIRouter:
                     ],
                     "useful_endpoints": {
                         "View all entities": "/api/v1/entities",
-                        "Emergency stop": "POST /api/v1/entities/emergency-stop",
-                        "Clear emergency": "POST /api/v1/entities/clear-emergency-stop",
+                        "Command halt": "POST /api/v1/entities/command-halt",
+                        "Clear command halt": "POST /api/v1/entities/command-halt/clear",
                         "Unmapped devices": "/api/v1/entities/debug/unmapped",
                     },
                 },
@@ -370,18 +372,18 @@ def create_entities_router() -> APIRouter:
             logger.error(f"Failed to get entities: {e}")
             raise HTTPException(status_code=500, detail=f"Failed to retrieve entities: {e!s}")
 
-    @router.get("/safety-status")
-    async def get_safety_status(
+    @router.get("/guardrail-status")
+    async def get_guardrail_status(
         request: Request, domain_service: Annotated[Any, Depends(get_entity_domain_service)]
     ) -> dict:
-        """Get current safety system status"""
+        """Get current guardrail status"""
 
         try:
-            result = await domain_service.get_safety_status()
+            result = await domain_service.get_guardrail_status()
             return result
         except Exception as e:
-            logger.error(f"Get safety status failed: {e}")
-            raise HTTPException(status_code=500, detail=f"Get safety status failed: {e!s}")
+            logger.error(f"Get guardrail status failed: {e}")
+            raise HTTPException(status_code=500, detail=f"Get guardrail status failed: {e!s}")
 
     # SPECIFIC ROUTES - MUST COME BEFORE /{entity_id} ROUTE
     @router.get("/metadata")
@@ -589,45 +591,45 @@ def create_entities_router() -> APIRouter:
             logger.error(f"Bulk operation failed: {e}")
             raise HTTPException(status_code=500, detail=f"Bulk operation failed: {e!s}")
 
-    @router.post("/emergency-stop")
-    async def emergency_stop(
-        request: Request,
+    @router.post("/command-halt")
+    async def halt_command_emission(
+        _request: Request,
         domain_service: Annotated[Any, Depends(get_entity_domain_service)],
-        admin_user: dict = Depends(get_authenticated_admin),
+        admin_user: Annotated[dict, Depends(get_authenticated_admin)],
     ) -> dict:
-        """Emergency stop - immediately halt all entity operations (Admin Only)"""
+        """Command halt - immediately halt all entity operations (Admin Only)"""
 
         try:
-            # Log the admin user who triggered emergency stop for audit trail
+            # Log the admin user who triggered command halt for audit trail
             triggered_by = f"{admin_user.get('username', admin_user.get('user_id', 'unknown'))}"
-            logger.warning(f"Domain API emergency stop triggered by admin user {triggered_by}")
+            logger.warning(f"Domain API command halt triggered by admin user {triggered_by}")
 
-            result = await domain_service.emergency_stop()
+            result = await domain_service.halt_command_emission()
             result["triggered_by"] = triggered_by
             return result
         except Exception as e:
-            logger.error(f"Emergency stop failed: {e}")
-            raise HTTPException(status_code=500, detail=f"Emergency stop failed: {e!s}")
+            logger.error(f"Command halt failed: {e}")
+            raise HTTPException(status_code=500, detail=f"Command halt failed: {e!s}")
 
-    @router.post("/clear-emergency-stop")
-    async def clear_emergency_stop(
-        request: Request,
+    @router.post("/command-halt/clear")
+    async def clear_command_halt(
+        _request: Request,
         domain_service: Annotated[Any, Depends(get_entity_domain_service)],
-        admin_user: dict = Depends(get_authenticated_admin),
+        admin_user: Annotated[dict, Depends(get_authenticated_admin)],
     ) -> dict:
-        """Clear emergency stop condition (Admin Only)"""
+        """Clear command halt condition (Admin Only)"""
 
         try:
-            # Log the admin user who cleared emergency stop for audit trail
+            # Log the admin user who cleared command halt for audit trail
             cleared_by = f"{admin_user.get('username', admin_user.get('user_id', 'unknown'))}"
-            logger.warning(f"Domain API emergency stop cleared by admin user {cleared_by}")
+            logger.warning(f"Domain API command halt cleared by admin user {cleared_by}")
 
-            result = await domain_service.clear_emergency_stop()
+            result = await domain_service.clear_command_halt()
             result["cleared_by"] = cleared_by
             return result
         except Exception as e:
-            logger.error(f"Clear emergency stop failed: {e}")
-            raise HTTPException(status_code=500, detail=f"Clear emergency stop failed: {e!s}")
+            logger.error(f"Clear command halt failed: {e}")
+            raise HTTPException(status_code=500, detail=f"Clear command halt failed: {e!s}")
 
     @router.post("/reconcile-state")
     async def reconcile_state_with_rvc_bus(

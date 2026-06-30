@@ -88,6 +88,9 @@ from backend.services.database.database_update_service import (
 from backend.services.database.migration_safety_validator import (
     MigrationSafetyValidator as _MigrationSafetyValidator,
 )
+from backend.services.guardrails.command_guardrail_service import (
+    CommandGuardrailService as _CommandGuardrailService,
+)
 from backend.services.maintenance.predictive_maintenance_service import (
     PredictiveMaintenanceService as _PredictiveMaintenanceService,
 )
@@ -102,7 +105,6 @@ from backend.services.notifications.notification_reporting_service import (
 )
 from backend.services.rvc.rvc_config_facade import RVCConfigFacade as _RVCConfigFacade
 from backend.services.rvc.rvc_service import RVCService as _RVCService
-from backend.services.safety.safety_service import SafetyService as _SafetyService
 from backend.services.security.security_audit_service import (
     SecurityAuditService as _SecurityAuditService,
 )
@@ -345,7 +347,7 @@ def get_can_protocol_analyzer() -> _ProtocolAnalyzer:
     return create_service_dependency("can_protocol_analyzer")()
 
 
-def get_safety_service() -> _SafetyService:
+def get_command_guardrail_service() -> _CommandGuardrailService:
     """
     Get the API guardrail service from ServiceRegistry.
 
@@ -355,13 +357,13 @@ def get_safety_service() -> _SafetyService:
     owns the actual vehicle safety case. See ADR-0004.
 
     Returns:
-        The SafetyService instance.
+        The CommandGuardrailService instance.
 
     Raises:
         RuntimeError: If the service is not available (orchestration tier
             cannot accept commands without it).
     """
-    return create_service_dependency("safety_service")()
+    return create_service_dependency("command_guardrail_service")()
 
 
 def get_rvc_service() -> _RVCService:

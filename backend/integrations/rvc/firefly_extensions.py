@@ -48,7 +48,7 @@ class FireflyComponentType(Enum):
     SAFETY_SYSTEMS = "safety_systems"
 
 
-class SafetyInterlockState(Enum):
+class CommandPreconditionState(Enum):
     """Safety interlock states for Firefly systems."""
 
     UNKNOWN = "unknown"
@@ -69,7 +69,7 @@ class FireflyMessage:
     dgn_type: FireflyDGNType
     component_type: FireflyComponentType | None = None
     multiplexed_data: dict[str, Any] | None = None
-    safety_status: SafetyInterlockState | None = None
+    guardrail_status: CommandPreconditionState | None = None
     signals: dict[str, Any] = field(default_factory=dict)
     validation_errors: list[str] = field(default_factory=list)
 
@@ -96,12 +96,12 @@ class MultiplexBuffer:
 
 
 @dataclass
-class SafetyInterlock:
+class CommandPrecondition:
     """Represents a safety interlock requirement."""
 
     component: str
     required_conditions: list[str]
-    current_state: SafetyInterlockState
+    current_state: CommandPreconditionState
     last_check: float
     override_active: bool = False
     fault_reason: str | None = None
@@ -123,7 +123,7 @@ class FireflyDecoder:
         """Initialize the Firefly decoder."""
         self.settings = settings or get_firefly_settings()
         self.multiplex_buffers: dict[str, MultiplexBuffer] = {}
-        self.safety_interlocks: dict[str, SafetyInterlock] = {}
+        self.safety_interlocks: dict[str, CommandPrecondition] = {}
         self.component_states: dict[str, dict[str, Any]] = {}
         self._initialize_safety_interlocks()
 
@@ -133,10 +133,10 @@ class FireflyDecoder:
         """Initialize safety interlocks based on configuration."""
         for component in self.settings.safety_interlock_components:
             required_conditions = self.settings.required_interlocks.get(component, [])
-            self.safety_interlocks[component] = SafetyInterlock(
+            self.safety_interlocks[component] = CommandPrecondition(
                 component=component,
                 required_conditions=required_conditions,
-                current_state=SafetyInterlockState.UNKNOWN,
+                current_state=CommandPreconditionState.UNKNOWN,
                 last_check=time.time(),
             )
 
@@ -398,7 +398,7 @@ class FireflyDecoder:
             "position_percent": data[2],
             "target_position": data[3],
             "movement_state": data[4],  # 0=stopped, 1=extending, 2=retracting
-            "safety_status": data[5],
+            "guardrail_status": data[5],
             "current_draw_amps": data[6],
             "fault_flags": data[7],
         }
@@ -440,7 +440,9 @@ class FireflyDecoder:
             # Extract safety status information
             if len(message.data) >= 4:
                 component_id = message.data[0]
-                safety_state = SafetyInterlockState(message.data[1] if message.data[1] < 5 else 0)
+                safety_state = CommandPreconditionState(
+                    message.data[1] if message.data[1] < 5 else 0
+                )
                 conditions_met = message.data[2]
                 fault_code = message.data[3]
 
@@ -454,7 +456,7 @@ class FireflyDecoder:
                     if fault_code != 0:
                         interlock.fault_reason = f"Fault code: {fault_code}"
 
-                message.safety_status = safety_state
+                message.guardrail_status = safety_state
                 message.signals = {
                     "component": component_name,
                     "safety_state": safety_state.value,
@@ -478,7 +480,9 @@ class FireflyDecoder:
         # For now, return the message as-is since the main RVC decoder handles standard messages
         return message
 
-    def validate_safety_interlocks(self, component: str, operation: str) -> tuple[bool, list[str]]:
+    def validate_command_preconditions(
+        self, component: str, operation: str
+    ) -> tuple[bool, list[str]]:
         """
         Validate safety interlocks before allowing an operation.
 
@@ -500,11 +504,11 @@ class FireflyDecoder:
         interlock = self.safety_interlocks[component]
 
         # Check if interlock is in a safe state
-        if interlock.current_state == SafetyInterlockState.UNSAFE:
+        if interlock.current_state == CommandPreconditionState.UNSAFE:
             violations.append(f"{component} safety interlock is in UNSAFE state")
-        elif interlock.current_state == SafetyInterlockState.FAULT:
+        elif interlock.current_state == CommandPreconditionState.FAULT:
             violations.append(f"{component} safety interlock has FAULT: {interlock.fault_reason}")
-        elif interlock.current_state == SafetyInterlockState.UNKNOWN:
+        elif interlock.current_state == CommandPreconditionState.UNKNOWN:
             violations.append(f"{component} safety interlock state is UNKNOWN")
 
         # Check specific conditions (this would integrate with vehicle state monitoring)
@@ -686,7 +690,9 @@ class FireflyEncoder:
         try:
             # Validate safety interlocks if enabled
             if validate_safety and self.settings.enable_state_interlocks:
-                is_safe, violations = self.decoder.validate_safety_interlocks(component, operation)
+                is_safe, violations = self.decoder.validate_command_preconditions(
+                    component, operation
+                )
                 if not is_safe:
                     logger.warning(f"Command blocked due to safety violations: {violations}")
                     return []

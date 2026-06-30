@@ -15,11 +15,11 @@ from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any, Dict, List, Optional, Tuple
 
-from backend.core.safety_interfaces import (
-    SafeStateAction,
-    SafetyAware,
-    SafetyClassification,
-    SafetyStatus,
+from backend.core.guardrail_interfaces import (
+    CommandHaltAction,
+    GuardrailParticipant,
+    GuardrailStatus,
+    GuardrailTier,
 )
 
 logger = logging.getLogger(__name__)
@@ -242,7 +242,7 @@ class FilterRule:
         return False, []
 
 
-class MessageFilter(SafetyAware):
+class MessageFilter(GuardrailParticipant):
     """
     CAN message filtering system.
 
@@ -263,8 +263,8 @@ class MessageFilter(SafetyAware):
         """Initialize message filter."""
         # Initialize as safety-aware service
         super().__init__(
-            safety_classification=SafetyClassification.CRITICAL,
-            safe_state_action=SafeStateAction.DISABLE,
+            guardrail_tier=GuardrailTier.CRITICAL,
+            command_halt_action=CommandHaltAction.DISABLE_COMMANDS,
         )
 
         self.max_rules = max_rules
@@ -336,18 +336,18 @@ class MessageFilter(SafetyAware):
         logger.info("Starting CAN message filter")
         self._is_running = True
         self._sort_rules()
-        self._set_safety_status(SafetyStatus.SAFE)
+        self._set_guardrail_status(GuardrailStatus.SAFE)
 
     async def stop(self) -> None:
         """Stop message filter."""
         logger.info("Stopping CAN message filter")
         self._is_running = False
 
-    async def emergency_stop(self, reason: str) -> None:
+    async def halt_command_emission(self, reason: str) -> None:
         """
         Emergency stop all message filtering operations.
 
-        This method implements the SafetyAware emergency stop interface
+        This method implements the GuardrailParticipant emergency stop interface
         for immediate cessation of filtering activities.
 
         Args:
@@ -356,7 +356,7 @@ class MessageFilter(SafetyAware):
         logger.critical("CAN message filter emergency stop: %s", reason)
 
         # Set emergency stop state
-        self._set_emergency_stop_active(True)
+        self._set_command_halt_active(True)
 
         # Clear all active filtering operations
         self._is_running = False
@@ -370,18 +370,18 @@ class MessageFilter(SafetyAware):
 
         logger.critical("CAN message filter emergency stop completed")
 
-    async def get_safety_status(self) -> SafetyStatus:
+    async def get_guardrail_status(self) -> GuardrailStatus:
         """Get current safety status of the message filter."""
-        if self._emergency_stop_active:
-            return SafetyStatus.EMERGENCY_STOP
+        if self._command_halt_active:
+            return GuardrailStatus.COMMAND_HALTED
         if not self._is_running:
-            return SafetyStatus.SAFE
+            return GuardrailStatus.SAFE
         if len(self.rules) > self.max_rules * 0.9:
             # Near capacity - could affect performance
-            return SafetyStatus.DEGRADED
-        return SafetyStatus.SAFE
+            return GuardrailStatus.DEGRADED
+        return GuardrailStatus.SAFE
 
-    async def validate_safety_interlock(self, operation: str) -> bool:
+    async def validate_command_precondition(self, operation: str) -> bool:
         """
         Validate if filter operation is safe to perform.
 
@@ -392,8 +392,8 @@ class MessageFilter(SafetyAware):
             True if operation is safe to perform
         """
         # Check basic safety status
-        safety_status = await self.get_safety_status()
-        if safety_status == SafetyStatus.EMERGENCY_STOP:
+        guardrail_status = await self.get_guardrail_status()
+        if guardrail_status == GuardrailStatus.COMMAND_HALTED:
             logger.warning("Filter operation %s blocked: emergency stop active", operation)
             return False
 
@@ -420,7 +420,7 @@ class MessageFilter(SafetyAware):
     async def add_rule(self, rule: FilterRule) -> bool:
         """Add a filter rule."""
         # Check safety interlock
-        if not await self.validate_safety_interlock("add_rule"):
+        if not await self.validate_command_precondition("add_rule"):
             return False
 
         if len(self.rules) >= self.max_rules:
@@ -519,7 +519,7 @@ class MessageFilter(SafetyAware):
             True if message should be passed, False if blocked
         """
         # Check safety interlock
-        if not await self.validate_safety_interlock("process_message"):
+        if not await self.validate_command_precondition("process_message"):
             return True  # Pass message if safety check fails (fail-safe)
 
         start_time = time.time()

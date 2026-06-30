@@ -71,7 +71,7 @@
 ### 🟡 HIGH: Potential Safety Risk
 
 **Indicators**:
-- SafetyStatus = DEGRADED
+- GuardrailStatus = DEGRADED
 - Service health check failures
 - Performance degradation >50ms
 - Queue overflow warnings
@@ -83,7 +83,7 @@
    ```
 
 2. **MONITOR** Prometheus metrics:
-   - `coachiq_can_safety_status`
+   - `coachiq_can_guardrail_status`
    - `coachiq_can_message_latency_seconds`
    - `coachiq_can_error_frames_total`
 
@@ -126,7 +126,7 @@ curl -X POST https://api.production.com/api/can/emergency-stop \
 ```python
 # Direct facade access (for internal services)
 can_facade = get_can_facade()  # Via ServiceRegistry
-await can_facade.emergency_stop("Code-triggered emergency")
+await can_facade.halt_command_emission("Code-triggered emergency")
 ```
 
 #### Via Hardware (Physical)

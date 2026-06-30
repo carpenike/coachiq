@@ -116,11 +116,11 @@ async def get_filter_status(
         raise HTTPException(status_code=404, detail="Message filter service not available")
 
     # Get current safety status
-    safety_status = await filter_service.get_safety_status()
+    guardrail_status = await filter_service.get_guardrail_status()
 
     return {
         "enabled": filter_service._is_running,
-        "healthy": safety_status.value != "emergency_stop",
+        "healthy": guardrail_status.value != "halt_command_emission",
         "total_rules": len(filter_service.rules),
         "active_rules": len([r for r in filter_service.rules.values() if r.enabled]),
         "statistics": filter_service.get_statistics(),

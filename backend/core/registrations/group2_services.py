@@ -16,7 +16,7 @@ Behavior is bit-identical to the original.
 import logging
 
 from backend.core.config import get_settings
-from backend.core.safety_registry import SafetyServiceRegistry
+from backend.core.guardrail_coordinator import GuardrailCoordinator
 from backend.core.service_dependency_resolver import DependencyType, ServiceDependency
 
 # Auth services (token, session, MFA, lockout) -- split into per-file modules
@@ -47,7 +47,7 @@ def _create_database_engine() -> DatabaseEngine:
     return DatabaseEngine(settings)
 
 
-def register(service_registry: SafetyServiceRegistry) -> None:
+def register(service_registry: GuardrailCoordinator) -> None:
     """
     Register all Group 2 services with the ServiceRegistry (Phase 3).
 

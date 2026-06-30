@@ -1,8 +1,8 @@
 """
-Integration tests for PIN-based safety API endpoints.
+Integration tests for PIN-based guardrails API endpoints.
 
 Tests cover the complete request/response cycle for:
-- PIN emergency stop endpoints
+- PIN command halt endpoints
 - Interlock override endpoints
 - Maintenance mode endpoints
 - Diagnostic mode endpoints
@@ -16,35 +16,38 @@ import pytest
 from fastapi import FastAPI, status
 from fastapi.testclient import TestClient
 
-from backend.api.routers.safety import router
+from backend.api.routers.guardrails import router
 from backend.core.dependencies import (
     get_authenticated_admin,
     get_authenticated_user,
-    get_safety_service,
+    get_command_guardrail_service,
 )
-from backend.services.safety.safety_service import SafetyInterlock, SystemOperationalMode
+from backend.services.guardrails.command_guardrail_service import (
+    CommandPrecondition,
+    SystemOperationalMode,
+)
 
 
 @pytest.fixture
-def mock_safety_service():
-    """Mock safety service for testing."""
+def mock_command_guardrail_service():
+    """Mock guardrails service for testing."""
     service = MagicMock()
-    service._emergency_stop_active = False
+    service._command_halt_active = False
     service._operational_mode = SystemOperationalMode.NORMAL
     service._interlocks = {}
     service._active_overrides = {}
-    service.get_safety_status = MagicMock(
+    service.get_guardrail_status = MagicMock(
         return_value={
-            "in_safe_state": False,
-            "emergency_stop_active": False,
+            "in_command_halt_state": False,
+            "command_halt_active": False,
             "operational_mode": "normal",
             "mode_session": None,
             "active_overrides": {},
             "interlocks": {},
             "system_state": {},
             "audit_log_entries": 0,
-            "emergency_stop_reason": None,
-            "active_safety_actions": [],
+            "halt_command_emission_reason": None,
+            "active_guardrail_actions": [],
             "watchdog_timeout": 15.0,
             "time_since_last_kick": 1.0,
         }
@@ -53,7 +56,7 @@ def mock_safety_service():
 
 
 @pytest.fixture
-def client(mock_safety_service):
+def client(mock_command_guardrail_service):
     """Create test client with FastAPI dependency overrides.
 
     NOTE: We override the dependency callables at the FastAPI app level rather
@@ -75,7 +78,7 @@ def client(mock_safety_service):
         "email": "user@example.com",
     }
 
-    app.dependency_overrides[get_safety_service] = lambda: mock_safety_service
+    app.dependency_overrides[get_command_guardrail_service] = lambda: mock_command_guardrail_service
     app.dependency_overrides[get_authenticated_admin] = lambda: admin_user
     app.dependency_overrides[get_authenticated_user] = lambda: regular_user
 
@@ -84,62 +87,64 @@ def client(mock_safety_service):
     app.dependency_overrides.clear()
 
 
-class TestPINEmergencyStopEndpoints:
-    """Test PIN-based emergency stop endpoints."""
+class TestPINCommandHaltEndpoints:
+    """Test PIN-based command halt endpoints."""
 
-    def test_pin_emergency_stop_success(self, client, mock_safety_service):
-        """Test successful PIN emergency stop."""
+    def test_pin_halt_command_emission_success(self, client, mock_command_guardrail_service):
+        """Test successful PIN command halt."""
         # Mock the service method
-        mock_safety_service.emergency_stop_with_pin = AsyncMock(return_value=True)
+        mock_command_guardrail_service.halt_command_emission_with_pin = AsyncMock(return_value=True)
 
         # Make request
         response = client.post(
-            "/api/safety/pin/emergency-stop",
+            "/api/guardrails/pin/command-halt",
             json={
                 "pin_session_id": "test-session-123",
-                "reason": "Test emergency stop",
+                "reason": "Test command halt",
             },
         )
 
         assert response.status_code == status.HTTP_200_OK
         data = response.json()
-        assert data["status"] == "emergency_stop_activated"
-        assert data["reason"] == "Test emergency stop"
+        assert data["status"] == "halt_command_emission_activated"
+        assert data["reason"] == "Test command halt"
         assert data["triggered_by"] == "admin"
         assert data["authorization_method"] == "pin_session"
 
         # Verify service method was called
-        mock_safety_service.emergency_stop_with_pin.assert_called_once_with(
+        mock_command_guardrail_service.halt_command_emission_with_pin.assert_called_once_with(
             pin_session_id="test-session-123",
-            reason="Test emergency stop",
+            reason="Test command halt",
             triggered_by="admin",
         )
 
-    def test_pin_emergency_stop_unauthorized(self, client, mock_safety_service):
-        """Test emergency stop with invalid PIN."""
+    def test_pin_halt_command_emission_unauthorized(self, client, mock_command_guardrail_service):
+        """Test command halt with invalid PIN."""
         # Mock failed authorization
-        mock_safety_service.emergency_stop_with_pin = AsyncMock(return_value=False)
+        mock_command_guardrail_service.halt_command_emission_with_pin = AsyncMock(
+            return_value=False
+        )
 
         # Make request
         response = client.post(
-            "/api/safety/pin/emergency-stop",
+            "/api/guardrails/pin/command-halt",
             json={
                 "pin_session_id": "invalid-session",
-                "reason": "Test emergency stop",
+                "reason": "Test command halt",
             },
         )
 
         assert response.status_code == status.HTTP_401_UNAUTHORIZED
-        assert response.json()["detail"] == "PIN authorization failed for emergency stop"
+        assert response.json()["detail"] == "PIN authorization failed for command halt"
 
-    def test_pin_emergency_reset_success(self, client, mock_safety_service):
-        """Test successful PIN emergency stop reset."""
+    def test_pin_clear_command_halt_success(self, client, mock_command_guardrail_service):
+        """Test successful PIN command halt clear."""
         # Mock the service method
-        mock_safety_service.reset_emergency_stop_with_pin = AsyncMock(return_value=True)
+        mock_command_guardrail_service.clear_command_halt_with_pin = AsyncMock(return_value=True)
 
         # Make request
         response = client.post(
-            "/api/safety/pin/emergency-stop/reset",
+            "/api/guardrails/pin/command-halt/clear",
             json={
                 "pin_session_id": "test-session-123",
             },
@@ -148,24 +153,24 @@ class TestPINEmergencyStopEndpoints:
         assert response.status_code == status.HTTP_200_OK
         data = response.json()
         assert data["status"] == "success"
-        assert data["reset_by"] == "admin"
+        assert data["cleared_by"] == "admin"
         assert data["authorization_method"] == "pin_session"
 
 
 class TestInterlockOverrideEndpoints:
     """Test PIN-based interlock override endpoints."""
 
-    def test_pin_override_interlock_success(self, client, mock_safety_service):
+    def test_pin_override_interlock_success(self, client, mock_command_guardrail_service):
         """Test successful interlock override with PIN."""
         # Mock the service method
-        mock_safety_service.override_interlock_with_pin = AsyncMock(return_value=True)
+        mock_command_guardrail_service.override_interlock_with_pin = AsyncMock(return_value=True)
 
         # Make request
         response = client.post(
-            "/api/safety/pin/interlocks/override",
+            "/api/guardrails/pin/interlocks/override",
             json={
                 "pin_session_id": "test-session-123",
-                "interlock_name": "slide_room_safety",
+                "interlock_name": "slide_room_precondition",
                 "reason": "Maintenance required",
                 "duration_minutes": 60,
             },
@@ -174,14 +179,14 @@ class TestInterlockOverrideEndpoints:
         assert response.status_code == status.HTTP_200_OK
         data = response.json()
         assert data["status"] == "success"
-        assert data["interlock_name"] == "slide_room_safety"
+        assert data["interlock_name"] == "slide_room_precondition"
         assert data["overridden_by"] == "admin"
         assert data["duration_minutes"] == 60
 
         # Verify service method was called
-        mock_safety_service.override_interlock_with_pin.assert_called_once_with(
+        mock_command_guardrail_service.override_interlock_with_pin.assert_called_once_with(
             pin_session_id="test-session-123",
-            interlock_name="slide_room_safety",
+            interlock_name="slide_room_precondition",
             reason="Maintenance required",
             duration_minutes=60,
             overridden_by="admin",
@@ -191,7 +196,7 @@ class TestInterlockOverrideEndpoints:
         """Test interlock override with invalid duration."""
         # Make request with duration too long
         response = client.post(
-            "/api/safety/pin/interlocks/override",
+            "/api/guardrails/pin/interlocks/override",
             json={
                 "pin_session_id": "test-session-123",
                 "interlock_name": "test_interlock",
@@ -202,29 +207,29 @@ class TestInterlockOverrideEndpoints:
 
         assert response.status_code == status.HTTP_422_UNPROCESSABLE_ENTITY
 
-    def test_clear_interlock_override_success(self, client, mock_safety_service):
+    def test_clear_interlock_override_success(self, client, mock_command_guardrail_service):
         """Test clearing an interlock override."""
         # Mock the service method
-        mock_safety_service.clear_interlock_override = MagicMock(return_value=True)
+        mock_command_guardrail_service.clear_interlock_override = MagicMock(return_value=True)
 
         # Make request
         response = client.post(
-            "/api/safety/interlocks/clear-override",
+            "/api/guardrails/interlocks/clear-override",
             json={
-                "interlock_name": "slide_room_safety",
+                "interlock_name": "slide_room_precondition",
             },
         )
 
         assert response.status_code == status.HTTP_200_OK
         data = response.json()
         assert data["status"] == "success"
-        assert data["interlock_name"] == "slide_room_safety"
+        assert data["interlock_name"] == "slide_room_precondition"
         assert data["cleared_by"] == "admin"
 
-    def test_get_active_overrides(self, client, mock_safety_service):
+    def test_get_active_overrides(self, client, mock_command_guardrail_service):
         """Test getting active interlock overrides."""
         # Set up mock data
-        test_interlock = SafetyInterlock(
+        test_interlock = CommandPrecondition(
             name="test_interlock",
             feature_name="test_feature",
             interlock_conditions=["vehicle_not_moving"],
@@ -234,8 +239,8 @@ class TestInterlockOverrideEndpoints:
         test_interlock._override_reason = "Testing"
         test_interlock._override_session_id = "session-123"
 
-        mock_safety_service._interlocks = {"test_interlock": test_interlock}
-        mock_safety_service.get_safety_status.return_value["active_overrides"] = {
+        mock_command_guardrail_service._interlocks = {"test_interlock": test_interlock}
+        mock_command_guardrail_service.get_guardrail_status.return_value["active_overrides"] = {
             "test_interlock": datetime.now(UTC).isoformat()
         }
 
@@ -251,7 +256,7 @@ class TestInterlockOverrideEndpoints:
         )
 
         # Make request
-        response = client.get("/api/safety/interlocks/overrides")
+        response = client.get("/api/guardrails/interlocks/overrides")
 
         assert response.status_code == status.HTTP_200_OK
         data = response.json()
@@ -264,14 +269,16 @@ class TestInterlockOverrideEndpoints:
 class TestMaintenanceModeEndpoints:
     """Test PIN-based maintenance mode endpoints."""
 
-    def test_enter_maintenance_mode_success(self, client, mock_safety_service):
+    def test_enter_maintenance_mode_success(self, client, mock_command_guardrail_service):
         """Test successful maintenance mode entry."""
         # Mock the service method
-        mock_safety_service.enter_maintenance_mode_with_pin = AsyncMock(return_value=True)
+        mock_command_guardrail_service.enter_maintenance_mode_with_pin = AsyncMock(
+            return_value=True
+        )
 
         # Make request
         response = client.post(
-            "/api/safety/pin/maintenance-mode/enter",
+            "/api/guardrails/pin/maintenance-mode/enter",
             json={
                 "pin_session_id": "test-session-123",
                 "reason": "Scheduled maintenance",
@@ -286,14 +293,14 @@ class TestMaintenanceModeEndpoints:
         assert data["entered_by"] == "admin"
         assert data["duration_minutes"] == 120
 
-    def test_exit_maintenance_mode_success(self, client, mock_safety_service):
+    def test_exit_maintenance_mode_success(self, client, mock_command_guardrail_service):
         """Test successful maintenance mode exit."""
         # Mock the service method
-        mock_safety_service.exit_maintenance_mode_with_pin = AsyncMock(return_value=True)
+        mock_command_guardrail_service.exit_maintenance_mode_with_pin = AsyncMock(return_value=True)
 
         # Make request
         response = client.post(
-            "/api/safety/pin/maintenance-mode/exit",
+            "/api/guardrails/pin/maintenance-mode/exit",
             json={
                 "pin_session_id": "test-session-123",
             },
@@ -309,7 +316,7 @@ class TestMaintenanceModeEndpoints:
         """Test maintenance mode with invalid duration."""
         # Too short
         response = client.post(
-            "/api/safety/pin/maintenance-mode/enter",
+            "/api/guardrails/pin/maintenance-mode/enter",
             json={
                 "pin_session_id": "test-session-123",
                 "reason": "Test",
@@ -323,14 +330,14 @@ class TestMaintenanceModeEndpoints:
 class TestDiagnosticModeEndpoints:
     """Test PIN-based diagnostic mode endpoints."""
 
-    def test_enter_diagnostic_mode_success(self, client, mock_safety_service):
+    def test_enter_diagnostic_mode_success(self, client, mock_command_guardrail_service):
         """Test successful diagnostic mode entry."""
         # Mock the service method
-        mock_safety_service.enter_diagnostic_mode_with_pin = AsyncMock(return_value=True)
+        mock_command_guardrail_service.enter_diagnostic_mode_with_pin = AsyncMock(return_value=True)
 
         # Make request
         response = client.post(
-            "/api/safety/pin/diagnostic-mode/enter",
+            "/api/guardrails/pin/diagnostic-mode/enter",
             json={
                 "pin_session_id": "test-session-123",
                 "reason": "System diagnostics",
@@ -342,12 +349,12 @@ class TestDiagnosticModeEndpoints:
         data = response.json()
         assert data["status"] == "success"
         assert data["operational_mode"] == "diagnostic"
-        assert data["warning"] == "Safety constraints may be modified during diagnostics"
+        assert data["warning"] == "Guardrail constraints may be modified during diagnostics"
 
-    def test_get_operational_mode(self, client, mock_safety_service):
+    def test_get_operational_mode(self, client, mock_command_guardrail_service):
         """Test getting current operational mode."""
         # Set up maintenance mode active
-        mock_safety_service.get_safety_status.return_value.update(
+        mock_command_guardrail_service.get_guardrail_status.return_value.update(
             {
                 "operational_mode": "maintenance",
                 "mode_session": {
@@ -361,7 +368,7 @@ class TestDiagnosticModeEndpoints:
         )
 
         # Make request
-        response = client.get("/api/safety/operational-mode")
+        response = client.get("/api/guardrails/operational-mode")
 
         assert response.status_code == status.HTTP_200_OK
         data = response.json()
@@ -371,10 +378,10 @@ class TestDiagnosticModeEndpoints:
         assert data["active_overrides_count"] == 1
 
 
-class TestSafetyEndpointsAuthentication:
-    """Test authentication requirements for safety endpoints."""
+class TestGuardrailEndpointsAuthentication:
+    """Test authentication requirements for guardrails endpoints."""
 
-    def test_unauthenticated_access_denied(self, mock_safety_service):
+    def test_unauthenticated_access_denied(self, mock_command_guardrail_service):
         """Test that unauthenticated access is denied."""
 
         def _unauthorized():
@@ -382,14 +389,16 @@ class TestSafetyEndpointsAuthentication:
 
         app = FastAPI()
         app.include_router(router)
-        app.dependency_overrides[get_safety_service] = lambda: mock_safety_service
+        app.dependency_overrides[get_command_guardrail_service] = (
+            lambda: mock_command_guardrail_service
+        )
         app.dependency_overrides[get_authenticated_admin] = _unauthorized
         app.dependency_overrides[get_authenticated_user] = _unauthorized
 
         client = TestClient(app, raise_server_exceptions=False)
 
         response = client.post(
-            "/api/safety/pin/emergency-stop",
+            "/api/guardrails/pin/command-halt",
             json={
                 "pin_session_id": "test-session-123",
                 "reason": "Test",
@@ -400,7 +409,7 @@ class TestSafetyEndpointsAuthentication:
 
         assert response.status_code == status.HTTP_500_INTERNAL_SERVER_ERROR
 
-    def test_non_admin_access_denied(self, mock_safety_service):
+    def test_non_admin_access_denied(self, mock_command_guardrail_service):
         """Test that non-admin users cannot access admin endpoints."""
 
         def _not_admin():
@@ -408,7 +417,9 @@ class TestSafetyEndpointsAuthentication:
 
         app = FastAPI()
         app.include_router(router)
-        app.dependency_overrides[get_safety_service] = lambda: mock_safety_service
+        app.dependency_overrides[get_command_guardrail_service] = (
+            lambda: mock_command_guardrail_service
+        )
         app.dependency_overrides[get_authenticated_admin] = _not_admin
         app.dependency_overrides[get_authenticated_user] = lambda: {
             "user_id": "user-123",
@@ -418,7 +429,7 @@ class TestSafetyEndpointsAuthentication:
         client = TestClient(app, raise_server_exceptions=False)
 
         response = client.post(
-            "/api/safety/pin/maintenance-mode/enter",
+            "/api/guardrails/pin/maintenance-mode/enter",
             json={
                 "pin_session_id": "test-session-123",
                 "reason": "Test",
@@ -432,18 +443,18 @@ class TestSafetyEndpointsAuthentication:
 
 
 class TestErrorHandling:
-    """Test error handling in safety endpoints."""
+    """Test error handling in guardrails endpoints."""
 
-    def test_service_error_handling(self, client, mock_safety_service):
+    def test_service_error_handling(self, client, mock_command_guardrail_service):
         """Test handling of service errors."""
         # Mock service error
-        mock_safety_service.emergency_stop_with_pin = AsyncMock(
+        mock_command_guardrail_service.halt_command_emission_with_pin = AsyncMock(
             side_effect=Exception("Database connection failed")
         )
 
         # Make request
         response = client.post(
-            "/api/safety/pin/emergency-stop",
+            "/api/guardrails/pin/command-halt",
             json={
                 "pin_session_id": "test-session-123",
                 "reason": "Test",
@@ -457,7 +468,7 @@ class TestErrorHandling:
         """Test handling of invalid request format."""
         # Missing required field
         response = client.post(
-            "/api/safety/pin/emergency-stop",
+            "/api/guardrails/pin/command-halt",
             json={
                 "reason": "Test",
                 # Missing pin_session_id
@@ -468,7 +479,7 @@ class TestErrorHandling:
 
         # Invalid field type
         response = client.post(
-            "/api/safety/pin/interlocks/override",
+            "/api/guardrails/pin/interlocks/override",
             json={
                 "pin_session_id": "test-session-123",
                 "interlock_name": "test",

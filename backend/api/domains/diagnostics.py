@@ -132,11 +132,11 @@ def _can_health_score(can_facade: Any | None) -> tuple[float | None, bool]:
     if can_facade is None or not hasattr(can_facade, "get_health_status"):
         return None, True
     status = can_facade.get_health_status()
-    if status.get("emergency_stop_active"):
+    if status.get("command_halt_active"):
         return 20.0, True
     if not status.get("healthy", False):
         return 40.0, True
-    if str(status.get("safety_status", "")).lower() == "degraded":
+    if str(status.get("guardrail_status", "")).lower() == "degraded":
         return 75.0, True
     return 100.0, False
 

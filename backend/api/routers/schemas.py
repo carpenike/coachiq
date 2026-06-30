@@ -202,7 +202,7 @@ def _generate_schema_example(schema_name: str, schema: dict[str, Any]) -> dict[s
             "capabilities": ["on_off", "dimming"],
             "suggested_area": "Living Room",
             "groups": ["interior_lights"],
-            "safety_status": "operational",
+            "guardrail_status": "operational",
         },
         "ControlCommand": {
             "command": "set",

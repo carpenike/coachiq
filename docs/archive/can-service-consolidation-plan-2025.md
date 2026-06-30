@@ -16,7 +16,7 @@ This plan consolidates the fragmented CAN service architecture into a unified, s
 
 ### Problems to Solve
 1. **Dual CAN Services**: `CANService` and `CANBusService` with overlapping responsibilities
-2. **Missing Safety Implementation**: Core services lack `SafetyAware` interface
+2. **Missing Safety Implementation**: Core services lack `GuardrailParticipant` interface
 3. **Inconsistent Dependencies**: Mix of ServiceRegistry, direct imports, and app_state
 4. **Incorrect Safety Classifications**: Critical services marked as `OPERATIONAL`
 5. **No Emergency Stop Coordination**: Fragmented safety response
@@ -76,14 +76,14 @@ This plan consolidates the fragmented CAN service architecture into a unified, s
 
 ```python
 from typing import Any, Optional
-from backend.core.safety_interfaces import SafetyAware, SafetyClassification, SafetyStatus
+from backend.core.guardrail_interfaces import GuardrailParticipant, GuardrailTier, GuardrailStatus
 from backend.core.health_monitoring import HealthMonitor, WatchdogTimer
 import asyncio
 import logging
 
 logger = logging.getLogger(__name__)
 
-class CANFacade(SafetyAware):
+class CANFacade(GuardrailParticipant):
     """
     Unified facade for all CAN operations.
 
@@ -104,8 +104,8 @@ class CANFacade(SafetyAware):
         performance_monitor: Any
     ):
         super().__init__(
-            safety_classification=SafetyClassification.SAFETY_CRITICAL,
-            safe_state_action=SafeStateAction.DISABLE
+            guardrail_tier=GuardrailTier.SAFETY_CRITICAL,
+            command_halt_action=CommandHaltAction.DISABLE
         )
 
         # Core services
@@ -153,17 +153,17 @@ class CANFacade(SafetyAware):
         await self._recorder.stop()
         await self._bus_service.stop()
 
-    async def emergency_stop(self, reason: str) -> None:
+    async def halt_command_emission(self, reason: str) -> None:
         """Execute coordinated emergency stop across all services."""
         logger.critical(f"CANFacade EMERGENCY STOP: {reason}")
-        self._set_emergency_stop_active(True)
+        self._set_command_halt_active(True)
 
         # Stop all safety-critical services in parallel
         stop_tasks = [
-            self._bus_service.emergency_stop(reason),
-            self._injector.emergency_stop(reason),
-            self._filter.emergency_stop(reason),
-            self._recorder.emergency_stop(reason),
+            self._bus_service.halt_command_emission(reason),
+            self._injector.halt_command_emission(reason),
+            self._filter.halt_command_emission(reason),
+            self._recorder.halt_command_emission(reason),
             self._analyzer.stop(),  # Operational services just stop
             self._anomaly_detector.stop()
         ]
@@ -180,33 +180,33 @@ class CANFacade(SafetyAware):
     # ... Additional methods for API operations
 ```
 
-#### 1.2 Add SafetyAware to CANBusService
+#### 1.2 Add GuardrailParticipant to CANBusService
 **File**: `backend/services/can_bus_service.py`
 
 Add imports and modify class definition:
 ```python
-from backend.core.safety_interfaces import (
-    SafeStateAction,
-    SafetyAware,
-    SafetyClassification,
-    SafetyStatus,
+from backend.core.guardrail_interfaces import (
+    CommandHaltAction,
+    GuardrailParticipant,
+    GuardrailTier,
+    GuardrailStatus,
 )
 
-class CANBusService(SafetyAware):  # Add inheritance
+class CANBusService(GuardrailParticipant):  # Add inheritance
     def __init__(self, ...):
         super().__init__(
-            safety_classification=SafetyClassification.SAFETY_CRITICAL,
-            safe_state_action=SafeStateAction.DISABLE,
+            guardrail_tier=GuardrailTier.SAFETY_CRITICAL,
+            command_halt_action=CommandHaltAction.DISABLE,
         )
         # ... rest of existing __init__
 ```
 
 Add safety methods:
 ```python
-async def emergency_stop(self, reason: str) -> None:
+async def halt_command_emission(self, reason: str) -> None:
     """Emergency stop implementation."""
     logger.critical(f"CANBusService emergency stop: {reason}")
-    self._set_emergency_stop_active(True)
+    self._set_command_halt_active(True)
     self._running = False
 
     # Stop all listeners and tasks
@@ -221,10 +221,10 @@ async def emergency_stop(self, reason: str) -> None:
     if self.anomaly_detector:
         await self.anomaly_detector.stop()
 
-def get_safety_status(self) -> SafetyStatus:
+def get_guardrail_status(self) -> GuardrailStatus:
     """Get current safety status."""
-    return SafetyStatus(
-        is_safe=self._running and not self._emergency_stop_active,
+    return GuardrailStatus(
+        is_safe=self._running and not self._command_halt_active,
         component="CANBusService",
         details={"listeners_active": len(self._listeners)}
     )
@@ -237,17 +237,17 @@ Update the following services to use correct safety classifications:
 **`backend/integrations/can/message_injector.py`** - Line 147:
 ```python
 # Change from:
-safety_classification=SafetyClassification.OPERATIONAL,
+guardrail_tier=GuardrailTier.OPERATIONAL,
 # To:
-safety_classification=SafetyClassification.SAFETY_CRITICAL,
+guardrail_tier=GuardrailTier.SAFETY_CRITICAL,
 ```
 
 **`backend/integrations/can/message_filter.py`** - Line 266:
 ```python
 # Change from:
-safety_classification=SafetyClassification.OPERATIONAL,
+guardrail_tier=GuardrailTier.OPERATIONAL,
 # To:
-safety_classification=SafetyClassification.SAFETY_CRITICAL,
+guardrail_tier=GuardrailTier.SAFETY_CRITICAL,
 ```
 
 #### 1.4 Update ServiceRegistry Registration
@@ -257,7 +257,7 @@ safety_classification=SafetyClassification.SAFETY_CRITICAL,
 Add CANFacade registration:
 ```python
 # After existing CAN service registrations, add:
-service_registry.register_safety_service(
+service_registry.register_guardrail_service(
     name="can_facade",
     init_func=lambda bus_service, injector, filter, recorder, analyzer,
                      anomaly_detector, interface_service, performance_monitor: CANFacade(
@@ -270,7 +270,7 @@ service_registry.register_safety_service(
         interface_service=interface_service,
         performance_monitor=performance_monitor
     ),
-    safety_classification=SafetyClassification.SAFETY_CRITICAL,
+    guardrail_tier=GuardrailTier.SAFETY_CRITICAL,
     dependencies=[
         ServiceDependency("can_bus_service", DependencyType.REQUIRED),
         ServiceDependency("can_message_injector", DependencyType.REQUIRED),
@@ -536,7 +536,7 @@ The CANFacade backend successfully maintains full compatibility with the existin
 import pytest
 from unittest.mock import AsyncMock, Mock
 from backend.services.can.can_facade import CANFacade
-from backend.services.feature_models import SafetyClassification
+from backend.services.feature_models import GuardrailTier
 
 @pytest.fixture
 def mock_services():
@@ -553,17 +553,17 @@ def mock_services():
     }
 
 @pytest.mark.asyncio
-async def test_emergency_stop_coordination(mock_services):
+async def test_halt_command_emission_coordination(mock_services):
     """Test that emergency stop is propagated to all services."""
     facade = CANFacade(**mock_services)
 
-    await facade.emergency_stop("Test emergency")
+    await facade.halt_command_emission("Test emergency")
 
     # Verify all safety-critical services received emergency stop
-    mock_services['bus_service'].emergency_stop.assert_called_once_with("Test emergency")
-    mock_services['injector'].emergency_stop.assert_called_once_with("Test emergency")
-    mock_services['filter'].emergency_stop.assert_called_once_with("Test emergency")
-    mock_services['recorder'].emergency_stop.assert_called_once_with("Test emergency")
+    mock_services['bus_service'].halt_command_emission.assert_called_once_with("Test emergency")
+    mock_services['injector'].halt_command_emission.assert_called_once_with("Test emergency")
+    mock_services['filter'].halt_command_emission.assert_called_once_with("Test emergency")
+    mock_services['recorder'].halt_command_emission.assert_called_once_with("Test emergency")
 ```
 
 #### 4.2 Integration Tests
@@ -582,7 +582,7 @@ async def test_can_facade_with_registry(service_registry):
     assert facade is not None
 
     # Test emergency stop through registry
-    results = await service_registry.execute_emergency_stop(
+    results = await service_registry.halt_command_emission(
         reason="Integration test",
         triggered_by="test"
     )
@@ -610,8 +610,8 @@ async def get_can_health(
 Update Prometheus metrics:
 ```python
 # Add facade-specific metrics
-can_facade_emergency_stops = Counter(
-    'can_facade_emergency_stops_total',
+can_facade_halt_command_emissions = Counter(
+    'can_facade_halt_command_emissions_total',
     'Total number of emergency stops triggered'
 )
 
@@ -625,7 +625,7 @@ can_facade_health_status = Gauge(
 
 ### Week 1 ✅ COMPLETED
 - [x] Create `can_facade.py` with full implementation ✅ DONE 2024-12-27
-- [x] Add SafetyAware to CANBusService ✅ DONE 2024-12-27
+- [x] Add GuardrailParticipant to CANBusService ✅ DONE 2024-12-27
 - [x] Fix safety classifications in injector and filter ✅ DONE 2024-12-27
 - [x] Update main.py service registrations ✅ DONE 2024-12-27
 - [x] Update dependencies.py ✅ DONE 2024-12-27
@@ -651,7 +651,7 @@ can_facade_health_status = Gauge(
 ## Success Criteria
 
 1. **Single Entry Point**: All CAN operations go through CANFacade
-2. **Safety Compliance**: All safety-critical services implement SafetyAware
+2. **Safety Compliance**: All safety-critical services implement GuardrailParticipant
 3. **Emergency Stop**: Coordinated emergency stop works across all services
 4. **No Legacy Code**: can_service.py deleted, no backward compatibility
 5. **Frontend Integration**: All frontend components use new facade API
@@ -683,16 +683,16 @@ After implementation, conduct:
 
 #### What Was Accomplished
 1. **CANFacade Implementation** (`backend/services/can_facade.py`)
-   - ✅ Full facade pattern implementation with SafetyAware interface
+   - ✅ Full facade pattern implementation with GuardrailParticipant interface
    - ✅ Comprehensive service coordination (8 underlying services)
    - ✅ Emergency stop coordination with parallel execution
    - ✅ Health monitoring with 5-second intervals
    - ✅ **BONUS**: Performance monitoring integration with PerformanceMonitor decorators
 
 2. **Safety Classification Fixes**
-   - ✅ Updated `can_message_injector.py` to `SafetyClassification.CRITICAL`
-   - ✅ Updated `can_message_filter.py` to `SafetyClassification.CRITICAL`
-   - ✅ Added SafetyAware interface to CANBusService
+   - ✅ Updated `can_message_injector.py` to `GuardrailTier.CRITICAL`
+   - ✅ Updated `can_message_filter.py` to `GuardrailTier.CRITICAL`
+   - ✅ Added GuardrailParticipant interface to CANBusService
 
 3. **Service Registry Integration**
    - ✅ Added CANFacade as safety-critical service in `main.py`
@@ -867,7 +867,7 @@ After implementation, conduct:
 
 ### Week 1 ✅ COMPLETED
 - [x] Create `can_facade.py` with full implementation ✅ DONE 2024-12-27
-- [x] Add SafetyAware to CANBusService ✅ DONE 2024-12-27
+- [x] Add GuardrailParticipant to CANBusService ✅ DONE 2024-12-27
 - [x] Fix safety classifications in injector and filter ✅ DONE 2024-12-27
 - [x] Update main.py service registrations ✅ DONE 2024-12-27
 - [x] Update dependencies.py ✅ DONE 2024-12-27
@@ -894,7 +894,7 @@ After implementation, conduct:
 ### Success Criteria Status
 
 1. **Single Entry Point**: ✅ **ACHIEVED** - All CAN operations go through CANFacade
-2. **Safety Compliance**: ✅ **ACHIEVED** - All safety-critical services implement SafetyAware
+2. **Safety Compliance**: ✅ **ACHIEVED** - All safety-critical services implement GuardrailParticipant
 3. **Emergency Stop**: ✅ **IMPLEMENTED** - Coordinated emergency stop architecture in place
 4. **Performance Monitoring**: ✅ **ACHIEVED** - Comprehensive monitoring integrated
 5. **Code Quality**: ✅ **ACHIEVED** - No type errors, clean architecture
@@ -920,11 +920,11 @@ After implementation, conduct:
 
 ## 🔥 Critical Issue Resolution (2024-12-28)
 
-### SafetyClassification Enum Fix - **RESOLVED** ✅
+### GuardrailTier Enum Fix - **RESOLVED** ✅
 
-**Issue**: Application startup failing with `AttributeError: type object 'SafetyClassification' has no attribute 'SAFETY_CRITICAL'`
+**Issue**: Application startup failing with `AttributeError: type object 'GuardrailTier' has no attribute 'SAFETY_CRITICAL'`
 
-**Root Cause**: Multiple files were using incorrect enum value `SafetyClassification.SAFETY_CRITICAL` instead of the correct `SafetyClassification.CRITICAL`.
+**Root Cause**: Multiple files were using incorrect enum value `GuardrailTier.SAFETY_CRITICAL` instead of the correct `GuardrailTier.CRITICAL`.
 
 **Files Fixed**:
 - ✅ `backend/main.py` (3 occurrences)
@@ -932,7 +932,7 @@ After implementation, conduct:
 - ✅ `backend/integrations/can/message_filter.py`
 - ✅ `backend/services/can_bus_service.py`
 
-**Resolution**: Replaced all `SafetyClassification.SAFETY_CRITICAL` with `SafetyClassification.CRITICAL` across the codebase.
+**Resolution**: Replaced all `GuardrailTier.SAFETY_CRITICAL` with `GuardrailTier.CRITICAL` across the codebase.
 
 **Verification**: Application now starts successfully and CANFacade integration verified working.
 
@@ -1094,17 +1094,17 @@ The CANFacade implementation successfully maintained API compatibility while con
 
 **Unit Tests (6 tests)**:
 1. ✅ `test_facade_initialization_success` - Constructor and dependency setup
-2. ✅ `test_emergency_stop_successful_coordination` - Emergency stop coordination across all services
-3. ✅ `test_emergency_stop_handles_service_failure` - Exception handling during emergency stop
-4. ✅ `test_send_message_blocked_during_emergency_stop` - Safety interlock validation
+2. ✅ `test_halt_command_emission_successful_coordination` - Emergency stop coordination across all services
+3. ✅ `test_halt_command_emission_handles_service_failure` - Exception handling during emergency stop
+4. ✅ `test_send_message_blocked_during_halt_command_emission` - Safety interlock validation
 5. ✅ `test_send_message_proceeds_when_safe` - Normal operation validation
-6. ✅ `test_emergency_stop_idempotency` - Multiple emergency stop calls
+6. ✅ `test_halt_command_emission_idempotency` - Multiple emergency stop calls
 
 **Integration Tests (4 tests + 1 skipped)**:
 1. ✅ `test_health_status_reflects_internal_state` - Safety status transitions (SAFE/DEGRADED/UNSAFE/EMERGENCY_STOP)
 2. ✅ `test_health_monitoring_degradation_detection` - Service health monitoring
 3. ⚠️ `test_comprehensive_health_aggregation` - **SKIPPED** due to CANFacade implementation issue
-4. ✅ `test_concurrent_emergency_stop_and_send_message` - Emergency stop state management
+4. ✅ `test_concurrent_halt_command_emission_and_send_message` - Emergency stop state management
 5. ✅ `test_service_registry_integration_pattern` - ServiceRegistry interface compliance
 
 #### Critical Safety Tests Verified
@@ -1112,7 +1112,7 @@ The CANFacade implementation successfully maintained API compatibility while con
 **Emergency Stop Coordination** ✅:
 - Parallel emergency stop execution across 4 safety-critical services
 - Exception handling with continued operation if individual services fail
-- Proper state management (_emergency_stop_active flag)
+- Proper state management (_command_halt_active flag)
 - Prometheus metrics updates during emergency events
 
 **Safety Interlock Mechanisms** ✅:
@@ -1139,7 +1139,7 @@ The CANFacade implementation successfully maintained API compatibility while con
 #### Testing Methodology Lessons
 
 **Mock Strategy Success**:
-- AsyncMock for async service methods (emergency_stop, inject_message)
+- AsyncMock for async service methods (halt_command_emission, inject_message)
 - Mock for sync methods (get_health_status, resolve_logical_interface)
 - Performance monitor decorator mocking with pass-through lambda functions
 - Comprehensive fixture setup for realistic testing scenarios
@@ -1214,8 +1214,8 @@ The CANFacade implementation successfully maintained API compatibility while con
   - `coachiq_can_message_queue_depth` - Queue monitoring
   - `coachiq_can_bus_load_percent` - Bus utilization
   - `coachiq_can_error_frames_total` - Error tracking
-  - `coachiq_can_emergency_stops_total` - Emergency events
-  - `coachiq_can_safety_status` - Real-time safety state
+  - `coachiq_can_halt_command_emissions_total` - Emergency events
+  - `coachiq_can_guardrail_status` - Real-time safety state
   - `coachiq_can_message_latency_seconds` - Performance tracking
 
 **FMEA Safety Analysis** ✅:

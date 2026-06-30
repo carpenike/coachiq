@@ -1576,7 +1576,7 @@ class APIDomainSettings(BaseSettings):
     # Core domain API settings
     enabled: bool = Field(default=False, description="Enable Domain API v1 architecture")
     safety_mode: str = Field(
-        default="strict", description="Safety mode: strict, permissive, emergency_stop"
+        default="strict", description="Safety mode: strict, permissive, halt_command_emission"
     )
 
     # Validation and schema settings
@@ -1608,7 +1608,7 @@ class APIDomainSettings(BaseSettings):
     )
 
     # Emergency and safety controls
-    enable_emergency_stop: bool = Field(
+    enable_halt_command_emission: bool = Field(
         default=True, description="Enable emergency stop capability"
     )
     enable_safety_interlocks: bool = Field(
@@ -1655,7 +1655,7 @@ class APIDomainSettings(BaseSettings):
     @classmethod
     def validate_safety_mode(cls, v):
         """Validate safety mode setting."""
-        valid_modes = {"strict", "permissive", "emergency_stop"}
+        valid_modes = {"strict", "permissive", "halt_command_emission"}
         if isinstance(v, str) and v.lower() not in valid_modes:
             msg = f"Invalid safety mode: {v}. Must be one of {valid_modes}"
             raise ValueError(msg)

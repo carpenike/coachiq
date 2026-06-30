@@ -1,13 +1,8 @@
-"""
-Safety API endpoints for RV-C vehicle control systems.
+"""Guardrail API endpoints for command-emission control.
 
-Provides access to safety monitoring, interlocks, emergency stop,
-and audit logging functionality.
-
-Note: "safety-critical" / "safety" naming in this file is historical and
-refers to **API guardrail / command-validation** behavior, NOT vehicle safety.
-The OEM Firefly MIRA panel owns the actual vehicle safety case. See
-`docs/adr/ADR-0004-coachiq-is-not-the-safety-system.md`.
+Provides access to guardrail monitoring, command preconditions, command halt,
+and audit logging. Firefly owns physical interlocks; these endpoints control
+CoachIQ's API command-emission behavior.
 """
 
 import logging
@@ -19,12 +14,12 @@ from pydantic import BaseModel, Field
 from backend.core.dependencies import (
     get_authenticated_admin,
     get_authenticated_user,
-    get_safety_service,
+    get_command_guardrail_service,
 )
 
 logger = logging.getLogger(__name__)
 
-router = APIRouter(prefix="/api/safety", tags=["safety"])
+router = APIRouter(prefix="/api/guardrails", tags=["guardrails"])
 
 
 class SystemStateUpdate(BaseModel):
@@ -38,53 +33,52 @@ class SystemStateUpdate(BaseModel):
     all_slides_retracted: bool | None = Field(None, description="All slides retracted status")
 
 
-class EmergencyStopRequest(BaseModel):
-    """Emergency stop request model."""
+class CommandHaltRequest(BaseModel):
+    """Command halt request model."""
 
-    reason: str = Field(..., description="Reason for emergency stop")
+    reason: str = Field(..., description="Reason for command halt")
 
 
-class EmergencyStopResetRequest(BaseModel):
-    """Emergency stop reset request model."""
+class ClearCommandHaltRequest(BaseModel):
+    """Command halt clear request model."""
 
-    authorization_code: str = Field("", description="Legacy authorization code for reset")
+    authorization_code: str = Field("", description="Legacy authorization code for clear")
     pin_session_id: str = Field("", description="PIN session ID for enhanced authorization")
 
 
 @router.get("/status")
-async def get_safety_status(
-    safety_service: Annotated[Any, Depends(get_safety_service)],
+async def get_guardrail_status(
+    command_guardrail_service: Annotated[Any, Depends(get_command_guardrail_service)],
     user: Annotated[dict, Depends(get_authenticated_user)],  # noqa: ARG001
 ) -> dict[str, Any]:
     """
-    Get comprehensive safety system status.
+    Get comprehensive guardrail status.
 
-    Returns current state of all safety systems including:
-    - Safe state status
-    - Emergency stop status
+    Returns current state of guardrail checks including:
+    - Command halt state
     - Watchdog timer status
-    - Safety interlock states
-    - System state information
+    - Command preconditions
+    - Operator-supplied state information
     - Audit log entry count
     """
     try:
-        return safety_service.get_safety_status()
+        return command_guardrail_service.get_guardrail_status()
     except Exception as e:
-        logger.error("Error getting safety status: %s", e)
+        logger.error("Error getting guardrails status: %s", e)
         raise HTTPException(status_code=500, detail=str(e)) from e
 
 
 @router.post("/update-state")
 async def update_system_state(
     state_update: SystemStateUpdate,
-    safety_service: Annotated[Any, Depends(get_safety_service)],
+    command_guardrail_service: Annotated[Any, Depends(get_command_guardrail_service)],
     user: Annotated[dict, Depends(get_authenticated_user)],  # noqa: ARG001
 ) -> dict[str, Any]:
     """
-    Update system state information used by safety interlocks.
+    Update operator-supplied state information used by command preconditions.
 
-    This endpoint allows updating vehicle state information that
-    safety interlocks use to determine if operations are safe.
+    This endpoint accepts operator-supplied context; it is not the vehicle
+    safety source of truth.
     """
     try:
         # Convert model to dict and filter out None values
@@ -93,10 +87,10 @@ async def update_system_state(
         if not updates:
             raise HTTPException(status_code=400, detail="No state updates provided")
 
-        safety_service.update_system_state(updates)
+        command_guardrail_service.update_system_state(updates)
 
         # Check interlocks after state update
-        interlock_results = await safety_service.check_safety_interlocks()
+        interlock_results = await command_guardrail_service.check_command_preconditions()
 
         return {
             "status": "success",
@@ -113,20 +107,20 @@ async def update_system_state(
 
 @router.get("/interlocks")
 async def get_interlock_status(
-    safety_service: Annotated[Any, Depends(get_safety_service)],
+    command_guardrail_service: Annotated[Any, Depends(get_command_guardrail_service)],
     user: Annotated[dict, Depends(get_authenticated_user)],  # noqa: ARG001
 ) -> dict[str, Any]:
     """
-    Get status of all safety interlocks.
+    Get status of all command preconditions.
 
-    Returns detailed information about each safety interlock including:
+    Returns detailed information about each command precondition including:
     - Engagement status
     - Protected feature
     - Required conditions
     - Engagement time and reason
     """
     try:
-        status = safety_service.get_safety_status()
+        status = command_guardrail_service.get_guardrail_status()
         return {"interlocks": status["interlocks"], "system_state": status["system_state"]}
     except Exception as e:
         logger.error("Error getting interlock status: %s", e)
@@ -135,17 +129,17 @@ async def get_interlock_status(
 
 @router.post("/interlocks/check")
 async def check_interlocks(
-    safety_service: Annotated[Any, Depends(get_safety_service)],
+    command_guardrail_service: Annotated[Any, Depends(get_command_guardrail_service)],
     user: Annotated[dict, Depends(get_authenticated_user)],  # noqa: ARG001
 ) -> dict[str, Any]:
     """
-    Manually trigger safety interlock checks.
+    Manually trigger command precondition checks.
 
-    Forces an immediate check of all safety interlocks and returns
+    Forces an immediate check of all command preconditions and returns
     the results. Interlocks will be engaged/disengaged as needed.
     """
     try:
-        results = await safety_service.check_safety_interlocks()
+        results = await command_guardrail_service.check_command_preconditions()
         return {
             "status": "success",
             "results": {
@@ -158,94 +152,94 @@ async def check_interlocks(
         raise HTTPException(status_code=500, detail=str(e)) from e
 
 
-@router.post("/emergency-stop")
-async def trigger_emergency_stop(
-    stop_request: EmergencyStopRequest,
-    safety_service: Annotated[Any, Depends(get_safety_service)],
+@router.post("/command-halt")
+async def halt_command_emission(
+    stop_request: CommandHaltRequest,
+    command_guardrail_service: Annotated[Any, Depends(get_command_guardrail_service)],
     admin_user: Annotated[dict, Depends(get_authenticated_admin)],
 ) -> dict[str, str]:
     """
-    Trigger emergency stop for all position-critical features.
+    Trigger command halt for all position-critical features.
 
     This will:
     - Stop all position-critical features
-    - Engage all safety interlocks
-    - Enter system-wide safe state
+    - Engage all command preconditions
+    - Enter system-wide command halt state
     - Log the event to audit trail
 
-    WARNING: This is a safety-critical operation that requires
-    manual reset with authorization.
+    WARNING: This is a guardrail-critical operation that requires
+    manual clearing with authorization.
     """
     try:
-        # Include user information in the emergency stop call for audit trail
+        # Include user information in the command halt call for audit trail
         triggered_by = f"{admin_user.get('username', admin_user.get('user_id', 'unknown'))}"
-        await safety_service.trigger_emergency_stop(stop_request.reason, triggered_by)
+        await command_guardrail_service.halt_command_emission(stop_request.reason, triggered_by)
 
         logger.warning(
-            "Emergency stop triggered by admin user %s: %s", triggered_by, stop_request.reason
+            "Command halt triggered by admin user %s: %s", triggered_by, stop_request.reason
         )
 
         return {
-            "status": "emergency_stop_activated",
+            "status": "halt_command_emission_activated",
             "reason": stop_request.reason,
             "triggered_by": triggered_by,
-            "message": "Emergency stop activated. Manual reset with authorization required.",
+            "message": "Command halt activated. Manual clearing with authorization required.",
         }
     except Exception as e:
-        logger.error("Error triggering emergency stop: %s", e)
+        logger.error("Error triggering command halt: %s", e)
         raise HTTPException(status_code=500, detail=str(e)) from e
 
 
-@router.post("/emergency-stop/reset")
-async def reset_emergency_stop(
-    reset_request: EmergencyStopResetRequest,
-    safety_service: Annotated[Any, Depends(get_safety_service)],
+@router.post("/command-halt/clear")
+async def clear_command_halt(
+    clear_request: ClearCommandHaltRequest,
+    command_guardrail_service: Annotated[Any, Depends(get_command_guardrail_service)],
     admin_user: Annotated[dict, Depends(get_authenticated_admin)],
 ) -> dict[str, str]:
     """
-    Reset emergency stop with authorization.
+    Clear command halt with authorization.
 
-    Requires valid authorization code. After reset, individual
-    features and interlocks must be manually re-enabled.
+    Requires valid authorization code. After clearing, individual
+    features and command preconditions must be manually re-enabled.
     """
     try:
-        # Include user information in the reset call for audit trail
-        reset_by = f"{admin_user.get('username', admin_user.get('user_id', 'unknown'))}"
-        success = await safety_service.reset_emergency_stop(
-            reset_request.authorization_code, reset_by, reset_request.pin_session_id
+        # Include user information in the clear call for audit trail
+        cleared_by = f"{admin_user.get('username', admin_user.get('user_id', 'unknown'))}"
+        success = await command_guardrail_service.clear_command_halt(
+            clear_request.authorization_code, cleared_by, clear_request.pin_session_id
         )
 
         if not success:
-            logger.warning("Invalid authorization code provided by admin user %s", reset_by)
+            logger.warning("Invalid authorization code provided by admin user %s", cleared_by)
             raise HTTPException(status_code=403, detail="Invalid authorization code")
 
-        logger.warning("Emergency stop reset by admin user %s", reset_by)
+        logger.warning("Command halt cleared by admin user %s", cleared_by)
 
         return {
             "status": "success",
-            "reset_by": reset_by,
-            "message": "Emergency stop reset. Features must be manually re-enabled.",
+            "cleared_by": cleared_by,
+            "message": "Command halt cleared. Features must be manually re-enabled.",
         }
     except HTTPException:
         raise
     except Exception as e:
-        logger.error("Error resetting emergency stop: %s", e)
+        logger.error("Error clearing command halt: %s", e)
         raise HTTPException(status_code=500, detail=str(e)) from e
 
 
 @router.get("/audit-log")
 async def get_audit_log(
-    safety_service: Annotated[Any, Depends(get_safety_service)],
+    command_guardrail_service: Annotated[Any, Depends(get_command_guardrail_service)],
     admin_user: Annotated[dict, Depends(get_authenticated_admin)],  # noqa: ARG001
     max_entries: int = 100,
 ) -> dict[str, Any]:
     """
-    Get safety audit log entries.
+    Get guardrails audit log entries.
 
-    Returns recent safety-critical events including:
+    Returns recent guardrail-critical events including:
     - Interlock engagements/disengagements
-    - Emergency stops
-    - Safe state entries
+    - Command halts
+    - Command halt state entries
     - System errors
 
     Args:
@@ -256,7 +250,7 @@ async def get_audit_log(
         if max_entries < 1 or max_entries > max_audit_entries:
             raise HTTPException(status_code=400, detail="max_entries must be between 1 and 1000")
 
-        entries = safety_service.get_audit_log(max_entries)
+        entries = command_guardrail_service.get_audit_log(max_entries)
         return {"total_entries": len(entries), "entries": entries}
     except HTTPException:
         raise
@@ -266,140 +260,140 @@ async def get_audit_log(
 
 
 @router.get("/health")
-async def get_safety_health(
-    safety_service: Annotated[Any, Depends(get_safety_service)],
+async def get_guardrail_health(
+    command_guardrail_service: Annotated[Any, Depends(get_command_guardrail_service)],
     user: Annotated[dict, Depends(get_authenticated_user)],  # noqa: ARG001
 ) -> dict[str, Any]:
     """
-    Get safety service health status.
+    Get guardrails service health status.
 
-    Returns information about the safety monitoring system itself:
+    Returns information about the guardrails monitoring system itself:
     - Monitoring task status
     - Watchdog timer health
     - Last check timestamps
     """
     try:
-        status = safety_service.get_safety_status()
+        status = command_guardrail_service.get_guardrail_status()
 
         # Calculate health based on watchdog status
         watchdog_healthy = status["time_since_last_kick"] < status["watchdog_timeout"]
 
         return {
-            "healthy": watchdog_healthy and not status["in_safe_state"],
-            "in_safe_state": status["in_safe_state"],
-            "emergency_stop_active": status["emergency_stop_active"],
+            "healthy": watchdog_healthy and not status["in_command_halt_state"],
+            "in_command_halt_state": status["in_command_halt_state"],
+            "command_halt_active": status["command_halt_active"],
             "watchdog": {
                 "timeout": status["watchdog_timeout"],
                 "time_since_last_kick": status["time_since_last_kick"],
                 "healthy": watchdog_healthy,
             },
-            "monitoring_active": not status["in_safe_state"],
+            "monitoring_active": not status["in_command_halt_state"],
         }
     except Exception as e:
-        logger.error("Error getting safety health: %s", e)
+        logger.error("Error getting guardrails health: %s", e)
         raise HTTPException(status_code=500, detail=str(e)) from e
 
 
-# PIN-Based Safety Endpoints
+# PIN-Based Guardrail Endpoints
 
 
-class PINEmergencyStopRequest(BaseModel):
-    """PIN-based emergency stop request model."""
-
-    pin_session_id: str = Field(..., description="PIN session ID for authorization")
-    reason: str = Field(..., description="Reason for emergency stop")
-
-
-class PINEmergencyResetRequest(BaseModel):
-    """PIN-based emergency reset request model."""
+class PINCommandHaltRequest(BaseModel):
+    """PIN-based command halt request model."""
 
     pin_session_id: str = Field(..., description="PIN session ID for authorization")
+    reason: str = Field(..., description="Reason for command halt")
 
 
-@router.post("/pin/emergency-stop")
-async def pin_emergency_stop(
-    stop_request: PINEmergencyStopRequest,
-    safety_service: Annotated[Any, Depends(get_safety_service)],
+class PINClearCommandHaltRequest(BaseModel):
+    """PIN-based command halt clear request model."""
+
+    pin_session_id: str = Field(..., description="PIN session ID for authorization")
+
+
+@router.post("/pin/command-halt")
+async def pin_halt_command_emission(
+    stop_request: PINCommandHaltRequest,
+    command_guardrail_service: Annotated[Any, Depends(get_command_guardrail_service)],
     admin_user: Annotated[dict, Depends(get_authenticated_admin)],
 ) -> dict[str, Any]:
     """
-    Trigger emergency stop using PIN authorization (Admin Only).
+    Trigger command halt using PIN authorization (Admin Only).
 
-    Requires valid PIN session for emergency operations.
-    Provides enhanced security for safety-critical operations.
+    Requires valid PIN session for command-halt operations.
+    Provides enhanced security for guardrail-critical operations.
     """
     try:
         triggered_by = f"{admin_user.get('username', admin_user.get('user_id', 'unknown'))}"
 
-        success = await safety_service.emergency_stop_with_pin(
+        success = await command_guardrail_service.halt_command_emission_with_pin(
             pin_session_id=stop_request.pin_session_id,
             reason=stop_request.reason,
             triggered_by=triggered_by,
         )
 
         if not success:
-            logger.warning("PIN emergency stop failed for admin user %s", triggered_by)
-            raise HTTPException(
-                status_code=401, detail="PIN authorization failed for emergency stop"
-            )
+            logger.warning("PIN command halt failed for admin user %s", triggered_by)
+            raise HTTPException(status_code=401, detail="PIN authorization failed for command halt")
 
         logger.warning(
-            "PIN emergency stop triggered by admin user %s: %s", triggered_by, stop_request.reason
+            "PIN command halt triggered by admin user %s: %s", triggered_by, stop_request.reason
         )
 
         return {
-            "status": "emergency_stop_activated",
+            "status": "halt_command_emission_activated",
             "reason": stop_request.reason,
             "triggered_by": triggered_by,
             "authorization_method": "pin_session",
-            "message": "PIN-authorized emergency stop activated. Reset requires PIN authorization.",
+            "message": (
+                "PIN-authorized command halt activated. Clearing requires PIN authorization."
+            ),
         }
 
     except HTTPException:
         raise
     except Exception as e:
-        logger.error("Error triggering PIN emergency stop: %s", e)
+        logger.error("Error triggering PIN command halt: %s", e)
         raise HTTPException(status_code=500, detail=str(e)) from e
 
 
-@router.post("/pin/emergency-stop/reset")
-async def pin_emergency_reset(
-    reset_request: PINEmergencyResetRequest,
-    safety_service: Annotated[Any, Depends(get_safety_service)],
+@router.post("/pin/command-halt/clear")
+async def pin_clear_command_halt(
+    clear_request: PINClearCommandHaltRequest,
+    command_guardrail_service: Annotated[Any, Depends(get_command_guardrail_service)],
     admin_user: Annotated[dict, Depends(get_authenticated_admin)],
 ) -> dict[str, Any]:
     """
-    Reset emergency stop using PIN authorization (Admin Only).
+    Clear command halt using PIN authorization (Admin Only).
 
-    Requires valid PIN session for reset operations.
-    Provides enhanced security for safety-critical operations.
+    Requires valid PIN session for command-halt clear operations.
+    Provides enhanced security for guardrail-critical operations.
     """
     try:
-        reset_by = f"{admin_user.get('username', admin_user.get('user_id', 'unknown'))}"
+        cleared_by = f"{admin_user.get('username', admin_user.get('user_id', 'unknown'))}"
 
-        success = await safety_service.reset_emergency_stop_with_pin(
-            pin_session_id=reset_request.pin_session_id, reset_by=reset_by
+        success = await command_guardrail_service.clear_command_halt_with_pin(
+            pin_session_id=clear_request.pin_session_id, reset_by=cleared_by
         )
 
         if not success:
-            logger.warning("PIN emergency reset failed for admin user %s", reset_by)
+            logger.warning("PIN command halt clear failed for admin user %s", cleared_by)
             raise HTTPException(
-                status_code=401, detail="PIN authorization failed for emergency reset"
+                status_code=401, detail="PIN authorization failed for command halt clear"
             )
 
-        logger.warning("PIN emergency stop reset by admin user %s", reset_by)
+        logger.warning("PIN command halt cleared by admin user %s", cleared_by)
 
         return {
             "status": "success",
-            "reset_by": reset_by,
+            "cleared_by": cleared_by,
             "authorization_method": "pin_session",
-            "message": "PIN-authorized emergency stop reset. Features must be manually re-enabled.",
+            "message": "PIN-authorized command halt cleared. Features must be manually re-enabled.",
         }
 
     except HTTPException:
         raise
     except Exception as e:
-        logger.error("Error resetting PIN emergency stop: %s", e)
+        logger.error("Error clearing PIN command halt: %s", e)
         raise HTTPException(status_code=500, detail=str(e)) from e
 
 
@@ -429,21 +423,21 @@ class InterlockOverrideClearRequest(BaseModel):
 @router.post("/pin/interlocks/override")
 async def pin_override_interlock(
     override_request: PINInterlockOverrideRequest,
-    safety_service: Annotated[Any, Depends(get_safety_service)],
+    command_guardrail_service: Annotated[Any, Depends(get_command_guardrail_service)],
     admin_user: Annotated[dict, Depends(get_authenticated_admin)],
 ) -> dict[str, Any]:
     """
-    Override a safety interlock using PIN authorization (Admin Only).
+    Override a command precondition using PIN authorization (Admin Only).
 
-    Allows temporary override of safety interlocks for maintenance or
+    Allows temporary override of command preconditions for maintenance or
     diagnostic operations. Requires valid PIN session with override permissions.
     Override will automatically expire after the specified duration.
     """
     try:
         overridden_by = f"{admin_user.get('username', admin_user.get('user_id', 'unknown'))}"
 
-        # Use the safety service method to override with PIN authorization
-        success = await safety_service.override_interlock_with_pin(
+        # Use the guardrails service method to override with PIN authorization
+        success = await command_guardrail_service.override_interlock_with_pin(
             pin_session_id=override_request.pin_session_id,
             interlock_name=override_request.interlock_name,
             reason=override_request.reason,
@@ -491,7 +485,7 @@ async def pin_override_interlock(
 @router.post("/interlocks/clear-override")
 async def clear_interlock_override(
     clear_request: InterlockOverrideClearRequest,
-    safety_service: Annotated[Any, Depends(get_safety_service)],
+    command_guardrail_service: Annotated[Any, Depends(get_command_guardrail_service)],
     admin_user: Annotated[dict, Depends(get_authenticated_admin)],
 ) -> dict[str, Any]:
     """
@@ -504,7 +498,7 @@ async def clear_interlock_override(
         cleared_by = f"{admin_user.get('username', admin_user.get('user_id', 'unknown'))}"
 
         # Clear the override
-        success = safety_service.clear_interlock_override(clear_request.interlock_name)
+        success = command_guardrail_service.clear_interlock_override(clear_request.interlock_name)
 
         if not success:
             raise HTTPException(
@@ -532,7 +526,7 @@ async def clear_interlock_override(
 
 @router.get("/interlocks/overrides")
 async def get_active_overrides(
-    safety_service: Annotated[Any, Depends(get_safety_service)],
+    command_guardrail_service: Annotated[Any, Depends(get_command_guardrail_service)],
     admin_user: Annotated[dict, Depends(get_authenticated_admin)],  # noqa: ARG001
 ) -> dict[str, Any]:
     """
@@ -542,13 +536,13 @@ async def get_active_overrides(
     who authorized them, when they expire, and the reason for override.
     """
     try:
-        status = safety_service.get_safety_status()
+        status = command_guardrail_service.get_guardrail_status()
         active_overrides = status.get("active_overrides", {})
 
         # Get detailed override information for each interlock
         override_details = []
         for interlock_name, expiry in active_overrides.items():
-            interlock = safety_service._interlocks.get(interlock_name)  # noqa: SLF001
+            interlock = command_guardrail_service._interlocks.get(interlock_name)  # noqa: SLF001
             if interlock:
                 override_info = interlock.get_override_info()
                 if override_info:
@@ -598,15 +592,15 @@ class PINMaintenanceModeExitRequest(BaseModel):
 @router.post("/pin/maintenance-mode/enter")
 async def pin_enter_maintenance_mode(
     mode_request: PINMaintenanceModeRequest,
-    safety_service: Annotated[Any, Depends(get_safety_service)],
+    command_guardrail_service: Annotated[Any, Depends(get_command_guardrail_service)],
     admin_user: Annotated[dict, Depends(get_authenticated_admin)],
 ) -> dict[str, Any]:
     """
     Enter maintenance mode using PIN authorization (Admin Only).
 
     In maintenance mode:
-    - Safety interlocks can be temporarily overridden
-    - Certain safety checks may be relaxed for service operations
+    - Guardrail interlocks can be temporarily overridden
+    - Certain guardrails checks may be relaxed for service operations
     - All actions are fully audited
     - Mode automatically expires after the specified duration
 
@@ -615,8 +609,8 @@ async def pin_enter_maintenance_mode(
     try:
         entered_by = f"{admin_user.get('username', admin_user.get('user_id', 'unknown'))}"
 
-        # Use the safety service method to enter maintenance mode with PIN authorization
-        success = await safety_service.enter_maintenance_mode_with_pin(
+        # Use the guardrails service method to enter maintenance mode with PIN authorization
+        success = await command_guardrail_service.enter_maintenance_mode_with_pin(
             pin_session_id=mode_request.pin_session_id,
             reason=mode_request.reason,
             duration_minutes=mode_request.duration_minutes,
@@ -659,24 +653,24 @@ async def pin_enter_maintenance_mode(
 @router.post("/pin/maintenance-mode/exit")
 async def pin_exit_maintenance_mode(
     exit_request: PINMaintenanceModeExitRequest,
-    safety_service: Annotated[Any, Depends(get_safety_service)],
+    command_guardrail_service: Annotated[Any, Depends(get_command_guardrail_service)],
     admin_user: Annotated[dict, Depends(get_authenticated_admin)],
 ) -> dict[str, Any]:
     """
     Exit maintenance mode using PIN authorization (Admin Only).
 
     Returns system to normal operational mode:
-    - All safety interlocks return to normal operation
+    - All command preconditions return to normal operation
     - Any active overrides are cleared
-    - Full safety validation resumes
+    - Full guardrails validation resumes
 
     Requires valid PIN session.
     """
     try:
         exited_by = f"{admin_user.get('username', admin_user.get('user_id', 'unknown'))}"
 
-        # Use the safety service method to exit maintenance mode with PIN authorization
-        success = await safety_service.exit_maintenance_mode_with_pin(
+        # Use the guardrails service method to exit maintenance mode with PIN authorization
+        success = await command_guardrail_service.exit_maintenance_mode_with_pin(
             pin_session_id=exit_request.pin_session_id,
             exited_by=exited_by,
         )
@@ -709,7 +703,7 @@ async def pin_exit_maintenance_mode(
 
 @router.get("/operational-mode")
 async def get_operational_mode(
-    safety_service: Annotated[Any, Depends(get_safety_service)],
+    command_guardrail_service: Annotated[Any, Depends(get_command_guardrail_service)],
     user: Annotated[dict, Depends(get_authenticated_user)],  # noqa: ARG001
 ) -> dict[str, Any]:
     """
@@ -722,7 +716,7 @@ async def get_operational_mode(
     - Active overrides count
     """
     try:
-        status = safety_service.get_safety_status()
+        status = command_guardrail_service.get_guardrail_status()
         mode = status["operational_mode"]
         mode_session = status.get("mode_session")
 
@@ -771,7 +765,7 @@ class PINDiagnosticModeExitRequest(BaseModel):
 @router.post("/pin/diagnostic-mode/enter")
 async def pin_enter_diagnostic_mode(
     mode_request: PINDiagnosticModeRequest,
-    safety_service: Annotated[Any, Depends(get_safety_service)],
+    command_guardrail_service: Annotated[Any, Depends(get_command_guardrail_service)],
     admin_user: Annotated[dict, Depends(get_authenticated_admin)],
 ) -> dict[str, Any]:
     """
@@ -779,20 +773,20 @@ async def pin_enter_diagnostic_mode(
 
     In diagnostic mode:
     - System diagnostics and testing can be performed
-    - Test procedures may temporarily modify safety constraints
+    - Test procedures may temporarily modify guardrails constraints
     - All actions are fully audited
     - Mode automatically expires after the specified duration
 
     WARNING: Diagnostic mode is intended for troubleshooting only.
-    Safety constraints may be modified during diagnostics.
+    Guardrail constraints may be modified during diagnostics.
 
     Requires valid PIN session with diagnostic permissions.
     """
     try:
         entered_by = f"{admin_user.get('username', admin_user.get('user_id', 'unknown'))}"
 
-        # Use the safety service method to enter diagnostic mode with PIN authorization
-        success = await safety_service.enter_diagnostic_mode_with_pin(
+        # Use the guardrails service method to enter diagnostic mode with PIN authorization
+        success = await command_guardrail_service.enter_diagnostic_mode_with_pin(
             pin_session_id=mode_request.pin_session_id,
             reason=mode_request.reason,
             duration_minutes=mode_request.duration_minutes,
@@ -823,7 +817,7 @@ async def pin_enter_diagnostic_mode(
             "duration_minutes": mode_request.duration_minutes,
             "authorization_method": "pin_session",
             "message": (f"Diagnostic mode activated for {mode_request.duration_minutes} minutes"),
-            "warning": "Safety constraints may be modified during diagnostics",
+            "warning": "Guardrail constraints may be modified during diagnostics",
         }
 
     except HTTPException:
@@ -836,24 +830,24 @@ async def pin_enter_diagnostic_mode(
 @router.post("/pin/diagnostic-mode/exit")
 async def pin_exit_diagnostic_mode(
     exit_request: PINDiagnosticModeExitRequest,
-    safety_service: Annotated[Any, Depends(get_safety_service)],
+    command_guardrail_service: Annotated[Any, Depends(get_command_guardrail_service)],
     admin_user: Annotated[dict, Depends(get_authenticated_admin)],
 ) -> dict[str, Any]:
     """
     Exit diagnostic mode using PIN authorization (Admin Only).
 
     Returns system to normal operational mode:
-    - All safety constraints return to normal operation
+    - All guardrails constraints return to normal operation
     - Any diagnostic overrides are cleared
-    - Full safety validation resumes
+    - Full guardrails validation resumes
 
     Requires valid PIN session.
     """
     try:
         exited_by = f"{admin_user.get('username', admin_user.get('user_id', 'unknown'))}"
 
-        # Use the safety service method to exit diagnostic mode with PIN authorization
-        success = await safety_service.exit_diagnostic_mode_with_pin(
+        # Use the guardrails service method to exit diagnostic mode with PIN authorization
+        success = await command_guardrail_service.exit_diagnostic_mode_with_pin(
             pin_session_id=exit_request.pin_session_id,
             exited_by=exited_by,
         )

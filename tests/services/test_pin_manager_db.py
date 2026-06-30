@@ -303,7 +303,7 @@ class TestPINValidationAndSessions:
         # Try to authorize with expired session
         result = await pin_manager_with_db.authorize_operation(
             session_id="expired-session-id",
-            operation="emergency_stop",
+            operation="halt_command_emission",
             user_id=test_user.id,
         )
 

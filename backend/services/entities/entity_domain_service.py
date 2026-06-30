@@ -25,8 +25,8 @@ from pydantic import BaseModel, Field
 from backend.core.entity_manager import EntityManager
 from backend.models.entity import ControlCommand
 from backend.services.auth.manager import AuthManager
-from backend.services.rvc.rvc_config_facade import RVCConfigFacade
 from backend.services.entities.entity_service import EntityService
+from backend.services.rvc.rvc_config_facade import RVCConfigFacade
 from backend.websocket.handlers import WebSocketManager
 
 logger = logging.getLogger(__name__)
@@ -73,7 +73,7 @@ class BulkSafetyOperationRequestV2(BaseModel):
     command: SafetyControlCommandV2 = Field(..., description="Command to execute on all entities")
     ignore_errors: bool = Field(False, description="Continue on individual failures")
     safety_mode: str = Field(
-        "strict", description="Safety mode: strict, permissive, emergency_stop"
+        "strict", description="Safety mode: strict, permissive, halt_command_emission"
     )
     max_concurrent: int = Field(10, ge=1, le=50, description="Maximum concurrent operations")
 
@@ -125,7 +125,7 @@ class EntityDomainService:
         self.entity_manager = entity_manager
 
         # Safety tracking - optimized for Pi memory constraints
-        self._emergency_stop_active = False
+        self._command_halt_active = False
         self._pending_operations: dict[str, SafetyOperationResultV2] = {}
         self._safety_interlocks_enabled = True
 
@@ -137,21 +137,21 @@ class EntityDomainService:
             "EntityDomainService initialized with Pi optimizations and safety interlocks enabled"
         )
 
-    async def _check_safety_interlocks(self, command: SafetyControlCommandV2) -> dict[str, Any]:
+    async def _check_command_preconditions(self, command: SafetyControlCommandV2) -> dict[str, Any]:
         """
         Check safety interlocks before executing any command.
 
         Returns safety validation results with any issues detected.
         """
         validation = {
-            "emergency_stop_check": not self._emergency_stop_active,
+            "halt_command_emission_check": not self._command_halt_active,
             "safety_interlocks_check": self._safety_interlocks_enabled,
             "command_validation": True,
             "timeout_validation": 0.1 <= command.timeout_seconds <= 30.0,
             "issues": [],
         }
 
-        if self._emergency_stop_active:
+        if self._command_halt_active:
             validation["issues"].append("Emergency stop is active - all operations halted")
 
         if not self._safety_interlocks_enabled:
@@ -249,23 +249,23 @@ class EntityDomainService:
 
         return True
 
-    async def emergency_stop(self) -> dict[str, Any]:
+    async def halt_command_emission(self) -> dict[str, Any]:
         """
-        Emergency stop - immediately halt all entity operations.
+        Command halt - immediately halt all entity operations.
 
-        This is a safety-critical function that stops all pending operations
+        This is a guardrail-critical function that stops all pending operations
         and prevents new operations from starting.
         """
-        logger.critical("EMERGENCY STOP ACTIVATED - Halting all entity operations")
+        logger.critical("COMMAND HALT ACTIVATED - Halting all entity operations")
 
-        self._emergency_stop_active = True
+        self._command_halt_active = True
 
         # Cancel all pending operations
         cancelled_operations = []
         for operation_id, operation in self._pending_operations.items():
-            operation.status = "safety_abort"
-            operation.error_message = "Emergency stop activated"
-            operation.error_code = "EMERGENCY_STOP"
+            operation.status = "command_halt_abort"
+            operation.error_message = "Command halt activated"
+            operation.error_code = "COMMAND_HALT"
             cancelled_operations.append(operation_id)
 
         # Clear pending operations
@@ -273,36 +273,36 @@ class EntityDomainService:
 
         # Notify all connected clients via WebSocket
         emergency_message = {
-            "type": "emergency_stop",
+            "type": "halt_command_emission",
             "timestamp": time.time(),
             "cancelled_operations": cancelled_operations,
-            "message": "All entity operations have been halted for safety",
+            "message": "All entity operations have been halted by guardrail policy",
         }
 
         if self.websocket:
             await self.websocket.broadcast_to_data_clients(emergency_message)
 
         return {
-            "emergency_stop_active": True,
+            "command_halt_active": True,
             "cancelled_operations_count": len(cancelled_operations),
             "cancelled_operations": cancelled_operations,
             "timestamp": time.time(),
         }
 
-    async def clear_emergency_stop(self) -> dict[str, Any]:
+    async def clear_command_halt(self) -> dict[str, Any]:
         """
-        Clear emergency stop condition.
+        Clear command halt condition.
 
-        Only authorized users should be able to clear emergency stop.
+        Only authorized users should be able to clear command halt.
         """
-        logger.warning("Emergency stop cleared - Normal operations resuming")
+        logger.warning("Command halt cleared - Normal operations resuming")
 
-        self._emergency_stop_active = False
+        self._command_halt_active = False
 
         return {
-            "emergency_stop_active": False,
+            "command_halt_active": False,
             "timestamp": time.time(),
-            "message": "Emergency stop cleared - Normal operations resumed",
+            "message": "Command halt cleared - Normal operations resumed",
         }
 
     async def control_entity_safe(
@@ -336,7 +336,7 @@ class EntityDomainService:
 
         try:
             # Step 1: Safety interlocks check
-            safety_validation = await self._check_safety_interlocks(command)
+            safety_validation = await self._check_command_preconditions(command)
             operation.safety_validation = safety_validation
 
             if not safety_validation["passed"]:
@@ -439,7 +439,7 @@ class EntityDomainService:
         )
 
         # Safety check: Emergency stop
-        if self._emergency_stop_active:
+        if self._command_halt_active:
             return BulkSafetyOperationResultV2(
                 operation_id=operation_id,
                 total_count=len(request.entity_ids),
@@ -449,7 +449,7 @@ class EntityDomainService:
                 safety_abort_count=len(request.entity_ids),
                 results=[],
                 total_execution_time_ms=(time.time() - start_time) * 1000,
-                safety_summary={"emergency_stop_active": True},
+                safety_summary={"command_halt_active": True},
             )
 
         # Safety check: Bulk operation limits - Pi optimized
@@ -505,7 +505,7 @@ class EntityDomainService:
         total_time = (time.time() - start_time) * 1000
 
         safety_summary = {
-            "emergency_stop_active": self._emergency_stop_active,
+            "command_halt_active": self._command_halt_active,
             "safety_interlocks_enabled": self._safety_interlocks_enabled,
             "acknowledgment_rate": sum(1 for r in processed_results if r.acknowledged)
             / len(processed_results),
@@ -531,10 +531,10 @@ class EntityDomainService:
 
         return result
 
-    async def get_safety_status(self) -> dict[str, Any]:
+    async def get_guardrail_status(self) -> dict[str, Any]:
         """Get current safety system status"""
         return {
-            "emergency_stop_active": self._emergency_stop_active,
+            "command_halt_active": self._command_halt_active,
             "safety_interlocks_enabled": self._safety_interlocks_enabled,
             "pending_operations_count": len(self._pending_operations),
             "pending_operations": list(self._pending_operations.keys()),

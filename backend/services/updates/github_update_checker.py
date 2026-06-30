@@ -159,7 +159,7 @@ class GitHubUpdateCheckerFeature:
         config: dict[str, Any] | None = None,
         dependencies: list[str] | None = None,
         friendly_name: str | None = None,
-        safety_classification: Any | None = None,
+        guardrail_tier: Any | None = None,
         log_state_transitions: bool = True,
     ) -> None:
         self.name = name
@@ -251,7 +251,7 @@ def register_github_update_checker_feature(
     config: dict[str, Any],
     dependencies: list[str],
     friendly_name: str | None = None,
-    safety_classification: Any | None = None,
+    guardrail_tier: Any | None = None,
     log_state_transitions: bool = True,
 ) -> GitHubUpdateCheckerFeature:
     """
@@ -266,7 +266,7 @@ def register_github_update_checker_feature(
         config: Feature configuration from YAML
         dependencies: List of feature dependencies
         friendly_name: Human-readable name for the feature
-        safety_classification: Safety classification for state validation
+        guardrail_tier: Safety classification for state validation
         log_state_transitions: Whether to log state transitions for audit
 
     Returns:
@@ -279,7 +279,7 @@ def register_github_update_checker_feature(
         config=config,
         dependencies=dependencies,
         friendly_name=friendly_name,
-        safety_classification=safety_classification,
+        guardrail_tier=guardrail_tier,
         log_state_transitions=log_state_transitions,
     )
 

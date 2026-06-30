@@ -30,7 +30,7 @@ class EntitySchemaV2(BaseModel):
     suggested_area: str | None = Field(None, description="Suggested location/area")
     groups: list[str] = Field(default_factory=list, description="Entity group memberships")
     safety_critical: bool = Field(False, description="Whether this entity is safety-critical")
-    safety_status: str = Field("unknown", description="Safety validation status")
+    guardrail_status: str = Field("unknown", description="Safety validation status")
     status: str = Field("unknown", description="Entity operational status")
     last_seen: str | None = Field(None, description="ISO datetime when entity was last seen")
     metadata: dict[str, Any] = Field(default_factory=dict, description="Additional entity metadata")
@@ -51,7 +51,7 @@ class EntitySchemaV2(BaseModel):
                 "suggested_area": {"type": ["string", "null"]},
                 "groups": {"type": "array", "items": {"type": "string"}},
                 "safety_critical": {"type": "boolean", "default": False},
-                "safety_status": {"type": "string"},
+                "guardrail_status": {"type": "string"},
                 "status": {"type": "string"},
                 "last_seen": {"type": ["string", "null"], "format": "date-time"},
                 "metadata": {"type": "object"},
@@ -66,7 +66,7 @@ class ControlCommandSchemaV2(BaseModel):
 
     command: str = Field(
         ...,
-        description="Command type: set, toggle, brightness_up, brightness_down, emergency_stop, clear_emergency_stop",
+        description="Command type: set, toggle, brightness_up, brightness_down, halt_command_emission, clear_command_halt",
     )
     entity_ids: list[str] = Field(default_factory=list, description="Target entity IDs")
     state: bool | None = Field(None, description="Target state for set commands")
@@ -92,8 +92,8 @@ class ControlCommandSchemaV2(BaseModel):
                         "toggle",
                         "brightness_up",
                         "brightness_down",
-                        "emergency_stop",
-                        "clear_emergency_stop",
+                        "halt_command_emission",
+                        "clear_command_halt",
                     ],
                 },
                 "entity_ids": {"type": "array", "items": {"type": "string"}},
@@ -169,7 +169,7 @@ class BulkOperationSchemaV2(BaseModel):
     command: ControlCommandSchemaV2 = Field(..., description="Command to execute on all entities")
     ignore_errors: bool = Field(False, description="Continue on individual failures")
     safety_mode: str = Field(
-        "strict", description="Safety mode: strict, permissive, emergency_stop"
+        "strict", description="Safety mode: strict, permissive, halt_command_emission"
     )
     safety_validation: dict[str, Any] = Field(
         default_factory=dict, description="Safety validation configuration"
@@ -189,7 +189,7 @@ class BulkOperationSchemaV2(BaseModel):
                 "ignore_errors": {"type": "boolean", "default": False},
                 "safety_mode": {
                     "type": "string",
-                    "enum": ["strict", "permissive", "emergency_stop"],
+                    "enum": ["strict", "permissive", "halt_command_emission"],
                     "default": "strict",
                 },
                 "safety_validation": {"type": "object"},

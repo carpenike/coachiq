@@ -3,14 +3,14 @@ Guardrail service for the API command-validation tier.
 
 Implements defense-in-depth API guardrail patterns including:
 - Interlocks for position-critical commands (refuse to forward unsafe frames)
-- Emergency stop on the orchestration loop
+- Command halt on the orchestration loop
 - Watchdog monitoring of dependent services
 - Audit logging for command-validation operations
 - Enhanced security audit logging and rate limiting
 
 "Safety" naming is historical; the OEM Firefly MIRA panel owns the actual
 vehicle safety case. CoachIQ refuses to forward bad commands; it does not
-enforce physical-safety interlocks. See
+enforce physical-command preconditions. See
 `docs/adr/ADR-0004-coachiq-is-not-the-safety-system.md`.
 """
 
@@ -23,7 +23,7 @@ from datetime import UTC, datetime, timedelta
 from enum import Enum
 from typing import Any
 
-from backend.core.safety_interfaces import SafeStateAction
+from backend.core.guardrail_interfaces import CommandHaltAction
 
 logger = logging.getLogger(__name__)
 
@@ -56,11 +56,11 @@ class ModeSession:
     active_overrides: dict[str, datetime]  # interlock_name -> override_expiry
 
 
-class SafetyInterlock:
+class CommandPrecondition:
     """
-    Safety interlock for position-critical features.
+    Command precondition for position-critical features.
 
-    Prevents unsafe operations and enforces safety constraints
+    Prevents unsafe operations and enforces guardrail constraints
     for physical positioning systems like slides, awnings, leveling jacks.
     """
 
@@ -69,21 +69,21 @@ class SafetyInterlock:
         name: str,
         feature_name: str,
         interlock_conditions: list[str],
-        safe_state_action: SafeStateAction = SafeStateAction.MAINTAIN_POSITION,
+        command_halt_action: CommandHaltAction = CommandHaltAction.BLOCK_COMMANDS,
     ):
         """
-        Initialize safety interlock.
+        Initialize command precondition.
 
         Args:
             name: Unique identifier for this interlock
             feature_name: Name of the feature this interlock protects
             interlock_conditions: List of conditions that must be met
-            safe_state_action: Action to take when interlock is triggered
+            command_halt_action: Action to take when interlock is triggered
         """
         self.name = name
         self.feature_name = feature_name
         self.interlock_conditions = interlock_conditions
-        self.safe_state_action = safe_state_action
+        self.command_halt_action = command_halt_action
         self.is_engaged = False
         self.engagement_time: datetime | None = None
         self.engagement_reason = ""
@@ -126,7 +126,9 @@ class SafetyInterlock:
                 return False, f"Interlock condition not met: {condition}"
         return True, "All conditions satisfied"
 
-    async def _evaluate_condition(self, condition: str, system_state: dict[str, Any]) -> bool:
+    async def _evaluate_condition(  # noqa: PLR0911 - condition table is intentionally explicit
+        self, condition: str, system_state: dict[str, Any]
+    ) -> bool:
         """
         Evaluate a single interlock condition.
 
@@ -157,7 +159,7 @@ class SafetyInterlock:
 
     async def engage(self, reason: str) -> None:
         """
-        Engage the safety interlock.
+        Engage the command precondition.
 
         Args:
             reason: Reason for engaging the interlock
@@ -168,7 +170,7 @@ class SafetyInterlock:
             self.engagement_reason = reason
 
             logger.warning(
-                "Safety interlock '%s' ENGAGED for feature '%s': %s",
+                "Command precondition '%s' ENGAGED for feature '%s': %s",
                 self.name,
                 self.feature_name,
                 reason,
@@ -176,7 +178,7 @@ class SafetyInterlock:
 
     async def disengage(self, reason: str = "Manual override") -> None:
         """
-        Disengage the safety interlock.
+        Disengage the command precondition.
 
         Args:
             reason: Reason for disengaging the interlock
@@ -190,7 +192,7 @@ class SafetyInterlock:
             self.engagement_reason = ""
 
             logger.info(
-                "Safety interlock '%s' DISENGAGED for feature '%s' after %.1fs: %s",
+                "Command precondition '%s' DISENGAGED for feature '%s' after %.1fs: %s",
                 self.name,
                 self.feature_name,
                 duration,
@@ -205,7 +207,7 @@ class SafetyInterlock:
         overridden_by: str,
     ) -> None:
         """
-        Override the safety interlock temporarily.
+        Override the command precondition temporarily.
 
         Args:
             session_id: PIN session ID authorizing the override
@@ -220,7 +222,7 @@ class SafetyInterlock:
         self._override_by = overridden_by
 
         logger.warning(
-            "Safety interlock '%s' OVERRIDDEN for feature '%s' by %s: %s (expires: %s)",
+            "Command precondition '%s' OVERRIDDEN for feature '%s' by %s: %s (expires: %s)",
             self.name,
             self.feature_name,
             overridden_by,
@@ -232,7 +234,7 @@ class SafetyInterlock:
         """Clear any active override on this interlock."""
         if self._is_overridden:
             logger.info(
-                "Safety interlock '%s' override CLEARED for feature '%s'",
+                "Command precondition '%s' override CLEARED for feature '%s'",
                 self.name,
                 self.feature_name,
             )
@@ -260,23 +262,23 @@ class SafetyInterlock:
         }
 
 
-class SafetyService:
+class CommandGuardrailService:
     """
     API command-validation guardrail service.
 
     Implements defense-in-depth API guardrail patterns including interlocks,
-    emergency stop on the orchestration loop, watchdog monitoring, and audit
+    command halt on the orchestration loop, watchdog monitoring, and audit
     logging. "Safety" naming is historical; the OEM Firefly MIRA panel owns
     the vehicle safety case (see ADR-0004).
 
     The service initializes with a safe default system state representing
     a parked and stabilized RV with parking brake engaged, leveling jacks
-    deployed, and transmission in park to prevent false safety violations
+    deployed, and transmission in park to prevent false guardrail violations
     at startup.
     """
 
     # Constants
-    MULTIPLE_VIOLATION_THRESHOLD = 3  # Number of violations to trigger emergency stop
+    MULTIPLE_VIOLATION_THRESHOLD = 3  # Number of violations to trigger command halt
 
     def __init__(
         self,
@@ -290,7 +292,7 @@ class SafetyService:
         Initialize safety service with modern ServiceRegistry integration.
 
         Args:
-            service_registry: SafetyServiceRegistry instance to monitor services
+            service_registry: GuardrailCoordinator instance to monitor services
             health_check_interval: Interval between health checks (seconds)
             watchdog_timeout: Watchdog timeout threshold (seconds)
             pin_manager: Optional PIN manager for enhanced authorization
@@ -303,8 +305,8 @@ class SafetyService:
         self.security_audit_service = security_audit_service
 
         # Safety state tracking
-        self._in_safe_state = False
-        self._emergency_stop_active = False
+        self._in_command_halt_state = False
+        self._command_halt_active = False
         self._operational_mode = SystemOperationalMode.NORMAL
         self._mode_session_id: str | None = None
         self._mode_entered_by: str | None = None
@@ -316,7 +318,7 @@ class SafetyService:
         self._health_monitor_task: asyncio.Task | None = None
 
         # Interlocks management
-        self._interlocks: dict[str, SafetyInterlock] = {}
+        self._interlocks: dict[str, CommandPrecondition] = {}
         # Initialize system state with safe defaults (parked and stabilized RV)
         self._system_state: dict[str, Any] = {
             "vehicle_speed": 0.0,  # Vehicle not moving
@@ -331,22 +333,25 @@ class SafetyService:
         self._audit_log: list[dict[str, Any]] = []
         self._max_audit_entries = 1000
 
-        # Emergency stop tracking
-        self._emergency_stop_reason: str | None = None
-        self._emergency_stop_triggered_by: str | None = None
-        self._emergency_stop_time: datetime | None = None
-        self._active_safety_actions: list[str] = []
+        # Command halt tracking
+        self._halt_command_emission_reason: str | None = None
+        self._halt_command_emission_triggered_by: str | None = None
+        self._halt_command_emission_time: datetime | None = None
+        self._active_guardrail_actions: list[str] = []
         self._last_health_check: datetime | None = None
 
         # Initialize default interlocks
         self._setup_default_interlocks()
 
-        logger.info("SafetyService initialized with default system state: %s", self._system_state)
+        logger.info(
+            "CommandGuardrailService initialized with default system state: %s",
+            self._system_state,
+        )
 
     def _setup_default_interlocks(self) -> None:
-        """Set up default safety interlocks for common RV systems."""
+        """Set up default command preconditions for common RV systems."""
 
-        # Slide room safety interlocks
+        # Slide room command preconditions
         slide_interlocks = [
             "vehicle_not_moving",
             "parking_brake_engaged",
@@ -355,30 +360,30 @@ class SafetyService:
         ]
 
         self.add_interlock(
-            SafetyInterlock(
-                name="slide_room_safety",
+            CommandPrecondition(
+                name="slide_room_precondition",
                 feature_name="firefly",  # Firefly controls slide rooms
                 interlock_conditions=slide_interlocks,
-                safe_state_action=SafeStateAction.MAINTAIN_POSITION,
+                command_halt_action=CommandHaltAction.BLOCK_COMMANDS,
             )
         )
 
-        # Awning safety interlocks
+        # Awning command preconditions
         awning_interlocks = [
             "vehicle_not_moving",
             "parking_brake_engaged",
         ]
 
         self.add_interlock(
-            SafetyInterlock(
-                name="awning_safety",
+            CommandPrecondition(
+                name="awning_precondition",
                 feature_name="firefly",  # Firefly controls awnings
                 interlock_conditions=awning_interlocks,
-                safe_state_action=SafeStateAction.MAINTAIN_POSITION,
+                command_halt_action=CommandHaltAction.BLOCK_COMMANDS,
             )
         )
 
-        # Leveling jack safety interlocks
+        # Leveling jack command preconditions
         leveling_interlocks = [
             "vehicle_not_moving",
             "parking_brake_engaged",
@@ -387,24 +392,24 @@ class SafetyService:
         ]
 
         self.add_interlock(
-            SafetyInterlock(
-                name="leveling_jack_safety",
+            CommandPrecondition(
+                name="leveling_jack_precondition",
                 feature_name="spartan_k2",  # Spartan K2 controls leveling
                 interlock_conditions=leveling_interlocks,
-                safe_state_action=SafeStateAction.MAINTAIN_POSITION,
+                command_halt_action=CommandHaltAction.BLOCK_COMMANDS,
             )
         )
 
-    def add_interlock(self, interlock: SafetyInterlock) -> None:
+    def add_interlock(self, interlock: CommandPrecondition) -> None:
         """
-        Add a safety interlock to the system.
+        Add a command precondition to the system.
 
         Args:
-            interlock: SafetyInterlock instance to add
+            interlock: CommandPrecondition instance to add
         """
         self._interlocks[interlock.name] = interlock
         logger.info(
-            "Added safety interlock: %s for feature %s", interlock.name, interlock.feature_name
+            "Added command precondition: %s for feature %s", interlock.name, interlock.feature_name
         )
 
     def update_system_state(self, state_updates: dict[str, Any]) -> None:
@@ -423,9 +428,9 @@ class SafetyService:
         self._system_state.update(state_updates)
         logger.debug("Updated system state: %s", state_updates)
 
-    async def check_safety_interlocks(self) -> dict[str, tuple[bool, str]]:
+    async def check_command_preconditions(self) -> dict[str, tuple[bool, str]]:
         """
-        Check all safety interlocks and engage/disengage as needed.
+        Check all command preconditions and engage/disengage as needed.
 
         Returns:
             Dictionary mapping interlock names to (satisfied, reason) tuples
@@ -447,7 +452,7 @@ class SafetyService:
                     },
                 )
 
-                # Enhanced security audit logging for safety interlock violations
+                # Enhanced security audit logging for command precondition violations
                 if self.security_audit_service:
                     await self.security_audit_service.log_security_event(
                         event_type="safety_interlock_violated",
@@ -456,9 +461,9 @@ class SafetyService:
                             "interlock_name": interlock_name,
                             "feature_name": interlock.feature_name,
                             "violation_reason": reason,
-                            "safe_state_action": interlock.safe_state_action.value,
+                            "command_halt_action": interlock.command_halt_action.value,
                         },
-                        emergency_context=self._emergency_stop_active,
+                        emergency_context=self._command_halt_active,
                     )
             elif conditions_met and interlock.is_engaged:
                 await interlock.disengage("Conditions satisfied")
@@ -473,222 +478,131 @@ class SafetyService:
 
         return results
 
-    async def trigger_emergency_stop(
-        self,
-        reason: str,
-        triggered_by: str,
+    async def halt_command_emission(  # noqa: C901 - command-halt flow is kept explicit
+        self, reason: str = "Manual trigger", triggered_by: str = "system"
     ) -> bool:
-        """
-        Trigger emergency stop with specific reason and source.
-
-        Args:
-            reason: Reason for triggering emergency stop
-            triggered_by: Who/what triggered the stop
-
-        Returns:
-            True if emergency stop was activated
-        """
-        if self._emergency_stop_active:
-            logger.warning("Emergency stop already active")
+        """Halt CoachIQ command emission and record the cause."""
+        if self._command_halt_active:
+            logger.warning("Command halt already active")
             return False
 
-        self._emergency_stop_active = True
-        self._emergency_stop_reason = reason
-        self._emergency_stop_triggered_by = triggered_by
-        self._emergency_stop_time = datetime.now(UTC)
+        self._command_halt_active = True
+        self._halt_command_emission_reason = reason
+        self._halt_command_emission_triggered_by = triggered_by
+        self._halt_command_emission_time = datetime.now(UTC)
 
         await self._audit_log_event(
-            "emergency_stop_triggered",
+            "command_halt_activated",
             {
                 "reason": reason,
                 "triggered_by": triggered_by,
-                "timestamp": self._emergency_stop_time.isoformat(),
+                "timestamp": self._halt_command_emission_time.isoformat(),
             },
         )
 
-        # Enhanced security audit logging
         if self.security_audit_service:
             await self.security_audit_service.log_security_event(
-                event_type="emergency_stop_triggered",
+                event_type="command_halt_activated",
                 severity="critical",
                 user_id=triggered_by,
-                details={
-                    "reason": reason,
-                    "method": "trigger_emergency_stop",
-                    "safety_actions_count": len(self._active_safety_actions),
-                },
+                details={"reason": reason, "method": "halt_command_emission"},
                 emergency_context=True,
             )
 
-        # Execute emergency stop actions
-        await self._execute_emergency_stop_actions()
-
-        logger.critical(
-            "EMERGENCY STOP TRIGGERED - Reason: %s, By: %s",
-            reason,
-            triggered_by,
-        )
-
-        return True
-
-    async def emergency_stop(self, reason: str = "Manual trigger") -> None:
-        """
-        Trigger emergency stop for all position-critical features.
-
-        Args:
-            reason: Reason for emergency stop
-        """
-        if self._emergency_stop_active:
-            logger.warning("Emergency stop already active")
-            return
-
-        self._emergency_stop_active = True
-        # Record reason + source so observers (``get_safety_status()``,
-        # audit consumers, integration tests) can see WHY the system
-        # stopped, not just that it did. Previously only the public
-        # ``trigger_emergency_stop`` populated these fields, so any
-        # auto-triggered stop from the monitoring loop
-        # (``_check_emergency_conditions`` -> ``emergency_stop``) left
-        # ``_emergency_stop_reason`` as None -- losing critical
-        # forensic context. The fields stay None on the explicit
-        # ``trigger_emergency_stop`` path because that one sets them
-        # itself with richer ``triggered_by`` info; here we use a
-        # generic ``"safety_monitoring"`` source.
-        self._emergency_stop_reason = reason
-        self._emergency_stop_triggered_by = "safety_monitoring"
-        self._emergency_stop_time = datetime.now(UTC)
-        logger.critical("=== EMERGENCY STOP ACTIVATED ===")
-        logger.critical("Reason: %s", reason)
-
-        await self._audit_log_event(
-            "emergency_stop_activated",
-            {"reason": reason, "timestamp": datetime.now(UTC).isoformat()},
-        )
-
         try:
-            # Use SafetyServiceRegistry coordinated emergency stop
-            if self.service_registry and hasattr(self.service_registry, "execute_emergency_stop"):
-                logger.critical("Initiating coordinated emergency stop via SafetyServiceRegistry")
-                emergency_results = await self.service_registry.execute_emergency_stop(
-                    reason=reason, triggered_by="safety_service"
+            if self.service_registry and hasattr(self.service_registry, "halt_command_emission"):
+                logger.critical("Initiating coordinated command halt via GuardrailCoordinator")
+                command_halt_results = await self.service_registry.halt_command_emission(
+                    reason=reason, triggered_by="command_guardrail_service"
                 )
-
-                # Log emergency stop results
-                successful_stops = sum(1 for success in emergency_results.values() if success)
-                failed_stops = sum(1 for success in emergency_results.values() if not success)
+                successful_stops = sum(1 for success in command_halt_results.values() if success)
+                failed_stops = sum(1 for success in command_halt_results.values() if not success)
 
                 logger.critical(
-                    f"Emergency stop coordination complete: {successful_stops} successful, {failed_stops} failed"
+                    "Command halt coordination complete: %d successful, %d failed",
+                    successful_stops,
+                    failed_stops,
                 )
 
                 if failed_stops > 0:
                     failed_services = [
-                        name for name, success in emergency_results.items() if not success
+                        name for name, success in command_halt_results.items() if not success
                     ]
-                    logger.error(f"Emergency stop failed for services: {failed_services}")
+                    logger.error("Command halt failed for services: %s", failed_services)
 
             else:
-                # Fallback to manual service shutdown
-                logger.warning("SafetyServiceRegistry not available, using fallback emergency stop")
-                safety_critical_services = self._get_safety_critical_services()
-
-                for service_name in safety_critical_services:
+                logger.warning("GuardrailCoordinator not available, using fallback command halt")
+                for service_name in self._get_command_halt_targets():
                     try:
                         service = (
                             self.service_registry.get_service(service_name)
                             if self.service_registry
                             else None
                         )
-                        if service and hasattr(service, "emergency_stop"):
-                            logger.critical(
-                                "Emergency stop: Triggering safe shutdown for %s", service_name
-                            )
-                            await service.emergency_stop(reason)
-                        elif service and hasattr(service, "stop"):
-                            logger.critical("Emergency stop: Stopping service %s", service_name)
-                            await service.stop()
+                        if service and hasattr(service, "halt_command_emission"):
+                            logger.critical("Command halt target: %s", service_name)
+                            await service.halt_command_emission(reason)
                     except Exception as e:
-                        logger.error(
-                            "Error stopping service %s during emergency: %s", service_name, e
-                        )
+                        logger.error("Error halting service %s: %s", service_name, e)
 
-            # Engage all safety interlocks
+            self._active_guardrail_actions = ["halt_command_emission"]
             for interlock in self._interlocks.values():
                 if not interlock.is_engaged:
-                    await interlock.engage(f"Emergency stop: {reason}")
-                    # Mirror the action-tracking that
-                    # ``_execute_emergency_stop_actions`` performs on
-                    # the ``trigger_emergency_stop`` path. Without this,
-                    # observers calling ``get_safety_status()`` on an
-                    # auto-triggered (loop-driven) emergency stop see
-                    # an EMPTY ``active_safety_actions`` list -- losing
-                    # forensic context about what got engaged.
-                    self._active_safety_actions.append(f"interlock_engaged_{interlock.name}")
+                    await interlock.engage(f"Command halt: {reason}")
+                    self._active_guardrail_actions.append(f"precondition_engaged_{interlock.name}")
 
-            # Record the high-level shutdown action for parity with
-            # the ``trigger_emergency_stop`` path (line 1628-1629).
-            if "safety_critical_safe_shutdown" not in self._active_safety_actions:
-                self._active_safety_actions.append("safety_critical_safe_shutdown")
-            if "maintain_safe_state" not in self._active_safety_actions:
-                self._active_safety_actions.append("maintain_safe_state")
-
-            # Enter system-wide safe state
-            await self._enter_safe_state(f"Emergency stop: {reason}")
-
-            logger.critical("=== EMERGENCY STOP COMPLETED ===")
+            self._in_command_halt_state = True
+            logger.critical("Command emission halted: %s", reason)
+            return True
 
         except Exception as e:
-            logger.critical("Error during emergency stop: %s", e)
-            await self._audit_log_event("emergency_stop_error", {"error": str(e), "reason": reason})
+            logger.critical("Error during command halt: %s", e)
+            await self._audit_log_event("command_halt_error", {"error": str(e), "reason": reason})
+            return False
 
-    def _get_safety_critical_services(self) -> list[str]:
+    def _get_command_halt_targets(self) -> list[str]:
         """
-        Get list of CRITICAL-classified service names from SafetyServiceRegistry.
+        Get list of CRITICAL-classified service names from GuardrailCoordinator.
 
         Returns:
-            List of service names classified CRITICAL that need emergency stop.
+            List of service names classified CRITICAL that need command halt.
         """
-        # Use SafetyServiceRegistry if available for accurate classification
-        if self.service_registry and hasattr(self.service_registry, "get_safety_critical_services"):
-            return self.service_registry.get_safety_critical_services()
+        # Use GuardrailCoordinator if available for accurate classification
+        if self.service_registry and hasattr(self.service_registry, "get_command_halt_targets"):
+            return self.service_registry.get_command_halt_targets()
 
-        # Fallback: Define known CRITICAL services for basic operation
-        fallback_critical_services = [
-            "can_bus_service",  # Vehicle CAN bus control
-            "entity_service",  # Entity state read + control (unified facade)
-            "auth_manager",  # Access control security
-            "websocket_manager",  # Real-time communication
-        ]
+        # Fallback: use the CAN facade as the single command-halt coordinator.
+        fallback_critical_services = ["can_facade"]
 
         # Filter to only services that are actually registered and running
         if self.service_registry:
-            available_services = []
-            for service_name in fallback_critical_services:
-                if self.service_registry.has_service(service_name):
-                    available_services.append(service_name)
-            return available_services
+            return [
+                service_name
+                for service_name in fallback_critical_services
+                if self.service_registry.has_service(service_name)
+            ]
 
         return []
 
-    async def reset_emergency_stop(
+    async def clear_command_halt(
         self,
         authorization_code: str,
         reset_by: str,
         pin_session_id: str | None = None,
     ) -> bool:
         """
-        Reset emergency stop after manual authorization.
+        Reset command halt after manual authorization.
 
         Args:
             authorization_code: Authorization code for reset (legacy support)
-            reset_by: Who is resetting the emergency stop
+            reset_by: Who is resetting the command halt
             pin_session_id: PIN session ID for enhanced authorization
 
         Returns:
             True if reset was successful
         """
-        if not self._emergency_stop_active:
-            logger.info("No emergency stop active to reset")
+        if not self._command_halt_active:
+            logger.info("No command halt active to reset")
             return True
 
         # Enhanced authorization with PIN support
@@ -699,7 +613,7 @@ class SafetyService:
         if pin_session_id and self.pin_manager:
             try:
                 authorized = await self.pin_manager.authorize_operation(
-                    session_id=pin_session_id, operation="emergency_reset", user_id=reset_by
+                    session_id=pin_session_id, operation="clear_command_halt", user_id=reset_by
                 )
                 auth_method = "pin_session"
                 auth_status = "succeeded" if authorized else "failed"
@@ -713,13 +627,13 @@ class SafetyService:
             if authorization_code == "SAFETY_OVERRIDE_ADMIN":
                 authorized = True
                 auth_method = "legacy_code"
-                logger.warning("Emergency stop reset using legacy authorization code")
+                logger.warning("Command halt reset using legacy authorization code")
             else:
-                logger.warning("Invalid legacy authorization code for emergency stop reset")
+                logger.warning("Invalid legacy authorization code for command halt reset")
 
         if not authorized:
             await self._audit_log_event(
-                "emergency_stop_reset_failed",
+                "halt_command_emission_reset_failed",
                 {
                     "reset_by": reset_by,
                     "auth_method": auth_method,
@@ -729,15 +643,20 @@ class SafetyService:
             )
             return False
 
-        logger.info("Resetting emergency stop with %s authorization", auth_method)
+        logger.info("Resetting command halt with %s authorization", auth_method)
 
-        self._emergency_stop_active = False
-        self._emergency_stop_reason = None
-        self._emergency_stop_triggered_by = None
-        self._emergency_stop_time = None
+        self._command_halt_active = False
+        self._halt_command_emission_reason = None
+        self._halt_command_emission_triggered_by = None
+        self._halt_command_emission_time = None
+        self._in_command_halt_state = False
+        self._active_guardrail_actions.clear()
+
+        for interlock in self._interlocks.values():
+            await interlock.disengage("Command halt cleared")
 
         await self._audit_log_event(
-            "emergency_stop_reset",
+            "halt_command_emission_reset",
             {
                 "reset_by": reset_by,
                 "auth_method": auth_method,
@@ -749,7 +668,7 @@ class SafetyService:
         # Enhanced security audit logging
         if self.security_audit_service:
             await self.security_audit_service.log_security_event(
-                event_type="emergency_stop_reset",
+                event_type="halt_command_emission_reset",
                 severity="high",
                 user_id=reset_by,
                 details={
@@ -760,42 +679,39 @@ class SafetyService:
                 emergency_context=False,  # Emergency is being cleared
             )
 
-        # Note: Individual features and interlocks must be manually re-enabled
-        # This requires explicit operator action to ensure safety
-
         return True
 
-    async def emergency_stop_with_pin(
+    async def halt_command_emission_with_pin(
         self,
         pin_session_id: str,
         reason: str,
         triggered_by: str,
     ) -> bool:
         """
-        Trigger emergency stop using PIN authorization.
+        Trigger command halt using PIN authorization.
 
         Args:
             pin_session_id: PIN session ID for authorization
-            reason: Reason for emergency stop
-            triggered_by: User triggering the emergency stop
+            reason: Reason for command halt
+            triggered_by: User triggering the command halt
 
         Returns:
-            True if emergency stop was successfully triggered
+            True if command halt was successfully triggered
         """
         if not self.pin_manager:
-            logger.error("PIN manager not available for emergency stop")
+            logger.error("PIN manager not available for command halt")
             return False
 
-        # Authorize the emergency stop operation
+        # Authorize the command halt operation
         try:
             authorized = await self.pin_manager.authorize_operation(
-                session_id=pin_session_id, operation="emergency_stop", user_id=triggered_by
+                session_id=pin_session_id, operation="halt_command_emission", user_id=triggered_by
             )
 
             if not authorized:
-                logger.warning("Emergency stop authorization failed for user %s", triggered_by)
+                logger.warning("Command halt authorization failed for user %s", triggered_by)
                 await self._audit_log_event(
-                    "emergency_stop_auth_failed",
+                    "halt_command_emission_auth_failed",
                     {
                         "triggered_by": triggered_by,
                         "reason": reason,
@@ -810,7 +726,7 @@ class SafetyService:
                         severity="high",
                         user_id=triggered_by,
                         details={
-                            "attempted_operation": "emergency_stop_with_pin",
+                            "attempted_operation": "halt_command_emission_with_pin",
                             "failure_reason": "pin_authorization_failed",
                             "pin_session_id": pin_session_id,
                         },
@@ -818,18 +734,16 @@ class SafetyService:
                     )
                 return False
 
-            # Proceed with emergency stop
-            await self.trigger_emergency_stop(reason, triggered_by)
+            # Proceed with command halt
+            await self.halt_command_emission(reason, triggered_by)
 
-            logger.warning(
-                "PIN-authorized emergency stop triggered by %s: %s", triggered_by, reason
-            )
+            logger.warning("PIN-authorized command halt triggered by %s: %s", triggered_by, reason)
             return True
 
         except Exception as e:
-            logger.error("Error during PIN-authorized emergency stop: %s", e)
+            logger.error("Error during PIN-authorized command halt: %s", e)
             await self._audit_log_event(
-                "emergency_stop_pin_error",
+                "halt_command_emission_pin_error",
                 {
                     "triggered_by": triggered_by,
                     "reason": reason,
@@ -838,7 +752,7 @@ class SafetyService:
             )
             return False
 
-    async def validate_safety_operation(
+    async def validate_guardrail_operation(  # noqa: PLR0913 - API audit context is intentionally explicit
         self,
         operation_type: str,
         user_id: str,
@@ -848,10 +762,10 @@ class SafetyService:
         details: dict | None = None,
     ) -> bool:
         """
-        Validate a safety operation with rate limiting and audit logging.
+        Validate a guardrail operation with rate limiting and audit logging.
 
         Args:
-            operation_type: Type of operation (emergency, safety, control)
+            operation_type: Type of operation (command_halt, guardrail, control)
             user_id: User performing the operation
             source_ip: Source IP address for rate limiting
             is_admin: Whether user has admin privileges
@@ -867,12 +781,12 @@ class SafetyService:
 
         # Determine endpoint category for rate limiting
         category_map = {
-            "emergency": "emergency",
-            "safety": "safety",
-            "control": "safety",
+            "command_halt": "guardrail",
+            "guardrail": "guardrail",
+            "control": "guardrail",
             "pin_auth": "pin_auth",
         }
-        category = category_map.get(operation_type, "safety")
+        category = category_map.get(operation_type, "guardrail")
 
         # Check rate limits
         identifier = source_ip or user_id
@@ -901,11 +815,11 @@ class SafetyService:
             return False
 
         # Log successful validation
-        severity = "high" if operation_type == "emergency" else "medium"
+        severity = "high" if operation_type == "command_halt" else "medium"
         await self.security_audit_service.log_security_event(
             event_type="entity_control_success"
             if operation_type == "control"
-            else "safety_operation_authorized",
+            else "guardrail_operation_authorized",
             severity=severity,
             user_id=user_id,
             source_ip=source_ip,
@@ -916,27 +830,27 @@ class SafetyService:
                 "validation_passed": True,
                 **(details or {}),
             },
-            emergency_context=self._emergency_stop_active,
+            emergency_context=self._command_halt_active,
         )
 
         return True
 
-    async def reset_emergency_stop_with_pin(
+    async def clear_command_halt_with_pin(
         self,
         pin_session_id: str,
         reset_by: str,
     ) -> bool:
         """
-        Reset emergency stop using PIN authorization only.
+        Reset command halt using PIN authorization only.
 
         Args:
             pin_session_id: PIN session ID for authorization
-            reset_by: User resetting the emergency stop
+            reset_by: User resetting the command halt
 
         Returns:
             True if reset was successful
         """
-        return await self.reset_emergency_stop(
+        return await self.clear_command_halt(
             authorization_code="",  # No legacy code
             reset_by=reset_by,
             pin_session_id=pin_session_id,
@@ -951,7 +865,7 @@ class SafetyService:
         overridden_by: str,
     ) -> bool:
         """
-        Override a safety interlock using PIN authorization.
+        Override a command precondition using PIN authorization.
 
         Args:
             pin_session_id: PIN session ID for authorization
@@ -1002,7 +916,7 @@ class SafetyService:
                             "interlock_name": interlock_name,
                             "pin_session_id": pin_session_id,
                         },
-                        emergency_context=self._emergency_stop_active,
+                        emergency_context=self._command_halt_active,
                     )
                 return False
 
@@ -1047,7 +961,7 @@ class SafetyService:
                         "expires_at": expires_at.isoformat(),
                         "authorization_method": "pin_session",
                     },
-                    emergency_context=self._emergency_stop_active,
+                    emergency_context=self._command_halt_active,
                 )
 
             logger.warning(
@@ -1119,7 +1033,7 @@ class SafetyService:
         """
         Enter maintenance mode using PIN authorization.
 
-        In maintenance mode, certain safety interlocks may be relaxed
+        In maintenance mode, certain command preconditions may be relaxed
         for service operations. Requires PIN authorization.
 
         Args:
@@ -1168,7 +1082,7 @@ class SafetyService:
                             "failure_reason": "pin_authorization_failed",
                             "pin_session_id": pin_session_id,
                         },
-                        emergency_context=self._emergency_stop_active,
+                        emergency_context=self._command_halt_active,
                     )
                 return False
 
@@ -1209,7 +1123,7 @@ class SafetyService:
                         "authorization_method": "pin_session",
                         "previous_mode": previous_mode.value,
                     },
-                    emergency_context=self._emergency_stop_active,
+                    emergency_context=self._command_halt_active,
                 )
 
             logger.warning(
@@ -1322,7 +1236,7 @@ class SafetyService:
                         "cleared_overrides_count": len(cleared_overrides),
                         "authorization_method": "pin_session",
                     },
-                    emergency_context=self._emergency_stop_active,
+                    emergency_context=self._command_halt_active,
                 )
 
             logger.warning(
@@ -1395,7 +1309,7 @@ class SafetyService:
         Enter diagnostic mode using PIN authorization.
 
         In diagnostic mode, system diagnostics and testing can be performed
-        with modified safety constraints. Requires PIN authorization.
+        with modified guardrail constraints. Requires PIN authorization.
 
         Args:
             pin_session_id: PIN session ID for authorization
@@ -1443,7 +1357,7 @@ class SafetyService:
                             "failure_reason": "pin_authorization_failed",
                             "pin_session_id": pin_session_id,
                         },
-                        emergency_context=self._emergency_stop_active,
+                        emergency_context=self._command_halt_active,
                     )
                 return False
 
@@ -1484,7 +1398,7 @@ class SafetyService:
                         "authorization_method": "pin_session",
                         "previous_mode": previous_mode.value,
                     },
-                    emergency_context=self._emergency_stop_active,
+                    emergency_context=self._command_halt_active,
                 )
 
             logger.warning(
@@ -1597,7 +1511,7 @@ class SafetyService:
                         "cleared_overrides_count": len(cleared_overrides),
                         "authorization_method": "pin_session",
                     },
-                    emergency_context=self._emergency_stop_active,
+                    emergency_context=self._command_halt_active,
                 )
 
             logger.warning(
@@ -1618,15 +1532,15 @@ class SafetyService:
             )
             return False
 
-    async def _execute_emergency_stop_actions(self) -> None:
-        """Execute emergency stop safety actions."""
-        self._active_safety_actions = []
+    async def _halt_command_emission_actions(self) -> None:
+        """Execute command halt guardrail actions."""
+        self._active_guardrail_actions = []
 
         # 1. Safety-critical services to safe shutdown
-        safety_critical_services = self._get_safety_critical_services()
+        guardrail_critical_services = self._get_command_halt_targets()
         safety_shutdown_count = 0
 
-        for service_name in safety_critical_services:
+        for service_name in guardrail_critical_services:
             try:
                 service = (
                     self.service_registry.get_service(service_name)
@@ -1635,99 +1549,98 @@ class SafetyService:
                 )
                 if service:
                     safety_shutdown_count += 1
-                    if hasattr(service, "emergency_stop"):
+                    if hasattr(service, "halt_command_emission"):
                         logger.critical(
-                            "Emergency stop action: Triggering safe shutdown for %s", service_name
+                            "Command halt action: Triggering safe shutdown for %s", service_name
                         )
-                        await service.emergency_stop("Safety system emergency stop")
+                        await service.halt_command_emission("Safety system command halt")
                     else:
                         logger.warning(
-                            "Service %s does not support emergency_stop method", service_name
+                            "Service %s does not support halt_command_emission method", service_name
                         )
             except Exception as e:
-                logger.error("Error executing emergency stop for service %s: %s", service_name, e)
+                logger.error("Error executing command halt for service %s: %s", service_name, e)
 
         if safety_shutdown_count > 0:
-            self._active_safety_actions.append("safety_critical_safe_shutdown")
-            self._active_safety_actions.append("maintain_safe_state")
+            self._active_guardrail_actions.append("guardrail_critical_safe_shutdown")
+            self._active_guardrail_actions.append("maintain_command_halt_state")
 
-        # 2. Engage all safety interlocks
+        # 2. Engage all command preconditions
         for interlock in self._interlocks.values():
             if not interlock.is_engaged:
-                await interlock.engage(f"Emergency stop: {self._emergency_stop_reason}")
-                self._active_safety_actions.append(f"interlock_engaged_{interlock.name}")
+                await interlock.engage(f"Command halt: {self._halt_command_emission_reason}")
+                self._active_guardrail_actions.append(f"interlock_engaged_{interlock.name}")
 
-        # 3. Enter system-wide safe state
-        await self._enter_safe_state(f"Emergency stop: {self._emergency_stop_reason}")
+        # 3. Enter system-wide command halt state
+        await self._enter_command_halt_state(f"Command halt: {self._halt_command_emission_reason}")
 
     async def check_all_interlocks(self) -> None:
-        """Check all safety interlocks and engage if needed."""
-        results = await self.check_safety_interlocks()
+        """Check all command preconditions and engage if needed."""
+        results = await self.check_command_preconditions()
 
         # Count violations
         violations = 0
         for name, (satisfied, _reason) in results.items():
             if not satisfied:
                 violations += 1
-                if name not in self._active_safety_actions:
-                    self._active_safety_actions.append(f"interlock_violated_{name}")
+                if name not in self._active_guardrail_actions:
+                    self._active_guardrail_actions.append(f"interlock_violated_{name}")
 
-        # Multiple violations trigger emergency stop
+        # Multiple violations trigger command halt
         if violations >= self.MULTIPLE_VIOLATION_THRESHOLD:
-            await self.trigger_emergency_stop(
-                f"Multiple interlock violations: {violations}", "safety_monitoring"
+            await self.halt_command_emission(
+                f"Multiple interlock violations: {violations}", "guardrail_monitoring"
             )
 
-    async def _check_interlock_conditions(self, interlock: SafetyInterlock) -> bool:
+    async def _check_interlock_conditions(self, interlock: CommandPrecondition) -> bool:
         """Check if interlock conditions are violated."""
-        conditions_met, reason = await interlock.check_conditions(self._system_state)
+        conditions_met, _reason = await interlock.check_conditions(self._system_state)
         return not conditions_met  # Return True if violated
 
-    async def _perform_health_check(self) -> None:
+    async def _perform_health_check(self) -> None:  # noqa: C901, PLR0912
         """Perform comprehensive health check."""
         self._last_health_check = datetime.now(UTC)
 
-        # Check service health via SafetyServiceRegistry
-        if self.service_registry and hasattr(self.service_registry, "get_safety_status_summary"):
+        # Check service health via GuardrailCoordinator
+        if self.service_registry and hasattr(self.service_registry, "get_guardrail_status_summary"):
             try:
-                # Use comprehensive safety status from SafetyServiceRegistry
-                safety_summary = await self.service_registry.get_safety_status_summary()
+                # Use comprehensive guardrail status from GuardrailCoordinator
+                guardrail_summary = await self.service_registry.get_guardrail_status_summary()
 
-                # Check for critical safety issues
-                overall_status = safety_summary.get("overall_safety_status", "safe")
-                unsafe_count = safety_summary.get("summary", {}).get("unsafe_count", 0)
-                emergency_count = safety_summary.get("summary", {}).get("emergency_stop_count", 0)
+                # Check for critical guardrail issues
+                overall_status = guardrail_summary.get("overall_guardrail_status", "safe")
+                unsafe_count = guardrail_summary.get("summary", {}).get("unsafe_count", 0)
 
                 if overall_status == "unsafe" or unsafe_count > 0:
                     # Find which services are unsafe
                     failed_critical = []
                     for category in [
                         "critical_services",
-                        "safety_related_services",
-                        "position_critical_services",
+                        "operational_services",
+                        "maintenance_services",
                     ]:
-                        services = safety_summary.get(category, {})
+                        services = guardrail_summary.get(category, {})
                         for service_name, status in services.items():
-                            if status in ["unsafe", "emergency_stop"]:
+                            if status in ["unsafe", "halt_command_emission"]:
                                 failed_critical.append(service_name)
 
                     if failed_critical:
-                        await self.trigger_emergency_stop(
-                            f"Critical safety failure detected: {', '.join(failed_critical)}",
+                        await self.halt_command_emission(
+                            f"Critical guardrail failure detected: {', '.join(failed_critical)}",
                             "health_monitoring",
                         )
                         return
 
                 elif overall_status == "degraded":
-                    logger.warning("System operating in degraded safety mode")
+                    logger.warning("System operating in degraded guardrail mode")
 
             except Exception as e:
-                logger.error(f"Error checking safety status summary: {e}")
+                logger.error("Error checking guardrail status summary: %s", e)
                 # Fallback to individual service checks
                 failed_critical = []
-                safety_critical_services = self._get_safety_critical_services()
+                guardrail_critical_services = self._get_command_halt_targets()
 
-                for service_name in safety_critical_services:
+                for service_name in guardrail_critical_services:
                     try:
                         status = self.service_registry.get_service_status(service_name)
                         if status in ["FAILED", "DEGRADED"]:
@@ -1738,7 +1651,7 @@ class SafetyService:
 
                 # Check for critical failures
                 if failed_critical:
-                    await self.trigger_emergency_stop(
+                    await self.halt_command_emission(
                         f"Critical service failed: {', '.join(failed_critical)}",
                         "health_monitoring",
                     )
@@ -1746,7 +1659,7 @@ class SafetyService:
 
         # Check watchdog timeout
         if self._check_watchdog_timeout():
-            await self.trigger_emergency_stop("Watchdog timeout", "watchdog_monitor")
+            await self.halt_command_emission("Watchdog timeout", "watchdog_monitor")
             return
 
         # Update watchdog
@@ -1776,13 +1689,13 @@ class SafetyService:
         if len(self._audit_log) > self._max_audit_entries:
             self._audit_log = self._audit_log[-self._max_audit_entries :]
 
-    async def get_safety_status_async(self) -> dict[str, Any]:
-        """Get comprehensive safety status (async version)."""
-        return self.get_safety_status()
+    async def get_guardrail_status_async(self) -> dict[str, Any]:
+        """Get comprehensive guardrail status (async version)."""
+        return self.get_guardrail_status()
 
     async def start_monitoring(self) -> None:
-        """Start safety monitoring tasks (watchdog and health checks)."""
-        logger.info("Starting safety monitoring with system state: %s", self._system_state)
+        """Start guardrail monitoring tasks (watchdog and health checks)."""
+        logger.info("Starting guardrail monitoring with system state: %s", self._system_state)
 
         if self._health_monitor_task is None:
             self._health_monitor_task = asyncio.create_task(self._health_monitoring_loop())
@@ -1790,13 +1703,13 @@ class SafetyService:
 
         if self._watchdog_task is None:
             self._watchdog_task = asyncio.create_task(self._watchdog_loop())
-            logger.info("Started safety watchdog monitoring")
+            logger.info("Started guardrail watchdog monitoring")
 
         # Initialize watchdog
         self._last_watchdog_kick = time.time()
 
     async def stop_monitoring(self) -> None:
-        """Stop safety monitoring tasks."""
+        """Stop guardrail monitoring tasks."""
         if self._health_monitor_task:
             self._health_monitor_task.cancel()
             with suppress(asyncio.CancelledError):
@@ -1809,13 +1722,13 @@ class SafetyService:
             with suppress(asyncio.CancelledError):
                 await self._watchdog_task
             self._watchdog_task = None
-            logger.info("Stopped safety watchdog monitoring")
+            logger.info("Stopped guardrail watchdog monitoring")
 
     async def _health_monitoring_loop(self) -> None:
         """Health monitoring loop with watchdog pattern (see ADR-0004 for framing)."""
         logger.info("Starting safety health monitoring loop")
 
-        while not self._in_safe_state:
+        while not self._in_command_halt_state:
             try:
                 start_time = time.time()
 
@@ -1832,7 +1745,7 @@ class SafetyService:
                     # Create health report compatible with existing logic
                     health_report = {
                         "failed_critical": [
-                            s for s in failed_services if s in self._get_safety_critical_services()
+                            s for s in failed_services if s in self._get_command_halt_targets()
                         ],
                         "healthy": len(failed_services) == 0,
                     }
@@ -1840,8 +1753,8 @@ class SafetyService:
                     # Fallback when ServiceRegistry not available
                     health_report = {"failed_critical": [], "healthy": True}
 
-                # Check safety interlocks
-                interlock_results = await self.check_safety_interlocks()
+                # Check command preconditions
+                interlock_results = await self.check_command_preconditions()
 
                 # Update watchdog timer
                 self._last_watchdog_kick = time.time()
@@ -1853,7 +1766,7 @@ class SafetyService:
                 loop_duration = time.time() - start_time
                 if loop_duration > self.health_check_interval:
                     logger.warning(
-                        "Safety monitoring loop took %.2fs (threshold: %.2fs)",
+                        "Guardrail monitoring loop took %.2fs (threshold: %.2fs)",
                         loop_duration,
                         self.health_check_interval,
                     )
@@ -1861,25 +1774,25 @@ class SafetyService:
                 await asyncio.sleep(self.health_check_interval)
 
             except Exception as e:
-                logger.critical("Safety monitoring loop failed: %s", e)
-                await self._enter_safe_state(f"Monitoring loop failure: {e}")
+                logger.critical("Guardrail monitoring loop failed: %s", e)
+                await self._enter_command_halt_state(f"Monitoring loop failure: {e}")
                 break
 
     async def _watchdog_loop(self) -> None:
         """Separate watchdog task to monitor health check kicks."""
-        logger.info("Starting safety watchdog loop")
+        logger.info("Starting guardrail watchdog loop")
 
-        while not self._in_safe_state:
+        while not self._in_command_halt_state:
             current_time = time.time()
             time_since_kick = current_time - self._last_watchdog_kick
 
             if time_since_kick > self.watchdog_timeout:
                 logger.critical(
-                    "Safety watchdog timeout detected (%.1fs > %.1fs)",
+                    "Guardrail watchdog timeout detected (%.1fs > %.1fs)",
                     time_since_kick,
                     self.watchdog_timeout,
                 )
-                await self._enter_safe_state("Watchdog timeout")
+                await self._enter_command_halt_state("Watchdog timeout")
                 break
 
             await asyncio.sleep(1.0)
@@ -1888,17 +1801,19 @@ class SafetyService:
         self, health_report: dict[str, Any], interlock_results: dict[str, tuple[bool, str]]
     ) -> None:
         """
-        Check for conditions that require emergency stop.
+        Check for conditions that require command halt.
 
         Args:
             health_report: System health report from service registry
-            interlock_results: Results from safety interlock checks
+            interlock_results: Results from command precondition checks
         """
         # Check for critical feature failures
         failed_critical = health_report.get("failed_critical", [])
         if failed_critical:
             logger.critical("Critical features failed: %s", failed_critical)
-            await self.emergency_stop(f"Critical feature failure: {', '.join(failed_critical)}")
+            await self.halt_command_emission(
+                f"Critical feature failure: {', '.join(failed_critical)}"
+            )
 
         # Check for multiple interlock violations
         violated_interlocks = [
@@ -1906,28 +1821,29 @@ class SafetyService:
         ]
 
         multiple_violation_threshold = 3
-        if len(violated_interlocks) >= multiple_violation_threshold:  # Multiple safety violations
-            logger.critical("Multiple safety interlocks violated: %s", violated_interlocks)
-            await self.emergency_stop(
+        if len(violated_interlocks) >= multiple_violation_threshold:
+            logger.critical("Multiple command preconditions violated: %s", violated_interlocks)
+            await self.halt_command_emission(
                 f"Multiple interlock violations: {', '.join(violated_interlocks)}"
             )
 
-    async def _enter_safe_state(self, reason: str) -> None:
+    async def _enter_command_halt_state(self, reason: str) -> None:
         """
-        Enter system-wide safe state.
+        Enter system-wide command halt state.
 
         Args:
-            reason: Reason for entering safe state
+            reason: Reason for entering command halt state
         """
-        if self._in_safe_state:
-            return  # Already in safe state
+        if self._in_command_halt_state:
+            return  # Already in command halt state
 
-        self._in_safe_state = True
-        logger.critical("=== ENTERING SAFE STATE ===")
+        self._in_command_halt_state = True
+        logger.critical("=== ENTERING COMMAND HALT STATE ===")
         logger.critical("Reason: %s", reason)
 
         await self._audit_log_event(
-            "safe_state_entered", {"reason": reason, "timestamp": datetime.now(UTC).isoformat()}
+            "command_halt_state_entered",
+            {"reason": reason, "timestamp": datetime.now(UTC).isoformat()},
         )
 
         try:
@@ -1935,25 +1851,27 @@ class SafetyService:
             system_snapshot = dict(self._system_state)
             logger.info("System state snapshot: %s", system_snapshot)
 
-            # Set all CRITICAL-classified features to safe shutdown
-            await self._shutdown_safety_critical_features()
+            # Set all CRITICAL-classified features to command halt.
+            await self._shutdown_guardrail_critical_features()
 
-            # Engage all safety interlocks
+            # Engage all command preconditions
             for interlock in self._interlocks.values():
                 if not interlock.is_engaged:
-                    await interlock.engage(f"Safe state: {reason}")
+                    await interlock.engage(f"Command halt state: {reason}")
 
-            logger.critical("=== SAFE STATE ESTABLISHED ===")
+            logger.critical("=== COMMAND HALT STATE ESTABLISHED ===")
 
         except Exception as e:
-            logger.critical("Failed to enter safe state: %s", e)
-            await self._audit_log_event("safe_state_error", {"error": str(e), "reason": reason})
+            logger.critical("Failed to enter command halt state: %s", e)
+            await self._audit_log_event(
+                "command_halt_state_error", {"error": str(e), "reason": reason}
+            )
 
-    async def _shutdown_safety_critical_features(self) -> None:
+    async def _shutdown_guardrail_critical_features(self) -> None:
         """Shut down CRITICAL-classified services in controlled manner."""
-        safety_critical_services = self._get_safety_critical_services()
+        guardrail_critical_services = self._get_command_halt_targets()
 
-        for service_name in safety_critical_services:
+        for service_name in guardrail_critical_services:
             try:
                 service = (
                     self.service_registry.get_service(service_name)
@@ -1961,11 +1879,11 @@ class SafetyService:
                     else None
                 )
                 if service:
-                    if hasattr(service, "emergency_stop"):
-                        logger.info("Safe state shutdown: %s", service_name)
-                        await service.emergency_stop("Entering safe state")
+                    if hasattr(service, "halt_command_emission"):
+                        logger.info("Command halt state shutdown: %s", service_name)
+                        await service.halt_command_emission("Entering command halt state")
                     elif hasattr(service, "stop"):
-                        logger.info("Safe state shutdown: %s", service_name)
+                        logger.info("Command halt state shutdown: %s", service_name)
                         await service.stop()
             except Exception as e:
                 logger.error("Error shutting down service %s: %s", service_name, e)
@@ -1973,9 +1891,9 @@ class SafetyService:
     def get_health_status(self) -> dict[str, Any]:
         """Get health status for ServiceRegistry monitoring."""
         return {
-            "healthy": not self._emergency_stop_active and not self._in_safe_state,
-            "emergency_stop_active": self._emergency_stop_active,
-            "in_safe_state": self._in_safe_state,
+            "healthy": not self._command_halt_active and not self._in_command_halt_state,
+            "command_halt_active": self._command_halt_active,
+            "in_command_halt_state": self._in_command_halt_state,
             "operational_mode": self._operational_mode.value,
             "active_interlocks": len([i for i in self._interlocks.values() if i.is_engaged]),
             "last_health_check": self._last_health_check.isoformat()
@@ -2022,16 +1940,16 @@ class SafetyService:
         """
         return self._audit_log[-max_entries:] if self._audit_log else []
 
-    def get_safety_status(self) -> dict[str, Any]:
+    def get_guardrail_status(self) -> dict[str, Any]:
         """
-        Get comprehensive safety system status.
+        Get comprehensive guardrail subsystem status.
 
         Returns:
-            Dictionary containing safety system status
+            Dictionary containing guardrail subsystem status
         """
         return {
-            "in_safe_state": self._in_safe_state,
-            "emergency_stop_active": self._emergency_stop_active,
+            "in_command_halt_state": self._in_command_halt_state,
+            "command_halt_active": self._command_halt_active,
             "operational_mode": self._operational_mode.value,
             "mode_session": {
                 "session_id": self._mode_session_id,
@@ -2060,6 +1978,6 @@ class SafetyService:
             },
             "system_state": dict(self._system_state),
             "audit_log_entries": len(self._audit_log),
-            "emergency_stop_reason": self._emergency_stop_reason,
-            "active_safety_actions": list(self._active_safety_actions),
+            "halt_command_emission_reason": self._halt_command_emission_reason,
+            "active_guardrail_actions": list(self._active_guardrail_actions),
         }

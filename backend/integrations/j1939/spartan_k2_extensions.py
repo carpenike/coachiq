@@ -99,7 +99,7 @@ class SpartanK2PGNDefinition(NamedTuple):
     diagnostic_support: bool = True
 
 
-class SpartanK2SafetyInterlock:
+class SpartanK2CommandPrecondition:
     """Safety interlock validation for Spartan K2 chassis systems."""
 
     def __init__(self, settings: Settings):
@@ -194,7 +194,7 @@ class SpartanK2Decoder:
         """
         self.settings = settings
         self.spartan_config = getattr(settings, "spartan_k2", None)
-        self.safety_interlock = SpartanK2SafetyInterlock(settings)
+        self.safety_interlock = SpartanK2CommandPrecondition(settings)
         self._pgn_definitions: dict[int, SpartanK2PGNDefinition] = {}
         self._message_cache: dict[int, SpartanK2Message] = {}
         self._load_spartan_k2_pgns()
@@ -245,7 +245,7 @@ class SpartanK2Decoder:
             return None
 
         # Validate safety interlocks
-        safety_violations = self._validate_safety_interlocks(pgn_def, decoded_signals)
+        safety_violations = self._validate_command_preconditions(pgn_def, decoded_signals)
 
         # Extract diagnostic codes
         diagnostic_codes = self._extract_diagnostic_codes(pgn_def, decoded_signals)
@@ -275,7 +275,7 @@ class SpartanK2Decoder:
             "system_type": system_type.value,
             "messages_received": 0,
             "last_update": None,
-            "safety_status": "unknown",
+            "guardrail_status": "unknown",
             "diagnostic_codes": [],
             "interlock_violations": [],
         }
@@ -291,7 +291,7 @@ class SpartanK2Decoder:
                 {
                     "messages_received": len(system_messages),
                     "last_update": latest_msg.timestamp,
-                    "safety_status": "ok" if not latest_msg.safety_interlocks else "violation",
+                    "guardrail_status": "ok" if not latest_msg.safety_interlocks else "violation",
                     "diagnostic_codes": latest_msg.diagnostic_codes,
                     "interlock_violations": latest_msg.safety_interlocks,
                 }
@@ -500,7 +500,7 @@ class SpartanK2Decoder:
 
         return decoded_signals, raw_signals
 
-    def _validate_safety_interlocks(
+    def _validate_command_preconditions(
         self, pgn_def: SpartanK2PGNDefinition, decoded_signals: dict
     ) -> list[str]:
         """Validate safety interlocks for the message."""

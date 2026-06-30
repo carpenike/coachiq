@@ -747,7 +747,7 @@ async def get_can_health(
     Get basic health status of the CAN subsystem.
 
     Returns a simple health check suitable for monitoring systems.
-    Includes overall health status, safety status, and emergency stop state.
+    Includes overall health status, guardrail status, and command-halt state.
     """
     return can_facade.get_health_status()
 
@@ -760,7 +760,7 @@ async def get_can_comprehensive_health(
     Get comprehensive health status including all subsystems.
 
     Returns detailed health information including:
-    - Facade safety status and emergency stop state
+    - Facade guardrail status and command-halt state
     - Individual service health statuses
     - Performance metrics
     - Queue depths and resource utilization
@@ -770,25 +770,25 @@ async def get_can_comprehensive_health(
     return await can_facade.get_comprehensive_health()
 
 
-@router.post("/emergency-stop")
-async def trigger_emergency_stop(
+@router.post("/command-halt")
+async def halt_command_emission(
     can_facade: VerifiedCANFacade,
-    reason: str = Query(..., description="Reason for emergency stop"),
+    reason: str = Query(..., description="Reason for command halt"),
 ) -> dict[str, Any]:
     """
-    Trigger an emergency stop across all CAN services.
+    Trigger command halt across CAN command emitters.
 
-    This is a safety-critical operation that will:
+    This is a guardrail-critical operation that will:
     - Stop all CAN message transmission
     - Halt all recording operations
     - Disable message injection
-    - Put the system in a safe state
+    - Put the CAN facade in command-halt state
 
-    The system must be manually reset after an emergency stop.
+    The system must be manually cleared after command halt.
     """
-    await can_facade.emergency_stop(reason)
+    await can_facade.halt_command_emission(reason)
     return {
         "success": True,
-        "message": f"Emergency stop triggered: {reason}",
-        "safety_status": can_facade.get_health_status(),
+        "message": f"Command halt triggered: {reason}",
+        "guardrail_status": can_facade.get_health_status(),
     }

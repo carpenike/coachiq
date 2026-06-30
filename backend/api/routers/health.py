@@ -172,16 +172,16 @@ async def health_check(
                         )
 
         # 4. Check safety-critical components if enabled
-        safety_service = service_registry.get_service("safety_service")
-        if safety_service:
-            safety_health = await check_safety_service_health(safety_service)
+        command_guardrail_service = service_registry.get_service("command_guardrail_service")
+        if command_guardrail_service:
+            safety_health = await check_command_guardrail_service_health(command_guardrail_service)
             if safety_health["status"] == HealthStatus.FAIL:
                 overall_status = HealthStatus.FAIL
                 notes.append("Safety service critical failure")
 
             if include_components:
-                checks["safety_service"] = ComponentHealth(
-                    component_name="safety_service",
+                checks["command_guardrail_service"] = ComponentHealth(
+                    component_name="command_guardrail_service",
                     component_type="safety_critical",
                     status=safety_health["status"],
                     message=safety_health["message"],
@@ -451,12 +451,12 @@ async def check_service_registry_health(
         }
 
 
-async def check_safety_service_health(safety_service) -> dict[str, Any]:
-    """Check SafetyService health with special handling for safety-critical status."""
+async def check_command_guardrail_service_health(command_guardrail_service) -> dict[str, Any]:
+    """Check CommandGuardrailService health with special handling for safety-critical status."""
     try:
-        # SafetyService doesn't have check_health method yet
+        # CommandGuardrailService doesn't have check_health method yet
         # Check if it's initialized and has validator
-        if hasattr(safety_service, "validator") and safety_service.validator:
+        if hasattr(command_guardrail_service, "validator") and command_guardrail_service.validator:
             status = HealthStatus.PASS
             message = "Safety service operational"
             action = None

@@ -25,6 +25,7 @@ from backend.api.routers import (
     dbc,
     device_discovery,
     docs,
+    guardrails,
     health,
     logs,
     multi_network,
@@ -34,7 +35,6 @@ from backend.api.routers import (
     performance_analytics,
     pin_auth,
     predictive_maintenance,
-    safety,
     schemas,
     security_config,
     security_dashboard,
@@ -82,7 +82,7 @@ def configure_routers(app: FastAPI) -> None:
     app.include_router(device_discovery.router)
     app.include_router(predictive_maintenance.router)
     app.include_router(schemas.router)
-    app.include_router(safety.router)
+    app.include_router(guardrails.router)
     app.include_router(pin_auth.router)
     app.include_router(security_config.router)
     app.include_router(security_dashboard.router)
@@ -160,7 +160,7 @@ def get_router_info() -> dict[str, Any]:
                 "tags": ["repository-migration"],
                 "name": "repository_migration",
             },
-            {"prefix": "/api/safety", "tags": ["safety"], "name": "safety"},
+            {"prefix": "/api/guardrails", "tags": ["guardrails"], "name": "guardrails"},
             {
                 "prefix": "/api/notifications/dashboard",
                 "tags": ["notification-dashboard"],

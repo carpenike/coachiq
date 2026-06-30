@@ -14,11 +14,11 @@ talks to the **Firefly MIRA** multiplex panel over RV-C / J1939 CAN.
 It is genuinely tempting to describe CoachIQ as a "vehicle safety
 system" because:
 
-- it has files named `safety_service.py`, `brake_safety_monitor.py`,
-  `safety_state_engine.py`, `safety_interfaces.py`;
+- it has files named `command_guardrail_service.py`, `brake_safety_monitor.py`,
+  `safety_state_engine.py`, and `guardrail_interfaces.py`;
 - it sends commands that affect physical hardware (lights, slides,
   awnings, leveling jacks);
-- it has emergency-stop endpoints, watchdog timers, and interlock
+- it has command-halt endpoints, watchdog timers, and command-precondition
   checks.
 
 If we accepted that framing, the implication would be that we should
@@ -66,7 +66,7 @@ In particular:
     cannot flood Firefly).
   - Pydantic-validated message factories; never hand-construct CAN
     payloads from user input.
-  - Audit logging for every safety-relevant API action.
+  - Audit logging for every guardrail-relevant API action.
   - Bandit medium+ blocking on the entire project.
 
 - **Out of scope** for this codebase:
@@ -78,13 +78,13 @@ In particular:
   - Anything that frames CoachIQ as the system of record for vehicle
     safety state.
 
-The naming is unfortunate. Files like `safety_service.py` and
-`brake_safety_monitor.py` describe **API guardrails** ("don't let the
-API send commands that would be invalid or confusing for Firefly to
-process"), not vehicle-safety primitives. The architecture-doc files,
-the AGENTS.md / copilot-instructions.md files, and this ADR all repeat
-that disclaimer because the names alone will keep tempting readers
-toward the wrong framing.
+The remaining safety-named files are explicitly scoped: `brake_safety_monitor.py`
+and `safety_state_engine.py` describe API-side defensive checks, not vehicle
+safety primitives. HOF-051 renamed the core command-validation service,
+coordinator, interfaces, and API routes to **guardrail** vocabulary so the code
+matches this ADR in names, not only in comments. New code should use guardrail,
+command-precondition, and command-halt names unless it is integrating with an
+unchanged legacy type.
 
 ## Consequences
 
@@ -118,14 +118,14 @@ Would require the standards listed above. Rejected because:
   CoachIQ being "more certified" than the device it talks to doesn't
   improve outcomes.
 
-### Treat CoachIQ as a generic web app, drop the safety-* naming entirely
+### Treat CoachIQ as a generic web app, drop every safety-related signal
 Considered but rejected:
-- The naming reflects real intent: the rate-limiting, interlock checks,
-  and emergency-stop paths are *defensive* code that exists because
-  CAN commands have physical consequences. Removing the safety-*
-  prefix would lose that signal.
-- A single ADR (this one) clarifying the scope is cheaper than
-  renaming dozens of files and re-training every contributor.
+- The guardrail code reflects real intent: rate limiting, command-precondition
+  checks, and command-halt paths are defensive code that exists because CAN
+  commands have physical consequences.
+- HOF-051 did remove misleading safety vocabulary from the core command-control
+  path, but the code should still signal that these are API guardrails rather
+  than generic web CRUD operations.
 
 ## See also
 
@@ -133,5 +133,5 @@ Considered but rejected:
   of this decision (will be kept in sync with this ADR).
 - `docs/safety.md` -- operational-safety policy that this ADR
   references.
-- `backend/services/safety_service.py` -- the file with the most
-  misleading name; read its module docstring for the per-file scope.
+- `backend/services/guardrails/command_guardrail_service.py` -- the primary
+  command-validation guardrail service.

@@ -54,8 +54,8 @@ class SecurityEventType(str, Enum):
     PIN_ROTATION = "pin_rotation"
 
     # Safety Operation Events
-    EMERGENCY_STOP_TRIGGERED = "emergency_stop_triggered"
-    EMERGENCY_STOP_RESET = "emergency_stop_reset"
+    EMERGENCY_STOP_TRIGGERED = "halt_command_emission_triggered"
+    EMERGENCY_STOP_RESET = "halt_command_emission_reset"
     SAFETY_INTERLOCK_VIOLATED = "safety_interlock_violated"
     SAFETY_OVERRIDE_USED = "safety_override_used"
 

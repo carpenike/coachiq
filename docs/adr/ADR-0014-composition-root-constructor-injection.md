@@ -7,7 +7,7 @@
 ## Context
 
 CoachIQ currently starts backend services through a bespoke `ServiceRegistry` and
-`SafetyServiceRegistry`. The registry is a hand-rolled dependency-injection
+`GuardrailCoordinator`. The registry is a hand-rolled dependency-injection
 container: service names are strings, dependencies are declared by string, the
 resolver uses a custom topological sort, startup uses dynamic keyword injection,
 and request-time dependencies look typed only because `backend/core/dependencies.py`
@@ -16,10 +16,10 @@ wraps registry lookups in `Annotated[..., Depends(...)]` aliases.
 The HOF-050 grounding pass showed the current registry graph contains 68
 services across 6 resolved startup stages. It also showed the replacement is not
 only a `dependencies.py` provider rewrite. There are direct `get_service()` users
-in `main.py`, middleware, websocket handlers, CAN services, `SafetyService`,
+in `main.py`, middleware, websocket handlers, CAN services, `CommandGuardrailService`,
 routers, integrations, and service internals; there are 33 optional dependency
-edges; and the `SafetyServiceRegistry` carries real guardrail behavior such as
-service classification, emergency-stop coordination, metadata, and safety status
+edges; and the `GuardrailCoordinator` carries real guardrail behavior such as
+service classification, command-halt coordination, metadata, and guardrail status
 summary.
 
 Pre-1.0 is the right window to replace this foundation decisively before OIDC,
@@ -42,10 +42,11 @@ their internals will be repointed to the typed composition-root container instea
 of `ServiceRegistry.get_service()`.
 
 Separate generic DI from guardrail-domain behavior. The generic registry,
-resolver, and registration modules are retired. The safety classification,
-emergency-stop coordination, safety metadata, and safety status summary behavior
-from `SafetyServiceRegistry` remains, either as a small typed safety coordinator
-or as explicit responsibilities in `SafetyService` and the composition root.
+resolver, and registration modules are retired. The guardrail-tier metadata,
+command-halt participant inventory, command-halt coordination, guardrail metadata,
+and guardrail status summary behavior from `GuardrailCoordinator` remain, either
+as a small typed guardrail coordinator or as explicit responsibilities in
+`CommandGuardrailService` and the composition root.
 
 Migrate in phases, not as a big-bang cutover:
 
@@ -74,7 +75,7 @@ rather than hand-guessing construction order.
 - Direct registry consumers outside `dependencies.py` must be migrated.
 - Optional dependency behavior must be represented explicitly as object-or-None
   constructor arguments or deferred wiring.
-- The safety-classification behavior must be preserved deliberately; it cannot
+- The guardrail-classification behavior must be preserved deliberately; it cannot
   be treated as generic health aggregation.
 - During Phase A, compatibility shims may temporarily coexist with the new root,
   so the migration needs strict boundaries and boot tests after each cluster.
@@ -82,7 +83,7 @@ rather than hand-guessing construction order.
 ### Cannot do anymore
 
 - Add new long-lived services to `ServiceRegistry` as the primary DI mechanism.
-- Treat `SafetyServiceRegistry` as disposable generic DI; its guardrail behavior
+- Treat `GuardrailCoordinator` as disposable generic DI; its guardrail behavior
   must be preserved in typed code.
 - Hide service dependencies behind `Any` string lookups when constructors can
   accept typed objects.
@@ -98,16 +99,16 @@ rather than hand-guessing construction order.
   composition root.
 - **Big-bang cutover**: rejected because startup order and optional edges are
   load-bearing. Phase A/Phase B keeps the app bootable while each cluster moves.
-- **Delete all safety-registry behavior with the DI registry**: rejected.
-  Classification, emergency stop, and safety-status coordination are API
-  guardrail behavior under ADR-0004, not DI mechanics.
+- **Delete all guardrail-coordination behavior with the DI registry**: rejected.
+  Guardrail-tier classification, command-halt coordination, and guardrail-status
+  reporting are API guardrail behavior under ADR-0004, not DI mechanics.
 
 ## Revisit conditions
 
 - A future public 1.0 plugin API requires dynamic service registration.
 - The composition root grows a generic string lookup interface, recreating the
   registry under another name.
-- Safety classification semantics move into a separate formally specified
+- Guardrail classification semantics move into a separate formally specified
   guardrail subsystem.
 
 ## See also

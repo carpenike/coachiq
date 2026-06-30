@@ -20,7 +20,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.models.auth import PINAttempt, PINSession, User, UserPIN
 from backend.services.auth.pin_manager import PINConfig, PINManager
-from backend.services.safety.safety_service import SafetyService, SystemOperationalMode
+from backend.services.guardrails.command_guardrail_service import (
+    CommandGuardrailService,
+    SystemOperationalMode,
+)
 from backend.services.security.security_audit_service import SecurityAuditService
 
 
@@ -88,15 +91,15 @@ async def security_audit_service():
 
 
 @pytest.fixture
-async def safety_service(pin_manager, security_audit_service):
+async def command_guardrail_service(pin_manager, security_audit_service):
     """Create safety service with PIN manager."""
-    # Modern SafetyService takes a SafetyServiceRegistry, not a feature_manager.
+    # Modern CommandGuardrailService takes a GuardrailCoordinator, not a feature_manager.
     # Use a permissive mock here since these tests exercise PIN-related paths,
     # not the registry-driven health checks.
     service_registry = MagicMock()
     service_registry.check_system_health = AsyncMock(return_value={"failed_critical": []})
 
-    service = SafetyService(
+    service = CommandGuardrailService(
         service_registry=service_registry,
         pin_manager=pin_manager,
         security_audit_service=security_audit_service,
@@ -265,7 +268,7 @@ class TestPINValidation:
         # Authorize operation
         result = await pin_manager.authorize_operation(
             session_id="test-session-id",
-            operation="emergency_stop",
+            operation="halt_command_emission",
             user_id="user-123",
         )
 
@@ -290,7 +293,7 @@ class TestPINValidation:
         # Try to authorize - should fail
         result = await pin_manager.authorize_operation(
             session_id="test-session-id",
-            operation="emergency_stop",
+            operation="halt_command_emission",
             user_id="user-123",
         )
 
@@ -300,86 +303,92 @@ class TestPINValidation:
 class TestEmergencyStopWithPIN:
     """Test emergency stop operations with PIN authorization."""
 
-    async def test_emergency_stop_with_pin_success(self, safety_service, pin_manager):
+    async def test_halt_command_emission_with_pin_success(
+        self, command_guardrail_service, pin_manager
+    ):
         """Test successful emergency stop with PIN."""
         # Mock PIN authorization
         pin_manager.authorize_operation = AsyncMock(return_value=True)
 
         # Trigger emergency stop
-        result = await safety_service.emergency_stop_with_pin(
+        result = await command_guardrail_service.halt_command_emission_with_pin(
             pin_session_id="test-session-id",
             reason="Test emergency stop",
             triggered_by="testuser",
         )
 
         assert result is True
-        assert safety_service._emergency_stop_active is True
-        assert safety_service._emergency_stop_reason == "Test emergency stop"
-        assert safety_service._emergency_stop_triggered_by == "testuser"
+        assert command_guardrail_service._command_halt_active is True
+        assert command_guardrail_service._halt_command_emission_reason == "Test emergency stop"
+        assert command_guardrail_service._halt_command_emission_triggered_by == "testuser"
 
         # Verify PIN authorization was called
         pin_manager.authorize_operation.assert_called_once_with(
             session_id="test-session-id",
-            operation="emergency_stop",
+            operation="halt_command_emission",
             user_id="testuser",
         )
 
-    async def test_emergency_stop_with_pin_unauthorized(self, safety_service, pin_manager):
+    async def test_halt_command_emission_with_pin_unauthorized(
+        self, command_guardrail_service, pin_manager
+    ):
         """Test emergency stop with invalid PIN."""
         # Mock failed PIN authorization
         pin_manager.authorize_operation = AsyncMock(return_value=False)
 
         # Try to trigger emergency stop
-        result = await safety_service.emergency_stop_with_pin(
+        result = await command_guardrail_service.halt_command_emission_with_pin(
             pin_session_id="invalid-session",
             reason="Test emergency stop",
             triggered_by="testuser",
         )
 
         assert result is False
-        assert safety_service._emergency_stop_active is False
+        assert command_guardrail_service._command_halt_active is False
 
-    async def test_reset_emergency_stop_with_pin(self, safety_service, pin_manager):
+    async def test_clear_command_halt_with_pin(self, command_guardrail_service, pin_manager):
         """Test emergency stop reset with PIN."""
         # First activate emergency stop
-        safety_service._emergency_stop_active = True
-        safety_service._emergency_stop_reason = "Test"
-        safety_service._emergency_stop_triggered_by = "testuser"
+        command_guardrail_service._command_halt_active = True
+        command_guardrail_service._halt_command_emission_reason = "Test"
+        command_guardrail_service._halt_command_emission_triggered_by = "testuser"
 
         # Mock PIN authorization
         pin_manager.authorize_operation = AsyncMock(return_value=True)
 
         # Reset emergency stop
-        result = await safety_service.reset_emergency_stop_with_pin(
+        result = await command_guardrail_service.clear_command_halt_with_pin(
             pin_session_id="test-session-id",
             reset_by="testuser",
         )
 
         assert result is True
-        assert safety_service._emergency_stop_active is False
-        assert safety_service._emergency_stop_reason is None
+        assert command_guardrail_service._command_halt_active is False
+        assert command_guardrail_service._halt_command_emission_reason is None
 
 
 class TestInterlockOverrideWithPIN:
     """Test safety interlock override operations with PIN."""
 
-    async def test_override_interlock_with_pin_success(self, safety_service, pin_manager):
+    async def test_override_interlock_with_pin_success(
+        self, command_guardrail_service, pin_manager
+    ):
         """Test successful interlock override with PIN."""
         # Add a test interlock
-        from backend.services.safety.safety_service import SafetyInterlock
+        from backend.services.guardrails.command_guardrail_service import CommandPrecondition
 
-        test_interlock = SafetyInterlock(
+        test_interlock = CommandPrecondition(
             name="test_interlock",
             feature_name="test_feature",
             interlock_conditions=["vehicle_not_moving"],
         )
-        safety_service._interlocks["test_interlock"] = test_interlock
+        command_guardrail_service._interlocks["test_interlock"] = test_interlock
 
         # Mock PIN authorization
         pin_manager.authorize_operation = AsyncMock(return_value=True)
 
         # Override interlock
-        result = await safety_service.override_interlock_with_pin(
+        result = await command_guardrail_service.override_interlock_with_pin(
             pin_session_id="test-session-id",
             interlock_name="test_interlock",
             reason="Testing override",
@@ -391,15 +400,15 @@ class TestInterlockOverrideWithPIN:
         assert test_interlock._is_overridden is True
         assert test_interlock._override_reason == "Testing override"
         assert test_interlock._override_by == "testuser"
-        assert "test_interlock" in safety_service._active_overrides
+        assert "test_interlock" in command_guardrail_service._active_overrides
 
-    async def test_override_nonexistent_interlock(self, safety_service, pin_manager):
+    async def test_override_nonexistent_interlock(self, command_guardrail_service, pin_manager):
         """Test override attempt on non-existent interlock."""
         # Mock PIN authorization
         pin_manager.authorize_operation = AsyncMock(return_value=True)
 
         # Try to override non-existent interlock
-        result = await safety_service.override_interlock_with_pin(
+        result = await command_guardrail_service.override_interlock_with_pin(
             pin_session_id="test-session-id",
             interlock_name="nonexistent",
             reason="Testing",
@@ -409,39 +418,39 @@ class TestInterlockOverrideWithPIN:
 
         assert result is False
 
-    async def test_clear_interlock_override(self, safety_service):
+    async def test_clear_interlock_override(self, command_guardrail_service):
         """Test clearing an interlock override."""
         # Add a test interlock with override
-        from backend.services.safety.safety_service import SafetyInterlock
+        from backend.services.guardrails.command_guardrail_service import CommandPrecondition
 
-        test_interlock = SafetyInterlock(
+        test_interlock = CommandPrecondition(
             name="test_interlock",
             feature_name="test_feature",
             interlock_conditions=["vehicle_not_moving"],
         )
         test_interlock._is_overridden = True
         test_interlock._override_reason = "Test"
-        safety_service._interlocks["test_interlock"] = test_interlock
-        safety_service._active_overrides["test_interlock"] = datetime.now(UTC)
+        command_guardrail_service._interlocks["test_interlock"] = test_interlock
+        command_guardrail_service._active_overrides["test_interlock"] = datetime.now(UTC)
 
         # Clear override
-        result = safety_service.clear_interlock_override("test_interlock")
+        result = command_guardrail_service.clear_interlock_override("test_interlock")
 
         assert result is True
         assert test_interlock._is_overridden is False
-        assert "test_interlock" not in safety_service._active_overrides
+        assert "test_interlock" not in command_guardrail_service._active_overrides
 
 
 class TestMaintenanceModeWithPIN:
     """Test maintenance mode operations with PIN."""
 
-    async def test_enter_maintenance_mode_success(self, safety_service, pin_manager):
+    async def test_enter_maintenance_mode_success(self, command_guardrail_service, pin_manager):
         """Test successful entry into maintenance mode."""
         # Mock PIN authorization
         pin_manager.authorize_operation = AsyncMock(return_value=True)
 
         # Enter maintenance mode
-        result = await safety_service.enter_maintenance_mode_with_pin(
+        result = await command_guardrail_service.enter_maintenance_mode_with_pin(
             pin_session_id="test-session-id",
             reason="Scheduled maintenance",
             duration_minutes=120,
@@ -449,37 +458,37 @@ class TestMaintenanceModeWithPIN:
         )
 
         assert result is True
-        assert safety_service._operational_mode == SystemOperationalMode.MAINTENANCE
-        assert safety_service._mode_entered_by == "testuser"
-        assert safety_service._mode_session_id == "test-session-id"
+        assert command_guardrail_service._operational_mode == SystemOperationalMode.MAINTENANCE
+        assert command_guardrail_service._mode_entered_by == "testuser"
+        assert command_guardrail_service._mode_session_id == "test-session-id"
 
-    async def test_exit_maintenance_mode_success(self, safety_service, pin_manager):
+    async def test_exit_maintenance_mode_success(self, command_guardrail_service, pin_manager):
         """Test successful exit from maintenance mode."""
         # Set up maintenance mode
-        safety_service._operational_mode = SystemOperationalMode.MAINTENANCE
-        safety_service._mode_entered_by = "testuser"
-        safety_service._mode_entered_at = datetime.now(UTC)
+        command_guardrail_service._operational_mode = SystemOperationalMode.MAINTENANCE
+        command_guardrail_service._mode_entered_by = "testuser"
+        command_guardrail_service._mode_entered_at = datetime.now(UTC)
 
         # Mock PIN authorization
         pin_manager.authorize_operation = AsyncMock(return_value=True)
 
         # Exit maintenance mode
-        result = await safety_service.exit_maintenance_mode_with_pin(
+        result = await command_guardrail_service.exit_maintenance_mode_with_pin(
             pin_session_id="test-session-id",
             exited_by="testuser",
         )
 
         assert result is True
-        assert safety_service._operational_mode == SystemOperationalMode.NORMAL
-        assert safety_service._mode_entered_by is None
+        assert command_guardrail_service._operational_mode == SystemOperationalMode.NORMAL
+        assert command_guardrail_service._mode_entered_by is None
 
-    async def test_maintenance_mode_already_active(self, safety_service, pin_manager):
+    async def test_maintenance_mode_already_active(self, command_guardrail_service, pin_manager):
         """Test entering maintenance mode when already active."""
         # Set maintenance mode active
-        safety_service._operational_mode = SystemOperationalMode.MAINTENANCE
+        command_guardrail_service._operational_mode = SystemOperationalMode.MAINTENANCE
 
         # Try to enter again
-        result = await safety_service.enter_maintenance_mode_with_pin(
+        result = await command_guardrail_service.enter_maintenance_mode_with_pin(
             pin_session_id="test-session-id",
             reason="Another maintenance",
             duration_minutes=60,
@@ -492,13 +501,13 @@ class TestMaintenanceModeWithPIN:
 class TestDiagnosticModeWithPIN:
     """Test diagnostic mode operations with PIN."""
 
-    async def test_enter_diagnostic_mode_success(self, safety_service, pin_manager):
+    async def test_enter_diagnostic_mode_success(self, command_guardrail_service, pin_manager):
         """Test successful entry into diagnostic mode."""
         # Mock PIN authorization
         pin_manager.authorize_operation = AsyncMock(return_value=True)
 
         # Enter diagnostic mode
-        result = await safety_service.enter_diagnostic_mode_with_pin(
+        result = await command_guardrail_service.enter_diagnostic_mode_with_pin(
             pin_session_id="test-session-id",
             reason="System diagnostics",
             duration_minutes=60,
@@ -506,37 +515,39 @@ class TestDiagnosticModeWithPIN:
         )
 
         assert result is True
-        assert safety_service._operational_mode == SystemOperationalMode.DIAGNOSTIC
-        assert safety_service._mode_entered_by == "testuser"
+        assert command_guardrail_service._operational_mode == SystemOperationalMode.DIAGNOSTIC
+        assert command_guardrail_service._mode_entered_by == "testuser"
 
-    async def test_mode_expiration(self, safety_service):
+    async def test_mode_expiration(self, command_guardrail_service):
         """Test automatic mode expiration."""
         # Set up expired diagnostic mode
-        safety_service._operational_mode = SystemOperationalMode.DIAGNOSTIC
-        safety_service._mode_expires_at = datetime.now(UTC) - timedelta(minutes=1)
-        safety_service._mode_entered_by = "testuser"
+        command_guardrail_service._operational_mode = SystemOperationalMode.DIAGNOSTIC
+        command_guardrail_service._mode_expires_at = datetime.now(UTC) - timedelta(minutes=1)
+        command_guardrail_service._mode_entered_by = "testuser"
 
         # Add an active override
-        safety_service._active_overrides["test_interlock"] = datetime.now(UTC)
+        command_guardrail_service._active_overrides["test_interlock"] = datetime.now(UTC)
 
         # Check expiration
-        safety_service.check_mode_expiration()
+        command_guardrail_service.check_mode_expiration()
 
-        assert safety_service._operational_mode == SystemOperationalMode.NORMAL
-        assert safety_service._mode_expires_at is None
-        assert len(safety_service._active_overrides) == 0
+        assert command_guardrail_service._operational_mode == SystemOperationalMode.NORMAL
+        assert command_guardrail_service._mode_expires_at is None
+        assert len(command_guardrail_service._active_overrides) == 0
 
 
 class TestSecurityAuditIntegration:
     """Test security audit logging integration."""
 
-    async def test_security_audit_on_failed_pin(self, safety_service, security_audit_service):
+    async def test_security_audit_on_failed_pin(
+        self, command_guardrail_service, security_audit_service
+    ):
         """Test security audit logging on failed PIN attempts."""
         # Mock failed PIN authorization
-        safety_service.pin_manager.authorize_operation = AsyncMock(return_value=False)
+        command_guardrail_service.pin_manager.authorize_operation = AsyncMock(return_value=False)
 
         # Try emergency stop with invalid PIN
-        await safety_service.emergency_stop_with_pin(
+        await command_guardrail_service.halt_command_emission_with_pin(
             pin_session_id="invalid",
             reason="Test",
             triggered_by="testuser",
@@ -551,20 +562,22 @@ class TestSecurityAuditIntegration:
             severity="high",
             user_id="testuser",
             details={
-                "attempted_operation": "emergency_stop_with_pin",
+                "attempted_operation": "halt_command_emission_with_pin",
                 "failure_reason": "pin_authorization_failed",
                 "pin_session_id": "invalid",
             },
             emergency_context=True,
         )
 
-    async def test_rate_limiting_integration(self, safety_service, security_audit_service):
+    async def test_rate_limiting_integration(
+        self, command_guardrail_service, security_audit_service
+    ):
         """Test rate limiting integration."""
         # Configure rate limit to fail
         security_audit_service.check_rate_limit = AsyncMock(return_value=False)
 
         # Try safety operation
-        result = await safety_service.validate_safety_operation(
+        result = await command_guardrail_service.validate_safety_operation(
             operation_type="emergency",
             user_id="testuser",
             source_ip="127.0.0.1",

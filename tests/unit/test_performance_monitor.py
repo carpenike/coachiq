@@ -251,13 +251,13 @@ class TestPerformanceMonitor:
         monitor.record_safety_state_transition(0.003)  # 3ms
         monitor.record_safety_command_issued()
         monitor.record_safety_operation_blocked()
-        monitor.record_safety_emergency_stop()
+        monitor.record_safety_halt_command_emission()
 
         safety_stats = monitor.safety_stats
         assert safety_stats["state_transitions"] == 1
         assert safety_stats["safety_commands_issued"] == 1
         assert safety_stats["operations_blocked"] == 1
-        assert safety_stats["emergency_stops"] == 1
+        assert safety_stats["halt_command_emissions"] == 1
         assert safety_stats["state_transition_times"][0] == 0.003
 
     def test_security_metrics_recording(self, monitor):

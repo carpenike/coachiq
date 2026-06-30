@@ -21,7 +21,6 @@ from unittest.mock import Mock
 
 import pytest
 
-from backend.integrations.rvc.spec_loader import RVCSpecLoader
 from backend.core.safety_state_engine import SafetyEvent, SafetyStateEngine
 from backend.integrations.can.performance_monitor import ComponentType, PerformanceMonitor
 from backend.integrations.can.protocol_router import (
@@ -32,6 +31,7 @@ from backend.integrations.can.protocol_router import (
 )
 from backend.integrations.rvc.adaptive_security import AdaptiveSecurityManager
 from backend.integrations.rvc.bam_handler import BAMHandler
+from backend.integrations.rvc.spec_loader import RVCSpecLoader
 
 
 @dataclass
@@ -318,7 +318,7 @@ def _vehicle_status_decode_side_effect(pgn: int, data: bytes, source: int):
     Decodes ``data`` to derive vehicle speed (bytes 0-1, little-endian, 0.1 mph
     units), park-brake state (data[2] bit 0), and engine state (data[3] bit 0),
     then emits the corresponding ``SafetyEvent`` names so the harness can drive
-    the SafetyStateEngine. Mirrors the inline helper that TestSafetyInterlock-
+    the SafetyStateEngine. Mirrors the inline helper that TestCommandPrecondition-
     Validation defines so every test class sees the same translation rules.
     """
     if pgn != _VEHICLE_STATUS_PGN:
@@ -511,7 +511,7 @@ class TestEndToEndMessageFlow:
         assert cache_size >= 1  # Should have cached the DGN spec
 
 
-class TestSafetyInterlockValidation:
+class TestCommandPreconditionValidation:
     """Test safety interlock validation in integrated environment."""
 
     @pytest.fixture
@@ -602,7 +602,7 @@ class TestSafetyInterlockValidation:
         stats = safety_decoder.get_system_statistics()
         assert stats["current_vehicle_state"] != "parked_safe"
 
-    async def test_emergency_stop_scenario(self, safety_decoder):
+    async def test_halt_command_emission_scenario(self, safety_decoder):
         """Test emergency stop activation in unsafe conditions."""
         # Create sequence leading to emergency stop
         messages = [

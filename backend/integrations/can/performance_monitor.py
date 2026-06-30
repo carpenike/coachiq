@@ -167,7 +167,7 @@ class PerformanceMonitor:
             "state_transitions": 0,
             "safety_commands_issued": 0,
             "operations_blocked": 0,
-            "emergency_stops": 0,
+            "halt_command_emissions": 0,
             "state_transition_times": deque(maxlen=1000),
         }
 
@@ -362,7 +362,7 @@ class PerformanceMonitor:
             ("safety_state_transitions_total", stats["state_transitions"]),
             ("safety_commands_issued_total", stats["safety_commands_issued"]),
             ("safety_operations_blocked_total", stats["operations_blocked"]),
-            ("safety_emergency_stops_total", stats["emergency_stops"]),
+            ("safety_halt_command_emissions_total", stats["halt_command_emissions"]),
         ]:
             self._add_metric(metric_name, MetricType.COUNTER, ComponentType.SAFETY_ENGINE, value)
 
@@ -492,10 +492,10 @@ class PerformanceMonitor:
         with self._lock:
             self.safety_stats["operations_blocked"] += 1
 
-    def record_safety_emergency_stop(self) -> None:
+    def record_safety_halt_command_emission(self) -> None:
         """Record emergency stop activation."""
         with self._lock:
-            self.safety_stats["emergency_stops"] += 1
+            self.safety_stats["halt_command_emissions"] += 1
 
     def record_security_frame_validated(self) -> None:
         """Record security frame validation."""
@@ -658,7 +658,7 @@ class PerformanceMonitor:
                     "state_transitions": self.safety_stats["state_transitions"],
                     "commands_issued": self.safety_stats["safety_commands_issued"],
                     "operations_blocked": self.safety_stats["operations_blocked"],
-                    "emergency_stops": self.safety_stats["emergency_stops"],
+                    "halt_command_emissions": self.safety_stats["halt_command_emissions"],
                     "avg_response_time_ms": (
                         statistics.mean(self.safety_stats["state_transition_times"]) * 1000
                         if self.safety_stats["state_transition_times"]
@@ -711,7 +711,7 @@ class PerformanceMonitor:
                 "state_transitions": 0,
                 "safety_commands_issued": 0,
                 "operations_blocked": 0,
-                "emergency_stops": 0,
+                "halt_command_emissions": 0,
                 "state_transition_times": deque(maxlen=1000),
             }
             self.security_stats = {

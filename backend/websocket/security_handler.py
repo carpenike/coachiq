@@ -347,7 +347,7 @@ class SecurityWebSocketHandler:
         Send system notification to all clients.
 
         Args:
-            notification_type: Type of notification (emergency_stop, system_health, etc.)
+            notification_type: Type of notification (halt_command_emission, system_health, etc.)
             data: Notification data
         """
         message = {

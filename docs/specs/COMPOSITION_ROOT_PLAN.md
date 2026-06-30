@@ -27,7 +27,7 @@ and coordinate API guardrails as it does today.
 The HOF-050 review ran the current registration setup and resolver:
 
 ```python
-registry = SafetyServiceRegistry()
+registry = GuardrailCoordinator()
 await _configure_service_startup_stages(registry)
 stages = registry._resolver.resolve_dependencies()
 ```
@@ -73,7 +73,7 @@ the migration; do not hand-guess it.
 
 ### Stage 4
 
-`auth_manager`, `safety_service`, `security_event_manager`.
+`auth_manager`, `command_guardrail_service`, `security_event_manager`.
 
 ### Stage 5
 
@@ -84,7 +84,7 @@ the migration; do not hand-guess it.
 Grounding counts from 2026-06-30:
 
 - `register_service(`: 71 sites.
-- `register_safety_service(`: 10 sites.
+- `register_guardrail_service(`: 10 sites.
 - `ServiceDefinition(`: 1 site.
 - `create_service_dependency(`: 38 sites.
 - `get_service(`: 71 sites.
@@ -99,7 +99,7 @@ The registration surface includes more than the four modules under
 - `backend/core/registrations/phase4.py`
 - `backend/repositories/service_registration.py`
 - `backend/core/service_registration_database_update.py`
-- `backend/core/safety_registry.py`
+- `backend/core/guardrail_coordinator.py`
 - `backend/core/service_registry.py`
 - `backend/test_service_startup.py`
 
@@ -122,8 +122,8 @@ Known direct-consumer groups:
   service-backed websocket helpers.
 - CAN services/integrations: `CANBusService`, CAN tools registration, anomaly
   detector, multi-network manager.
-- Guardrails: `SafetyService` currently receives/uses registry access for
-  emergency-stop coordination.
+- Guardrails: `CommandGuardrailService` currently receives/uses registry access for
+  command-halt coordination.
 - Routers: health, protocols, diagnostics helpers, and any router using
   `create_service_dependency` directly.
 - Legacy helper modules: `backend/core/service_patterns.py` and
@@ -156,19 +156,19 @@ Important optional edges include:
 Optional dependencies are not silently ignored in the new root. The constructor
 call must make the optionality visible.
 
-## 6. Safety Coordinator
+## 6. Guardrail Coordinator
 
-Retire the generic DI role of `SafetyServiceRegistry`, but preserve its
+Retire the generic DI role of `GuardrailCoordinator`, but preserve its
 guardrail-domain behavior.
 
-The replacement design must include a typed safety coordinator or explicit
-composition-root/SafetyService responsibilities for:
+The replacement design must include a typed guardrail coordinator or explicit
+composition-root/CommandGuardrailService responsibilities for:
 
-- Service safety classification metadata.
-- Critical-service inventory.
-- Emergency-stop coordination across critical services.
-- Safety metadata reporting.
-- Safety status summary compatible with current health/diagnostic behavior.
+- Service guardrail-tier metadata.
+- Command-halt participant inventory.
+- Command-halt coordination across explicit participants.
+- Guardrail metadata reporting.
+- Guardrail status summary compatible with current health/diagnostic behavior.
 
 This is not vehicle safety. It is API guardrail behavior under ADR-0004, and it
 must not disappear as collateral damage of removing the registry.
@@ -195,7 +195,7 @@ cluster:
 
 1. Settings, performance monitor, database manager, and repositories.
 2. Core facades and protocol services.
-3. Auth/security services and safety coordinator.
+3. Auth/security services and guardrail coordinator.
 4. CAN, websocket, entity, diagnostics, dashboard, and API-facing services.
 5. Repoint `backend/core/dependencies.py` providers to the typed container.
 6. Migrate direct `get_service()` consumers by cluster.
@@ -227,7 +227,7 @@ Each implementation HOF must cite the real quality gate:
 - Direct registry consumers in the edited cluster are gone or explicitly
   deferred with a linked follow-up.
 - No new `app.state` or module-level service singletons.
-- Safety classification/emergency-stop/status behavior is preserved.
+- Guardrail classification/command-halt/status behavior is preserved.
 - `pyright backend` is at or below baseline and ratchets down when the migration
   removes `Any` surfaces.
 - `scripts/ci-quality-gate.sh` and relevant marker suites pass for each phase.
@@ -237,5 +237,5 @@ Each implementation HOF must cite the real quality gate:
 - Implementing the composition root under HOF-050 itself.
 - Resuming OIDC/MCP work before Phase A establishes the clean construction base.
 - Removing FastAPI `Depends` as the request-access mechanism.
-- Treating safety guardrail behavior as a generic DI feature that can be
+- Treating guardrail behavior as a generic DI feature that can be
   discarded.

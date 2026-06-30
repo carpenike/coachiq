@@ -11,11 +11,11 @@ import time
 from typing import Any, override
 
 from backend.core.config import get_settings
-from backend.core.safety_interfaces import (
-    SafeStateAction,
-    SafetyAware,
-    SafetyClassification,
-    SafetyStatus,
+from backend.core.guardrail_interfaces import (
+    CommandHaltAction,
+    GuardrailParticipant,
+    GuardrailStatus,
+    GuardrailTier,
 )
 from backend.core.structured_logging import get_logger, log_execution_time, log_safety_critical
 from backend.integrations.diagnostics.handler import DiagnosticHandler
@@ -43,7 +43,7 @@ LIGHT_STATUS_SIMULATION_TYPE = 2
 SIMULATION_ERROR_SLEEP_SECONDS = 5
 
 
-class CANBusService(SafetyAware):
+class CANBusService(GuardrailParticipant):
     """
     Service that manages CAN bus integration.
 
@@ -68,8 +68,8 @@ class CANBusService(SafetyAware):
             diagnostic_handler: Optional diagnostic DTC handler for DM_RV ingestion
         """
         super().__init__(
-            safety_classification=SafetyClassification.CRITICAL,
-            safe_state_action=SafeStateAction.DISABLE,
+            guardrail_tier=GuardrailTier.CRITICAL,
+            command_halt_action=CommandHaltAction.DISABLE_COMMANDS,
         )
         self._can_tracking_repository = can_tracking_repository
         self._system_state_repository = system_state_repository
@@ -218,10 +218,10 @@ class CANBusService(SafetyAware):
 
     @log_safety_critical(safety_level="CRITICAL")
     @override
-    async def emergency_stop(self, reason: str) -> None:
+    async def halt_command_emission(self, reason: str) -> None:
         """Emergency stop implementation."""
         logger.critical("CANBusService emergency stop triggered", reason=reason)
-        self._set_emergency_stop_active(True)
+        self._set_command_halt_active(True)
         self._running = False
 
         # Stop all listeners and tasks
@@ -237,13 +237,13 @@ class CANBusService(SafetyAware):
             await self.anomaly_detector.stop()
 
     @override
-    async def get_safety_status(self) -> SafetyStatus:
+    async def get_guardrail_status(self) -> GuardrailStatus:
         """Get current safety status."""
-        if self._emergency_stop_active:
-            return SafetyStatus.EMERGENCY_STOP
+        if self._command_halt_active:
+            return GuardrailStatus.COMMAND_HALTED
         if not self._running:
-            return SafetyStatus.UNSAFE
-        return SafetyStatus.SAFE
+            return GuardrailStatus.UNSAFE
+        return GuardrailStatus.SAFE
 
     def get_health_status(self) -> dict[str, Any]:
         """

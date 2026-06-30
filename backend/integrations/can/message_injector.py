@@ -21,11 +21,11 @@ from typing import Any, Optional
 
 import can
 
-from backend.core.safety_interfaces import (
-    SafeStateAction,
-    SafetyAware,
-    SafetyClassification,
-    SafetyStatus,
+from backend.core.guardrail_interfaces import (
+    CommandHaltAction,
+    GuardrailParticipant,
+    GuardrailStatus,
+    GuardrailTier,
 )
 
 logger = logging.getLogger(__name__)
@@ -121,7 +121,7 @@ class InjectionResult:
         return (self.messages_sent / total * 100) if total > 0 else 0.0
 
 
-class CANMessageInjector(SafetyAware):
+class CANMessageInjector(GuardrailParticipant):
     """
     Safe CAN message injection service for testing and diagnostics.
 
@@ -149,8 +149,8 @@ class CANMessageInjector(SafetyAware):
         """
         # Initialize as safety-aware service
         super().__init__(
-            safety_classification=SafetyClassification.CRITICAL,
-            safe_state_action=SafeStateAction.DISABLE,
+            guardrail_tier=GuardrailTier.CRITICAL,
+            command_halt_action=CommandHaltAction.DISABLE_COMMANDS,
         )
 
         self.safety_level = safety_level
@@ -177,7 +177,7 @@ class CANMessageInjector(SafetyAware):
         """Start the CAN message injector service."""
         logger.info("Starting CAN message injector service")
         self._is_running = True
-        self._set_safety_status(SafetyStatus.SAFE)
+        self._set_guardrail_status(GuardrailStatus.SAFE)
 
     async def stop(self) -> None:
         """Stop the CAN message injector service."""
@@ -201,11 +201,11 @@ class CANMessageInjector(SafetyAware):
         self._buses.clear()
         self._active_injections.clear()
 
-    async def emergency_stop(self, reason: str) -> None:
+    async def halt_command_emission(self, reason: str) -> None:
         """
         Emergency stop all CAN message injection operations.
 
-        This method implements the SafetyAware emergency stop interface
+        This method implements the GuardrailParticipant emergency stop interface
         for immediate cessation of all injection activities.
 
         Args:
@@ -214,7 +214,7 @@ class CANMessageInjector(SafetyAware):
         logger.critical("CAN message injector emergency stop: %s", reason)
 
         # Set emergency stop state
-        self._set_emergency_stop_active(True)
+        self._set_command_halt_active(True)
 
         # Immediately cancel all active injections
         emergency_tasks = []
@@ -229,44 +229,44 @@ class CANMessageInjector(SafetyAware):
 
         # Close all CAN buses immediately
         for interface, bus in self._buses.items():
-            logger.critical("Emergency closing CAN bus: %s", interface)
+            logger.critical("Command halt closing CAN bus: %s", interface)
             try:
                 self._shutdown_bus(bus)
             except Exception as e:
-                logger.error("Error closing CAN bus %s during emergency stop: %s", interface, e)
+                logger.error("Error closing CAN bus %s during command halt: %s", interface, e)
 
         self._buses.clear()
         self._active_injections.clear()
         self._is_running = False
 
-        # Audit the emergency stop
+        # Audit the command halt
         if self.audit_callback:
             try:
-                # Create a special emergency stop audit record
-                emergency_request = InjectionRequest(
+                # Create a special command halt audit record
+                command_halt_request = InjectionRequest(
                     user="SYSTEM",
                     interface="ALL",
                     can_id=0x000,
                     data=b"",
                     mode=InjectionMode.SINGLE,
-                    reason=f"EMERGENCY_STOP: {reason}",
-                    description="Emergency stop of all injection operations",
+                    reason=f"COMMAND_HALT: {reason}",
+                    description="Command halt of all injection operations",
                 )
-                emergency_result = InjectionResult(
-                    success=True, messages_sent=0, error=f"Emergency stop executed: {reason}"
+                command_halt_result = InjectionResult(
+                    success=True, messages_sent=0, error=f"Command halt executed: {reason}"
                 )
-                self.audit_callback(emergency_request, emergency_result)
+                self.audit_callback(command_halt_request, command_halt_result)
             except Exception as e:
-                logger.error("Error during emergency stop audit: %s", e)
+                logger.error("Error during command halt audit: %s", e)
 
-        logger.critical("CAN message injector emergency stop completed")
+        logger.critical("CAN message injector command halt completed")
 
-    async def get_safety_status(self) -> SafetyStatus:
+    async def get_guardrail_status(self) -> GuardrailStatus:
         """Get current safety status of the CAN message injector."""
-        if self._emergency_stop_active:
-            return SafetyStatus.EMERGENCY_STOP
+        if self._command_halt_active:
+            return GuardrailStatus.COMMAND_HALTED
         if not self._is_running:
-            return SafetyStatus.SAFE
+            return GuardrailStatus.SAFE
         if len(self._active_injections) > 0:
             # Check if any dangerous operations are active
             if any(
@@ -274,11 +274,11 @@ class CANMessageInjector(SafetyAware):
                 for task in self._active_injections.values()
                 if hasattr(task, "get_name")
             ):
-                return SafetyStatus.DEGRADED
-            return SafetyStatus.SAFE
-        return SafetyStatus.SAFE
+                return GuardrailStatus.DEGRADED
+            return GuardrailStatus.SAFE
+        return GuardrailStatus.SAFE
 
-    async def validate_safety_interlock(self, operation: str) -> bool:
+    async def validate_command_precondition(self, operation: str) -> bool:
         """
         Validate if CAN injection operation is safe to perform.
 
@@ -289,8 +289,8 @@ class CANMessageInjector(SafetyAware):
             True if operation is safe to perform
         """
         # Check basic safety status
-        safety_status = await self.get_safety_status()
-        if safety_status == SafetyStatus.EMERGENCY_STOP:
+        guardrail_status = await self.get_guardrail_status()
+        if guardrail_status == GuardrailStatus.COMMAND_HALTED:
             logger.warning("CAN injection operation %s blocked: emergency stop active", operation)
             return False
 
@@ -419,7 +419,7 @@ class CANMessageInjector(SafetyAware):
 
         try:
             # Check safety interlock first
-            if not await self.validate_safety_interlock("inject_message"):
+            if not await self.validate_command_precondition("inject_message"):
                 result.error = "Safety interlock violation: injection blocked"
                 result.warnings.append("Injection blocked by safety interlock")
                 logger.warning("CAN injection blocked by safety interlock: %s", request)

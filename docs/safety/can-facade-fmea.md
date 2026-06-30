@@ -67,7 +67,7 @@ This FMEA analyzes potential failure modes in the CAN Facade architecture, evalu
 - **Detection**: 4 (Moderate - startup logs show state)
 - **RPN**: 128
 - **Current Controls**:
-  - _emergency_stop_active flag
+  - _command_halt_active flag
   - Safety status enum
 - **Recommended Actions**:
   - Persist emergency stop state to disk
@@ -138,7 +138,7 @@ This FMEA analyzes potential failure modes in the CAN Facade architecture, evalu
 - **Detection**: 2 (Very High - logged and returns error)
 - **RPN**: 40
 - **Current Controls**:
-  - validate_safety_interlock() check
+  - validate_command_precondition() check
   - Emergency stop flag check
   - Error response on blocked operations
 - **Recommended Actions**:
@@ -159,7 +159,7 @@ This FMEA analyzes potential failure modes in the CAN Facade architecture, evalu
 - **Current Controls**:
   - PerformanceMonitor decorators
   - 50ms alert threshold for send_message
-  - 20ms threshold for emergency_stop
+  - 20ms threshold for halt_command_emission
 - **Recommended Actions**:
   - Add adaptive load shedding
   - Implement priority message queuing
@@ -193,8 +193,8 @@ This FMEA analyzes potential failure modes in the CAN Facade architecture, evalu
 - **Detection**: 4 (Moderate - status endpoints)
 - **RPN**: 64
 - **Current Controls**:
-  - SafetyStatus enum
-  - _set_safety_status() method
+  - GuardrailStatus enum
+  - _set_guardrail_status() method
   - Status logging
 - **Recommended Actions**:
   - Add state transition validation

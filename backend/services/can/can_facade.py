@@ -1,9 +1,9 @@
 """
 CAN Facade Service - Unified Entry Point for CAN Operations
 
-Provides a single, safety-critical entry point for all CAN operations,
-coordinating multiple underlying services with proper safety validation
-and emergency stop coordination.
+Provides a single guardrail-critical entry point for all CAN command operations,
+coordinating multiple underlying services with command validation and command-halt
+coordination.
 
 Note: "safety-critical" / "safety" naming in this file is historical and
 refers to **API guardrail / command-validation** behavior, NOT vehicle safety.
@@ -15,15 +15,15 @@ import asyncio
 import logging
 from typing import Any, override
 
-# CAN-specific Prometheus metrics for safety-critical monitoring
+# CAN-specific Prometheus metrics for guardrail-critical monitoring
 from prometheus_client import Counter, Gauge
 
 # Health monitoring will be implemented later
-from backend.core.safety_interfaces import (
-    SafeStateAction,
-    SafetyAware,
-    SafetyClassification,
-    SafetyStatus,
+from backend.core.guardrail_interfaces import (
+    CommandHaltAction,
+    GuardrailParticipant,
+    GuardrailStatus,
+    GuardrailTier,
 )
 
 logger = logging.getLogger(__name__)
@@ -39,7 +39,7 @@ def _counter_total(stats: dict[str, Any], *field_names: str) -> int:
     return total
 
 
-# CAN-specific Prometheus metrics for safety-critical monitoring
+# CAN-specific Prometheus metrics for guardrail-critical monitoring
 CAN_MESSAGE_QUEUE_DEPTH = Gauge(
     "coachiq_can_message_queue_depth",
     "Number of messages in the CAN transmission queue",
@@ -56,15 +56,15 @@ CAN_ERROR_FRAMES_TOTAL = Counter(
     labelnames=["interface", "error_type"],
 )
 
-CAN_EMERGENCY_STOPS_TOTAL = Counter(
-    "coachiq_can_emergency_stops_total",
-    "Total number of CAN facade emergency stops",
+CAN_COMMAND_HALTS_TOTAL = Counter(
+    "coachiq_can_command_halts_total",
+    "Total number of CAN facade command halts",
     labelnames=["reason"],
 )
 
-CAN_SAFETY_STATUS = Gauge(
-    "coachiq_can_safety_status",
-    "Current CAN safety status (0=SAFE, 1=DEGRADED, 2=UNSAFE, 3=EMERGENCY_STOP)",
+CAN_GUARDRAIL_STATUS = Gauge(
+    "coachiq_can_guardrail_status",
+    "Current CAN guardrail status (0=SAFE, 1=DEGRADED, 2=UNSAFE, 3=COMMAND_HALTED)",
 )
 
 CAN_MESSAGE_LATENCY_SECONDS = Gauge(
@@ -74,13 +74,13 @@ CAN_MESSAGE_LATENCY_SECONDS = Gauge(
 )
 
 
-class CANFacade(SafetyAware):
+class CANFacade(GuardrailParticipant):
     """
     Unified facade for all CAN operations.
 
     This is the ONLY service that API routers should interact with
     for CAN-related functionality. It coordinates all underlying
-    CAN services and ensures safety-critical operations.
+    CAN services and ensures guardrail-critical operations.
     """
 
     def __init__(  # noqa: PLR0913 - facade coordinates several CAN services by design
@@ -95,8 +95,8 @@ class CANFacade(SafetyAware):
         performance_monitor: Any,
     ):
         super().__init__(
-            safety_classification=SafetyClassification.CRITICAL,
-            safe_state_action=SafeStateAction.DISABLE,
+            guardrail_tier=GuardrailTier.CRITICAL,
+            command_halt_action=CommandHaltAction.DISABLE_COMMANDS,
         )
 
         # Core services
@@ -119,14 +119,14 @@ class CANFacade(SafetyAware):
         self.send_message = self._monitor(
             service_name="CANFacade",
             method_name="send_message",
-            alert_threshold_ms=50,  # Safety-critical: 50ms max
+            alert_threshold_ms=50,  # Guardrail-critical: 50ms max
         )(self.send_message)
 
-        self.emergency_stop = self._monitor(
+        self.halt_command_emission = self._monitor(
             service_name="CANFacade",
-            method_name="emergency_stop",
-            alert_threshold_ms=20,  # Emergency stop: 20ms max
-        )(self.emergency_stop)
+            method_name="halt_command_emission",
+            alert_threshold_ms=20,  # Command halt: 20ms max
+        )(self.halt_command_emission)
 
         self.get_queue_status = self._monitor(
             service_name="CANFacade", method_name="get_queue_status", alert_threshold_ms=100
@@ -159,7 +159,7 @@ class CANFacade(SafetyAware):
         self.send_raw_message = self._monitor(
             service_name="CANFacade",
             method_name="send_raw_message",
-            alert_threshold_ms=50,  # Safety-critical: 50ms max
+            alert_threshold_ms=50,  # Guardrail-critical: 50ms max
         )(self.send_raw_message)
 
         self.get_comprehensive_health = self._monitor(
@@ -197,22 +197,22 @@ class CANFacade(SafetyAware):
         await self._bus_service.stop()
 
     @override
-    async def emergency_stop(self, reason: str) -> None:
-        """Execute coordinated emergency stop across all services."""
-        logger.critical("CANFacade EMERGENCY STOP: %s", reason)
-        self._set_emergency_stop_active(True)
+    async def halt_command_emission(self, reason: str) -> None:
+        """Halt CAN command emission through the facade-owned command path."""
+        logger.critical("CANFacade command halt: %s", reason)
+        self._set_command_halt_active(True)
 
         # Update Prometheus metrics
-        CAN_EMERGENCY_STOPS_TOTAL.labels(reason=reason).inc()
-        CAN_SAFETY_STATUS.set(3)  # EMERGENCY_STOP
+        CAN_COMMAND_HALTS_TOTAL.labels(reason=reason).inc()
+        CAN_GUARDRAIL_STATUS.set(3)  # COMMAND_HALTED
 
-        # Stop all safety-critical services in parallel
+        # Stop command emitters in parallel. The message filter is monitoring-only
+        # for transmit flow today, so it remains outside the command-halt cascade.
         stop_tasks = [
-            self._bus_service.emergency_stop(reason),
-            self._injector.emergency_stop(reason),
-            self._filter.emergency_stop(reason),
-            self._recorder.emergency_stop(reason),
-            self._analyzer.stop(),  # Operational services just stop
+            self._bus_service.halt_command_emission(reason),
+            self._injector.halt_command_emission(reason),
+            self._recorder.halt_command_emission(reason),
+            self._analyzer.stop(),  # Operational analyzer stops observing during halt.
             self._anomaly_detector.stop(),
         ]
 
@@ -221,9 +221,9 @@ class CANFacade(SafetyAware):
         # Log any failures
         for i, result in enumerate(results):
             if isinstance(result, Exception):
-                logger.critical("Emergency stop failed for service %s: %s", i, result)
+                logger.critical("Command halt failed for service %s: %s", i, result)
 
-        logger.critical("CANFacade emergency stop completed")
+        logger.critical("CANFacade command halt completed")
 
     async def get_interface_status(self) -> dict[str, Any]:
         """Get CAN bus service health/status information."""
@@ -237,7 +237,7 @@ class CANFacade(SafetyAware):
     ) -> dict[str, Any]:
         """Send a CAN message through the proper interface."""
         # Validate safety before sending
-        if not await self.validate_safety_interlock("send_message"):
+        if not await self.validate_command_precondition("send_message"):
             return {"success": False, "error": "Safety interlock active - cannot send message"}
 
         # Resolve logical to physical interface
@@ -251,8 +251,8 @@ class CANFacade(SafetyAware):
     async def get_comprehensive_health(self) -> dict[str, Any]:
         """Get comprehensive health status from all services."""
         health_data: dict[str, Any] = {
-            "facade_status": self._safety_status.value,
-            "emergency_stop_active": self._emergency_stop_active,
+            "facade_status": self._guardrail_status.value,
+            "command_halt_active": self._command_halt_active,
             "services": {},
             "performance": {},
         }
@@ -297,16 +297,16 @@ class CANFacade(SafetyAware):
                     bus_health.get("healthy", False) if isinstance(bus_health, dict) else False
                 )
 
-                # Update safety status and Prometheus metrics
+                # Update guardrail status and Prometheus metrics
                 if not bus_healthy:
-                    self._set_safety_status(SafetyStatus.DEGRADED)
-                    CAN_SAFETY_STATUS.set(1)  # DEGRADED
-                elif self._emergency_stop_active:
-                    self._set_safety_status(SafetyStatus.EMERGENCY_STOP)
-                    CAN_SAFETY_STATUS.set(3)  # EMERGENCY_STOP
+                    self._set_guardrail_status(GuardrailStatus.DEGRADED)
+                    CAN_GUARDRAIL_STATUS.set(1)  # DEGRADED
+                elif self._command_halt_active:
+                    self._set_guardrail_status(GuardrailStatus.COMMAND_HALTED)
+                    CAN_GUARDRAIL_STATUS.set(3)  # COMMAND_HALTED
                 else:
-                    self._set_safety_status(SafetyStatus.SAFE)
-                    CAN_SAFETY_STATUS.set(0)  # SAFE
+                    self._set_guardrail_status(GuardrailStatus.SAFE)
+                    CAN_GUARDRAIL_STATUS.set(0)  # SAFE
 
                 # Update CAN-specific metrics
                 try:
@@ -338,8 +338,8 @@ class CANFacade(SafetyAware):
                 break
             except Exception as e:
                 logger.error("Health monitoring error: %s", e)
-                self._set_safety_status(SafetyStatus.UNSAFE)
-                CAN_SAFETY_STATUS.set(2)  # UNSAFE
+                self._set_guardrail_status(GuardrailStatus.UNSAFE)
+                CAN_GUARDRAIL_STATUS.set(2)  # UNSAFE
 
     async def get_queue_status(self) -> dict[str, Any]:
         """Get the current status of the CAN transmission queue."""
@@ -460,7 +460,7 @@ class CANFacade(SafetyAware):
     def get_health_status(self) -> dict[str, Any]:
         """Get basic health status for ServiceRegistry."""
         return {
-            "healthy": self._safety_status in [SafetyStatus.SAFE, SafetyStatus.DEGRADED],
-            "safety_status": self._safety_status.value,
-            "emergency_stop_active": self._emergency_stop_active,
+            "healthy": self._guardrail_status in [GuardrailStatus.SAFE, GuardrailStatus.DEGRADED],
+            "guardrail_status": self._guardrail_status.value,
+            "command_halt_active": self._command_halt_active,
         }

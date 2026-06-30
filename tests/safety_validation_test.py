@@ -51,8 +51,8 @@ class TestSafetySystemValidation:
     def test_schema_validation_safety_critical_commands(self):
         """Test that safety-critical commands are properly validated."""
         # Test emergency stop command
-        emergency_stop = ControlCommandSchemaV2(
-            command="emergency_stop",
+        halt_command_emission = ControlCommandSchemaV2(
+            command="halt_command_emission",
             entity_ids=["light-1", "tank-1", "generator-1"],
             safety_critical=True,
             command_metadata={
@@ -62,9 +62,9 @@ class TestSafetySystemValidation:
             },
         )
 
-        assert emergency_stop.safety_critical is True
-        assert emergency_stop.command == "emergency_stop"
-        assert emergency_stop.command_metadata["require_acknowledgment"] is True
+        assert halt_command_emission.safety_critical is True
+        assert halt_command_emission.command == "halt_command_emission"
+        assert halt_command_emission.command_metadata["require_acknowledgment"] is True
 
         # Test that non-safety-critical commands default correctly
         normal_command = ControlCommandSchemaV2(
@@ -75,9 +75,9 @@ class TestSafetySystemValidation:
 
         # Test bulk safety operations
         bulk_emergency = BulkOperationSchemaV2(
-            operation_type="emergency_stop",
+            operation_type="halt_command_emission",
             entity_filters={"device_type": "all"},
-            command=emergency_stop,
+            command=halt_command_emission,
             safety_validation={
                 "require_confirmation": True,
                 "max_entities": 1000,
@@ -193,7 +193,7 @@ class TestSafetySystemValidation:
 
         # Test emergency stop command validation
         emergency_data = {
-            "command": "emergency_stop",
+            "command": "halt_command_emission",
             "entity_ids": ["all"],
             "safety_critical": True,
             "command_metadata": {"require_acknowledgment": True, "timeout_ms": 1000},
@@ -204,18 +204,18 @@ class TestSafetySystemValidation:
         assert validation_result["valid"] is True
         validated_data = validation_result["data"]
         assert validated_data["safety_critical"] is True
-        assert validated_data["command"] == "emergency_stop"
+        assert validated_data["command"] == "halt_command_emission"
 
         # Test that invalid safety data is rejected
         invalid_data = {
-            "command": "emergency_stop",
+            "command": "halt_command_emission",
             "entity_ids": [],  # Empty entity list should be invalid for emergency stop
             "safety_critical": False,  # Emergency stop should be safety critical
         }
 
         # This should raise ValidationError which is caught by validate_data
         validation_result = service.validate_data(invalid_data, ControlCommandSchemaV2)
-        # For this test, we expect it to pass since the schema doesn't enforce emergency_stop safety requirements
+        # For this test, we expect it to pass since the schema doesn't enforce halt_command_emission safety requirements
         # The business logic enforcement would happen at the service layer, not the schema layer
         assert validation_result["valid"] is True
 
@@ -256,14 +256,14 @@ class TestSafetySystemValidation:
             state={"active": True, "last_test": "2024-01-01T00:00:00Z"},
             last_updated="2024-01-01T00:00:00Z",
             safety_critical=True,
-            capabilities=["emergency_stop", "system_shutdown"],
+            capabilities=["halt_command_emission", "system_shutdown"],
             status="online",
             last_seen="2024-01-01T00:00:00Z",
             metadata={"safety_class": "critical", "redundancy": "triple"},
         )
 
         assert safety_entity.safety_critical is True
-        assert "emergency_stop" in safety_entity.capabilities
+        assert "halt_command_emission" in safety_entity.capabilities
 
         # Test that safety metadata is preserved
         assert safety_entity.metadata["safety_class"] == "critical"
@@ -272,13 +272,13 @@ class TestSafetySystemValidation:
         """Test safety validation for various command types."""
         # Test emergency stop - should always be safety critical
         emergency_cmd = ControlCommandSchemaV2(
-            command="emergency_stop", entity_ids=["all"], safety_critical=True
+            command="halt_command_emission", entity_ids=["all"], safety_critical=True
         )
         assert emergency_cmd.safety_critical is True
 
         # Test clear emergency stop - should also be safety critical
         clear_emergency_cmd = ControlCommandSchemaV2(
-            command="clear_emergency_stop",
+            command="clear_command_halt",
             entity_ids=["emergency-system-1"],
             safety_critical=True,
             command_metadata={"require_manual_confirmation": True, "safety_check_required": True},
@@ -295,10 +295,10 @@ class TestSafetySystemValidation:
         """Test that bulk operations have appropriate safety limits."""
         # Test emergency stop bulk operation
         emergency_bulk = BulkOperationSchemaV2(
-            operation_type="emergency_stop",
+            operation_type="halt_command_emission",
             entity_filters={"device_type": "all"},
             command=ControlCommandSchemaV2(
-                command="emergency_stop",
+                command="halt_command_emission",
                 entity_ids=[],  # Will be populated by filter
                 safety_critical=True,
             ),
@@ -341,7 +341,7 @@ if __name__ == "__main__":
     # Test safety command validation
     try:
         emergency_cmd = ControlCommandSchemaV2(
-            command="emergency_stop", entity_ids=["all"], safety_critical=True
+            command="halt_command_emission", entity_ids=["all"], safety_critical=True
         )
         print("✅ Emergency stop command validation: PASS")
     except Exception as e:

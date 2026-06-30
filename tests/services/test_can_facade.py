@@ -9,7 +9,7 @@ from unittest.mock import AsyncMock, Mock
 
 import pytest
 
-from backend.core.safety_interfaces import SafetyStatus
+from backend.core.guardrail_interfaces import GuardrailStatus
 from backend.services.can.can_facade import CANFacade
 
 
@@ -25,18 +25,18 @@ class TestCANFacade:
         """Create properly mocked dependencies using autospec for safety-critical testing."""
         # Use autospec to ensure mocks match real service interfaces
         mock_bus_service = AsyncMock()
-        mock_bus_service.emergency_stop = AsyncMock()
+        mock_bus_service.halt_command_emission = AsyncMock()
         mock_bus_service.get_health_status = Mock(return_value={"healthy": True})
 
         mock_injector = AsyncMock()
-        mock_injector.emergency_stop = AsyncMock()
+        mock_injector.halt_command_emission = AsyncMock()
         mock_injector.inject_message = AsyncMock(return_value={"success": True})
 
         mock_message_filter = AsyncMock()
-        mock_message_filter.emergency_stop = AsyncMock()
+        mock_message_filter.halt_command_emission = AsyncMock()
 
         mock_recorder = AsyncMock()
-        mock_recorder.emergency_stop = AsyncMock()
+        mock_recorder.halt_command_emission = AsyncMock()
         mock_recorder.get_queue_status = Mock(return_value={"size": 0, "max_size": 1000})
 
         mock_analyzer = AsyncMock()
@@ -81,62 +81,66 @@ class TestCANFacade:
         assert can_facade._performance_monitor == mock_dependencies["performance_monitor"]
 
         # Verify initial safety state
-        assert can_facade._safety_status == SafetyStatus.SAFE
-        assert can_facade._emergency_stop_active is False
+        assert can_facade._guardrail_status == GuardrailStatus.SAFE
+        assert can_facade._command_halt_active is False
 
     @pytest.mark.asyncio
-    async def test_emergency_stop_successful_coordination(self, can_facade, mock_dependencies):
+    async def test_halt_command_emission_successful_coordination(
+        self, can_facade, mock_dependencies
+    ):
         """🔴 CRITICAL: Test successful emergency stop coordination across all services."""
         reason = "Test emergency stop"
 
         # Execute emergency stop
-        await can_facade.emergency_stop(reason)
+        await can_facade.halt_command_emission(reason)
 
         # Verify all safety-critical services received emergency stop call
-        mock_dependencies["bus_service"].emergency_stop.assert_awaited_once_with(reason)
-        mock_dependencies["injector"].emergency_stop.assert_awaited_once_with(reason)
-        mock_dependencies["message_filter"].emergency_stop.assert_awaited_once_with(reason)
-        mock_dependencies["recorder"].emergency_stop.assert_awaited_once_with(reason)
+        mock_dependencies["bus_service"].halt_command_emission.assert_awaited_once_with(reason)
+        mock_dependencies["injector"].halt_command_emission.assert_awaited_once_with(reason)
+        mock_dependencies["message_filter"].halt_command_emission.assert_awaited_once_with(reason)
+        mock_dependencies["recorder"].halt_command_emission.assert_awaited_once_with(reason)
 
         # Verify operational services received stop call
         mock_dependencies["analyzer"].stop.assert_awaited_once()
         mock_dependencies["anomaly_detector"].stop.assert_awaited_once()
 
         # Verify emergency stop state is set
-        assert can_facade._emergency_stop_active is True
+        assert can_facade._command_halt_active is True
 
     @pytest.mark.asyncio
-    async def test_emergency_stop_handles_service_failure(
+    async def test_halt_command_emission_handles_service_failure(
         self, can_facade, mock_dependencies, caplog
     ):
         """🔴 CRITICAL: Test that emergency stop handles partial service failures gracefully."""
         reason = "Test emergency with failure"
 
         # Make bus service emergency stop fail
-        mock_dependencies["bus_service"].emergency_stop.side_effect = Exception(
+        mock_dependencies["bus_service"].halt_command_emission.side_effect = Exception(
             "Bus hardware fault"
         )
 
         # Emergency stop should not raise exception despite service failure
-        await can_facade.emergency_stop(reason)
+        await can_facade.halt_command_emission(reason)
 
         # Verify all services were attempted despite failure
-        mock_dependencies["bus_service"].emergency_stop.assert_awaited_once_with(reason)
-        mock_dependencies["injector"].emergency_stop.assert_awaited_once_with(reason)
-        mock_dependencies["message_filter"].emergency_stop.assert_awaited_once_with(reason)
+        mock_dependencies["bus_service"].halt_command_emission.assert_awaited_once_with(reason)
+        mock_dependencies["injector"].halt_command_emission.assert_awaited_once_with(reason)
+        mock_dependencies["message_filter"].halt_command_emission.assert_awaited_once_with(reason)
 
         # Verify failure was logged
         assert "Emergency stop failed for service" in caplog.text
         assert "Bus hardware fault" in caplog.text
 
         # Verify emergency stop state is still set despite failure
-        assert can_facade._emergency_stop_active is True
+        assert can_facade._command_halt_active is True
 
     @pytest.mark.asyncio
-    async def test_send_message_blocked_during_emergency_stop(self, can_facade, mock_dependencies):
+    async def test_send_message_blocked_during_halt_command_emission(
+        self, can_facade, mock_dependencies
+    ):
         """🔴 CRITICAL: Test that send_message is blocked when emergency stop is active."""
         # Set emergency stop state
-        can_facade._set_emergency_stop_active(True)
+        can_facade._set_command_halt_active(True)
 
         # Attempt to send message
         result = await can_facade.send_message("can0", 0x123, b"\x01\x02\x03")
@@ -152,8 +156,8 @@ class TestCANFacade:
     async def test_send_message_proceeds_when_safe(self, can_facade, mock_dependencies):
         """Test that send_message proceeds normally when system is safe."""
         # Ensure system is in safe state
-        can_facade._safety_status = SafetyStatus.SAFE
-        can_facade._emergency_stop_active = False
+        can_facade._guardrail_status = GuardrailStatus.SAFE
+        can_facade._command_halt_active = False
 
         # Configure injector to return success
         mock_dependencies["injector"].inject_message.return_value = {"success": True}
@@ -206,18 +210,18 @@ class TestCANFacade:
         assert stats["interfaces"]["can1"]["bus_off"] == 5
 
     @pytest.mark.asyncio
-    async def test_emergency_stop_idempotency(self, can_facade, mock_dependencies):
+    async def test_halt_command_emission_idempotency(self, can_facade, mock_dependencies):
         """Test that multiple emergency stop calls are handled safely."""
         reason = "Test idempotency"
 
         # Call emergency stop multiple times
-        await can_facade.emergency_stop(reason)
-        await can_facade.emergency_stop(reason)
+        await can_facade.halt_command_emission(reason)
+        await can_facade.halt_command_emission(reason)
 
         # Verify services were called appropriate number of times
         # (Implementation detail: each call should trigger service calls)
-        assert mock_dependencies["bus_service"].emergency_stop.await_count == 2
-        assert can_facade._emergency_stop_active is True
+        assert mock_dependencies["bus_service"].halt_command_emission.await_count == 2
+        assert can_facade._command_halt_active is True
 
 
 class TestCANFacadeIntegration:
@@ -234,21 +238,21 @@ class TestCANFacadeIntegration:
         mock_bus_service.get_health_status = Mock(
             return_value={"healthy": True, "status": "operational"}
         )
-        mock_bus_service.emergency_stop = AsyncMock()
+        mock_bus_service.halt_command_emission = AsyncMock()
 
         mock_injector = AsyncMock()
         mock_injector.inject_message = AsyncMock(return_value={"success": True})
-        mock_injector.emergency_stop = AsyncMock()
+        mock_injector.halt_command_emission = AsyncMock()
 
         mock_message_filter = AsyncMock()
-        mock_message_filter.emergency_stop = AsyncMock()
+        mock_message_filter.halt_command_emission = AsyncMock()
         mock_message_filter.get_health_status = AsyncMock(
             return_value={"healthy": True, "status": "operational"}
         )
 
         mock_recorder = AsyncMock()
         mock_recorder.get_queue_status = AsyncMock(return_value={"size": 0, "max_size": 1000})
-        mock_recorder.emergency_stop = AsyncMock()
+        mock_recorder.halt_command_emission = AsyncMock()
         mock_recorder.get_health_status = AsyncMock(
             return_value={"healthy": True, "status": "operational"}
         )
@@ -295,30 +299,30 @@ class TestCANFacadeIntegration:
     async def test_health_status_reflects_internal_state(self, can_facade_with_health):
         """Test that get_health_status accurately reflects the facade's internal state."""
         # Test SAFE state
-        can_facade_with_health._safety_status = SafetyStatus.SAFE
-        can_facade_with_health._emergency_stop_active = False
+        can_facade_with_health._guardrail_status = GuardrailStatus.SAFE
+        can_facade_with_health._command_halt_active = False
 
         health = can_facade_with_health.get_health_status()
         assert health["healthy"] is True
-        assert health["safety_status"] == "safe"
+        assert health["guardrail_status"] == "safe"
 
         # Test DEGRADED state
-        can_facade_with_health._safety_status = SafetyStatus.DEGRADED
+        can_facade_with_health._guardrail_status = GuardrailStatus.DEGRADED
         health = can_facade_with_health.get_health_status()
         assert health["healthy"] is True  # Degraded still allows operation
-        assert health["safety_status"] == "degraded"
+        assert health["guardrail_status"] == "degraded"
 
         # Test UNSAFE state
-        can_facade_with_health._safety_status = SafetyStatus.UNSAFE
+        can_facade_with_health._guardrail_status = GuardrailStatus.UNSAFE
         health = can_facade_with_health.get_health_status()
         assert health["healthy"] is False
-        assert health["safety_status"] == "unsafe"
+        assert health["guardrail_status"] == "unsafe"
 
         # Test EMERGENCY_STOP state
-        can_facade_with_health._emergency_stop_active = True
+        can_facade_with_health._command_halt_active = True
         health = can_facade_with_health.get_health_status()
         assert health["healthy"] is False
-        assert health["emergency_stop_active"] is True
+        assert health["command_halt_active"] is True
 
     @pytest.mark.asyncio
     async def test_health_monitoring_degradation_detection(
@@ -328,7 +332,7 @@ class TestCANFacadeIntegration:
         facade = can_facade_with_health
 
         # Start with healthy state
-        assert facade._safety_status == SafetyStatus.SAFE
+        assert facade._guardrail_status == GuardrailStatus.SAFE
 
         # Simulate service degradation
         mock_dependencies_with_health["bus_service"].get_health_status.return_value = {
@@ -341,10 +345,10 @@ class TestCANFacadeIntegration:
 
         # Manually trigger the health status logic
         if not bus_healthy:
-            facade._set_safety_status(SafetyStatus.DEGRADED)
+            facade._set_guardrail_status(GuardrailStatus.DEGRADED)
 
         # Verify state transitioned to DEGRADED
-        assert facade._safety_status == SafetyStatus.DEGRADED
+        assert facade._guardrail_status == GuardrailStatus.DEGRADED
 
     @pytest.mark.asyncio
     async def test_comprehensive_health_aggregation(
@@ -372,7 +376,7 @@ class TestCANFacadeIntegration:
         assert "services" in health
         assert "performance" in health
         assert health["facade_status"] == "safe"
-        assert health["emergency_stop_active"] is False
+        assert health["command_halt_active"] is False
 
         # Verify service health data
         assert "bus_service" in health["services"]
@@ -383,7 +387,7 @@ class TestCANFacadeIntegration:
         assert health["performance"]["cpu_usage"] == 15.5
 
     @pytest.mark.asyncio
-    async def test_concurrent_emergency_stop_and_send_message(
+    async def test_concurrent_halt_command_emission_and_send_message(
         self, can_facade_with_health, mock_dependencies_with_health
     ):
         """Test concurrent emergency stop and send_message operations."""
@@ -391,12 +395,12 @@ class TestCANFacadeIntegration:
         facade = can_facade_with_health
 
         # Execute emergency stop
-        await facade.emergency_stop("Concurrent test")
-        assert facade._emergency_stop_active is True
+        await facade.halt_command_emission("Concurrent test")
+        assert facade._command_halt_active is True
 
         # Verify that facade is in emergency stop state
         health = facade.get_health_status()
-        assert health["emergency_stop_active"] is True
+        assert health["command_halt_active"] is True
         assert health["healthy"] is False  # Emergency stop makes facade unhealthy
 
     @pytest.mark.asyncio
@@ -406,7 +410,7 @@ class TestCANFacadeIntegration:
 
         # Test that facade provides expected interface for ServiceRegistry
         assert hasattr(facade, "get_health_status")
-        assert hasattr(facade, "emergency_stop")
+        assert hasattr(facade, "halt_command_emission")
         assert hasattr(facade, "start")
         assert hasattr(facade, "stop")
 
@@ -415,13 +419,13 @@ class TestCANFacadeIntegration:
         assert isinstance(health, dict)
         assert "healthy" in health
         assert isinstance(health["healthy"], bool)
-        assert "safety_status" in health
-        assert "emergency_stop_active" in health
+        assert "guardrail_status" in health
+        assert "command_halt_active" in health
 
         # Test emergency stop interface (without execution to avoid complex mock setup)
         # This verifies the interface exists and can be called
-        assert callable(facade.emergency_stop)
+        assert callable(facade.halt_command_emission)
 
         # Test basic facade state
-        assert facade._safety_status == SafetyStatus.SAFE
-        assert facade._emergency_stop_active is False
+        assert facade._guardrail_status == GuardrailStatus.SAFE
+        assert facade._command_halt_active is False

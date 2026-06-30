@@ -186,7 +186,7 @@ class TestSafetyValidation:
             assert not is_safe, f"SAFETY FAILURE: {operation} allowed in UNSAFE state!"
             assert "unsafe state" in reason.lower(), f"Reason should mention unsafe state: {reason}"
 
-    def test_emergency_stop_on_unsafe_transition(self, safety_engine):
+    def test_halt_command_emission_on_unsafe_transition(self, safety_engine):
         """
         CRITICAL: Test that emergency stop is triggered on unsafe state transition.
 
@@ -207,7 +207,7 @@ class TestSafetyValidation:
         assert len(commands_received) == 1, "Emergency stop command should be issued"
 
         command = commands_received[0]
-        assert command.command_type == "emergency_stop"
+        assert command.command_type == "halt_command_emission"
         assert command.target_entity == "all"
         assert not command.allowed
         assert "unsafe state" in command.reason.lower()
