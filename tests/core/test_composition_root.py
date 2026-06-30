@@ -14,11 +14,19 @@ def _reset_dependency_globals() -> None:
     dependencies._service_registry = None
 
 
+def _seed_foundation_fakes(root: CompositionRoot) -> None:
+    """Seed non-tested foundation handles required by A0 typed services."""
+    root.set_constructed_service("rvc_config", object())
+    root.set_constructed_service("performance_monitor", object())
+    root.set_constructed_service("database_manager", object())
+
+
 @pytest.mark.asyncio
 async def test_composition_root_starts_registry_and_captures_typed_settings() -> None:
     """CompositionRoot starts the compatibility registry and captures typed services."""
     root = CompositionRoot()
     settings = get_settings()
+    _seed_foundation_fakes(root)
 
     async def configure(registry: GuardrailCoordinator) -> None:
         registry.register_service(
@@ -43,6 +51,7 @@ async def test_service_dependency_delegates_to_composition_root() -> None:
     _reset_dependency_globals()
     root = CompositionRoot()
     settings = get_settings()
+    _seed_foundation_fakes(root)
 
     async def configure(registry: GuardrailCoordinator) -> None:
         registry.register_service(

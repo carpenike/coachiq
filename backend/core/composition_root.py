@@ -5,10 +5,12 @@ compatibility layer while introducing a typed container that future clusters can
 populate through constructor injection.
 """
 
+import asyncio
+import inspect
 import logging
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, cast
 
 from backend.core.config import Settings
 from backend.core.config_provider import RVCConfigProvider
@@ -27,21 +29,33 @@ ConfigureServices = Callable[[GuardrailCoordinator], Awaitable[None]]
 class CompositionServices:
     """Typed service handles captured during the compatibility phase."""
 
-    settings: Settings | None = None
-    rvc_config: RVCConfigProvider | None = None
-    performance_monitor: PerformanceMonitor | None = None
+    settings: Settings
+    rvc_config: RVCConfigProvider
+    performance_monitor: PerformanceMonitor
+    database_manager: DatabaseManager
     persistence_service: PersistenceService | None = None
-    database_manager: DatabaseManager | None = None
     rvc_config_facade: RVCConfigFacade | None = None
 
 
 class CompositionRoot:
     """Own backend service lifecycle and expose typed service handles."""
 
+    _FOUNDATION_SERVICE_ORDER = (
+        "app_settings",
+        "performance_monitor",
+        "rvc_config",
+        "database_manager",
+    )
+
     def __init__(self, compat_registry: GuardrailCoordinator | None = None) -> None:
         self.compat_registry = compat_registry or GuardrailCoordinator()
         self._constructed_services: dict[str, Any] = {}
-        self.services = CompositionServices()
+        self.services = CompositionServices(
+            settings=cast("Settings", None),
+            rvc_config=cast("RVCConfigProvider", None),
+            performance_monitor=cast("PerformanceMonitor", None),
+            database_manager=cast("DatabaseManager", None),
+        )
         self._configured = False
         self._started = False
 
@@ -63,6 +77,7 @@ class CompositionRoot:
         if configure_services is not None:
             await self.configure(configure_services)
 
+        await self._construct_foundation_services()
         await self.compat_registry.startup_all()
         self._capture_registry_services()
         self._started = True
@@ -108,14 +123,58 @@ class CompositionRoot:
         registry.
         """
         self.services = CompositionServices(
-            settings=self.get_optional_service("app_settings"),
-            rvc_config=self.get_optional_service("rvc_config"),
-            performance_monitor=self.get_optional_service("performance_monitor"),
+            settings=self.get_service("app_settings"),
+            rvc_config=self.get_service("rvc_config"),
+            performance_monitor=self.get_service("performance_monitor"),
+            database_manager=self.get_service("database_manager"),
             persistence_service=self.get_optional_service("persistence_service"),
-            database_manager=self.get_optional_service("database_manager"),
             rvc_config_facade=self.get_optional_service("rvc_config_facade"),
         )
         logger.info("CompositionRoot captured typed service handles")
+
+    async def _construct_foundation_services(self) -> None:
+        """Construct the A0 foundation services before compatibility startup."""
+        for service_name in self._FOUNDATION_SERVICE_ORDER:
+            if service_name in self._constructed_services:
+                self._replace_compat_init_func(
+                    service_name, self._constructed_services[service_name]
+                )
+                continue
+
+            definition = self.compat_registry._service_definitions.get(service_name)  # noqa: SLF001
+            if definition is None:
+                continue
+
+            service = await self._construct_from_definition(definition)
+            self.set_constructed_service(service_name, service)
+            self._replace_compat_init_func(service_name, service)
+
+    async def _construct_from_definition(self, definition: Any) -> Any:
+        """Construct a registered service definition using root-owned dependencies."""
+        dependency_kwargs: dict[str, Any] = {}
+        for dependency in definition.dependencies:
+            if dependency.name in self._constructed_services:
+                param_name = dependency.inject_as or dependency.name.replace("-", "_")
+                dependency_kwargs[param_name] = self._constructed_services[dependency.name]
+
+        try:
+            signature = inspect.signature(definition.init_func)
+            accepted_params = set(signature.parameters.keys())
+            dependency_kwargs = {
+                name: value for name, value in dependency_kwargs.items() if name in accepted_params
+            }
+        except (TypeError, ValueError):
+            dependency_kwargs = {}
+
+        if asyncio.iscoroutinefunction(definition.init_func):
+            return await definition.init_func(**dependency_kwargs)
+        return definition.init_func(**dependency_kwargs)
+
+    def _replace_compat_init_func(self, service_name: str, service: Any) -> None:
+        """Make the compatibility registry return a root-constructed service."""
+        definition = self.compat_registry._service_definitions.get(service_name)  # noqa: SLF001
+        if definition is not None:
+            definition.init_func = lambda: service
 
     def _apply_constructed_service_handle(self, service_name: str, service: Any) -> None:
         """Update typed handles for services that have migrated to root construction."""
