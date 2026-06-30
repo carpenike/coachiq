@@ -216,6 +216,7 @@ proposing anything that touches the area.
 | ADR-0011 | Public API v1 naming                  | Domain API launches at `/api/v1/*`; the internal v2 migration label is retired             |
 | ADR-0012 | Knowledge & Maintenance boundary      | Offline-first coach knowledge/maintenance context; sqlite-vec vector substrate             |
 | ADR-0013 | PocketID OIDC + MCP OAuth AS          | Additive OIDC login; group-gated roles; conformant MCP OAuth AS for `/api/mcp`             |
+| ADR-0014 | Composition root constructor injection | Replace ServiceRegistry DI with a typed composition root; preserve safety coordinator      |
 
 ---
 

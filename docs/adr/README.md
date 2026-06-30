@@ -88,6 +88,9 @@ Keep ADRs short -- 50-150 lines is typical. If you find yourself writing
 - [ADR-0013](ADR-0013-auth-oidc-mcp-as-architecture.md) -- Add PocketID OIDC
   login as an additive local-session path and embed a conformant MCP OAuth AS
   for `/api/mcp`.
+- [ADR-0014](ADR-0014-composition-root-constructor-injection.md) -- Replace the
+  generic ServiceRegistry DI container with typed composition-root constructor
+  injection while preserving FastAPI `Depends` and safety guardrail behavior.
 
 ## Status
 
