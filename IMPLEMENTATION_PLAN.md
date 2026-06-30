@@ -92,6 +92,36 @@ retirements follow the HOF-016 plan.
 
 ## Build Log
 
+### HOF-045 — CAN Anomaly Rate Baseline Calibration
+
+- [shipped] same commit as this entry · 2026-06-29
+- [component] backend
+- [handoff] HOF-045
+
+**What changed.** The CAN anomaly detector now has explicit RECON-007-informed
+rate-limit profiles for the normal high-cadence RV-C PGNs observed on the
+reference coach: `0x15FCE/0x9C`, `0x1FEDB/0x9C`, `0x1FEDA/0x8E`,
+`0x1FEDA/0x8F`, and `0x1FACE/0x9C`. The default token bucket remains in place
+for unknown PGNs, ACL blocking is unchanged, and broadcast-storm detection is
+unchanged. Token bucket checks use the CAN message timestamp so replay tests
+model bus cadence deterministically.
+
+**Why.** RECON-007 showed the anomaly detector was raising medium
+`RATE_LIMIT_VIOLATION` alerts on normal live-bus traffic because those PGNs fell
+into the default `5/s` bucket despite normal rates around `12-34/s`. Review also
+confirmed `rate_limited` is alert-only, not a frame-drop path, so the fix is
+calibrating false-positive guardrail alerts rather than restoring dropped state
+updates.
+
+**Validation.** `nix develop --command poetry run pytest --no-cov
+tests/integrations/can/test_anomaly_detector.py`; tests cover RECON-007 normal
+cadence with no rate-limit alert, a synthetic over-baseline burst that still
+alerts, unknown-PGN default guardrail behavior, and the CANBusService caller path
+continuing after `rate_limited` actions.
+
+**Files.** `backend/integrations/can/anomaly_detector.py`,
+`tests/integrations/can/test_anomaly_detector.py`.
+
 ### HOF-043 — Pyroute2 Selector Loop Without Global Policy Mutation
 
 - [shipped] same commit as this entry · 2026-06-29

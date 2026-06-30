@@ -59,17 +59,19 @@ class TokenBucket:
         if self.tokens is None:
             self.tokens = self.capacity
 
-    def consume(self, tokens_needed: float = 1.0) -> bool:
+    def consume(self, tokens_needed: float = 1.0, now: float | None = None) -> bool:
         """
         Try to consume tokens from the bucket.
 
         Args:
             tokens_needed: Number of tokens to consume
+            now: Timestamp to use for refill calculations. Defaults to wall-clock time.
 
         Returns:
             True if tokens were available and consumed, False otherwise
         """
-        now = time.time()
+        if now is None:
+            now = time.time()
 
         # Refill tokens based on time elapsed
         time_elapsed = now - self.last_refill
@@ -119,6 +121,25 @@ class SourceACLEntry:
     is_whitelisted: bool = True
     description: str = ""
     added_time: float = field(default_factory=time.time)
+
+
+@dataclass(frozen=True)
+class RateLimitProfile:
+    """Token bucket profile for a CAN source/PGN rate baseline."""
+
+    capacity: float
+    refill_rate: float
+
+
+RECON_007_RATE_LIMIT_PROFILES: dict[tuple[int, int], RateLimitProfile] = {
+    # Measured on the reference Entegra live bus in RECON-007. These are normal
+    # high-cadence RV-C broadcasts, not suspicious traffic.
+    (0x9C, 0x15FCE): RateLimitProfile(capacity=160.0, refill_rate=40.0),
+    (0x9C, 0x1FEDB): RateLimitProfile(capacity=120.0, refill_rate=30.0),
+    (0x8E, 0x1FEDA): RateLimitProfile(capacity=100.0, refill_rate=25.0),
+    (0x8F, 0x1FEDA): RateLimitProfile(capacity=100.0, refill_rate=25.0),
+    (0x9C, 0x1FACE): RateLimitProfile(capacity=80.0, refill_rate=20.0),
+}
 
 
 class BroadcastStormDetector:
@@ -514,16 +535,17 @@ class CANAnomalyDetector:
 
         # Get or create token bucket for this (source, PGN) pair
         if bucket_key not in self.token_buckets:
-            # Create bucket with default parameters (can be made configurable)
-            capacity = self._get_rate_limit_capacity(pgn)
-            refill_rate = self._get_rate_limit_refill_rate(pgn)
+            profile = self._get_rate_limit_profile(source_address, pgn)
 
             self.token_buckets[bucket_key] = TokenBucket(
-                capacity=capacity, tokens=capacity, refill_rate=refill_rate, last_refill=timestamp
+                capacity=profile.capacity,
+                tokens=profile.capacity,
+                refill_rate=profile.refill_rate,
+                last_refill=timestamp,
             )
 
         bucket = self.token_buckets[bucket_key]
-        allowed = bucket.consume(1.0)
+        allowed = bucket.consume(1.0, now=timestamp)
 
         return {
             "allowed": allowed,
@@ -531,6 +553,17 @@ class CANAnomalyDetector:
             "source_address": source_address,
             "pgn": pgn,
         }
+
+    def _get_rate_limit_profile(self, source_address: int, pgn: int) -> RateLimitProfile:
+        """Get token bucket profile for a source/PGN pair."""
+        profile = RECON_007_RATE_LIMIT_PROFILES.get((source_address, pgn))
+        if profile is not None:
+            return profile
+
+        return RateLimitProfile(
+            capacity=self._get_rate_limit_capacity(pgn),
+            refill_rate=self._get_rate_limit_refill_rate(pgn),
+        )
 
     def _get_rate_limit_capacity(self, pgn: int) -> float:
         """Get token bucket capacity based on PGN type."""
