@@ -1,5 +1,6 @@
 """Tests for SocketCAN telemetry in CANInterfaceService."""
 
+import asyncio
 from collections.abc import Callable
 from typing import Any
 
@@ -27,8 +28,11 @@ class FakeNetlink(dict[str, Any]):
 class FakeIPRoute:
     """Context manager test double for pyroute2.IPRoute."""
 
-    def __init__(self, links: list[FakeNetlink]) -> None:
+    def __init__(
+        self, links: list[FakeNetlink], use_event_loop: asyncio.AbstractEventLoop | None = None
+    ) -> None:
         self._links = links
+        self.use_event_loop = use_event_loop
 
     def __enter__(self) -> "FakeIPRoute":
         """Enter the fake IPRoute context."""
@@ -102,7 +106,9 @@ async def test_socketcan_stats_parse_decoded_counters(monkeypatch: pytest.Monkey
         ),
     )
     monkeypatch.setattr(can_interface_module, "CAN_SUPPORTED", True)
-    monkeypatch.setattr(can_interface_module, "IPRoute", lambda: FakeIPRoute([link]))
+    monkeypatch.setattr(
+        can_interface_module, "IPRoute", lambda **kwargs: FakeIPRoute([link], **kwargs)
+    )
 
     stats = await CANInterfaceService().get_interface_stats()
 
@@ -139,12 +145,31 @@ async def test_socketcan_stats_dispatch_pyroute2_read_off_loop(
         return await _recording_to_thread(to_thread_calls, func, *args, **kwargs)
 
     monkeypatch.setattr(can_interface_module, "CAN_SUPPORTED", True)
-    monkeypatch.setattr(can_interface_module, "IPRoute", lambda: FakeIPRoute([link]))
+    created_routes: list[FakeIPRoute] = []
+
+    def fake_iproute(**kwargs: Any) -> FakeIPRoute:
+        route = FakeIPRoute([link], **kwargs)
+        created_routes.append(route)
+        return route
+
+    def fail_set_event_loop_policy(_policy: asyncio.AbstractEventLoopPolicy) -> None:
+        msg = "SocketCAN telemetry must not mutate process-global event loop policy"
+        raise AssertionError(msg)
+
+    original_set_event_loop_policy = can_interface_module.asyncio.set_event_loop_policy
+    monkeypatch.setattr(can_interface_module, "IPRoute", fake_iproute)
     monkeypatch.setattr(can_interface_module.asyncio, "to_thread", fake_to_thread)
 
-    stats = await CANInterfaceService().get_interface_stats()
+    can_interface_module.asyncio.set_event_loop_policy = fail_set_event_loop_policy
+    try:
+        stats = await CANInterfaceService().get_interface_stats()
+    finally:
+        can_interface_module.asyncio.set_event_loop_policy = original_set_event_loop_policy
 
     assert [call.__name__ for call in to_thread_calls] == ["read_socketcan_links"]
+    assert len(created_routes) == 1
+    assert isinstance(created_routes[0].use_event_loop, asyncio.SelectorEventLoop)
+    assert created_routes[0].use_event_loop.is_closed()
     assert list(stats) == ["can0"]
 
 
@@ -166,7 +191,9 @@ async def test_legacy_can_status_dispatches_pyroute2_read_off_loop(
         return await _recording_to_thread(to_thread_calls, func, *args, **kwargs)
 
     monkeypatch.setattr(can_interface_module, "CAN_SUPPORTED", True)
-    monkeypatch.setattr(can_interface_module, "IPRoute", lambda: FakeIPRoute([link]))
+    monkeypatch.setattr(
+        can_interface_module, "IPRoute", lambda **kwargs: FakeIPRoute([link], **kwargs)
+    )
     monkeypatch.setattr(can_router_module.asyncio, "to_thread", fake_to_thread)
     monkeypatch.setattr(can_router_module, "buses", ["can0"])
 
@@ -189,7 +216,9 @@ async def test_socketcan_stats_leave_raw_xstats_null(monkeypatch: pytest.MonkeyP
         ),
     )
     monkeypatch.setattr(can_interface_module, "CAN_SUPPORTED", True)
-    monkeypatch.setattr(can_interface_module, "IPRoute", lambda: FakeIPRoute([link]))
+    monkeypatch.setattr(
+        can_interface_module, "IPRoute", lambda **kwargs: FakeIPRoute([link], **kwargs)
+    )
 
     stats = await CANInterfaceService().get_interface_stats()
 

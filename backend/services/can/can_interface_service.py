@@ -8,8 +8,7 @@ Provides logical interface name mapping to physical interfaces.
 import asyncio
 import logging
 import platform
-import threading
-from typing import Any
+from typing import Any, cast
 
 from backend.core.config import get_settings
 from backend.models.can import CANInterfaceStats
@@ -26,7 +25,6 @@ else:
     IPRoute = None
 
 logger = logging.getLogger(__name__)
-_PYROUTE2_EVENT_LOOP_POLICY_LOCK = threading.Lock()
 
 CAN_STATE_MAP = {
     0: "ERROR-ACTIVE",
@@ -44,22 +42,17 @@ def socketcan_telemetry_available() -> bool:
 
 
 def read_socketcan_links() -> list[Any]:
-    """Read CAN links with pyroute2 using stdlib asyncio internals."""
+    """Read CAN links with pyroute2 using an explicit selector loop."""
     if IPRoute is None:
         return []
 
-    with _PYROUTE2_EVENT_LOOP_POLICY_LOCK:
-        previous_policy = asyncio.get_event_loop_policy()
-        # pyroute2 creates an internal loop while opening AF_NETLINK sockets.
-        # Under uvloop's process policy that internal loop cannot open netlink
-        # sockets, even from a worker thread. Keep uvloop for the app, but use
-        # the stdlib policy for this short synchronous pyroute2 section.
-        asyncio.set_event_loop_policy(asyncio.DefaultEventLoopPolicy())
-        try:
-            with IPRoute() as ipr:
-                return list(ipr.get_links(kind="can"))
-        finally:
-            asyncio.set_event_loop_policy(previous_policy)
+    loop = asyncio.SelectorEventLoop()
+    try:
+        iproute_factory = cast("Any", IPRoute)
+        with iproute_factory(use_event_loop=loop) as ipr:
+            return list(ipr.get_links(kind="can"))
+    finally:
+        loop.close()
 
 
 class CANInterfaceService:

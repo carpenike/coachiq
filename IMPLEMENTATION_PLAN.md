@@ -92,6 +92,34 @@ retirements follow the HOF-016 plan.
 
 ## Build Log
 
+### HOF-043 — Pyroute2 Selector Loop Without Global Policy Mutation
+
+- [shipped] same commit as this entry · 2026-06-29
+- [component] backend
+- [handoff] HOF-043
+
+**What changed.** `read_socketcan_links()` now creates a local
+`asyncio.SelectorEventLoop()` and passes it directly to pyroute2 as
+`IPRoute(use_event_loop=loop)`, then closes the loop in `finally`. The HOF-041
+`asyncio.to_thread` dispatch remains, but the temporary process-global
+`asyncio.set_event_loop_policy(...)` swap and its lock are gone.
+
+**Why.** HOF-041 restored functional telemetry but did so by briefly mutating the
+global event-loop policy so pyroute2 would not create a uvloop netlink loop. The
+pinned pyroute2 0.9.5 source and nixpi probe showed thread-local non-running
+loops are ignored (`new_event_loop()` still uses the global policy), while
+`IPRoute(use_event_loop=SelectorEventLoop())` works under uvloop. HOF-043 keeps
+uvloop untouched as the app policy and scopes the selector loop to pyroute2 only.
+
+**Validation.** `nix develop --command poetry run pytest --no-cov
+tests/services/test_can_interface_service.py`; `grep -R -n "set_event_loop_policy"
+backend/services/can backend/api/routers/can.py` returns no matches; nixpi
+ad-hoc probe under `uvloop.EventLoopPolicy()` proved the explicit `use_event_loop`
+technique returns `['can0', 'can1']`.
+
+**Files.** `backend/services/can/can_interface_service.py`,
+`tests/services/test_can_interface_service.py`.
+
 ### HOF-041 — CAN Interface Telemetry Under uvloop
 
 - [shipped] same commit as this entry · 2026-06-29
