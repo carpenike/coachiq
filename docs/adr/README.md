@@ -85,6 +85,9 @@ Keep ADRs short -- 50-150 lines is typical. If you find yourself writing
 - [ADR-0012](ADR-0012-knowledge-maintenance-subsystem-boundary.md) -- Keep
   Knowledge & Maintenance as a separate offline-first bounded context and
   use sqlite-vec as its proven local vector substrate.
+- [ADR-0013](ADR-0013-auth-oidc-mcp-as-architecture.md) -- Add PocketID OIDC
+  login as an additive local-session path and embed a conformant MCP OAuth AS
+  for `/api/mcp`.
 
 ## Status
 

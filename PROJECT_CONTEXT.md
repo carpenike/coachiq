@@ -180,8 +180,9 @@ subsystem is one package: `manager.py` (`AuthManager`, the policy engine) vs
 `service.py` (`AuthService`, the request-time facade) are intentionally
 distinct, plus `tokens.py`, `sessions.py`, `mfa.py` (TOTP), `lockout.py`,
 `repository.py`. Supports single-user, multi-user (JWT + PIN), and magic-link
-flows; CSRF protection on mutating endpoints. (OAuth/OIDC is future work, not
-yet implemented.)
+flows; CSRF protection on mutating endpoints. ADR-0013 adds PocketID OIDC as an
+additive federated-login capability over these local modes, not as a replacement
+mode, and reserves the embedded MCP OAuth AS for `/api/mcp`.
 
 **Repository pattern.** Repositories under `backend/repositories/` own DB
 access; services call repositories rather than issuing raw SQLAlchemy.
@@ -214,6 +215,7 @@ proposing anything that touches the area.
 | ADR-0010 | Pre-1.0 no backward compatibility     | No external-compat obligation before 1.0; ADR-0003/0005 compat pacing is relaxed           |
 | ADR-0011 | Public API v1 naming                  | Domain API launches at `/api/v1/*`; the internal v2 migration label is retired             |
 | ADR-0012 | Knowledge & Maintenance boundary      | Offline-first coach knowledge/maintenance context; sqlite-vec vector substrate             |
+| ADR-0013 | PocketID OIDC + MCP OAuth AS          | Additive OIDC login; group-gated roles; conformant MCP OAuth AS for `/api/mcp`             |
 
 ---
 
