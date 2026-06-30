@@ -10,7 +10,7 @@ from enum import Enum
 from typing import Dict, List, Optional
 
 from backend.core.config import get_settings
-from backend.core.service_registry import ServiceStatus
+from backend.core.service_status import ServiceStatus
 
 logger = logging.getLogger(__name__)
 

@@ -18,7 +18,6 @@ import logging
 import time
 from collections import defaultdict
 from collections.abc import Callable
-from enum import Enum
 from graphlib import TopologicalSorter
 from typing import Any, Dict, List, Optional, Set, Tuple, Union
 
@@ -33,29 +32,7 @@ from backend.core.service_lifecycle import (
     ServiceFailureReason,
     ServiceLifecycleManager,
 )
-
-
-class ServiceStatus(Enum):
-    """Service lifecycle status.
-
-    Lifecycle order during a normal run:
-        PENDING -> STARTING -> HEALTHY (-> DEGRADED) -> STOPPED
-    Failure paths transition to FAILED at any step.
-
-    STOPPED is used both pre-startup (initial state for services that
-    have been registered but not yet brought up) and post-shutdown
-    (after _shutdown_service successfully tears a service down). The
-    enum's previous omission of STOPPED meant services kept their last
-    runtime status forever after shutdown, which broke any caller that
-    needed to distinguish 'still running' from 'cleanly stopped'.
-    """
-
-    PENDING = "PENDING"
-    STARTING = "STARTING"
-    HEALTHY = "HEALTHY"
-    DEGRADED = "DEGRADED"
-    FAILED = "FAILED"
-    STOPPED = "STOPPED"
+from backend.core.service_status import ServiceStatus
 
 
 logger = logging.getLogger(__name__)

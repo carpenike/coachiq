@@ -8,6 +8,7 @@ from backend.core import dependencies
 from backend.core.composition_root import CompositionRoot
 from backend.core.config import Settings, get_settings
 from backend.core.performance import PerformanceMonitor
+from backend.core.service_registry import ServiceStatus
 from backend.repositories.security_config_repository import SecurityConfigRepository
 from backend.services.persistence.persistence_service import PersistenceService
 from backend.services.rvc.rvc_config_facade import RVCConfigFacade
@@ -210,3 +211,50 @@ def test_initialize_service_registry_rejects_divergent_registry() -> None:
         assert dependencies.get_service_registry() is root
     finally:
         _reset_dependency_globals()
+
+
+@pytest.mark.asyncio
+async def test_root_startup_metrics_are_owned_by_composition_root() -> None:
+    """CompositionRoot exposes startup metrics without a registry backend."""
+    root = CompositionRoot(service_catalog={"app_settings"})
+
+    await root.startup()
+    try:
+        metrics = root.get_startup_metrics()
+        assert metrics["service_count"] == 1
+        assert "app_settings" in metrics["service_timings"]
+        assert root.get_service_status("app_settings") == ServiceStatus.HEALTHY
+        assert root.get_health_summary()["app_settings"]["status"] == "HEALTHY"
+    finally:
+        await root.shutdown()
+
+
+@pytest.mark.asyncio
+async def test_root_shutdown_uses_service_specific_teardown_methods() -> None:
+    """Root shutdown fixes services that expose stop-only teardown methods."""
+    events: list[str] = []
+
+    class ShutdownOnly:
+        async def shutdown(self) -> None:
+            events.append("shutdown")
+
+    class StopOnly:
+        async def stop(self) -> None:
+            events.append("stop")
+
+    class StopMonitoringOnly:
+        async def stop_monitoring(self) -> None:
+            events.append("stop_monitoring")
+
+    root = CompositionRoot(service_catalog=set())
+    root.set_constructed_service("app_settings", ShutdownOnly())
+    root.set_constructed_service("performance_monitor", StopOnly())
+    root.set_constructed_service("rvc_config", StopMonitoringOnly())
+    root._started = True
+
+    await root.shutdown()
+
+    assert events == ["stop_monitoring", "stop", "shutdown"]
+    assert root.get_service_status("app_settings") == ServiceStatus.STOPPED
+    assert root.get_service_status("performance_monitor") == ServiceStatus.STOPPED
+    assert root.get_service_status("rvc_config") == ServiceStatus.STOPPED

@@ -298,7 +298,7 @@ class RVCConfigProvider:
         Returns:
             ServiceStatus indicating provider health
         """
-        from backend.core.service_registry import ServiceStatus
+        from backend.core.service_status import ServiceStatus
 
         if not self._initialized:
             return ServiceStatus.FAILED

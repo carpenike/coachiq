@@ -151,7 +151,16 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         logger.info("CompositionRoot startup completed successfully")
         logger.info(f"RVC Config Summary: {rvc_config_provider.get_configuration_summary()}")
 
-        logger.info("CompositionRoot service count: %d", len(composition_root.list_services()))
+        metrics = composition_root.get_startup_metrics()
+        logger.info("CompositionRoot Startup Metrics:")
+        logger.info("  Total startup time: %.2fms", metrics.get("total_startup_time_ms", 0))
+        logger.info("  Service count: %d", metrics.get("service_count", 0))
+        logger.info("  Startup errors: %s", metrics.get("startup_errors", {}))
+        slowest = metrics.get("slowest_services", [])
+        if slowest:
+            logger.info("  Slowest services:")
+            for service_name, timing in slowest[:5]:
+                logger.info("    - %s: %.2fms", service_name, timing)
 
         # Get services from ServiceRegistry
         websocket_manager = composition_root.services.websocket_manager

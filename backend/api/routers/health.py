@@ -26,7 +26,7 @@ from backend.core.dependencies import (
     CommandGuardrailService,
     get_service_registry,
 )
-from backend.core.service_registry import ServiceStatus
+from backend.core.service_status import ServiceStatus
 
 
 class HealthStatus(str, Enum):

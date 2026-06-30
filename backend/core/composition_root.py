@@ -1,6 +1,7 @@
 """Typed composition root for backend service construction."""
 
 import logging
+import time
 from dataclasses import dataclass
 from typing import Any, cast
 
@@ -9,6 +10,7 @@ from backend.core.config_provider import RVCConfigProvider
 from backend.core.guardrail_interfaces import GuardrailTier
 from backend.core.guardrail_runtime_coordinator import GuardrailRuntimeCoordinator
 from backend.core.performance import PerformanceMonitor
+from backend.core.service_status import ServiceStatus
 from backend.services.database.database_manager import DatabaseManager
 from backend.services.persistence.persistence_service import PersistenceService
 from backend.services.rvc.rvc_config_facade import RVCConfigFacade
@@ -253,6 +255,13 @@ class CompositionRoot:
         self._constructed_services: dict[str, Any] = {}
         self._constructing_services: set[str] = set()
         self._service_catalog = service_catalog or set(self._root_service_order)
+        self._service_status: dict[str, ServiceStatus] = {}
+        self._service_timings: dict[str, float] = {}
+        self._service_start_times: dict[str, float] = {}
+        self._startup_errors: dict[str, Exception] = {}
+        self._startup_time: float = 0.0
+        self._startup_started_at: float | None = None
+        self._current_constructing_service: str | None = None
         self.services = CompositionServices(
             settings=cast("Settings", None),
             rvc_config=cast("RVCConfigProvider", None),
@@ -279,13 +288,27 @@ class CompositionRoot:
 
     async def startup(self) -> None:
         """Start all services and capture typed handles for migrated clusters."""
-        await self._construct_foundation_services()
-        await self._construct_repository_substrate_services()
-        await self._construct_facade_services()
-        await self._construct_a2_services()
-        await self._construct_a3_services()
-        await self._construct_a4_services()
-        self._started = True
+        self._startup_started_at = time.perf_counter()
+        try:
+            await self._construct_foundation_services()
+            await self._construct_repository_substrate_services()
+            await self._construct_facade_services()
+            await self._construct_a2_services()
+            await self._construct_a3_services()
+            await self._construct_a4_services()
+            self._startup_time = (time.perf_counter() - self._startup_started_at) * 1000
+            self._started = True
+        except Exception as exc:
+            service_name = self._current_constructing_service or "unknown"
+            self._startup_errors[service_name] = exc
+            self._service_status[service_name] = ServiceStatus.FAILED
+            impacted = self._get_impacted_services(service_name)
+            error_lines = ["Service startup failures:", f"  • {service_name}: {exc}"]
+            if impacted:
+                error_lines.append(f"    Impacted services: {', '.join(impacted)}")
+            logger.error("\n".join(error_lines))
+            await self.shutdown()
+            raise RuntimeError("\n".join(error_lines)) from exc
 
     async def shutdown(self) -> None:
         """Shut down services in composition-root order."""
@@ -294,21 +317,24 @@ class CompositionRoot:
 
         for service_name in reversed(self._root_service_order):
             service = self._constructed_services.get(service_name)
-            if service is None or not hasattr(service, "shutdown"):
+            if service is None:
                 continue
             try:
-                shutdown = service.shutdown
-                if callable(shutdown):
-                    result = shutdown()
-                    if hasattr(result, "__await__"):
-                        await result
+                await self._teardown_service(service_name, service)
+                self._service_status[service_name] = ServiceStatus.STOPPED
             except Exception:
+                self._service_status[service_name] = ServiceStatus.FAILED
                 logger.exception("Error shutting down service %s", service_name)
         self._started = False
 
     def set_constructed_service(self, service_name: str, service: Any) -> None:
         """Store a root-constructed service without registry capture."""
         self._constructed_services[service_name] = service
+        start_time = self._service_start_times.pop(service_name, None)
+        self._service_timings[service_name] = (
+            (time.perf_counter() - start_time) * 1000 if start_time is not None else 0.0
+        )
+        self._service_status[service_name] = ServiceStatus.HEALTHY
         self._apply_constructed_service_handle(service_name, service)
         self._mirror_guardrail_service(service_name, service)
 
@@ -332,6 +358,88 @@ class CompositionRoot:
     def list_services(self) -> list[str]:
         """Return root-constructed service names."""
         return sorted(self._constructed_services)
+
+    def get_service_status(self, service_name: str) -> ServiceStatus:
+        """Return the cached lifecycle status for one service."""
+        return self._service_status.get(service_name, ServiceStatus.PENDING)
+
+    def get_service_count_by_status(self) -> dict[ServiceStatus, int]:
+        """Return service counts by cached lifecycle status."""
+        counts: dict[ServiceStatus, int] = {}
+        for status in self._service_status.values():
+            counts[status] = counts.get(status, 0) + 1
+        return counts
+
+    def get_service_timings(self) -> dict[str, float]:
+        """Return per-service startup timings in milliseconds."""
+        return self._service_timings.copy()
+
+    def get_startup_metrics(self) -> dict[str, Any]:
+        """Return root-owned startup metrics."""
+        total_time = self._startup_time or sum(self._service_timings.values())
+        service_count = len(self._service_timings)
+        return {
+            "total_startup_time_ms": total_time,
+            "service_count": service_count,
+            "average_service_time_ms": total_time / service_count if service_count else 0.0,
+            "slowest_services": sorted(
+                self._service_timings.items(), key=lambda item: item[1], reverse=True
+            )[:5],
+            "service_timings": self._service_timings.copy(),
+            "startup_errors": {
+                service_name: str(error) for service_name, error in self._startup_errors.items()
+            },
+        }
+
+    async def get_health_status(self) -> dict[str, ServiceStatus]:
+        """Return health status for all root-owned services."""
+        return {
+            service_name: await self.check_service_health(service_name)
+            for service_name in self._constructed_services
+        }
+
+    async def check_service_health(self, service_name: str) -> ServiceStatus:
+        """Check one root-owned service health."""
+        service = self._constructed_services.get(service_name)
+        if service is None:
+            return ServiceStatus.PENDING
+        if hasattr(service, "get_health_status"):
+            try:
+                health = service.get_health_status()
+                if hasattr(health, "__await__"):
+                    health = await health
+                if isinstance(health, dict) and health.get("healthy") is False:
+                    return ServiceStatus.DEGRADED
+            except Exception:
+                return ServiceStatus.DEGRADED
+        return self._service_status.get(service_name, ServiceStatus.HEALTHY)
+
+    async def check_system_health(self) -> dict[str, Any]:
+        """Return aggregate health status for root-owned services."""
+        service_status = await self.get_health_status()
+        failed = [name for name, status in service_status.items() if status == ServiceStatus.FAILED]
+        degraded = [
+            name for name, status in service_status.items() if status == ServiceStatus.DEGRADED
+        ]
+        if failed:
+            overall = "failed"
+        elif degraded:
+            overall = "degraded"
+        else:
+            overall = "healthy"
+        return {
+            "status": overall,
+            "services": {name: status.value for name, status in service_status.items()},
+            "failed": failed,
+            "degraded": degraded,
+        }
+
+    def get_health_summary(self) -> dict[str, dict[str, str]]:
+        """Return a synchronous health summary for guardrail monitoring."""
+        return {
+            service_name: {"status": status.name}
+            for service_name, status in self._service_status.items()
+        }
 
     async def _construct_foundation_services(self) -> None:
         """Construct A0 foundation services with typed constructors."""
@@ -960,10 +1068,48 @@ class CompositionRoot:
 
     def _should_construct(self, service_name: str) -> bool:
         """Return whether a service should be constructed for the current graph."""
-        return (
+        should_construct = (
             service_name not in self._constructed_services
             and service_name in self._service_catalog
         )
+        if should_construct:
+            self._service_status[service_name] = ServiceStatus.STARTING
+            self._service_start_times.setdefault(service_name, time.perf_counter())
+            self._current_constructing_service = service_name
+        return should_construct
+
+    def _get_impacted_services(self, service_name: str) -> list[str]:
+        """Return services after the failed service in baked construction order."""
+        if service_name not in self._root_service_order:
+            return []
+        service_index = self._root_service_order.index(service_name)
+        return [
+            name
+            for name in self._root_service_order[service_index + 1 :]
+            if name in self._service_catalog
+        ]
+
+    async def _teardown_service(self, service_name: str, service: Any) -> None:
+        """Call the correct teardown method for a root-owned service."""
+        method_name = self._teardown_method_name(service)
+        if method_name is None:
+            return
+        method = getattr(service, method_name)
+        result = method()
+        if isinstance(result, str):
+            return
+        if hasattr(result, "__await__"):
+            await result
+        logger.debug("Tore down service %s with %s()", service_name, method_name)
+
+    @staticmethod
+    def _teardown_method_name(service: Any) -> str | None:
+        """Choose the best teardown method exposed by a service."""
+        for method_name in ("shutdown", "stop", "stop_monitoring"):
+            method = getattr(service, method_name, None)
+            if callable(method):
+                return method_name
+        return None
 
     def _mirror_guardrail_service(self, service_name: str, service: Any) -> None:
         """Mirror root guardrail metadata into the guardrail-only coordinator."""
