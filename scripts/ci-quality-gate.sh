@@ -19,7 +19,7 @@ RESET="\033[0m"
 # gate's job is to stop the count from going UP (a ratchet); fixing actual
 # pyright errors lower the count and the script will print a green message
 # nudging you to update the baseline downward.
-EXPECTED_PYRIGHT_ERRORS=1364  # Ratcheted 2026-06-29 after HOF-038 sqlite-vec substrate cleanup (1367 -> 1364).
+EXPECTED_PYRIGHT_ERRORS=1348  # Ratcheted 2026-06-29 after HOF-040 auth validator schema cleanup (1364 -> 1348).
 EXPECTED_FRONTEND_TS_ERRORS=0  # Ratcheted 2026-05-12 to 0 by PR #110 (DatabaseManagementTab + can-sniffer + useCANScanWebSocket generic). Any new TS error is a hard fail.
 EXPECTED_FRONTEND_ESLINT_ERRORS=554  # Ratcheted 2026-06-29 after HOF-023 entity hook migration (602 -> 554).
 

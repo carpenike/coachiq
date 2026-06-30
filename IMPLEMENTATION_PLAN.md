@@ -92,6 +92,35 @@ retirements follow the HOF-016 plan.
 
 ## Build Log
 
+### HOF-040 — SecurityConfigValidator Auth Schema Fix
+
+- [shipped] same commit as this entry · 2026-06-29
+- [component] backend
+- [handoff] HOF-040
+
+**What changed.** Rewrote `SecurityConfigValidator._validate_auth_settings()`
+against the current `AuthenticationSettings` model: auth-specific JWT and
+credential checks now run only when authentication is enabled, JWT lifetime uses
+`jwt_expire_minutes`, admin credential consistency uses `admin_username` /
+`admin_password`, magic-link validation uses `enable_magic_links` + `base_url`,
+and OAuth validation requires complete provider credentials. Session validation
+now uses `session_expire_hours` instead of the removed timeout field.
+
+**Why.** The validator referenced removed settings (`access_token_expire_minutes`,
+`mode`, `admin_password_hash`, `enable_magic_link`, and the silent
+`session_timeout_minutes` branch), causing lifespan startup to crash on the
+nixpi appliance. Auth-disabled production deployments should not need an auth JWT
+secret; the app-level production security secret is enforced separately.
+
+**Validation.** `poetry run pytest tests/core/test_security_config_validator.py`;
+`poetry run pytest tests/core/test_security_config_validator.py
+tests/core/test_security_secret_config.py`; focused `ruff check` and `pyright`
+on touched files; stale-field grep for removed `AuthenticationSettings` fields;
+`scripts/ci-quality-gate.sh`.
+
+**Files.** `backend/core/security_config_validator.py`,
+`tests/core/test_security_config_validator.py`.
+
 ### HOF-038 — Knowledge Subsystem Phase 0 Substrate Proof
 
 - [shipped] same commit as this entry · 2026-06-29
