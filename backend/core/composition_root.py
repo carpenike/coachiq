@@ -105,6 +105,23 @@ class CompositionRoot:
         "security_event_manager",
         "command_guardrail_service",
     )
+    _A4_SERVICE_ORDER = (
+        "can_anomaly_detector",
+        "can_bus_recorder",
+        "can_interface_service",
+        "can_message_filter",
+        "can_message_injector",
+        "can_protocol_analyzer",
+        "dashboard_service",
+        "diagnostic_handler",
+        "websocket_manager",
+        "analytics_dashboard_service",
+        "can_bus_service",
+        "can_network_telemetry_service",
+        "entity_initialization_service",
+        "entity_service",
+        "entity_domain_service",
+    )
 
     def __init__(self, compat_registry: GuardrailCoordinator | None = None) -> None:
         self.compat_registry = compat_registry or GuardrailCoordinator()
@@ -145,6 +162,7 @@ class CompositionRoot:
         await self._construct_facade_services()
         await self._construct_a2_services()
         await self._construct_a3_services()
+        await self._construct_a4_services()
         await self.compat_registry.startup_all()
         self._capture_registry_services()
         self._started = True
@@ -222,6 +240,11 @@ class CompositionRoot:
     async def _construct_a3_services(self) -> None:
         """Construct the A3 auth/security/guardrail services before compatibility startup."""
         for service_name in self._A3_SERVICE_ORDER:
+            await self._construct_registered_service(service_name)
+
+    async def _construct_a4_services(self) -> None:
+        """Construct the A4 API-facing/CAN/websocket/entity services before startup."""
+        for service_name in self._A4_SERVICE_ORDER:
             await self._construct_registered_service(service_name)
 
     async def _construct_registered_service(self, service_name: str) -> None:
