@@ -687,18 +687,9 @@ class CompositionRoot:
         )
         from backend.services.entities.entity_service import EntityService
         from backend.services.system.dashboard_service import DashboardService
-        from backend.services.system.websocket_service import WebSocketService
-
         performance_monitor = self.get_service("performance_monitor")
 
-        if self._should_construct("websocket_manager"):
-            websocket_manager = WebSocketService(
-                can_tracking_repository=self.get_service("can_tracking_repository"),
-                system_state_repository=self.get_service("system_state_repository"),
-                service_registry=self,
-            )
-            await websocket_manager.start()
-            self._set_root_constructed_service("websocket_manager", websocket_manager)
+        await self._construct_websocket_manager()
 
         if self._should_construct("analytics_dashboard_service"):
             self._set_root_constructed_service(
@@ -777,16 +768,6 @@ class CompositionRoot:
         if self._should_construct("can_interface_service"):
             self._set_root_constructed_service("can_interface_service", CANInterfaceService())
 
-        if self._should_construct("can_bus_service"):
-            can_bus_service = CANBusService(
-                can_tracking_repository=self.get_service("can_tracking_repository"),
-                system_state_repository=self.get_service("system_state_repository"),
-                can_anomaly_detector=self.get_service("can_anomaly_detector"),
-                diagnostic_handler=self.get_service("diagnostic_handler"),
-            )
-            await can_bus_service.start()
-            self._set_root_constructed_service("can_bus_service", can_bus_service)
-
         if self._should_construct("can_message_injector"):
 
             async def audit_injection(request: Any, result: Any) -> None:
@@ -839,6 +820,39 @@ class CompositionRoot:
                     can_interface_service=self.get_service("can_interface_service")
                 ),
             )
+
+        await self._construct_websocket_manager()
+
+        if self._should_construct("can_bus_service"):
+            can_bus_service = CANBusService(
+                can_tracking_repository=self.get_service("can_tracking_repository"),
+                system_state_repository=self.get_service("system_state_repository"),
+                can_anomaly_detector=self.get_service("can_anomaly_detector"),
+                diagnostic_handler=self.get_service("diagnostic_handler"),
+                can_bus_recorder=self.get_optional_service("can_bus_recorder"),
+                can_protocol_analyzer=self.get_optional_service("can_protocol_analyzer"),
+                can_message_filter=self.get_optional_service("can_message_filter"),
+                device_discovery_service=self.get_optional_service("device_discovery_service"),
+                entity_manager_service=self.get_optional_service("entity_manager_service"),
+                websocket_manager=self.get_optional_service("websocket_manager"),
+            )
+            await can_bus_service.start()
+            self._set_root_constructed_service("can_bus_service", can_bus_service)
+
+    async def _construct_websocket_manager(self) -> None:
+        """Construct the websocket manager once its optional CAN tools are available."""
+        from backend.services.system.websocket_service import WebSocketService
+
+        if self._should_construct("websocket_manager"):
+            websocket_manager = WebSocketService(
+                can_tracking_repository=self.get_service("can_tracking_repository"),
+                system_state_repository=self.get_service("system_state_repository"),
+                can_bus_recorder=self.get_optional_service("can_bus_recorder"),
+                can_protocol_analyzer=self.get_optional_service("can_protocol_analyzer"),
+                can_message_filter=self.get_optional_service("can_message_filter"),
+            )
+            await websocket_manager.start()
+            self._set_root_constructed_service("websocket_manager", websocket_manager)
 
     def _set_root_constructed_service(self, service_name: str, service: Any) -> None:
         """Store a root-constructed service and mirror it for compatibility startup."""

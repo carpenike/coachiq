@@ -11,18 +11,6 @@ from backend.services.system import websocket_service as websocket_service_modul
 from backend.services.system.websocket_service import WebSocketService
 
 
-class _FakeRegistry:
-    """Small service-registry double that records lookup keys."""
-
-    def __init__(self, services: dict[str, Any]) -> None:
-        self.services = services
-        self.requested_keys: list[str] = []
-
-    def get_service(self, name: str) -> Any | None:
-        self.requested_keys.append(name)
-        return self.services.get(name)
-
-
 class _FakeWebSocket:
     """Minimal WebSocket double for connection-handler tests."""
 
@@ -91,26 +79,16 @@ class _FakeBroadcastService:
 
 
 @pytest.mark.asyncio
-async def test_can_entity_updates_use_canonical_entity_and_websocket_keys(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
+async def test_can_entity_updates_use_canonical_entity_and_websocket_keys() -> None:
     """CAN entity updates resolve canonical root service keys."""
     entity_manager = _FakeEntityManager()
     websocket_manager = _FakeBroadcastService()
-    registry = _FakeRegistry(
-        {
-            "entity_manager_service": _FakeEntityManagerService(entity_manager),
-            "websocket_manager": websocket_manager,
-        }
-    )
-    monkeypatch.setattr(
-        "backend.core.dependencies.get_service_registry",
-        lambda: registry,
-    )
 
     service = CANBusService(
         can_tracking_repository=SimpleNamespace(_pending_commands=[]),
         system_state_repository=SimpleNamespace(),
+        entity_manager_service=_FakeEntityManagerService(entity_manager),
+        websocket_manager=websocket_manager,
     )
 
     await service._update_entity_from_can_message(
@@ -121,7 +99,6 @@ async def test_can_entity_updates_use_canonical_entity_and_websocket_keys(
         msg={"timestamp": 123.0},
     )
 
-    assert registry.requested_keys == ["entity_manager_service", "websocket_manager"]
     assert entity_manager.updated_payloads
     assert websocket_manager.broadcasts == [
         {"type": "entity_update", "entity_id": "tank_fresh", "data": {"id": "tank_fresh"}}
@@ -144,26 +121,23 @@ class _FakeFilter:
 
 
 @pytest.mark.parametrize(
-    ("handler_name", "canonical_key", "legacy_key", "service", "message_type"),
+    ("handler_name", "canonical_key", "service", "message_type"),
     [
         (
             "handle_can_recorder_connection",
             "can_bus_recorder",
-            "can_recorder",
             _FakeRecorder(),
             "status",
         ),
         (
             "handle_can_analyzer_connection",
             "can_protocol_analyzer",
-            "can_analyzer",
             _FakeAnalyzer(),
             "statistics",
         ),
         (
             "handle_can_filter_connection",
             "can_message_filter",
-            "can_filter",
             _FakeFilter(),
             "status",
         ),
@@ -174,7 +148,6 @@ async def test_can_tool_websocket_handlers_use_canonical_service_keys(
     monkeypatch: pytest.MonkeyPatch,
     handler_name: str,
     canonical_key: str,
-    legacy_key: str,
     service: object,
     message_type: str,
 ) -> None:
@@ -184,13 +157,10 @@ async def test_can_tool_websocket_handlers_use_canonical_service_keys(
         "get_websocket_auth_handler",
         lambda: _AllowingAuthHandler(),
     )
-    registry = _FakeRegistry({canonical_key: service})
-    websocket_service = WebSocketService(service_registry=registry)
+    websocket_service = WebSocketService(**{canonical_key: service})
     websocket = _FakeWebSocket()
 
     handler = getattr(websocket_service, handler_name)
     await handler(websocket)
 
-    assert canonical_key in registry.requested_keys
-    assert legacy_key not in registry.requested_keys
     assert websocket.sent_json[0]["type"] == message_type

@@ -51,12 +51,18 @@ class CANBusService(GuardrailParticipant):
     using repository injection for all dependencies.
     """
 
-    def __init__(
+    def __init__(  # noqa: PLR0913
         self,
         can_tracking_repository: CANTrackingRepository,
         system_state_repository: SystemStateRepository,
         can_anomaly_detector: Any | None = None,
         diagnostic_handler: DiagnosticHandler | None = None,
+        can_bus_recorder: Any | None = None,
+        can_protocol_analyzer: Any | None = None,
+        can_message_filter: Any | None = None,
+        device_discovery_service: Any | None = None,
+        entity_manager_service: Any | None = None,
+        websocket_manager: Any | None = None,
     ):
         """
         Initialize the CAN bus service with repository dependencies.
@@ -113,6 +119,12 @@ class CANBusService(GuardrailParticipant):
 
         # Diagnostic handler for DTC ingestion (injected)
         self._diagnostic_handler = diagnostic_handler
+        self._can_bus_recorder = can_bus_recorder
+        self._can_protocol_analyzer = can_protocol_analyzer
+        self._can_message_filter = can_message_filter
+        self._device_discovery_service = device_discovery_service
+        self._entity_manager_service = entity_manager_service
+        self._websocket_manager = websocket_manager
 
         logger.info(
             "CANBusService initialized",
@@ -574,7 +586,7 @@ class CANBusService(GuardrailParticipant):
         finally:
             logger.info("CAN listener stopped", interface=interface_name)
 
-    async def _send_to_can_tools(self, message: Any, interface_name: str) -> bool:  # noqa: C901
+    async def _send_to_can_tools(self, message: Any, interface_name: str) -> bool:
         """
         Send CAN message to optional analysis tools through ServiceRegistry.
 
@@ -583,18 +595,9 @@ class CANBusService(GuardrailParticipant):
             interface_name: Name of the interface that received the message
         """
         try:
-            # Get ServiceRegistry through dependency injection
-            from backend.core.dependencies import get_service_registry
-
-            try:
-                service_registry = get_service_registry()
-            except Exception:
-                # ServiceRegistry not available yet
-                return True
-
             # Send to CAN recorder if available
             try:
-                recorder = service_registry.get_service("can_bus_recorder")
+                recorder = self._can_bus_recorder
                 if recorder and hasattr(recorder, "recording_state"):
                     # Check if recording is active
                     from backend.integrations.can.can_bus_recorder import RecordingState
@@ -613,7 +616,7 @@ class CANBusService(GuardrailParticipant):
 
             # Send to protocol analyzer if available
             try:
-                analyzer = service_registry.get_service("can_protocol_analyzer")
+                analyzer = self._can_protocol_analyzer
                 if analyzer:
                     await analyzer.analyze_message(
                         can_id=message.arbitration_id,
@@ -625,7 +628,7 @@ class CANBusService(GuardrailParticipant):
 
             # Send to message filter if available
             try:
-                message_filter = service_registry.get_service("can_message_filter")
+                message_filter = self._can_message_filter
                 if message_filter:
                     # Prepare message dict for filter
                     filter_msg = {
@@ -903,12 +906,9 @@ class CANBusService(GuardrailParticipant):
             return
 
         try:
-            from backend.core.dependencies import get_service_registry
-
-            service_registry = get_service_registry()
-            if not service_registry.has_service("device_discovery_service"):
+            discovery_service = self._device_discovery_service
+            if discovery_service is None:
                 return
-            discovery_service = service_registry.get_service("device_discovery_service")
             discovery_service.record_component_identification(
                 source_address=source_address,
                 component_id=component_id,
@@ -1028,17 +1028,9 @@ class CANBusService(GuardrailParticipant):
             msg: Original CAN message dictionary
         """
         try:
-            # Get ServiceRegistry
-            from backend.core.dependencies import get_service_registry
-
-            try:
-                service_registry = get_service_registry()
-            except Exception:
-                logger.warning("ServiceRegistry not available for entity update")
-                return
-            entity_manager_service = service_registry.get_service("entity_manager_service")
+            entity_manager_service = self._entity_manager_service
             if entity_manager_service is None:
-                logger.warning("EntityManagerService not found in ServiceRegistry")
+                logger.warning("EntityManagerService not available for entity update")
                 return
 
             entity_manager = entity_manager_service.get_entity_manager()
@@ -1082,7 +1074,7 @@ class CANBusService(GuardrailParticipant):
 
                 # Broadcast the update via WebSocket
                 # Broadcast entity update via WebSocket
-                websocket_service = service_registry.get_service("websocket_manager")
+                websocket_service = self._websocket_manager
                 if websocket_service:
                     broadcast_data = {
                         "type": "entity_update",

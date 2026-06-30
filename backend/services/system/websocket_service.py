@@ -34,7 +34,9 @@ class WebSocketService:
         self,
         can_tracking_repository: CANTrackingRepository | None = None,
         system_state_repository: SystemStateRepository | None = None,
-        service_registry: Any | None = None,
+        can_bus_recorder: Any | None = None,
+        can_protocol_analyzer: Any | None = None,
+        can_message_filter: Any | None = None,
     ):
         """
         Initialize the WebSocket service with repository dependencies.
@@ -42,12 +44,16 @@ class WebSocketService:
         Args:
             can_tracking_repository: Repository for CAN tracking operations
             system_state_repository: Repository for system state operations
-            service_registry: Service registry for accessing other services
+            can_bus_recorder: Optional CAN bus recorder for initial status
+            can_protocol_analyzer: Optional CAN protocol analyzer for initial statistics
+            can_message_filter: Optional CAN message filter for initial status
         """
         # Store repository references
         self._can_tracking_repository = can_tracking_repository
         self._system_state_repository = system_state_repository
-        self._service_registry = service_registry
+        self._can_bus_recorder = can_bus_recorder
+        self._can_protocol_analyzer = can_protocol_analyzer
+        self._can_message_filter = can_message_filter
 
         # WebSocket client sets
         self.data_clients: set[WebSocket] = set()  # Main data stream
@@ -698,10 +704,9 @@ class WebSocketService:
         )
         try:
             # Send initial recorder status if available
-            if self._service_registry is not None:
-                recorder_service = self._service_registry.get_service("can_bus_recorder")
-                if recorder_service:
-                    initial_status = recorder_service.get_status()
+            if self._can_bus_recorder is not None:
+                initial_status = self._can_bus_recorder.get_status()
+                if initial_status:
                     await websocket.send_json(
                         {"type": "status", "payload": initial_status, "timestamp": time.time()}
                     )
@@ -753,10 +758,9 @@ class WebSocketService:
         )
         try:
             # Send initial analyzer stats if available
-            if self._service_registry is not None:
-                analyzer_service = self._service_registry.get_service("can_protocol_analyzer")
-                if analyzer_service:
-                    initial_stats = analyzer_service.get_statistics()
+            if self._can_protocol_analyzer is not None:
+                initial_stats = self._can_protocol_analyzer.get_statistics()
+                if initial_stats:
                     await websocket.send_json(
                         {"type": "statistics", "payload": initial_stats, "timestamp": time.time()}
                     )
@@ -808,10 +812,9 @@ class WebSocketService:
         )
         try:
             # Send initial filter status if available
-            if self._service_registry is not None:
-                filter_service = self._service_registry.get_service("can_message_filter")
-                if filter_service:
-                    initial_status = filter_service.get_status()
+            if self._can_message_filter is not None:
+                initial_status = self._can_message_filter.get_status()
+                if initial_status:
                     await websocket.send_json(
                         {"type": "status", "payload": initial_status, "timestamp": time.time()}
                     )
