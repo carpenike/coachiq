@@ -21,6 +21,7 @@ from backend.core.service_dependency_resolver import DependencyType
 from backend.services.database.database_manager import DatabaseManager
 from backend.services.persistence.persistence_service import PersistenceService
 from backend.services.rvc.rvc_config_facade import RVCConfigFacade
+from backend.services.updates.edge_proxy_monitor_service import EdgeProxyMonitorService
 
 logger = logging.getLogger(__name__)
 
@@ -35,6 +36,7 @@ class CompositionServices:
     rvc_config: RVCConfigProvider
     performance_monitor: PerformanceMonitor
     database_manager: DatabaseManager
+    edge_proxy_monitor: EdgeProxyMonitorService
     persistence_service: PersistenceService
     rvc_config_facade: RVCConfigFacade
 
@@ -47,6 +49,7 @@ class CompositionRoot:
         "performance_monitor",
         "rvc_config",
         "database_manager",
+        "edge_proxy_monitor",
     )
     _REPOSITORY_SUBSTRATE_SERVICE_ORDER = (
         "rvc_config_repository",
@@ -133,6 +136,7 @@ class CompositionRoot:
             rvc_config=cast("RVCConfigProvider", None),
             performance_monitor=cast("PerformanceMonitor", None),
             database_manager=cast("DatabaseManager", None),
+            edge_proxy_monitor=cast("EdgeProxyMonitorService", None),
             persistence_service=cast("PersistenceService", None),
             rvc_config_facade=cast("RVCConfigFacade", None),
         )
@@ -216,43 +220,248 @@ class CompositionRoot:
             rvc_config=self.get_service("rvc_config"),
             performance_monitor=self.get_service("performance_monitor"),
             database_manager=self.get_service("database_manager"),
+            edge_proxy_monitor=self.get_service("edge_proxy_monitor"),
             persistence_service=self.get_service("persistence_service"),
             rvc_config_facade=self.get_service("rvc_config_facade"),
         )
         logger.info("CompositionRoot captured typed service handles")
 
     async def _construct_foundation_services(self) -> None:
-        """Construct the A0 foundation services before compatibility startup."""
-        for service_name in self._FOUNDATION_SERVICE_ORDER:
-            await self._construct_registered_service(service_name)
+        """Construct A0 foundation services with typed constructors."""
+        if (
+            "app_settings" not in self._constructed_services
+            and self.compat_registry.has_service_definition("app_settings")
+        ):
+            self._set_root_constructed_service("app_settings", Settings())
+
+        if (
+            "performance_monitor" not in self._constructed_services
+            and self.compat_registry.has_service_definition("performance_monitor")
+        ):
+            self._set_root_constructed_service("performance_monitor", PerformanceMonitor())
+
+        if (
+            "rvc_config" not in self._constructed_services
+            and self.compat_registry.has_service_definition("rvc_config")
+        ):
+            rvc_config = RVCConfigProvider()
+            await rvc_config.initialize()
+            self._set_root_constructed_service("rvc_config", rvc_config)
+
+        if (
+            "database_manager" not in self._constructed_services
+            and self.compat_registry.has_service_definition("database_manager")
+        ):
+            database_manager = DatabaseManager(
+                performance_monitor=self.get_service("performance_monitor")
+            )
+            if not await database_manager.initialize():
+                msg = "Failed to initialize database manager"
+                raise RuntimeError(msg)
+            self._set_root_constructed_service("database_manager", database_manager)
+
+        if (
+            "edge_proxy_monitor" not in self._constructed_services
+            and self.compat_registry.has_service_definition("edge_proxy_monitor")
+        ):
+            self._set_root_constructed_service("edge_proxy_monitor", EdgeProxyMonitorService())
 
     async def _construct_repository_substrate_services(self) -> None:
-        """Construct the A0 repository substrate before compatibility startup."""
-        for service_name in self._REPOSITORY_SUBSTRATE_SERVICE_ORDER:
-            await self._construct_registered_service(service_name)
+        """Construct A0 repository substrate with typed constructors."""
+        if all(
+            name in self._constructed_services for name in self._REPOSITORY_SUBSTRATE_SERVICE_ORDER
+        ):
+            return
+
+        from backend.repositories import (
+            CANTrackingRepository,
+            DiagnosticsRepository,
+            RVCConfigRepository,
+            SystemStateRepository,
+        )
+        from backend.repositories.analytics_repository import AnalyticsRepository
+        from backend.repositories.auth_repository import (
+            AuthEventRepository,
+            CredentialRepository,
+            MfaRepository,
+            SessionRepository,
+        )
+        from backend.repositories.database_repository import (
+            DatabaseSessionRepository,
+            MigrationRepository,
+        )
+        from backend.repositories.database_update_repository import (
+            DatabaseBackupRepository,
+            DatabaseConnectionRepository,
+            DatabaseMigrationRepository,
+            MigrationHistoryRepository,
+            SafetyRepository,
+        )
+        from backend.repositories.entity_repository import (
+            CanCommandRepository,
+            EntityConfigRepository,
+            EntityHistoryRepository,
+            EntityStateRepository,
+        )
+        from backend.repositories.persistence_repository import PersistenceRepository
+        from backend.repositories.security_audit_repository import SecurityAuditRepository
+        from backend.repositories.security_config_repository import SecurityConfigRepository
+        from backend.repositories.security_event_repository import (
+            SecurityEventRepository,
+            SecurityListenerRepository,
+        )
+        from backend.services.auth.tokens import TokenService
+        from backend.services.entities.entity_manager_service import EntityManagerService
+
+        database_manager = self.get_service("database_manager")
+        performance_monitor = self.get_service("performance_monitor")
+        settings = self.get_service("app_settings")
+
+        repository_factories = {
+            "rvc_config_repository": lambda: RVCConfigRepository(),
+            "system_state_repository": lambda: SystemStateRepository(),
+            "can_tracking_repository": lambda: CANTrackingRepository(),
+            "diagnostics_repository": lambda: DiagnosticsRepository(),
+            "database_session_repository": lambda: DatabaseSessionRepository(
+                database_manager, performance_monitor
+            ),
+            "migration_repository": lambda: MigrationRepository(
+                database_manager, performance_monitor
+            ),
+            "database_backup_repository": lambda: DatabaseBackupRepository(
+                database_manager.get_session
+            ),
+            "database_connection_repository": lambda: DatabaseConnectionRepository(
+                database_manager.get_session,
+                settings.database.get_database_url(),
+                settings.database.get_database_path(),
+            ),
+            "database_migration_repository": lambda: DatabaseMigrationRepository(
+                database_manager.get_session, None
+            ),
+            "migration_history_repository": lambda: MigrationHistoryRepository(
+                database_manager.get_session
+            ),
+            "safety_repository": lambda: SafetyRepository(database_manager.get_session),
+            "analytics_repository": lambda: AnalyticsRepository(
+                database_manager, performance_monitor
+            ),
+            "auth_event_repository": lambda: AuthEventRepository(
+                database_manager, performance_monitor
+            ),
+            "can_command_repository": lambda: CanCommandRepository(
+                database_manager, performance_monitor
+            ),
+            "credential_repository": lambda: CredentialRepository(
+                database_manager, performance_monitor
+            ),
+            "entity_config_repository": lambda: EntityConfigRepository(
+                database_manager, performance_monitor
+            ),
+            "entity_history_repository": lambda: EntityHistoryRepository(
+                database_manager, performance_monitor
+            ),
+            "entity_manager_service": lambda: EntityManagerService(
+                database_manager=database_manager,
+                rvc_config_provider=self.get_service("rvc_config"),
+                config={},
+            ),
+            "entity_state_repository": lambda: EntityStateRepository(
+                database_manager, performance_monitor
+            ),
+            "mfa_repository": lambda: MfaRepository(database_manager, performance_monitor),
+            "persistence_repository": lambda: PersistenceRepository(
+                database_manager=database_manager,
+                performance_monitor=performance_monitor,
+                data_dir=settings.data_dir,
+            ),
+            "security_audit_repository": lambda: SecurityAuditRepository(
+                database_manager, performance_monitor
+            ),
+            "security_config_repository": lambda: SecurityConfigRepository(
+                database_manager, performance_monitor
+            ),
+            "security_event_repository": lambda: SecurityEventRepository(
+                database_manager, performance_monitor
+            ),
+            "security_listener_repository": lambda: SecurityListenerRepository(
+                database_manager, performance_monitor
+            ),
+            "session_repository": lambda: SessionRepository(database_manager, performance_monitor),
+            "token_service": lambda: TokenService(
+                jwt_secret=settings.auth.secret_key,
+                jwt_algorithm=settings.auth.jwt_algorithm,
+                access_token_expire_minutes=settings.auth.jwt_expire_minutes,
+                magic_link_expire_minutes=settings.auth.magic_link_expire_minutes,
+            ),
+        }
+
+        for service_name, factory in repository_factories.items():
+            if (
+                service_name not in self._constructed_services
+                and self.compat_registry.has_service_definition(service_name)
+            ):
+                self._set_root_constructed_service(service_name, factory())
 
     async def _construct_facade_services(self) -> None:
-        """Construct the A1 persistence/config facades before compatibility startup."""
-        for service_name in self._FACADE_SERVICE_ORDER:
-            await self._construct_registered_service(service_name)
+        """Construct A1 persistence/config facades with typed constructors."""
+        if (
+            "rvc_config_facade" not in self._constructed_services
+            and self.compat_registry.has_service_definition("rvc_config_facade")
+        ):
+            rvc_config_facade = RVCConfigFacade(self.get_service("rvc_config_repository"))
+            self._set_root_constructed_service("rvc_config_facade", rvc_config_facade)
+
+        if (
+            "persistence_service" not in self._constructed_services
+            and self.compat_registry.has_service_definition("persistence_service")
+        ):
+            persistence_service = PersistenceService(
+                persistence_repository=self.get_service("persistence_repository"),
+                performance_monitor=self.get_service("performance_monitor"),
+            )
+            await persistence_service.initialize()
+            self._set_root_constructed_service("persistence_service", persistence_service)
 
     async def _construct_a2_services(self) -> None:
-        """Construct the A2 protocol/facade/database services before compatibility startup."""
+        """Construct A2 through the HOF-053 compatibility bridge.
+
+        TODO(HOF-053): replace this bridge with typed constructor calls before
+        deleting the registry/resolver.
+        """
         for service_name in self._A2_SERVICE_ORDER:
             await self._construct_registered_service(service_name)
 
     async def _construct_a3_services(self) -> None:
-        """Construct the A3 auth/security/guardrail services before compatibility startup."""
+        """Construct A3 through the HOF-053 compatibility bridge.
+
+        TODO(HOF-053): replace this bridge with typed constructor calls before
+        deleting the registry/resolver.
+        """
         for service_name in self._A3_SERVICE_ORDER:
             await self._construct_registered_service(service_name)
 
     async def _construct_a4_services(self) -> None:
-        """Construct the A4 API-facing/CAN/websocket/entity services before startup."""
+        """Construct A4 through the HOF-053 compatibility bridge.
+
+        TODO(HOF-053): replace this bridge with typed constructor calls before
+        deleting the registry/resolver.
+        """
         for service_name in self._A4_SERVICE_ORDER:
             await self._construct_registered_service(service_name)
 
+    def _set_root_constructed_service(self, service_name: str, service: Any) -> None:
+        """Store a root-constructed service and mirror it for compatibility startup."""
+        self.set_constructed_service(service_name, service)
+        self._replace_compat_init_func(service_name, service)
+        self._mirror_guardrail_service(service_name, service)
+
     async def _construct_registered_service(self, service_name: str) -> None:
-        """Construct a registered service once and mirror it into compatibility startup."""
+        """Construct one A2-A4 bridge service and mirror it into compatibility startup.
+
+        TODO(HOF-053): replace this registry-definition bridge before deleting
+        the registry/resolver. A0/A1 must not call this path.
+        """
         if service_name in self._constructed_services:
             self._replace_compat_init_func(service_name, self._constructed_services[service_name])
             self._mirror_guardrail_service(service_name, self._constructed_services[service_name])
@@ -285,7 +494,11 @@ class CompositionRoot:
             await self._construct_registered_service(dependency.name)
 
     async def _construct_from_definition(self, definition: Any) -> Any:
-        """Construct a registered service definition using root-owned dependencies."""
+        """Construct an A2-A4 compatibility service from a registered definition.
+
+        TODO(HOF-053): remove this bridge after the remaining services move to
+        explicit constructor calls.
+        """
         dependency_kwargs: dict[str, Any] = {}
         for dependency in definition.dependencies:
             if dependency.name in self._constructed_services:
@@ -298,8 +511,12 @@ class CompositionRoot:
             dependency_kwargs = {
                 name: value for name, value in dependency_kwargs.items() if name in accepted_params
             }
-        except (TypeError, ValueError):
-            dependency_kwargs = {}
+        except (TypeError, ValueError) as exc:
+            msg = (
+                "Cannot inspect compatibility factory for service "
+                f"'{getattr(definition, 'name', '<unknown>')}'"
+            )
+            raise RuntimeError(msg) from exc
 
         if asyncio.iscoroutinefunction(definition.init_func):
             return await definition.init_func(**dependency_kwargs)
@@ -307,9 +524,7 @@ class CompositionRoot:
 
     def _replace_compat_init_func(self, service_name: str, service: Any) -> None:
         """Make the compatibility registry return a root-constructed service."""
-        definition = self.compat_registry._service_definitions.get(service_name)  # noqa: SLF001
-        if definition is not None:
-            definition.init_func = lambda: service
+        self.compat_registry.provide_service_instance(service_name, service)
 
     def _mirror_guardrail_service(self, service_name: str, service: Any) -> None:
         """Mirror guardrail metadata into the guardrail-only coordinator."""

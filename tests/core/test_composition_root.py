@@ -4,10 +4,14 @@ import pytest
 
 from backend.core import dependencies
 from backend.core.composition_root import CompositionRoot
-from backend.core.config import get_settings
+from backend.core.config import Settings, get_settings
 from backend.core.guardrail_coordinator import GuardrailCoordinator
 from backend.core.guardrail_interfaces import GuardrailTier
+from backend.core.performance import PerformanceMonitor
 from backend.core.service_dependency_resolver import DependencyType, ServiceDependency
+from backend.repositories.security_config_repository import SecurityConfigRepository
+from backend.services.persistence.persistence_service import PersistenceService
+from backend.services.rvc.rvc_config_facade import RVCConfigFacade
 
 
 def _reset_dependency_globals() -> None:
@@ -21,6 +25,7 @@ def _seed_foundation_fakes(root: CompositionRoot) -> None:
     root.set_constructed_service("rvc_config", object())
     root.set_constructed_service("performance_monitor", object())
     root.set_constructed_service("database_manager", object())
+    root.set_constructed_service("edge_proxy_monitor", object())
     root.set_constructed_service("persistence_service", object())
     root.set_constructed_service("rvc_config_facade", object())
 
@@ -43,8 +48,8 @@ async def test_composition_root_starts_registry_and_captures_typed_settings() ->
     await root.startup(configure)
     try:
         assert root.has_service("app_settings")
-        assert root.get_service("app_settings") is settings
-        assert root.services.settings is settings
+        assert isinstance(root.get_service("app_settings"), Settings)
+        assert root.services.settings.app_name == settings.app_name
     finally:
         await root.shutdown()
 
@@ -54,13 +59,14 @@ async def test_repository_substrate_receives_root_constructed_dependencies() -> 
     """A0 repository substrate construction uses root-owned foundation services."""
     root = CompositionRoot()
     settings = get_settings()
-    performance_monitor = object()
+    performance_monitor = PerformanceMonitor()
     database_manager = object()
 
     root.set_constructed_service("app_settings", settings)
     root.set_constructed_service("rvc_config", object())
     root.set_constructed_service("performance_monitor", performance_monitor)
     root.set_constructed_service("database_manager", database_manager)
+    root.set_constructed_service("edge_proxy_monitor", object())
     root.set_constructed_service("persistence_service", object())
     root.set_constructed_service("rvc_config_facade", object())
 
@@ -93,10 +99,9 @@ async def test_repository_substrate_receives_root_constructed_dependencies() -> 
     await root.startup(configure)
     try:
         repository = root.get_service("security_config_repository")
-        assert repository == {
-            "database_manager": database_manager,
-            "performance_monitor": performance_monitor,
-        }
+        assert isinstance(repository, SecurityConfigRepository)
+        assert repository._db_manager is database_manager
+        assert repository._monitor is performance_monitor
         assert root.compat_registry.get_service("security_config_repository") is repository
     finally:
         await root.shutdown()
@@ -108,12 +113,13 @@ async def test_facade_services_receive_root_constructed_repositories() -> None:
     root = CompositionRoot()
     rvc_config_repository = object()
     persistence_repository = object()
-    performance_monitor = object()
+    performance_monitor = PerformanceMonitor()
 
     root.set_constructed_service("app_settings", get_settings())
     root.set_constructed_service("rvc_config", object())
     root.set_constructed_service("performance_monitor", performance_monitor)
     root.set_constructed_service("database_manager", object())
+    root.set_constructed_service("edge_proxy_monitor", object())
     root.set_constructed_service("rvc_config_repository", rvc_config_repository)
     root.set_constructed_service("persistence_repository", persistence_repository)
 
@@ -159,13 +165,52 @@ async def test_facade_services_receive_root_constructed_repositories() -> None:
 
     await root.startup(configure)
     try:
-        assert root.get_service("rvc_config_facade") == {
-            "rvc_config_repository": rvc_config_repository
-        }
-        assert root.get_service("persistence_service") == {
-            "persistence_repository": persistence_repository,
-            "performance_monitor": performance_monitor,
-        }
+        assert isinstance(root.get_service("rvc_config_facade"), RVCConfigFacade)
+        assert isinstance(root.get_service("persistence_service"), PersistenceService)
+    finally:
+        await root.shutdown()
+
+
+@pytest.mark.asyncio
+async def test_a0_a1_services_bypass_registry_factories() -> None:
+    """Converted A0/A1 services are built by typed constructors, not registry factories."""
+    root = CompositionRoot()
+    rvc_config_repository = object()
+
+    root.set_constructed_service("rvc_config", object())
+    root.set_constructed_service("performance_monitor", object())
+    root.set_constructed_service("database_manager", object())
+    root.set_constructed_service("edge_proxy_monitor", object())
+    root.set_constructed_service("persistence_service", object())
+    root.set_constructed_service("rvc_config_repository", rvc_config_repository)
+
+    def factory_must_not_run():
+        raise AssertionError("registry factory should not run for converted services")
+
+    async def configure(registry: GuardrailCoordinator) -> None:
+        registry.register_service(
+            name="app_settings",
+            init_func=factory_must_not_run,
+            dependencies=[],
+            description="Poison settings factory",
+        )
+        registry.register_service(
+            name="rvc_config_repository",
+            init_func=lambda: rvc_config_repository,
+            dependencies=[],
+            description="Test RV-C config repository",
+        )
+        registry.register_service(
+            name="rvc_config_facade",
+            init_func=factory_must_not_run,
+            dependencies=[ServiceDependency("rvc_config_repository", DependencyType.REQUIRED)],
+            description="Poison RV-C config facade factory",
+        )
+
+    await root.startup(configure)
+    try:
+        assert isinstance(root.services.settings, Settings)
+        assert isinstance(root.services.rvc_config_facade, RVCConfigFacade)
     finally:
         await root.shutdown()
 
@@ -230,7 +275,8 @@ async def test_service_dependency_delegates_to_composition_root() -> None:
     dependencies.initialize_composition_root(root)
     try:
         provider = dependencies.create_service_dependency("app_settings")
-        assert provider() is settings
+        assert isinstance(provider(), Settings)
+        assert provider().app_name == settings.app_name
     finally:
         await root.shutdown()
         _reset_dependency_globals()

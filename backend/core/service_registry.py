@@ -226,6 +226,16 @@ class ServiceRegistry:
             f"Registered service '{name}' with {len(definition.dependencies)} dependencies"
         )
 
+    def provide_service_instance(self, name: str, service: Any) -> None:
+        """Use an externally constructed service instance during compatibility startup."""
+        definition = self._service_definitions.get(name)
+        if definition is not None:
+            definition.init_func = lambda: service
+
+    def has_service_definition(self, name: str) -> bool:
+        """Return whether a service definition is registered."""
+        return name in self._service_definitions
+
     def register_services_batch(self, services: list[ServiceDefinition]) -> None:
         """
         Register multiple services at once.
