@@ -118,15 +118,8 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         # Execute orchestrated startup through the composition root.
         await composition_root.startup()
 
-        # CRITICAL: Inject service_registry into command_guardrail_service after startup to avoid circular dependency
         command_guardrail_service = composition_root.services.command_guardrail_service
-        if command_guardrail_service and hasattr(command_guardrail_service, "set_service_registry"):
-            command_guardrail_service.set_service_registry(composition_root.guardrail_coordinator)
-            logger.info("GuardrailRuntimeCoordinator injected into CommandGuardrailService")
-        elif command_guardrail_service:
-            command_guardrail_service.service_registry = composition_root.guardrail_coordinator
-            logger.info("GuardrailRuntimeCoordinator assigned to CommandGuardrailService")
-        else:
+        if not command_guardrail_service:
             logger.error(
                 "CommandGuardrailService not found in CompositionRoot - emergency stop coordination unavailable"
             )

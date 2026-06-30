@@ -21,6 +21,15 @@ def test_composition_root_has_no_registry_bridge_tokens() -> None:
     assert not any(token in source for token in forbidden_tokens)
 
 
+def test_command_guardrail_service_has_no_registry_collaborator() -> None:
+    """CommandGuardrailService must stay wired to the guardrail runtime coordinator."""
+    source = Path("backend/services/guardrails/command_guardrail_service.py").read_text(
+        encoding="utf-8"
+    )
+    assert "service_registry" not in source
+    assert "ServiceRegistry" not in source
+
+
 def _reset_dependency_globals() -> None:
     """Reset dependency globals mutated by composition-root tests."""
     dependencies._composition_root = None
@@ -258,3 +267,14 @@ async def test_root_shutdown_uses_service_specific_teardown_methods() -> None:
     assert root.get_service_status("app_settings") == ServiceStatus.STOPPED
     assert root.get_service_status("performance_monitor") == ServiceStatus.STOPPED
     assert root.get_service_status("rvc_config") == ServiceStatus.STOPPED
+
+
+def test_root_guardrail_metadata_declares_only_can_facade_as_halt_participant() -> None:
+    """Root guardrail metadata has the approved command-halt participant set."""
+    from backend.core.composition_root import ROOT_GUARDRAIL_METADATA
+
+    halt_targets = sorted(
+        name for name, metadata in ROOT_GUARDRAIL_METADATA.items() if metadata.command_halt_participant
+    )
+
+    assert halt_targets == ["can_facade"]

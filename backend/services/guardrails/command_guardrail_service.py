@@ -282,23 +282,23 @@ class CommandGuardrailService:
 
     def __init__(
         self,
-        service_registry=None,
+        guardrail_coordinator=None,
         health_check_interval: float = 5.0,
         watchdog_timeout: float = 15.0,
         pin_manager=None,
         security_audit_service=None,
     ):
         """
-        Initialize safety service with modern ServiceRegistry integration.
+        Initialize command guardrail service with a guardrail coordinator.
 
         Args:
-            service_registry: GuardrailCoordinator instance to monitor services
+            guardrail_coordinator: Coordinator/health adapter for guardrail-aware services
             health_check_interval: Interval between health checks (seconds)
             watchdog_timeout: Watchdog timeout threshold (seconds)
             pin_manager: Optional PIN manager for enhanced authorization
             security_audit_service: Optional security audit service for enhanced logging
         """
-        self.service_registry = service_registry
+        self.guardrail_coordinator = guardrail_coordinator
         self.health_check_interval = health_check_interval
         self.watchdog_timeout = watchdog_timeout
         self.pin_manager = pin_manager
@@ -510,9 +510,13 @@ class CommandGuardrailService:
             )
 
         try:
-            if self.service_registry and hasattr(self.service_registry, "halt_command_emission"):
-                logger.critical("Initiating coordinated command halt via GuardrailCoordinator")
-                command_halt_results = await self.service_registry.halt_command_emission(
+            if self.guardrail_coordinator and hasattr(
+                self.guardrail_coordinator, "halt_command_emission"
+            ):
+                logger.critical(
+                    "Initiating coordinated command halt via GuardrailRuntimeCoordinator"
+                )
+                command_halt_results = await self.guardrail_coordinator.halt_command_emission(
                     reason=reason, triggered_by="command_guardrail_service"
                 )
                 successful_stops = sum(1 for success in command_halt_results.values() if success)
@@ -531,12 +535,14 @@ class CommandGuardrailService:
                     logger.error("Command halt failed for services: %s", failed_services)
 
             else:
-                logger.warning("GuardrailCoordinator not available, using fallback command halt")
+                logger.warning(
+                    "GuardrailRuntimeCoordinator not available, using fallback command halt"
+                )
                 for service_name in self._get_command_halt_targets():
                     try:
                         service = (
-                            self.service_registry.get_service(service_name)
-                            if self.service_registry
+                            self.guardrail_coordinator.get_service(service_name)
+                            if self.guardrail_coordinator
                             else None
                         )
                         if service and hasattr(service, "halt_command_emission"):
@@ -562,24 +568,26 @@ class CommandGuardrailService:
 
     def _get_command_halt_targets(self) -> list[str]:
         """
-        Get list of CRITICAL-classified service names from GuardrailCoordinator.
+        Get list of CRITICAL-classified service names from GuardrailRuntimeCoordinator.
 
         Returns:
             List of service names classified CRITICAL that need command halt.
         """
-        # Use GuardrailCoordinator if available for accurate classification
-        if self.service_registry and hasattr(self.service_registry, "get_command_halt_targets"):
-            return self.service_registry.get_command_halt_targets()
+        # Use GuardrailRuntimeCoordinator if available for accurate classification
+        if self.guardrail_coordinator and hasattr(
+            self.guardrail_coordinator, "get_command_halt_targets"
+        ):
+            return self.guardrail_coordinator.get_command_halt_targets()
 
         # Fallback: use the CAN facade as the single command-halt coordinator.
         fallback_critical_services = ["can_facade"]
 
         # Filter to only services that are actually registered and running
-        if self.service_registry:
+        if self.guardrail_coordinator:
             return [
                 service_name
                 for service_name in fallback_critical_services
-                if self.service_registry.has_service(service_name)
+                if self.guardrail_coordinator.has_service(service_name)
             ]
 
         return []
@@ -1543,8 +1551,8 @@ class CommandGuardrailService:
         for service_name in guardrail_critical_services:
             try:
                 service = (
-                    self.service_registry.get_service(service_name)
-                    if self.service_registry
+                    self.guardrail_coordinator.get_service(service_name)
+                    if self.guardrail_coordinator
                     else None
                 )
                 if service:
@@ -1601,11 +1609,13 @@ class CommandGuardrailService:
         """Perform comprehensive health check."""
         self._last_health_check = datetime.now(UTC)
 
-        # Check service health via GuardrailCoordinator
-        if self.service_registry and hasattr(self.service_registry, "get_guardrail_status_summary"):
+        # Check service health via GuardrailRuntimeCoordinator
+        if self.guardrail_coordinator and hasattr(
+            self.guardrail_coordinator, "get_guardrail_status_summary"
+        ):
             try:
-                # Use comprehensive guardrail status from GuardrailCoordinator
-                guardrail_summary = await self.service_registry.get_guardrail_status_summary()
+                # Use comprehensive guardrail status from GuardrailRuntimeCoordinator
+                guardrail_summary = await self.guardrail_coordinator.get_guardrail_status_summary()
 
                 # Check for critical guardrail issues
                 overall_status = guardrail_summary.get("overall_guardrail_status", "safe")
@@ -1642,7 +1652,7 @@ class CommandGuardrailService:
 
                 for service_name in guardrail_critical_services:
                     try:
-                        status = self.service_registry.get_service_status(service_name)
+                        status = self.guardrail_coordinator.get_service_status(service_name)
                         if status in ["FAILED", "DEGRADED"]:
                             failed_critical.append(service_name)
                     except Exception as e:
@@ -1732,10 +1742,10 @@ class CommandGuardrailService:
             try:
                 start_time = time.time()
 
-                # Check service health via ServiceRegistry
-                if self.service_registry:
-                    # Use ServiceRegistry to check service health
-                    health_summary = self.service_registry.get_health_summary()
+                # Check service health via guardrail coordinator
+                if self.guardrail_coordinator:
+                    # Use guardrail coordinator to check service health
+                    health_summary = self.guardrail_coordinator.get_health_summary()
                     failed_services = [
                         name
                         for name, status in health_summary.items()
@@ -1750,7 +1760,7 @@ class CommandGuardrailService:
                         "healthy": len(failed_services) == 0,
                     }
                 else:
-                    # Fallback when ServiceRegistry not available
+                    # Fallback when guardrail coordinator not available
                     health_report = {"failed_critical": [], "healthy": True}
 
                 # Check command preconditions
@@ -1874,8 +1884,8 @@ class CommandGuardrailService:
         for service_name in guardrail_critical_services:
             try:
                 service = (
-                    self.service_registry.get_service(service_name)
-                    if self.service_registry
+                    self.guardrail_coordinator.get_service(service_name)
+                    if self.guardrail_coordinator
                     else None
                 )
                 if service:
@@ -1889,7 +1899,7 @@ class CommandGuardrailService:
                 logger.error("Error shutting down service %s: %s", service_name, e)
 
     def get_health_status(self) -> dict[str, Any]:
-        """Get health status for ServiceRegistry monitoring."""
+        """Get health status for guardrail coordinator monitoring."""
         return {
             "healthy": not self._command_halt_active and not self._in_command_halt_state,
             "command_halt_active": self._command_halt_active,

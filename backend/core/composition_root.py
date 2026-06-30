@@ -871,7 +871,7 @@ class CompositionRoot:
 
         if self._should_construct("command_guardrail_service"):
             command_guardrail_service = CommandGuardrailService(
-                service_registry=self.guardrail_coordinator,
+                guardrail_coordinator=self.guardrail_coordinator,
                 health_check_interval=5.0,
                 watchdog_timeout=15.0,
                 pin_manager=self.get_service("pin_manager"),
