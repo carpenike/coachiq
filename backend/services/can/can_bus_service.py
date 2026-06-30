@@ -1036,7 +1036,7 @@ class CANBusService(GuardrailParticipant):
             except Exception:
                 logger.warning("ServiceRegistry not available for entity update")
                 return
-            entity_manager_service = service_registry.get_service("entity_manager")
+            entity_manager_service = service_registry.get_service("entity_manager_service")
             if entity_manager_service is None:
                 logger.warning("EntityManagerService not found in ServiceRegistry")
                 return
@@ -1082,7 +1082,7 @@ class CANBusService(GuardrailParticipant):
 
                 # Broadcast the update via WebSocket
                 # Broadcast entity update via WebSocket
-                websocket_service = service_registry.get_service("websocket_service")
+                websocket_service = service_registry.get_service("websocket_manager")
                 if websocket_service:
                     broadcast_data = {
                         "type": "entity_update",

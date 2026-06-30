@@ -698,8 +698,8 @@ class WebSocketService:
         )
         try:
             # Send initial recorder status if available
-            if hasattr(self, "_service_registry"):
-                recorder_service = self._service_registry.get_service("can_recorder")
+            if self._service_registry is not None:
+                recorder_service = self._service_registry.get_service("can_bus_recorder")
                 if recorder_service:
                     initial_status = recorder_service.get_status()
                     await websocket.send_json(
@@ -753,8 +753,8 @@ class WebSocketService:
         )
         try:
             # Send initial analyzer stats if available
-            if hasattr(self, "_service_registry"):
-                analyzer_service = self._service_registry.get_service("can_analyzer")
+            if self._service_registry is not None:
+                analyzer_service = self._service_registry.get_service("can_protocol_analyzer")
                 if analyzer_service:
                     initial_stats = analyzer_service.get_statistics()
                     await websocket.send_json(
@@ -808,8 +808,8 @@ class WebSocketService:
         )
         try:
             # Send initial filter status if available
-            if hasattr(self, "_service_registry"):
-                filter_service = self._service_registry.get_service("can_filter")
+            if self._service_registry is not None:
+                filter_service = self._service_registry.get_service("can_message_filter")
                 if filter_service:
                     initial_status = filter_service.get_status()
                     await websocket.send_json(

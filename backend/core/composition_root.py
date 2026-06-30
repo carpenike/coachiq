@@ -695,7 +695,7 @@ class CompositionRoot:
             websocket_manager = WebSocketService(
                 can_tracking_repository=self.get_service("can_tracking_repository"),
                 system_state_repository=self.get_service("system_state_repository"),
-                service_registry=None,
+                service_registry=self,
             )
             await websocket_manager.start()
             self._set_root_constructed_service("websocket_manager", websocket_manager)
