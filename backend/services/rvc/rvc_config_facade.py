@@ -90,14 +90,14 @@ class RVCConfigFacade:
         }
 
 
-# Example factory function for ServiceRegistry registration
+# Example factory function for composition root registration
 def create_rvc_config_facade() -> RVCConfigFacade:
     """Factory function for creating RVCConfigFacade with dependencies.
 
-    This would be registered with ServiceRegistry and automatically
+    This would be registered with composition root and automatically
     get the RVCConfigRepository injected.
     """
     raise NotImplementedError(
-        "This factory should be registered with ServiceRegistry "
+        "This factory should be registered with composition root "
         "to get automatic dependency injection of RVCConfigRepository"
     )

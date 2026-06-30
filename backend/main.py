@@ -34,7 +34,7 @@ from backend.core.security_config_validator import validate_security_config
 from backend.core.security_hardening import configure_security_hardening
 
 # CAN Tools Services
-# from backend.integrations.registration import register_custom_features  # No longer needed - all services in ServiceRegistry
+# from backend.integrations.registration import register_custom_features  # No longer needed - all services in composition root
 from backend.middleware.auth import AuthenticationMiddleware
 from backend.middleware.csrf_protection import CSRFProtectionMiddleware
 from backend.middleware.logging_middleware import LoggingMiddleware
@@ -155,7 +155,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
             for service_name, timing in slowest[:5]:
                 logger.info("    - %s: %.2fms", service_name, timing)
 
-        # Get services from ServiceRegistry
+        # Get services from composition root
         websocket_manager = composition_root.services.websocket_manager
         entity_manager_service = composition_root.services.entity_manager_service
 
@@ -169,33 +169,33 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         update_websocket_logging(websocket_manager)
         logger.info("WebSocket logging integration completed")
 
-        # Services are now managed by ServiceRegistry - no need for manual initialization
+        # Services are now managed by composition root - no need for manual initialization
         # TODO(Phase 3): These services need to be updated for constructor injection
         # For now, they're getting dependencies via service locator pattern internally
         docs_service = None  # DocsService() - needs docs_repository, performance_monitor
         vector_service = None  # VectorService() - needs vector_repository, performance_monitor
         can_interface_service = None  # CANInterfaceService() - needs performance_monitor
-        # Get database_manager from ServiceRegistry
+        # Get database_manager from composition root
         database_manager = composition_root.services.database_manager
-        # TODO: Migrate these services to ServiceRegistry
+        # TODO: Migrate these services to composition root
         # For now, create with None until properly migrated
         predictive_maintenance_service = (
             None  # PredictiveMaintenanceService - needs maintenance_repository, performance_monitor
         )
-        # analytics_dashboard_service now registered in ServiceRegistry
+        # analytics_dashboard_service now registered in composition root
 
-        # Get security services from ServiceRegistry (already initialized)
+        # Get security services from composition root (already initialized)
         security_config_service = composition_root.services.security_config_service
         pin_manager = composition_root.services.pin_manager
         security_audit_service = composition_root.services.security_audit_service
 
-        logger.info("Security services retrieved from ServiceRegistry")
+        logger.info("Security services retrieved from composition root")
 
         logger.info("Backend services initialized")
 
         # Authentication middleware will be configured dynamically via the middleware itself
 
-        # Services are now accessed via ServiceRegistry and dependency injection
+        # Services are now accessed via composition root and dependency injection
 
         # Initialize Security WebSocket Handler with dependency injection
         # ARCHITECTURE NOTE: The SecurityWebSocketHandler is created as a singleton
@@ -214,13 +214,13 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
 
         security_websocket_handler = SecurityWebSocketHandler(event_manager=security_event_manager)
         await security_websocket_handler.startup()
-        # Security websocket handler is available via ServiceRegistry
+        # Security websocket handler is available via composition root
         logger.info("Security WebSocket handler initialized with dependency injection")
 
-        # Analytics dashboard service now started via ServiceRegistry lifecycle
+        # Analytics dashboard service now started via composition root lifecycle
 
         # Safety monitoring already started during service initialization
-        logger.info("Safety monitoring active via ServiceRegistry")
+        logger.info("Safety monitoring active via composition root")
 
         logger.info("Backend services initialized successfully")
 
@@ -230,24 +230,24 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         logger.error("Error during application startup: %s", e)
         raise
     finally:
-        # Cleanup with ServiceRegistry orchestration
+        # Cleanup with composition root orchestration
         logger.info("Shutting down coachiq backend application")
 
-        # Services shutdown is now handled by ServiceRegistry
-        # Individual service shutdown calls removed - ServiceRegistry handles proper shutdown order
+        # Services shutdown is now handled by composition root
+        # Individual service shutdown calls removed - composition root handles proper shutdown order
 
         # Shutdown Security WebSocket handler
-        # Use ServiceRegistry for orchestrated shutdown
+        # Use composition root for orchestrated shutdown
         try:
             logger.info("Using CompositionRoot for orchestrated shutdown")
             await composition_root.shutdown()
         except Exception as e:
-            logger.error(f"Error during ServiceRegistry shutdown: {e}")
-            logger.info("Using legacy shutdown (ServiceRegistry not available)")
+            logger.error(f"Error during composition root shutdown: {e}")
+            logger.info("Using legacy shutdown (composition root not available)")
 
-            # Feature manager removed - all services managed by ServiceRegistry
+            # Feature manager removed - all services managed by composition root
 
-            # CoreServices removed - individual services shutdown by ServiceRegistry
+            # CoreServices removed - individual services shutdown by composition root
 
         logger.info("Backend services stopped")
 

@@ -41,7 +41,7 @@ class ProtocolInfo:
         Args:
             name: Protocol name (e.g., "rvc", "j1939", "firefly")
             enabled: Whether the protocol is enabled in configuration
-            service_name: Name of the service in ServiceRegistry
+            service_name: Name of the service in composition root
             always_enabled: Whether this protocol is always enabled
             description: Human-readable description
         """
@@ -58,7 +58,7 @@ class ProtocolManager:
     Manages protocol enablement and status.
 
     This service bridges between static configuration (environment variables,
-    YAML files) and runtime service status from ServiceRegistry.
+    YAML files) and runtime service status from composition root.
     """
 
     def __init__(self):
@@ -105,7 +105,7 @@ class ProtocolManager:
         Get list of enabled protocols based on configuration and service health.
 
         Args:
-            service_registry: Optional ServiceRegistry instance. If not provided,
+            service_registry: Optional composition root instance. If not provided,
                             only configuration-based status is returned.
 
         Returns:
@@ -150,7 +150,7 @@ class ProtocolManager:
 
         Args:
             protocol: Protocol name
-            service_registry: Optional ServiceRegistry instance
+            service_registry: Optional composition root instance
 
         Returns:
             ProtocolStatus enum value
@@ -199,7 +199,7 @@ class ProtocolManager:
 
         Args:
             protocol: Protocol name to check
-            service_registry: Optional ServiceRegistry for runtime checks
+            service_registry: Optional composition root for runtime checks
 
         Returns:
             True if protocol is enabled and healthy

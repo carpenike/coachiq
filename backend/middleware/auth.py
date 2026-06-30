@@ -98,7 +98,7 @@ class AuthenticationMiddleware(BaseHTTPMiddleware):
         Raises:
             HTTPException: If authentication is required but fails
         """
-        # Get auth manager from ServiceRegistry if not provided during init
+        # Get auth manager from composition root if not provided during init
         # We need to check this each time because AuthService might not be started initially
         auth_manager = self.auth_manager
         if not auth_manager or (
@@ -242,7 +242,7 @@ class OptionalAuthenticationMiddleware(AuthenticationMiddleware):
         Returns:
             Response: HTTP response from the route handler
         """
-        # Get auth manager from ServiceRegistry if not provided during init
+        # Get auth manager from composition root if not provided during init
         # We need to check this each time because AuthService might not be started initially
         auth_manager = self.auth_manager
         if not auth_manager or (

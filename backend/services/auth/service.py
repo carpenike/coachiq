@@ -233,11 +233,11 @@ def create_auth_service() -> AuthService:
     """
     Factory function for creating AuthService with dependencies.
 
-    This would be registered with ServiceRegistry and automatically
+    This would be registered with composition root and automatically
     get the repositories injected.
     """
     msg = (
-        "This factory should be registered with ServiceRegistry "
+        "This factory should be registered with composition root "
         "to get automatic dependency injection of repositories"
     )
     raise NotImplementedError(msg)

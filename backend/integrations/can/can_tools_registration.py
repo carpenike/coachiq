@@ -26,18 +26,18 @@ logger = logging.getLogger(__name__)
 
 def _register_with_service_registry(service_name: str, service_instance: Any) -> None:
     """
-    Register a service with ServiceRegistry if available.
+    Register a service with composition root if available.
 
     Args:
         service_name: Name to register the service under
         service_instance: Service instance to register
     """
-    # Note: ServiceRegistry registration should happen during application startup,
+    # Note: composition root registration should happen during application startup,
     # not at runtime. This function is kept for backward compatibility but
     # effectively does nothing now. Services should be registered in main.py
     # during the application startup phase.
     logger.debug(
-        "Skipping runtime ServiceRegistry registration for %s. "
+        "Skipping runtime composition root registration for %s. "
         "Services should be registered during application startup.",
         service_name,
     )
@@ -48,9 +48,9 @@ def register_can_tools_features() -> None:
     Register CAN tools features (DEPRECATED).
 
     This function is kept for backward compatibility but does nothing.
-    CAN tools are now managed by ServiceRegistry.
+    CAN tools are now managed by composition root.
     """
-    logger.info("CAN tools registration called but deprecated - use ServiceRegistry")
+    logger.info("CAN tools registration called but deprecated - use composition root")
 
 
 def create_audit_callback() -> Callable[[InjectionRequest, InjectionResult], None] | None:

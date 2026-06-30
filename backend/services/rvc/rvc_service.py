@@ -223,12 +223,12 @@ def create_rvc_service() -> RVCService:
     """
     Factory function for creating RVCService with dependencies.
 
-    This would be registered with ServiceRegistry and automatically
+    This would be registered with composition root and automatically
     get the repositories injected.
     """
-    # In real usage, this would get the repositories from ServiceRegistry
+    # In real usage, this would get the repositories from composition root
     # For now, we'll document the pattern
     raise NotImplementedError(
-        "This factory should be registered with ServiceRegistry "
+        "This factory should be registered with composition root "
         "to get automatic dependency injection of repositories"
     )

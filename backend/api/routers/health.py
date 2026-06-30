@@ -152,7 +152,7 @@ async def health_check(
         critical_services = ["persistence_service", "database_manager", "entity_service"]
         for service_name in critical_services:
             if composition_root.has_service(service_name):
-                service = composition_root.get_service(service_name)
+                service = composition_root.require_service(service_name)
                 if hasattr(service, "check_health"):
                     try:
                         await service.check_health()
@@ -298,7 +298,7 @@ async def service_health_status(
         # Try to get additional health metadata
         if composition_root.has_service(name):
             try:
-                service = composition_root.get_service(name)
+                service = composition_root.require_service(name)
 
                 # Check for health_details property
                 if hasattr(service, "health_details"):

@@ -120,7 +120,7 @@ class CANNetworkTelemetryService:
         return {name: telemetry.model_dump() for name, telemetry in self._rolling.items()}
 
     def get_health_status(self) -> dict[str, Any]:
-        """Return basic sampler health for ServiceRegistry health checks."""
+        """Return basic sampler health for composition root health checks."""
         running = self._task is not None and not self._task.done()
         return {
             "healthy": self._task is None or running,

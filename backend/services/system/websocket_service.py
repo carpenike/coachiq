@@ -1007,13 +1007,13 @@ def create_websocket_service() -> WebSocketService:
     """
     Factory function for creating WebSocketService with dependencies.
 
-    This would be registered with ServiceRegistry and automatically
+    This would be registered with composition root and automatically
     get the repositories injected.
     """
-    # In real usage, this would get the repositories from ServiceRegistry
+    # In real usage, this would get the repositories from composition root
     # For now, we'll document the pattern
     msg = (
-        "This factory should be registered with ServiceRegistry "
+        "This factory should be registered with composition root "
         "to get automatic dependency injection of repositories"
     )
     raise NotImplementedError(msg)

@@ -271,7 +271,7 @@ async def get_feature_status() -> dict[str, Any]:
         "core_count": 0,
         "optional_count": 0,
         "features": {},
-        "message": "Feature flags have been removed. All services are available through ServiceRegistry.",
+        "message": "Feature flags have been removed. All services are available through composition root.",
     }
 
     logger.info("Feature status endpoint called - returning deprecation notice")
@@ -409,7 +409,7 @@ async def get_enhanced_feature_status():
         "dependency_graph": {},
         "conflict_resolution": {},
         "validation_errors": [],
-        "message": "Feature flags have been removed. All services are available through ServiceRegistry.",
+        "message": "Feature flags have been removed. All services are available through composition root.",
     }
 
 

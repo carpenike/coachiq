@@ -1,7 +1,7 @@
 """Guardrail-only runtime coordinator.
 
 This coordinator is constructed by the composition root and owns guardrail
-metadata/command-halt reads. It intentionally does not inherit ServiceRegistry.
+metadata/command-halt reads. It intentionally does not inherit composition root.
 """
 
 import logging
@@ -29,7 +29,7 @@ class GuardrailRuntimeCoordinator:
     def __init__(self) -> None:
         self._entries: dict[str, GuardrailRuntimeEntry] = {}
 
-    def register_guardrail_service(
+    def add_guardrail_service(
         self,
         service_name: str,
         service: Any,

@@ -75,7 +75,7 @@ class _LightCommandDecision:
     :meth:`EntityService._execute_light_command`. Splitting the decision
     out as plain data lets the brightness/state branching logic be
     unit-tested in isolation without mocking the entity repo or the CAN
-    bus -- see ``tests/services/test_control_light_resolver.py``.
+    bus; see the light control resolver tests.
 
     Attributes:
         new_state: Target ON/OFF state (True = on).
@@ -573,7 +573,7 @@ class EntityService:
         :meth:`_apply_light_command_side_effects`. Splitting it this way
         keeps each step under the ruff complexity caps and makes the
         decision tree unit-testable in isolation (see
-        ``tests/services/test_control_light_resolver.py``).
+        the light control resolver tests).
 
         Args:
             entity_id: The ID of the light entity to control
@@ -870,12 +870,12 @@ def create_entity_service() -> EntityService:
     """
     Factory function for creating EntityService with dependencies.
 
-    This would be registered with ServiceRegistry and automatically
+    This would be registered with composition root and automatically
     get the repositories injected.
     """
-    # In real usage, this would get the repositories from ServiceRegistry
+    # In real usage, this would get the repositories from composition root
     # For now, we'll document the pattern
     raise NotImplementedError(
-        "This factory should be registered with ServiceRegistry "
+        "This factory should be registered with composition root "
         "to get automatic dependency injection of repositories"
     )

@@ -329,8 +329,8 @@ class StartupPerformanceMonitor:
                 {
                     "category": "service_registry",
                     "priority": "medium",
-                    "title": "Optimize ServiceRegistry performance",
-                    "description": f"ServiceRegistry timing {registry_total:.1f}ms exceeds baseline {baseline_registry:.1f}ms",
+                    "title": "Optimize composition root performance",
+                    "description": f"composition root timing {registry_total:.1f}ms exceeds baseline {baseline_registry:.1f}ms",
                     "suggested_actions": [
                         "Review service dependency resolution",
                         "Consider parallel service initialization",

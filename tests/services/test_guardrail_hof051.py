@@ -4,8 +4,8 @@ from unittest.mock import AsyncMock, Mock
 
 import pytest
 
-from backend.core.guardrail_coordinator import GuardrailCoordinator
 from backend.core.guardrail_interfaces import GuardrailTier
+from backend.core.guardrail_runtime_coordinator import GuardrailRuntimeCoordinator
 from backend.services.can.can_facade import CANFacade
 from backend.services.guardrails.command_guardrail_service import CommandGuardrailService
 
@@ -37,17 +37,22 @@ class _CanFacadeService:
 @pytest.mark.asyncio
 async def test_guardrail_halt_does_not_stop_auth_manager() -> None:
     """Health-critical auth is not a command-halt participant."""
-    coordinator = GuardrailCoordinator()
+    coordinator = GuardrailRuntimeCoordinator()
     auth_service = _AuthService()
     can_facade = _CanFacadeService()
 
-    coordinator.register_guardrail_service(
-        "auth_manager", lambda: auth_service, GuardrailTier.CRITICAL, command_halt_participant=False
+    coordinator.add_guardrail_service(
+        "auth_manager",
+        auth_service,
+        GuardrailTier.CRITICAL,
+        command_halt_participant=False,
     )
-    coordinator.register_guardrail_service(
-        "can_facade", lambda: can_facade, GuardrailTier.CRITICAL, command_halt_participant=True
+    coordinator.add_guardrail_service(
+        "can_facade",
+        can_facade,
+        GuardrailTier.CRITICAL,
+        command_halt_participant=True,
     )
-    await coordinator.startup_all()
 
     result = await coordinator.halt_command_emission("test", "pytest")
 

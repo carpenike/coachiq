@@ -60,7 +60,7 @@ class RVCConfigProvider:
         """
         Load configuration files once during startup.
 
-        This method is called by the ServiceRegistry during startup to ensure
+        This method is called by the composition root during startup to ensure
         configuration is loaded exactly once and shared across all services.
 
         Raises:

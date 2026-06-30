@@ -46,7 +46,7 @@ def setup_websocket(
     Example:
         >>> ws_manager = setup_websocket(app)
     """
-    # WebSocketManager is now managed by ServiceRegistry
+    # WebSocketManager is now managed by composition root
     # This function is kept for backward compatibility
     ws_manager = initialize_websocket_manager(
         config=config or {},

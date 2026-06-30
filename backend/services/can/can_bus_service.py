@@ -588,7 +588,7 @@ class CANBusService(GuardrailParticipant):
 
     async def _send_to_can_tools(self, message: Any, interface_name: str) -> bool:
         """
-        Send CAN message to optional analysis tools through ServiceRegistry.
+        Send CAN message to optional analysis tools through composition root.
 
         Args:
             message: python-can Message object
@@ -1298,11 +1298,11 @@ def create_can_bus_service() -> CANBusService:
     """
     Factory function for creating CANBusService with dependencies.
 
-    This would be registered with ServiceRegistry and automatically
+    This would be registered with composition root and automatically
     get the repositories injected.
     """
     msg = (
-        "This factory should be registered with ServiceRegistry "
+        "This factory should be registered with composition root "
         "to get automatic dependency injection of repositories"
     )
     raise NotImplementedError(msg)

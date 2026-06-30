@@ -14,7 +14,7 @@ from backend.core.composition_root import CompositionRoot as _CompositionRootCla
 # Real service classes for typed DI aliases (ADR-0006).
 # Imported under underscore-prefixed names so the public alias name
 # (e.g. ``CANFacade``) matches what the rest of the codebase already
-# uses. The runtime ServiceRegistry lookup remains string-keyed; these
+# uses. The runtime composition root lookup remains string-keyed; these
 # imports exist purely so pyright + IDEs see real return types.
 from backend.integrations.can.can_bus_recorder import CANBusRecorder as _CANBusRecorder
 from backend.integrations.can.message_filter import MessageFilter as _MessageFilter
@@ -28,7 +28,7 @@ from backend.integrations.can.protocol_analyzer import (
 # Real repository classes for typed DI aliases (ADR-0006).
 # Imported under underscore-prefixed names so the public alias name
 # matches what the rest of the codebase already uses. The runtime
-# ServiceRegistry lookup remains string-keyed; these imports exist
+# composition root lookup remains string-keyed; these imports exist
 # purely so pyright + IDEs see real return types.
 #
 # NOTE: ``EntityStateRepository`` exists in TWO files under the same
@@ -53,7 +53,7 @@ from backend.repositories.system_state_repository import (
 # Real service classes for typed DI aliases (ADR-0006).
 # Imported under underscore-prefixed names so the public alias name
 # matches what the rest of the codebase already uses. The runtime
-# ServiceRegistry lookup remains string-keyed; these imports exist
+# composition root lookup remains string-keyed; these imports exist
 # purely so pyright + IDEs see real return types.
 from backend.services.analytics.analytics_dashboard_service import (
     AnalyticsDashboardService as _AnalyticsDashboardService,
@@ -67,7 +67,7 @@ from backend.services.analytics.analytics_dashboard_service import (
 # Real service classes for typed DI aliases (ADR-0006).
 # Imported under underscore-prefixed names so the public alias name
 # matches what the rest of the codebase already uses. The runtime
-# ServiceRegistry lookup remains string-keyed; these imports exist
+# composition root lookup remains string-keyed; these imports exist
 # purely so pyright + IDEs see real return types.
 #
 # NOTE: ``EntityService`` is intentionally NOT typed here -- importing
@@ -129,15 +129,6 @@ _SERVICE_HANDLE_NAMES = {
 }
 
 
-def initialize_service_registry(registry: Any) -> None:
-    """Compatibility shim for callers still passing the root's legacy catalog."""
-    if _composition_root is not None and registry is not _composition_root:
-        msg = "Cannot initialize a divergent ServiceRegistry after CompositionRoot startup."
-        raise RuntimeError(msg)
-
-    logger.info("Compatibility service registry ignored; composition root is authoritative")
-
-
 def initialize_composition_root(composition_root: _CompositionRootClass) -> None:
     """Initialize the module-level composition root."""
     global _composition_root  # noqa: PLW0603 - intentional module-level state
@@ -158,11 +149,6 @@ def get_composition_root() -> _CompositionRootClass:
     return _composition_root
 
 
-def get_service_registry() -> _CompositionRootClass:
-    """Temporary root alias for callers not yet migrated to get_composition_root."""
-    return get_composition_root()
-
-
 def root_service_dependency(service_name: str):
     """
     Factory function to create service dependencies.
@@ -170,7 +156,7 @@ def root_service_dependency(service_name: str):
     This creates FastAPI dependency functions that get services from the composition root.
 
     Args:
-        service_name: Name of the service in ServiceRegistry
+        service_name: Name of the service in composition root
 
     Returns:
         A FastAPI dependency function
@@ -197,7 +183,7 @@ def create_optional_service_dependency(service_name: str):
     returning None if the service is not available instead of raising an error.
 
     Args:
-        service_name: Name of the service in ServiceRegistry
+        service_name: Name of the service in composition root
 
     Returns:
         A FastAPI dependency function that returns the service or None
@@ -219,7 +205,7 @@ def create_optional_service_dependency(service_name: str):
 
 def get_websocket_manager() -> Any:
     """
-    Get the WebSocket manager from ServiceRegistry.
+    Get the WebSocket manager from composition root.
 
     Returns:
         The WebSocket manager instance
@@ -229,7 +215,7 @@ def get_websocket_manager() -> Any:
 
 def get_entity_service() -> Any:
     """
-    Get the entity service from ServiceRegistry.
+    Get the entity service from composition root.
 
     Returns:
         The entity service instance
@@ -238,7 +224,7 @@ def get_entity_service() -> Any:
 
 
 def get_rvc_config_facade() -> _RVCConfigFacade:
-    """Get the RV-C config facade from ServiceRegistry.
+    """Get the RV-C config facade from composition root.
 
     Returns:
         The RVCConfigFacade instance
@@ -248,7 +234,7 @@ def get_rvc_config_facade() -> _RVCConfigFacade:
 
 def get_can_facade() -> _CANFacade | None:
     """
-    Get the CAN facade from ServiceRegistry.
+    Get the CAN facade from composition root.
 
     This is the ONLY way to access CAN functionality.
     All CAN operations go through the facade.
@@ -284,7 +270,7 @@ VerifiedCANFacade = Annotated[_CANFacade, Depends(get_verified_can_facade)]
 
 
 def get_can_network_telemetry_service() -> _CANNetworkTelemetryService:
-    """Get the rolling CAN network telemetry service from ServiceRegistry."""
+    """Get the rolling CAN network telemetry service from composition root."""
     return root_service_dependency("can_network_telemetry_service")()
 
 
@@ -295,7 +281,7 @@ CANNetworkTelemetryService = Annotated[
 
 def get_can_message_injector() -> _CANMessageInjector:
     """
-    Get the CAN message injector service from ServiceRegistry.
+    Get the CAN message injector service from composition root.
 
     This service provides safe CAN message injection capabilities for
     testing and diagnostics with proper safety validation and audit logging.
@@ -308,7 +294,7 @@ def get_can_message_injector() -> _CANMessageInjector:
 
 def get_can_message_filter() -> _MessageFilter:
     """
-    Get the CAN message filter service from ServiceRegistry.
+    Get the CAN message filter service from composition root.
 
     This service provides CAN message filtering with real-time monitoring
     and alerting capabilities for traffic analysis and security.
@@ -326,7 +312,7 @@ def get_can_message_filter() -> _MessageFilter:
 
 def get_can_bus_recorder() -> _CANBusRecorder:
     """
-    Get the CAN bus recorder service from ServiceRegistry.
+    Get the CAN bus recorder service from composition root.
 
     This service provides CAN traffic recording and replay capabilities
     for diagnostics, testing, and analysis.
@@ -339,7 +325,7 @@ def get_can_bus_recorder() -> _CANBusRecorder:
 
 def get_can_protocol_analyzer() -> _ProtocolAnalyzer:
     """
-    Get the CAN protocol analyzer service from ServiceRegistry.
+    Get the CAN protocol analyzer service from composition root.
 
     This service provides deep packet inspection and protocol detection
     for comprehensive CAN network analysis.
@@ -352,7 +338,7 @@ def get_can_protocol_analyzer() -> _ProtocolAnalyzer:
 
 def get_command_guardrail_service() -> _CommandGuardrailService:
     """
-    Get the API guardrail service from ServiceRegistry.
+    Get the API guardrail service from composition root.
 
     Provides command-validation interlocks, emergency stop on the
     orchestration loop, and watchdog monitoring of CRITICAL-classified
@@ -371,7 +357,7 @@ def get_command_guardrail_service() -> _CommandGuardrailService:
 
 def get_rvc_service() -> _RVCService:
     """
-    Get the RVC service from ServiceRegistry.
+    Get the RVC service from composition root.
 
     Returns:
         The RVC service instance
@@ -391,7 +377,7 @@ def get_protocol_manager() -> Any:
 
 def get_entity_state_repository() -> _EntityStateRepository:
     """
-    Get the entity state repository from ServiceRegistry.
+    Get the entity state repository from composition root.
 
     Returns:
         The entity state repository instance
@@ -401,7 +387,7 @@ def get_entity_state_repository() -> _EntityStateRepository:
 
 def get_rvc_config_repository() -> _RVCConfigRepository:
     """
-    Get the RVC config repository from ServiceRegistry.
+    Get the RVC config repository from composition root.
 
     Returns:
         The RVC config repository instance
@@ -411,7 +397,7 @@ def get_rvc_config_repository() -> _RVCConfigRepository:
 
 def get_system_state_repository() -> _SystemStateRepository:
     """
-    Get the system state repository from ServiceRegistry.
+    Get the system state repository from composition root.
 
     Returns:
         The system state repository instance
@@ -421,7 +407,7 @@ def get_system_state_repository() -> _SystemStateRepository:
 
 def get_analytics_dashboard_service() -> _AnalyticsDashboardService:
     """
-    Get the analytics dashboard service from ServiceRegistry.
+    Get the analytics dashboard service from composition root.
 
     This service provides comprehensive analytics dashboard functionality including
     performance trends, system insights, historical data analysis, and intelligent
@@ -435,10 +421,10 @@ def get_analytics_dashboard_service() -> _AnalyticsDashboardService:
 
 def get_edge_proxy_monitor_service() -> _EdgeProxyMonitorService:
     """
-    Get the edge proxy monitor service from ServiceRegistry.
+    Get the edge proxy monitor service from composition root.
 
     This service monitors the health and status of the edge proxy (Caddy)
-    and integrates with ServiceRegistry health monitoring system.
+    and integrates with composition root health monitoring system.
 
     Returns:
         The EdgeProxyMonitorService instance
@@ -455,7 +441,7 @@ def get_database_update_service() -> _DatabaseUpdateService:
     """
     Get DatabaseUpdateService instance.
 
-    Target pattern: ServiceRegistry only, no fallback.
+    Target pattern: composition root only, no fallback.
 
     Returns:
         The DatabaseUpdateService instance
@@ -470,7 +456,7 @@ def get_migration_safety_validator() -> _MigrationSafetyValidator:
     """
     Get MigrationSafetyValidator instance.
 
-    Target pattern: ServiceRegistry only, no fallback.
+    Target pattern: composition root only, no fallback.
 
     Returns:
         The MigrationSafetyValidator instance
@@ -537,7 +523,7 @@ EdgeProxyMonitorService = Annotated[
 
 
 def get_analytics_service() -> _NotificationAnalyticsService:
-    """Get the analytics service from ServiceRegistry.
+    """Get the analytics service from composition root.
 
     See #169 -- the registry key ``"analytics_service"`` is currently
     NOT registered anywhere; this accessor will raise ``RuntimeError``
@@ -564,9 +550,6 @@ PredictiveMaintenanceService = Annotated[
 ]
 
 CompositionRoot = Annotated[_CompositionRootClass, Depends(get_composition_root)]
-ServiceRegistry = CompositionRoot
-
-
 # ==================================================================================
 # AUTHENTICATION DEPENDENCIES
 # ==================================================================================
@@ -574,7 +557,7 @@ ServiceRegistry = CompositionRoot
 
 def get_auth_manager() -> _AuthManager:
     """
-    Get the auth manager from ServiceRegistry.
+    Get the auth manager from composition root.
 
     Note: The service registry contains an AuthService under the name "auth_manager",
     and we need to call get_auth_manager() on it to get the actual AuthManager instance.
@@ -597,27 +580,27 @@ def get_auth_manager() -> _AuthManager:
 
 
 def get_pin_manager() -> _PINManager:
-    """Get the PIN manager from ServiceRegistry."""
+    """Get the PIN manager from composition root."""
     return root_service_dependency("pin_manager")()
 
 
 async def get_security_audit_service() -> _SecurityAuditService:
-    """Get the security audit service from ServiceRegistry."""
+    """Get the security audit service from composition root."""
     return root_service_dependency("security_audit_service")()
 
 
 def get_notification_manager() -> _NotificationManager:
-    """Get the notification manager from ServiceRegistry."""
+    """Get the notification manager from composition root."""
     return root_service_dependency("notification_manager")()
 
 
 def get_security_config_service() -> _SecurityConfigService:
-    """Get the security config service from ServiceRegistry."""
+    """Get the security config service from composition root."""
     return root_service_dependency("security_config_service")()
 
 
 def get_security_event_manager() -> _SecurityEventManager:
-    """Get the security event manager from ServiceRegistry."""
+    """Get the security event manager from composition root."""
     return root_service_dependency("security_event_manager")()
 
 

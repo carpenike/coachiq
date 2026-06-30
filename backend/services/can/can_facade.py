@@ -458,7 +458,7 @@ class CANFacade(GuardrailParticipant):
         }
 
     def get_health_status(self) -> dict[str, Any]:
-        """Get basic health status for ServiceRegistry."""
+        """Get basic health status for composition root."""
         return {
             "healthy": self._guardrail_status in [GuardrailStatus.SAFE, GuardrailStatus.DEGRADED],
             "guardrail_status": self._guardrail_status.value,

@@ -217,7 +217,6 @@ class CompositionRoot:
         "protocol_manager",
         "rvc_service",
         "device_discovery_service",
-        "can_facade",
     )
     _A3_SERVICE_ORDER = (
         "security_event_service",
@@ -244,6 +243,7 @@ class CompositionRoot:
         "websocket_manager",
         "analytics_dashboard_service",
         "can_bus_service",
+        "can_facade",
         "can_network_telemetry_service",
         "entity_initialization_service",
         "entity_service",
@@ -342,7 +342,7 @@ class CompositionRoot:
         """Return whether a service is available."""
         return service_name in self._constructed_services
 
-    def get_service(self, service_name: str) -> Any:
+    def require_service(self, service_name: str) -> Any:
         """Return a root-constructed service by name."""
         if service_name in self._constructed_services:
             return self._constructed_services[service_name]
@@ -353,7 +353,7 @@ class CompositionRoot:
         """Return a service by name, or None if it is unavailable."""
         if not self.has_service(service_name):
             return None
-        return self.get_service(service_name)
+        return self.require_service(service_name)
 
     def list_services(self) -> list[str]:
         """Return root-constructed service names."""
@@ -456,7 +456,7 @@ class CompositionRoot:
 
         if self._should_construct("database_manager"):
             database_manager = DatabaseManager(
-                performance_monitor=self.get_service("performance_monitor")
+                performance_monitor=self.require_service("performance_monitor")
             )
             if not await database_manager.initialize():
                 msg = "Failed to initialize database manager"
@@ -517,9 +517,9 @@ class CompositionRoot:
         from backend.services.auth.tokens import TokenService
         from backend.services.entities.entity_manager_service import EntityManagerService
 
-        database_manager = self.get_service("database_manager")
-        performance_monitor = self.get_service("performance_monitor")
-        settings = self.get_service("app_settings")
+        database_manager = self.require_service("database_manager")
+        performance_monitor = self.require_service("performance_monitor")
+        settings = self.require_service("app_settings")
 
         repository_factories = {
             "rvc_config_repository": lambda: RVCConfigRepository(),
@@ -567,7 +567,7 @@ class CompositionRoot:
             ),
             "entity_manager_service": lambda: EntityManagerService(
                 database_manager=database_manager,
-                rvc_config_provider=self.get_service("rvc_config"),
+                rvc_config_provider=self.require_service("rvc_config"),
                 config={},
             ),
             "entity_state_repository": lambda: EntityStateRepository(
@@ -607,13 +607,13 @@ class CompositionRoot:
     async def _construct_facade_services(self) -> None:
         """Construct A1 persistence/config facades with typed constructors."""
         if self._should_construct("rvc_config_facade"):
-            rvc_config_facade = RVCConfigFacade(self.get_service("rvc_config_repository"))
+            rvc_config_facade = RVCConfigFacade(self.require_service("rvc_config_repository"))
             self._set_root_constructed_service("rvc_config_facade", rvc_config_facade)
 
         if self._should_construct("persistence_service"):
             persistence_service = PersistenceService(
-                persistence_repository=self.get_service("persistence_repository"),
-                performance_monitor=self.get_service("performance_monitor"),
+                persistence_repository=self.require_service("persistence_repository"),
+                performance_monitor=self.require_service("performance_monitor"),
             )
             await persistence_service.initialize()
             self._set_root_constructed_service("persistence_service", persistence_service)
@@ -634,14 +634,14 @@ class CompositionRoot:
         from backend.services.protocols.protocol_manager import ProtocolManager
         from backend.services.rvc.rvc_service import RVCService
 
-        performance_monitor = self.get_service("performance_monitor")
+        performance_monitor = self.require_service("performance_monitor")
 
         if self._should_construct("database_connection_service"):
             self._set_root_constructed_service(
                 "database_connection_service",
                 DatabaseConnectionService(
-                    database_engine=DatabaseEngine(self.get_service("app_settings")),
-                    connection_repository=self.get_service("database_connection_repository"),
+                    database_engine=DatabaseEngine(self.require_service("app_settings")),
+                    connection_repository=self.require_service("database_connection_repository"),
                     performance_monitor=performance_monitor,
                 ),
             )
@@ -650,8 +650,8 @@ class CompositionRoot:
             self._set_root_constructed_service(
                 "database_session_service",
                 DatabaseSessionService(
-                    database_engine=DatabaseEngine(self.get_service("app_settings")),
-                    session_repository=self.get_service("database_session_repository"),
+                    database_engine=DatabaseEngine(self.require_service("app_settings")),
+                    session_repository=self.require_service("database_session_repository"),
                     performance_monitor=performance_monitor,
                 ),
             )
@@ -660,16 +660,16 @@ class CompositionRoot:
             self._set_root_constructed_service(
                 "database_migration_service",
                 DatabaseMigrationService(
-                    database_engine=DatabaseEngine(self.get_service("app_settings")),
-                    migration_repository=self.get_service("migration_repository"),
+                    database_engine=DatabaseEngine(self.require_service("app_settings")),
+                    migration_repository=self.require_service("migration_repository"),
                     performance_monitor=performance_monitor,
                 ),
             )
 
         if self._should_construct("migration_safety_validator"):
             migration_safety_validator = MigrationSafetyValidator(
-                safety_repository=self.get_service("safety_repository"),
-                connection_repository=self.get_service("database_connection_repository"),
+                safety_repository=self.require_service("safety_repository"),
+                connection_repository=self.require_service("database_connection_repository"),
                 performance_monitor=performance_monitor,
             )
             await migration_safety_validator.initialize()
@@ -679,14 +679,14 @@ class CompositionRoot:
 
         if self._should_construct("database_update_service"):
             database_update_service = DatabaseUpdateService(
-                connection_repository=self.get_service("database_connection_repository"),
-                migration_repository=self.get_service("database_migration_repository"),
-                safety_validator=self.get_service("migration_safety_validator"),
-                backup_repository=self.get_service("database_backup_repository"),
-                history_repository=self.get_service("migration_history_repository"),
+                connection_repository=self.require_service("database_connection_repository"),
+                migration_repository=self.require_service("database_migration_repository"),
+                safety_validator=self.require_service("migration_safety_validator"),
+                backup_repository=self.require_service("database_backup_repository"),
+                history_repository=self.require_service("migration_history_repository"),
                 websocket_repository=None,
                 performance_monitor=performance_monitor,
-                backup_dir=self.get_service("app_settings").persistence.get_backup_dir(),
+                backup_dir=self.require_service("app_settings").persistence.get_backup_dir(),
             )
             await database_update_service.initialize()
             self._set_root_constructed_service("database_update_service", database_update_service)
@@ -698,8 +698,8 @@ class CompositionRoot:
 
         if self._should_construct("rvc_service"):
             rvc_service = RVCService(
-                rvc_config_repository=self.get_service("rvc_config_repository"),
-                can_tracking_repository=self.get_service("can_tracking_repository"),
+                rvc_config_repository=self.require_service("rvc_config_repository"),
+                can_tracking_repository=self.require_service("can_tracking_repository"),
             )
             await rvc_service.start()
             self._set_root_constructed_service("rvc_service", rvc_service)
@@ -709,7 +709,7 @@ class CompositionRoot:
         if self._should_construct("device_discovery_service"):
             self._set_root_constructed_service(
                 "device_discovery_service",
-                DeviceDiscoveryService(can_facade=None, config=self.get_service("rvc_config")),
+                DeviceDiscoveryService(can_facade=None, config=self.require_service("rvc_config")),
             )
 
         if "can_facade" in self._service_catalog:
@@ -721,13 +721,13 @@ class CompositionRoot:
             self._set_root_constructed_service(
                 "can_facade",
                 CANFacade(
-                    bus_service=self.get_service("can_bus_service"),
-                    injector=self.get_service("can_message_injector"),
-                    message_filter=self.get_service("can_message_filter"),
-                    recorder=self.get_service("can_bus_recorder"),
-                    analyzer=self.get_service("can_protocol_analyzer"),
-                    anomaly_detector=self.get_service("can_anomaly_detector"),
-                    interface_service=self.get_service("can_interface_service"),
+                    bus_service=self.require_service("can_bus_service"),
+                    injector=self.require_service("can_message_injector"),
+                    message_filter=self.require_service("can_message_filter"),
+                    recorder=self.require_service("can_bus_recorder"),
+                    analyzer=self.require_service("can_protocol_analyzer"),
+                    anomaly_detector=self.require_service("can_anomaly_detector"),
+                    interface_service=self.require_service("can_interface_service"),
                     performance_monitor=performance_monitor,
                 ),
             )
@@ -751,14 +751,14 @@ class CompositionRoot:
         from backend.services.security.security_event_manager import SecurityEventManager
         from backend.services.security.security_event_service import SecurityEventService
 
-        performance_monitor = self.get_service("performance_monitor")
+        performance_monitor = self.require_service("performance_monitor")
 
         if self._should_construct("security_event_service"):
             self._set_root_constructed_service(
                 "security_event_service",
                 SecurityEventService(
-                    event_repository=self.get_service("security_event_repository"),
-                    listener_repository=self.get_service("security_listener_repository"),
+                    event_repository=self.require_service("security_event_repository"),
+                    listener_repository=self.require_service("security_listener_repository"),
                     performance_monitor=performance_monitor,
                 ),
             )
@@ -767,10 +767,10 @@ class CompositionRoot:
             self._set_root_constructed_service(
                 "attempt_tracker_service",
                 AttemptTrackerService(
-                    auth_event_repository=self.get_service("auth_event_repository"),
-                    security_audit_repository=self.get_service("security_audit_repository"),
+                    auth_event_repository=self.require_service("auth_event_repository"),
+                    security_audit_repository=self.require_service("security_audit_repository"),
                     performance_monitor=performance_monitor,
-                    security_event_service=self.get_service("security_event_service"),
+                    security_event_service=self.require_service("security_event_service"),
                 ),
             )
 
@@ -778,7 +778,7 @@ class CompositionRoot:
             self._set_root_constructed_service(
                 "mfa_service",
                 MfaService(
-                    mfa_repository=self.get_service("mfa_repository"),
+                    mfa_repository=self.require_service("mfa_repository"),
                     performance_monitor=performance_monitor,
                 ),
             )
@@ -787,8 +787,8 @@ class CompositionRoot:
             self._set_root_constructed_service(
                 "session_service",
                 SessionService(
-                    session_repository=self.get_service("session_repository"),
-                    token_service=self.get_service("token_service"),
+                    session_repository=self.require_service("session_repository"),
+                    token_service=self.require_service("token_service"),
                     performance_monitor=performance_monitor,
                 ),
             )
@@ -797,38 +797,38 @@ class CompositionRoot:
             self._set_root_constructed_service(
                 "security_config_service",
                 SecurityConfigService(
-                    self.get_service("security_config_repository"), performance_monitor
+                    self.require_service("security_config_repository"), performance_monitor
                 ),
             )
 
         if self._should_construct("lockout_service"):
-            auth_config = await self.get_service("security_config_service").get_auth_config()
+            auth_config = await self.require_service("security_config_service").get_auth_config()
             self._set_root_constructed_service(
                 "lockout_service",
                 LockoutService(
-                    auth_event_repository=self.get_service("auth_event_repository"),
+                    auth_event_repository=self.require_service("auth_event_repository"),
                     performance_monitor=performance_monitor,
                     max_failed_attempts=auth_config.get("max_login_attempts", 5),
                     lockout_window_minutes=auth_config.get("login_attempt_window_minutes", 15),
                     lockout_duration_minutes=auth_config.get("login_lockout_minutes", 30),
-                    attempt_tracker_service=self.get_service("attempt_tracker_service"),
+                    attempt_tracker_service=self.require_service("attempt_tracker_service"),
                 ),
             )
 
         if self._should_construct("pin_manager"):
             pin_config = PINConfig(
-                **await self.get_service("security_config_service").get_pin_config()
+                **await self.require_service("security_config_service").get_pin_config()
             )
             self._set_root_constructed_service("pin_manager", PINManager(pin_config))
 
         if self._should_construct("security_audit_service"):
             rate_limit_config = RateLimitConfig(
-                **await self.get_service("security_config_service").get_rate_limit_config()
+                **await self.require_service("security_config_service").get_rate_limit_config()
             )
             self._set_root_constructed_service(
                 "security_audit_service",
                 SecurityAuditService(
-                    security_audit_repository=self.get_service("security_audit_repository"),
+                    security_audit_repository=self.require_service("security_audit_repository"),
                     performance_monitor=performance_monitor,
                     config=rate_limit_config,
                 ),
@@ -838,18 +838,18 @@ class CompositionRoot:
             from backend.services.auth.repository import AuthRepository
 
             auth_service = AuthService(
-                credential_repository=self.get_service("credential_repository"),
-                session_repository=self.get_service("session_repository"),
-                auth_event_repository=self.get_service("auth_event_repository"),
-                mfa_repository=self.get_service("mfa_repository"),
+                credential_repository=self.require_service("credential_repository"),
+                session_repository=self.require_service("session_repository"),
+                auth_event_repository=self.require_service("auth_event_repository"),
+                mfa_repository=self.require_service("mfa_repository"),
                 notification_service=None,
                 performance_monitor=performance_monitor,
-                auth_repository=AuthRepository(self.get_service("database_manager")),
-                token_service=self.get_service("token_service"),
-                session_service=self.get_service("session_service"),
-                mfa_service=self.get_service("mfa_service"),
-                lockout_service=self.get_service("lockout_service"),
-                auth_settings=self.get_service("app_settings").auth,
+                auth_repository=AuthRepository(self.require_service("database_manager")),
+                token_service=self.require_service("token_service"),
+                session_service=self.require_service("session_service"),
+                mfa_service=self.require_service("mfa_service"),
+                lockout_service=self.require_service("lockout_service"),
+                auth_settings=self.require_service("app_settings").auth,
             )
             await auth_service.start()
             self._set_root_constructed_service("auth_manager", auth_service)
@@ -858,13 +858,13 @@ class CompositionRoot:
             self._set_root_constructed_service(
                 "security_event_manager",
                 SecurityEventManager(
-                    security_event_service=self.get_service("security_event_service"),
-                    attempt_tracker_service=self.get_service("attempt_tracker_service"),
-                    security_config_service=self.get_service("security_config_service"),
-                    security_audit_service=self.get_service("security_audit_service"),
-                    auth_manager=self.get_service("auth_manager"),
-                    pin_manager=self.get_service("pin_manager"),
-                    lockout_service=self.get_service("lockout_service"),
+                    security_event_service=self.require_service("security_event_service"),
+                    attempt_tracker_service=self.require_service("attempt_tracker_service"),
+                    security_config_service=self.require_service("security_config_service"),
+                    security_audit_service=self.require_service("security_audit_service"),
+                    auth_manager=self.require_service("auth_manager"),
+                    pin_manager=self.require_service("pin_manager"),
+                    lockout_service=self.require_service("lockout_service"),
                     performance_monitor=performance_monitor,
                 ),
             )
@@ -874,8 +874,8 @@ class CompositionRoot:
                 guardrail_coordinator=self.guardrail_coordinator,
                 health_check_interval=5.0,
                 watchdog_timeout=15.0,
-                pin_manager=self.get_service("pin_manager"),
-                security_audit_service=self.get_service("security_audit_service"),
+                pin_manager=self.require_service("pin_manager"),
+                security_audit_service=self.require_service("security_audit_service"),
             )
             await command_guardrail_service.start_monitoring()
             self._set_root_constructed_service(
@@ -895,7 +895,7 @@ class CompositionRoot:
         )
         from backend.services.entities.entity_service import EntityService
         from backend.services.system.dashboard_service import DashboardService
-        performance_monitor = self.get_service("performance_monitor")
+        performance_monitor = self.require_service("performance_monitor")
 
         await self._construct_websocket_manager()
 
@@ -904,8 +904,8 @@ class CompositionRoot:
                 "analytics_dashboard_service",
                 AnalyticsDashboardService(
                     performance_monitor=performance_monitor,
-                    database_manager=self.get_service("database_manager"),
-                    analytics_repository=self.get_service("analytics_repository"),
+                    database_manager=self.require_service("database_manager"),
+                    analytics_repository=self.require_service("analytics_repository"),
                 ),
             )
 
@@ -914,9 +914,9 @@ class CompositionRoot:
                 "dashboard_service",
                 DashboardService(
                     dashboard_repository=None,
-                    entity_repository=self.get_service("entity_state_repository"),
+                    entity_repository=self.require_service("entity_state_repository"),
                     performance_monitor=performance_monitor,
-                    websocket_manager=self.get_service("websocket_manager"),
+                    websocket_manager=self.require_service("websocket_manager"),
                 ),
             )
 
@@ -924,9 +924,9 @@ class CompositionRoot:
             self._set_root_constructed_service(
                 "entity_initialization_service",
                 EntityInitializationService(
-                    entity_state_repository=self.get_service("entity_state_repository"),
-                    rvc_config_repository=self.get_service("rvc_config_repository"),
-                    entity_manager=self.get_service("entity_manager_service").get_entity_manager(),
+                    entity_state_repository=self.require_service("entity_state_repository"),
+                    rvc_config_repository=self.require_service("rvc_config_repository"),
+                    entity_manager=self.require_service("entity_manager_service").get_entity_manager(),
                 ),
             )
 
@@ -934,10 +934,10 @@ class CompositionRoot:
             self._set_root_constructed_service(
                 "entity_service",
                 EntityService(
-                    websocket_manager=self.get_service("websocket_manager"),
-                    entity_state_repository=self.get_service("entity_state_repository"),
-                    rvc_config_repository=self.get_service("rvc_config_repository"),
-                    diagnostics_repository=self.get_service("diagnostics_repository"),
+                    websocket_manager=self.require_service("websocket_manager"),
+                    entity_state_repository=self.require_service("entity_state_repository"),
+                    rvc_config_repository=self.require_service("rvc_config_repository"),
+                    diagnostics_repository=self.require_service("diagnostics_repository"),
                 ),
             )
 
@@ -945,11 +945,11 @@ class CompositionRoot:
             self._set_root_constructed_service(
                 "entity_domain_service",
                 EntityDomainService(
-                    config_service=self.get_service("rvc_config_facade"),
-                    auth_manager=self.get_service("auth_manager"),
-                    entity_service=self.get_service("entity_service"),
-                    websocket_manager=self.get_service("websocket_manager"),
-                    entity_manager=self.get_service("entity_manager_service"),
+                    config_service=self.require_service("rvc_config_facade"),
+                    auth_manager=self.require_service("auth_manager"),
+                    entity_service=self.require_service("entity_service"),
+                    websocket_manager=self.require_service("websocket_manager"),
+                    entity_manager=self.require_service("entity_manager_service"),
                 ),
             )
 
@@ -969,7 +969,7 @@ class CompositionRoot:
             self._set_root_constructed_service("can_anomaly_detector", CANAnomalyDetector())
 
         if self._should_construct("diagnostic_handler"):
-            diagnostic_handler = DiagnosticHandler(self.get_service("app_settings"))
+            diagnostic_handler = DiagnosticHandler(self.require_service("app_settings"))
             await diagnostic_handler.startup()
             self._set_root_constructed_service("diagnostic_handler", diagnostic_handler)
 
@@ -1009,7 +1009,7 @@ class CompositionRoot:
         if self._should_construct("can_bus_recorder"):
             recorder = CANBusRecorder(
                 buffer_size=100000,
-                storage_path=self.get_service("app_settings").get_can_recorder_storage_path(),
+                storage_path=self.require_service("app_settings").get_can_recorder_storage_path(),
                 auto_save_interval=60.0,
                 max_file_size_mb=100.0,
             )
@@ -1025,7 +1025,7 @@ class CompositionRoot:
             self._set_root_constructed_service(
                 "can_network_telemetry_service",
                 CANNetworkTelemetryService(
-                    can_interface_service=self.get_service("can_interface_service")
+                    can_interface_service=self.require_service("can_interface_service")
                 ),
             )
 
@@ -1033,10 +1033,10 @@ class CompositionRoot:
 
         if self._should_construct("can_bus_service"):
             can_bus_service = CANBusService(
-                can_tracking_repository=self.get_service("can_tracking_repository"),
-                system_state_repository=self.get_service("system_state_repository"),
-                can_anomaly_detector=self.get_service("can_anomaly_detector"),
-                diagnostic_handler=self.get_service("diagnostic_handler"),
+                can_tracking_repository=self.require_service("can_tracking_repository"),
+                system_state_repository=self.require_service("system_state_repository"),
+                can_anomaly_detector=self.require_service("can_anomaly_detector"),
+                diagnostic_handler=self.require_service("diagnostic_handler"),
                 can_bus_recorder=self.get_optional_service("can_bus_recorder"),
                 can_protocol_analyzer=self.get_optional_service("can_protocol_analyzer"),
                 can_message_filter=self.get_optional_service("can_message_filter"),
@@ -1053,8 +1053,8 @@ class CompositionRoot:
 
         if self._should_construct("websocket_manager"):
             websocket_manager = WebSocketService(
-                can_tracking_repository=self.get_service("can_tracking_repository"),
-                system_state_repository=self.get_service("system_state_repository"),
+                can_tracking_repository=self.require_service("can_tracking_repository"),
+                system_state_repository=self.require_service("system_state_repository"),
                 can_bus_recorder=self.get_optional_service("can_bus_recorder"),
                 can_protocol_analyzer=self.get_optional_service("can_protocol_analyzer"),
                 can_message_filter=self.get_optional_service("can_message_filter"),
@@ -1117,7 +1117,7 @@ class CompositionRoot:
         if metadata is None:
             return
 
-        self.guardrail_coordinator.register_guardrail_service(
+        self.guardrail_coordinator.add_guardrail_service(
             service_name=service_name,
             service=service,
             tier=metadata.tier,

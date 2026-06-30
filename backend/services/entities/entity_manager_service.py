@@ -167,7 +167,7 @@ class EntityManagerService:
         return self._entity_manager
 
     def get_health_status(self) -> dict[str, Any]:
-        """Get health status for ServiceRegistry monitoring."""
+        """Get health status for composition root monitoring."""
         entity_count = len(self._entity_manager.get_entity_ids())
 
         return {

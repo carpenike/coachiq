@@ -390,7 +390,7 @@ def get_security_websocket_handler() -> SecurityWebSocketHandler:
 
     Note: This is a legacy function for backward compatibility. Prefer
     dependency injection (``main.py`` builds the handler with the
-    ServiceRegistry-resolved ``SecurityEventManager`` injected).
+    composition root-resolved ``SecurityEventManager`` injected).
 
     The previous implementation tried to import a
     ``get_security_event_manager`` function from the v1 facade module

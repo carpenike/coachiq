@@ -22,7 +22,7 @@ def setup_websocket_routes(app: Any) -> None:
     """
     Set up WebSocket routes for the FastAPI application.
 
-    Services are accessed via ServiceRegistry.
+    Services are accessed via composition root.
     """
     app.include_router(router)
     logger.info("WebSocket routes configured")
@@ -119,5 +119,5 @@ async def security_ws_endpoint(websocket: WebSocket) -> None:
     Connect to ws://<host>/ws/security to receive real-time security events.
     """
     # For now, close immediately - SecurityWebSocketHandler needs migration
-    logger.warning("Security WebSocket endpoint not yet migrated to ServiceRegistry")
+    logger.warning("Security WebSocket endpoint not yet migrated to composition root")
     await websocket.close(code=1011)  # Internal error

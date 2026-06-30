@@ -8,7 +8,7 @@ from backend.core import dependencies
 from backend.core.composition_root import CompositionRoot
 from backend.core.config import Settings, get_settings
 from backend.core.performance import PerformanceMonitor
-from backend.core.service_registry import ServiceStatus
+from backend.core.service_status import ServiceStatus
 from backend.repositories.security_config_repository import SecurityConfigRepository
 from backend.services.persistence.persistence_service import PersistenceService
 from backend.services.rvc.rvc_config_facade import RVCConfigFacade
@@ -33,7 +33,6 @@ def test_command_guardrail_service_has_no_registry_collaborator() -> None:
 def _reset_dependency_globals() -> None:
     """Reset dependency globals mutated by composition-root tests."""
     dependencies._composition_root = None
-    dependencies._service_registry = None
 
 
 def _seed_foundation_fakes(root: CompositionRoot) -> None:
@@ -55,7 +54,7 @@ async def test_composition_root_starts_and_captures_typed_settings() -> None:
     await root.startup()
     try:
         assert root.has_service("app_settings")
-        assert isinstance(root.get_service("app_settings"), Settings)
+        assert isinstance(root.require_service("app_settings"), Settings)
         assert root.services.settings.app_name == settings.app_name
     finally:
         await root.shutdown()
@@ -79,7 +78,7 @@ async def test_repository_substrate_receives_root_constructed_dependencies() -> 
 
     await root.startup()
     try:
-        repository = root.get_service("security_config_repository")
+        repository = root.require_service("security_config_repository")
         assert isinstance(repository, SecurityConfigRepository)
         assert repository._db_manager is database_manager
         assert repository._monitor is performance_monitor
@@ -105,8 +104,8 @@ async def test_facade_services_receive_root_constructed_repositories() -> None:
 
     await root.startup()
     try:
-        assert isinstance(root.get_service("rvc_config_facade"), RVCConfigFacade)
-        assert isinstance(root.get_service("persistence_service"), PersistenceService)
+        assert isinstance(root.require_service("rvc_config_facade"), RVCConfigFacade)
+        assert isinstance(root.require_service("persistence_service"), PersistenceService)
     finally:
         await root.shutdown()
 
@@ -190,34 +189,6 @@ def test_root_constructed_service_is_settable_without_registry_capture() -> None
         provider = dependencies.root_service_dependency("app_settings")
         assert provider() is settings
         assert root.services.settings is settings
-    finally:
-        _reset_dependency_globals()
-
-
-def test_initialize_service_registry_accepts_composition_root_alias() -> None:
-    """The legacy initializer accepts the root during the transition."""
-    _reset_dependency_globals()
-    root = CompositionRoot()
-
-    dependencies.initialize_composition_root(root)
-    try:
-        dependencies.initialize_service_registry(root)
-        assert dependencies.get_service_registry() is root
-    finally:
-        _reset_dependency_globals()
-
-
-def test_initialize_service_registry_rejects_divergent_registry() -> None:
-    """A second registry cannot silently diverge after the root is initialized."""
-    _reset_dependency_globals()
-    root = CompositionRoot()
-    other_registry = object()
-
-    dependencies.initialize_composition_root(root)
-    try:
-        with pytest.raises(RuntimeError, match="divergent ServiceRegistry"):
-            dependencies.initialize_service_registry(other_registry)
-        assert dependencies.get_service_registry() is root
     finally:
         _reset_dependency_globals()
 

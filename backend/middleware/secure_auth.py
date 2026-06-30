@@ -68,7 +68,7 @@ class SecureAuthenticationMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request: Request, call_next):
         """Process request with secure authentication"""
 
-        # Initialize services from ServiceRegistry if not already done
+        # Initialize services from composition root if not already done
         if not self.auth_manager:
             try:
                 from backend.core.dependencies import get_auth_manager

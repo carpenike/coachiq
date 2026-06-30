@@ -12,7 +12,7 @@ from unittest.mock import AsyncMock
 
 import pytest
 
-from backend.core.service_registry import ServiceStatus
+from backend.core.service_status import ServiceStatus
 from backend.services.guardrails.command_guardrail_service import CommandGuardrailService
 
 
@@ -65,12 +65,12 @@ def mock_services():
 
 
 @pytest.fixture
-def service_registry_with_safety(mock_services):
+def guardrail_coordinator_with_safety(mock_services):
     """Create a service registry with safety services.
 
     Restored 2026-05-13 (PR #129 follow-up). The mock implements the
     full surface that ``CommandGuardrailService`` actually calls in production
-    (verified by grepping ``self.service_registry.*`` in
+    (verified by grepping ``self.guardrail_coordinator.*`` in
     ``backend/services/command_guardrail_service.py``):
 
     - ``check_system_health`` — async, used by health-check loop
@@ -85,12 +85,11 @@ def service_registry_with_safety(mock_services):
 
     IMPORTANT: We use a plain ``SimpleNamespace`` rather than ``Mock()``
     because production's ``_perform_health_check`` does
-    ``hasattr(self.service_registry, 'get_guardrail_status_summary')`` and
-    ``hasattr(self.service_registry, 'halt_command_emission')`` -- both
+    ``hasattr(self.guardrail_coordinator, 'get_guardrail_status_summary')`` and
+    ``hasattr(self.guardrail_coordinator, 'halt_command_emission')`` -- both
     of which return True for a bare ``Mock`` (auto-generated attribute
     machinery), then crash trying to ``await`` the resulting Mock. The
-    real production ``ServiceRegistry`` does NOT have those methods
-    (they were on a deleted ``GuardrailCoordinator`` subclass).
+    production root health adapter exposes only the narrow methods it owns.
     SimpleNamespace gives us only the attributes we explicitly assign,
     matching the real production surface.
     """
@@ -123,7 +122,7 @@ def service_registry_with_safety(mock_services):
     ]
     # Production calls ``get_health_summary()`` on every monitoring tick
     # and iterates ``.items()`` expecting ``{name: {"status": <STATUS>}}``
-    # (see ``backend/core/service_registry.py:1019`` for the canonical
+    # (see ``backend/core/guardrail_coordinator.py:1019`` for the canonical
     # shape). Returning the wrong shape (e.g. flat dict of strings)
     # silently triggers command-halt-state via the loop's blanket exception
     # handler -- that's intentional failsafe behavior in production but
@@ -136,10 +135,10 @@ def service_registry_with_safety(mock_services):
 
 
 @pytest.fixture
-def integrated_command_guardrail_service(service_registry_with_safety):
+def integrated_command_guardrail_service(guardrail_coordinator_with_safety):
     """Create CommandGuardrailService integrated with service registry."""
     service = CommandGuardrailService(
-        service_registry=service_registry_with_safety,
+        guardrail_coordinator=guardrail_coordinator_with_safety,
         health_check_interval=0.5,  # Fast for testing
         watchdog_timeout=2.0,
     )
@@ -158,9 +157,9 @@ class TestEmergencyStopScenarios:
         Updated 2026-05-13 (PR #129 follow-up). The previous version
         mocked ``check_system_health.return_value`` -- production never
         calls that method on the monitoring loop hot path. The actual
-        contract is ``service_registry.get_health_summary()`` returning
+        contract is ``guardrail_coordinator.get_health_summary()`` returning
         ``{name: {"status": <STATUS_NAME>}}`` (see
-        ``backend/core/service_registry.py:1019`` for the canonical
+        ``backend/core/guardrail_coordinator.py:1019`` for the canonical
         shape; ``backend/services/command_guardrail_service.py:1788`` for the
         consumer). Iterate ``.items()``, look for ``"FAILED"`` /
         ``"DEGRADED"`` status strings, and feed any failures matching
@@ -178,12 +177,12 @@ class TestEmergencyStopScenarios:
         # 'critical'), so a FAILED status here will fan out into
         # ``failed_critical`` on the next health-check tick.
         services["can_interface"].state = ServiceStatus.FAILED
-        service.service_registry._service_statuses["can_interface"] = ServiceStatus.FAILED
+        service.guardrail_coordinator._service_statuses["can_interface"] = ServiceStatus.FAILED
 
         # Replace get_health_summary so production reads the failure.
         # ``lambda`` (not AsyncMock) because production calls this
         # synchronously inside the async loop.
-        service.service_registry.get_health_summary = lambda: {
+        service.guardrail_coordinator.get_health_summary = lambda: {
             "can_interface": {"status": "FAILED"},
             "firefly": {"status": "HEALTHY"},
             "spartan_k2": {"status": "HEALTHY"},
@@ -347,7 +346,7 @@ class TestEmergencyStopScenarios:
 
         # Start a state transition (firefly initializing)
         services["firefly"].state = ServiceStatus.STARTING
-        service.service_registry._service_statuses["firefly"] = ServiceStatus.STARTING
+        service.guardrail_coordinator._service_statuses["firefly"] = ServiceStatus.STARTING
 
         # Trigger emergency during transition
         await service.halt_command_emission(
@@ -381,7 +380,7 @@ class TestEmergencyStopScenarios:
         services["firefly"].state = ServiceStatus.FAILED
         services["analytics"].state = ServiceStatus.HEALTHY
 
-        service.service_registry._service_statuses.update(
+        service.guardrail_coordinator._service_statuses.update(
             {
                 "can_interface": ServiceStatus.HEALTHY,
                 "firefly": ServiceStatus.FAILED,

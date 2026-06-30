@@ -5,7 +5,7 @@ from typing import Any
 
 import pytest
 
-from backend.core.service_registry import ServiceRegistry
+from backend.core.composition_root import CompositionRoot
 from backend.services.can.can_network_telemetry_service import CANNetworkTelemetryService
 
 pytestmark = pytest.mark.can
@@ -208,18 +208,20 @@ async def test_sampler_startup_shutdown_use_registry_hooks() -> None:
 
 
 @pytest.mark.asyncio
-async def test_service_registry_invokes_sampler_startup_and_shutdown() -> None:
-    """ServiceRegistry drives sampler startup/shutdown, not bare start/stop."""
+async def test_composition_root_shutdown_invokes_sampler_shutdown() -> None:
+    """CompositionRoot shutdown drives sampler shutdown."""
     service = CANNetworkTelemetryService(
         can_interface_service=FakeCANInterfaceService([{}]),
         sample_interval_seconds=60.0,
     )
-    registry = ServiceRegistry()
-    registry.register_service("can_network_telemetry_service", lambda: service)
-
-    await registry.startup_all()
+    await service.startup()
     assert service.get_health_status()["running"] is True
-    await registry.shutdown_all()
+    root = CompositionRoot(service_catalog=set())
+    root.set_constructed_service("can_network_telemetry_service", service)
+    root._started = True
+
+    await root.shutdown()
+
     assert service.get_health_status()["running"] is False
 
 

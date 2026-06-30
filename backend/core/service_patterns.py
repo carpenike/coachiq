@@ -236,7 +236,7 @@ class ServiceLifecycleManager:
         if name not in self._startup_order:
             self._startup_order.append(name)
 
-    async def startup_all(self) -> None:
+    async def start_all(self) -> None:
         """Start all registered services in order."""
         logger.info("Starting long-lived services...")
 
@@ -252,7 +252,7 @@ class ServiceLifecycleManager:
                 logger.error(f"Failed to start {name}: {e}")
                 # Continue with other services
 
-    async def shutdown_all(self) -> None:
+    async def stop_all(self) -> None:
         """Stop all registered services in reverse order."""
         logger.info("Stopping long-lived services...")
 

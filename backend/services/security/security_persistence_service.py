@@ -470,7 +470,7 @@ def get_security_persistence_service() -> SecurityPersistenceService:
     if _security_persistence_service is None:
         msg = (
             "SecurityPersistenceService has not been initialized. "
-            "Ensure it's registered with the ServiceRegistry."
+            "Ensure it's registered with the composition root."
         )
         raise RuntimeError(msg)
     return _security_persistence_service

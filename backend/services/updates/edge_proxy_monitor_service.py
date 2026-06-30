@@ -2,9 +2,9 @@
 Edge Proxy Monitor Service
 
 Monitors the health and status of the edge proxy (Caddy) for integration
-with the ServiceRegistry health monitoring system. This service provides
+with the composition root health monitoring system. This service provides
 a bridge between infrastructure-layer (Caddy) and application-layer
-(ServiceRegistry) health monitoring.
+(composition root) health monitoring.
 """
 
 import logging
@@ -18,11 +18,11 @@ logger = logging.getLogger(__name__)
 
 class EdgeProxyMonitorService:
     """
-    Service to monitor edge proxy (Caddy) health and integrate with ServiceRegistry.
+    Service to monitor edge proxy (Caddy) health and integrate with composition root.
 
     This service periodically checks the Caddy Admin API to ensure the reverse proxy
     is operational and properly configured. It provides health status that can be
-    consumed by other services through the ServiceRegistry dependency system.
+    consumed by other services through the composition root dependency system.
     """
 
     def __init__(
@@ -59,7 +59,7 @@ class EdgeProxyMonitorService:
         Perform health check of the edge proxy.
 
         Returns:
-            Health status dictionary compatible with ServiceRegistry
+            Health status dictionary compatible with composition root
         """
         current_time = time.time()
 
