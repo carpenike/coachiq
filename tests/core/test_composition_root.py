@@ -6,6 +6,7 @@ from backend.core import dependencies
 from backend.core.composition_root import CompositionRoot
 from backend.core.config import get_settings
 from backend.core.guardrail_coordinator import GuardrailCoordinator
+from backend.core.guardrail_interfaces import GuardrailTier
 from backend.core.service_dependency_resolver import DependencyType, ServiceDependency
 
 
@@ -165,6 +166,46 @@ async def test_facade_services_receive_root_constructed_repositories() -> None:
             "persistence_repository": persistence_repository,
             "performance_monitor": performance_monitor,
         }
+    finally:
+        await root.shutdown()
+
+
+@pytest.mark.asyncio
+async def test_guardrail_metadata_reads_from_runtime_coordinator() -> None:
+    """Guardrail reads use the root-owned guardrail-only coordinator."""
+
+    class HaltTarget:
+        def __init__(self) -> None:
+            self.reasons: list[str] = []
+
+        async def halt_command_emission(self, reason: str) -> None:
+            self.reasons.append(reason)
+
+    root = CompositionRoot()
+    _seed_foundation_fakes(root)
+    root.set_constructed_service("app_settings", get_settings())
+    target = HaltTarget()
+
+    async def configure(registry: GuardrailCoordinator) -> None:
+        registry.register_guardrail_service(
+            name="can_facade",
+            init_func=lambda: target,
+            guardrail_tier=GuardrailTier.CRITICAL,
+            command_halt_participant=True,
+            dependencies=[],
+            description="Test CAN facade",
+        )
+
+    await root.startup(configure)
+    try:
+        assert root.guardrail_coordinator.get_command_halt_targets() == ["can_facade"]
+        metadata = root.guardrail_coordinator.get_guardrail_metadata("can_facade")
+        assert metadata is not None
+        assert metadata["command_halt_participant"] is True
+
+        result = await root.guardrail_coordinator.halt_command_emission("test", "pytest")
+        assert result == {"can_facade": True}
+        assert target.reasons == ["test"]
     finally:
         await root.shutdown()
 

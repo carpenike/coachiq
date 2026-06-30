@@ -15,6 +15,7 @@ from typing import Any, cast
 from backend.core.config import Settings
 from backend.core.config_provider import RVCConfigProvider
 from backend.core.guardrail_coordinator import GuardrailCoordinator
+from backend.core.guardrail_runtime_coordinator import GuardrailRuntimeCoordinator
 from backend.core.performance import PerformanceMonitor
 from backend.core.service_dependency_resolver import DependencyType
 from backend.services.database.database_manager import DatabaseManager
@@ -91,9 +92,23 @@ class CompositionRoot:
         "device_discovery_service",
         "can_facade",
     )
+    _A3_SERVICE_ORDER = (
+        "security_event_service",
+        "attempt_tracker_service",
+        "mfa_service",
+        "session_service",
+        "security_config_service",
+        "lockout_service",
+        "pin_manager",
+        "security_audit_service",
+        "auth_manager",
+        "security_event_manager",
+        "command_guardrail_service",
+    )
 
     def __init__(self, compat_registry: GuardrailCoordinator | None = None) -> None:
         self.compat_registry = compat_registry or GuardrailCoordinator()
+        self.guardrail_coordinator = GuardrailRuntimeCoordinator()
         self._constructed_services: dict[str, Any] = {}
         self._constructing_services: set[str] = set()
         self.services = CompositionServices(
@@ -129,6 +144,7 @@ class CompositionRoot:
         await self._construct_repository_substrate_services()
         await self._construct_facade_services()
         await self._construct_a2_services()
+        await self._construct_a3_services()
         await self.compat_registry.startup_all()
         self._capture_registry_services()
         self._started = True
@@ -203,10 +219,16 @@ class CompositionRoot:
         for service_name in self._A2_SERVICE_ORDER:
             await self._construct_registered_service(service_name)
 
+    async def _construct_a3_services(self) -> None:
+        """Construct the A3 auth/security/guardrail services before compatibility startup."""
+        for service_name in self._A3_SERVICE_ORDER:
+            await self._construct_registered_service(service_name)
+
     async def _construct_registered_service(self, service_name: str) -> None:
         """Construct a registered service once and mirror it into compatibility startup."""
         if service_name in self._constructed_services:
             self._replace_compat_init_func(service_name, self._constructed_services[service_name])
+            self._mirror_guardrail_service(service_name, self._constructed_services[service_name])
             return
         if service_name in self._constructing_services:
             msg = f"Circular root construction detected for service '{service_name}'"
@@ -222,6 +244,7 @@ class CompositionRoot:
             service = await self._construct_from_definition(definition)
             self.set_constructed_service(service_name, service)
             self._replace_compat_init_func(service_name, service)
+            self._mirror_guardrail_service(service_name, service)
         finally:
             self._constructing_services.discard(service_name)
 
@@ -260,6 +283,24 @@ class CompositionRoot:
         definition = self.compat_registry._service_definitions.get(service_name)  # noqa: SLF001
         if definition is not None:
             definition.init_func = lambda: service
+
+    def _mirror_guardrail_service(self, service_name: str, service: Any) -> None:
+        """Mirror guardrail metadata into the guardrail-only coordinator."""
+        guardrail_tiers = self.compat_registry._guardrail_tiers  # noqa: SLF001
+        if service_name not in guardrail_tiers:
+            return
+
+        self.guardrail_coordinator.register_guardrail_service(
+            service_name=service_name,
+            service=service,
+            tier=guardrail_tiers[service_name],
+            command_halt_participant=(
+                service_name in self.compat_registry.get_command_halt_targets()
+            ),
+            metadata=self.compat_registry.get_guardrail_metadata(service_name),
+        )
+        if service_name == "command_guardrail_service":
+            service.service_registry = self.guardrail_coordinator
 
     def _apply_constructed_service_handle(self, service_name: str, service: Any) -> None:
         """Update typed handles for services that have migrated to root construction."""

@@ -172,16 +172,13 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         # CRITICAL: Inject service_registry into command_guardrail_service after startup to avoid circular dependency
         command_guardrail_service = compat_registry.get_service("command_guardrail_service")
         if command_guardrail_service and hasattr(command_guardrail_service, "set_service_registry"):
-            command_guardrail_service.set_service_registry(compat_registry)
+            command_guardrail_service.set_service_registry(composition_root.guardrail_coordinator)
             logger.info(
-                "ServiceRegistry injected into CommandGuardrailService for emergency stop coordination"
+                "GuardrailRuntimeCoordinator injected into CommandGuardrailService"
             )
         elif command_guardrail_service:
-            # If CommandGuardrailService doesn't have set_service_registry method, set directly
-            command_guardrail_service._service_registry = compat_registry
-            logger.info(
-                "ServiceRegistry directly assigned to CommandGuardrailService._service_registry"
-            )
+            command_guardrail_service.service_registry = composition_root.guardrail_coordinator
+            logger.info("GuardrailRuntimeCoordinator assigned to CommandGuardrailService")
         else:
             logger.error(
                 "CommandGuardrailService not found in ServiceRegistry - emergency stop coordination unavailable"
