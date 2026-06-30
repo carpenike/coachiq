@@ -46,6 +46,35 @@ class CompositionRoot:
         "rvc_config",
         "database_manager",
     )
+    _REPOSITORY_SUBSTRATE_SERVICE_ORDER = (
+        "rvc_config_repository",
+        "system_state_repository",
+        "can_tracking_repository",
+        "diagnostics_repository",
+        "database_connection_repository",
+        "database_session_repository",
+        "migration_repository",
+        "database_backup_repository",
+        "database_migration_repository",
+        "migration_history_repository",
+        "safety_repository",
+        "analytics_repository",
+        "auth_event_repository",
+        "can_command_repository",
+        "credential_repository",
+        "entity_config_repository",
+        "entity_history_repository",
+        "entity_manager_service",
+        "entity_state_repository",
+        "mfa_repository",
+        "persistence_repository",
+        "security_audit_repository",
+        "security_config_repository",
+        "security_event_repository",
+        "security_listener_repository",
+        "session_repository",
+        "token_service",
+    )
 
     def __init__(self, compat_registry: GuardrailCoordinator | None = None) -> None:
         self.compat_registry = compat_registry or GuardrailCoordinator()
@@ -78,6 +107,7 @@ class CompositionRoot:
             await self.configure(configure_services)
 
         await self._construct_foundation_services()
+        await self._construct_repository_substrate_services()
         await self.compat_registry.startup_all()
         self._capture_registry_services()
         self._started = True
@@ -135,19 +165,26 @@ class CompositionRoot:
     async def _construct_foundation_services(self) -> None:
         """Construct the A0 foundation services before compatibility startup."""
         for service_name in self._FOUNDATION_SERVICE_ORDER:
-            if service_name in self._constructed_services:
-                self._replace_compat_init_func(
-                    service_name, self._constructed_services[service_name]
-                )
-                continue
+            await self._construct_registered_service(service_name)
 
-            definition = self.compat_registry._service_definitions.get(service_name)  # noqa: SLF001
-            if definition is None:
-                continue
+    async def _construct_repository_substrate_services(self) -> None:
+        """Construct the A0 repository substrate before compatibility startup."""
+        for service_name in self._REPOSITORY_SUBSTRATE_SERVICE_ORDER:
+            await self._construct_registered_service(service_name)
 
-            service = await self._construct_from_definition(definition)
-            self.set_constructed_service(service_name, service)
-            self._replace_compat_init_func(service_name, service)
+    async def _construct_registered_service(self, service_name: str) -> None:
+        """Construct a registered service once and mirror it into compatibility startup."""
+        if service_name in self._constructed_services:
+            self._replace_compat_init_func(service_name, self._constructed_services[service_name])
+            return
+
+        definition = self.compat_registry._service_definitions.get(service_name)  # noqa: SLF001
+        if definition is None:
+            return
+
+        service = await self._construct_from_definition(definition)
+        self.set_constructed_service(service_name, service)
+        self._replace_compat_init_func(service_name, service)
 
     async def _construct_from_definition(self, definition: Any) -> Any:
         """Construct a registered service definition using root-owned dependencies."""
