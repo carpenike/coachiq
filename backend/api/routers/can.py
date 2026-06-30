@@ -19,6 +19,7 @@ The OEM Firefly MIRA panel owns the actual vehicle safety case. See
 `docs/adr/ADR-0004-coachiq-is-not-the-safety-system.md`.
 """
 
+import asyncio
 import logging
 import platform
 from typing import Annotated, Any
@@ -40,18 +41,10 @@ from backend.integrations.can.manager import buses
 
 # Import models from the new backend structure
 from backend.models.can import AllCANStats, CANInterfaceStats
-
-# Conditionally import pyroute2 only on Linux systems
-# This allows development on macOS without pyroute2 installed
-CAN_SUPPORTED = platform.system() == "Linux"
-if CAN_SUPPORTED:
-    try:
-        from pyroute2 import IPRoute  # type: ignore
-    except ImportError:
-        IPRoute = None
-        CAN_SUPPORTED = False
-else:
-    IPRoute = None
+from backend.services.can.can_interface_service import (
+    read_socketcan_links,
+    socketcan_telemetry_available,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -79,7 +72,7 @@ async def verify_can_interface_enabled():
         return
 
     # For non-virtual interfaces, check platform support
-    if not CAN_SUPPORTED:
+    if not socketcan_telemetry_available():
         raise HTTPException(
             status_code=503,
             detail="Physical CAN interfaces are not supported on this platform (Linux required)",
@@ -647,7 +640,7 @@ async def get_can_status(
     is_virtual = settings.can.bustype == "virtual"
 
     # Handle non-Linux platforms or missing pyroute2
-    if not CAN_SUPPORTED or IPRoute is None:
+    if not socketcan_telemetry_available():
         platform_name = platform.system()
 
         # For virtual CAN, we can still provide meaningful status
@@ -690,21 +683,22 @@ async def get_can_status(
     # Linux platform with pyroute2 available
     try:
         pyroute2_stats = {}
-        with IPRoute() as ipr:
-            can_links = ipr.get_links(kind="can")
-            logger.debug(f"Found {len(can_links)} CAN links via pyroute2")
-            for link in can_links:
-                interface_name = link.get_attr("IFLA_IFNAME")
-                try:
-                    parsed_stats = get_stats_from_pyroute2_link(link)
-                    pyroute2_stats[interface_name] = parsed_stats
-                except Exception as e:
-                    logger.exception(
-                        f"Exception processing interface {interface_name} with pyroute2: {e}"
-                    )
-                    pyroute2_stats[interface_name] = CANInterfaceStats(
-                        name=interface_name, state="Exception/Pyroute2Error"
-                    )
+        can_links = await asyncio.to_thread(read_socketcan_links)
+        logger.debug("Found %d CAN links via pyroute2", len(can_links))
+        for link in can_links:
+            interface_name = link.get_attr("IFLA_IFNAME")
+            try:
+                parsed_stats = get_stats_from_pyroute2_link(link)
+                pyroute2_stats[interface_name] = parsed_stats
+            except Exception as e:
+                logger.exception(
+                    "Exception processing interface %s with pyroute2: %s",
+                    interface_name,
+                    e,
+                )
+                pyroute2_stats[interface_name] = CANInterfaceStats(
+                    name=interface_name, state="Exception/Pyroute2Error"
+                )
 
         # Merge: for every interface the service is listening on, prefer pyroute2 stats if available
         for iface in buses:

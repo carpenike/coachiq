@@ -5,8 +5,10 @@ Service for managing CAN interface mappings and resolution.
 Provides logical interface name mapping to physical interfaces.
 """
 
+import asyncio
 import logging
 import platform
+import threading
 from typing import Any
 
 from backend.core.config import get_settings
@@ -24,6 +26,7 @@ else:
     IPRoute = None
 
 logger = logging.getLogger(__name__)
+_PYROUTE2_EVENT_LOOP_POLICY_LOCK = threading.Lock()
 
 CAN_STATE_MAP = {
     0: "ERROR-ACTIVE",
@@ -33,6 +36,30 @@ CAN_STATE_MAP = {
     4: "STOPPED",
     5: "SLEEPING",
 }
+
+
+def socketcan_telemetry_available() -> bool:
+    """Return true when SocketCAN telemetry can be read through pyroute2."""
+    return CAN_SUPPORTED and IPRoute is not None
+
+
+def read_socketcan_links() -> list[Any]:
+    """Read CAN links with pyroute2 using stdlib asyncio internals."""
+    if IPRoute is None:
+        return []
+
+    with _PYROUTE2_EVENT_LOOP_POLICY_LOCK:
+        previous_policy = asyncio.get_event_loop_policy()
+        # pyroute2 creates an internal loop while opening AF_NETLINK sockets.
+        # Under uvloop's process policy that internal loop cannot open netlink
+        # sockets, even from a worker thread. Keep uvloop for the app, but use
+        # the stdlib policy for this short synchronous pyroute2 section.
+        asyncio.set_event_loop_policy(asyncio.DefaultEventLoopPolicy())
+        try:
+            with IPRoute() as ipr:
+                return list(ipr.get_links(kind="can"))
+        finally:
+            asyncio.set_event_loop_policy(previous_policy)
 
 
 class CANInterfaceService:
@@ -88,13 +115,12 @@ class CANInterfaceService:
 
     async def _get_socketcan_stats(self) -> dict[str, CANInterfaceStats]:
         """Read SocketCAN interface telemetry from pyroute2 when available."""
-        if not CAN_SUPPORTED or IPRoute is None:
+        if not socketcan_telemetry_available():
             logger.debug("SocketCAN telemetry unavailable on %s", platform.system())
             return {}
 
         try:
-            with IPRoute() as ipr:
-                can_links = ipr.get_links(kind="can")
+            can_links = await asyncio.to_thread(read_socketcan_links)
         except Exception as exc:
             logger.warning("Failed to read SocketCAN interface telemetry: %s", exc)
             return {}

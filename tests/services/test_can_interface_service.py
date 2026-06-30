@@ -1,9 +1,11 @@
 """Tests for SocketCAN telemetry in CANInterfaceService."""
 
+from collections.abc import Callable
 from typing import Any
 
 import pytest
 
+import backend.api.routers.can as can_router_module
 import backend.services.can.can_interface_service as can_interface_module
 from backend.services.can.can_interface_service import CANInterfaceService
 
@@ -39,6 +41,14 @@ class FakeIPRoute:
         """Return fake CAN links."""
         assert kind == "can"
         return self._links
+
+
+async def _recording_to_thread(
+    calls: list[Callable[..., Any]], func: Callable[..., Any], *args: Any, **kwargs: Any
+) -> Any:
+    """Record to_thread dispatch while executing the sync callable in-process."""
+    calls.append(func)
+    return func(*args, **kwargs)
 
 
 @pytest.mark.asyncio
@@ -115,6 +125,56 @@ async def test_socketcan_stats_parse_decoded_counters(monkeypatch: pytest.Monkey
     assert can0["bus_off"] == 10
     assert can0["parentbus"] == "spi"
     assert can0["parentdev"] == "spi0.1"
+
+
+@pytest.mark.asyncio
+async def test_socketcan_stats_dispatch_pyroute2_read_off_loop(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Provider dispatches the blocking pyroute2 read through asyncio.to_thread."""
+    link = FakeNetlink(attrs={"IFLA_IFNAME": "can0", "IFLA_STATS64": {}})
+    to_thread_calls: list[Callable[..., Any]] = []
+
+    async def fake_to_thread(func: Callable[..., Any], *args: Any, **kwargs: Any) -> Any:
+        return await _recording_to_thread(to_thread_calls, func, *args, **kwargs)
+
+    monkeypatch.setattr(can_interface_module, "CAN_SUPPORTED", True)
+    monkeypatch.setattr(can_interface_module, "IPRoute", lambda: FakeIPRoute([link]))
+    monkeypatch.setattr(can_interface_module.asyncio, "to_thread", fake_to_thread)
+
+    stats = await CANInterfaceService().get_interface_stats()
+
+    assert [call.__name__ for call in to_thread_calls] == ["read_socketcan_links"]
+    assert list(stats) == ["can0"]
+
+
+@pytest.mark.asyncio
+async def test_legacy_can_status_dispatches_pyroute2_read_off_loop(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Legacy CAN status route dispatches the blocking pyroute2 read off-loop."""
+    link = FakeNetlink(
+        attrs={
+            "IFLA_IFNAME": "can0",
+            "IFLA_OPERSTATE": "UP",
+            "IFLA_STATS64": {"rx_packets": 10, "tx_packets": 4},
+        }
+    )
+    to_thread_calls: list[Callable[..., Any]] = []
+
+    async def fake_to_thread(func: Callable[..., Any], *args: Any, **kwargs: Any) -> Any:
+        return await _recording_to_thread(to_thread_calls, func, *args, **kwargs)
+
+    monkeypatch.setattr(can_interface_module, "CAN_SUPPORTED", True)
+    monkeypatch.setattr(can_interface_module, "IPRoute", lambda: FakeIPRoute([link]))
+    monkeypatch.setattr(can_router_module.asyncio, "to_thread", fake_to_thread)
+    monkeypatch.setattr(can_router_module, "buses", ["can0"])
+
+    result = await can_router_module.get_can_status(object(), None)
+
+    assert [call.__name__ for call in to_thread_calls] == ["read_socketcan_links"]
+    assert result.interfaces["can0"].rx_packets == 10
+    assert result.interfaces["can0"].tx_packets == 4
 
 
 @pytest.mark.asyncio

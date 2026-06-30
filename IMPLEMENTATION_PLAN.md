@@ -92,6 +92,40 @@ retirements follow the HOF-016 plan.
 
 ## Build Log
 
+### HOF-041 — CAN Interface Telemetry Under uvloop
+
+- [shipped] same commit as this entry · 2026-06-29
+- [component] backend
+- [handoff] HOF-041
+
+**What changed.** SocketCAN pyroute2 netlink reads now run outside the async
+event loop and outside uvloop's event-loop policy. Both live call sites
+(`CANInterfaceService` telemetry and legacy `/api/can/status`) dispatch a shared
+synchronous `IPRoute()+get_links(kind="can")` helper through `asyncio.to_thread`.
+That helper guards pyroute2 with a short `asyncio.DefaultEventLoopPolicy()`
+section and restores the previous policy afterward, then callers parse the
+returned links into the existing telemetry response shapes.
+
+**Why.** On the nixpi appliance, Uvicorn selects uvloop in production and
+pyroute2's synchronous `IPRoute()` call adopted the running uvloop loop. uvloop
+rejects AF_NETLINK sockets (`invalid family 16`), so CoachIQ swallowed the
+exception and returned empty/null per-interface telemetry while the kernel had
+real can0/can1 counters. The first appliance validation showed that a worker
+thread alone removed the running-loop error but pyroute2 still followed the
+process-wide uvloop policy and failed on AF_NETLINK. The final fix keeps uvloop
+for the app while forcing only pyroute2's internal netlink loop back to stdlib
+asyncio.
+
+**Validation.** `nix develop --command poetry run pytest --no-cov
+tests/services/test_can_interface_service.py`; `nix develop --command bash
+scripts/ci-quality-gate.sh`; nixpi after-validation is recorded in the HOF-041
+ACK because it requires deploying this commit to the appliance. A nixpi probe
+confirmed plain `to_thread` fails under `uvloop.EventLoopPolicy()` and the
+policy-guarded helper returns `['can0', 'can1']`.
+
+**Files.** `backend/services/can/can_interface_service.py`,
+`backend/api/routers/can.py`, `tests/services/test_can_interface_service.py`.
+
 ### HOF-039 — Runtime Write Path Self-Anchoring
 
 - [shipped] same commit as this entry · 2026-06-29
