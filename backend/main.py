@@ -28,12 +28,10 @@ from slowapi.middleware import SlowAPIMiddleware
 from backend.api.router_config import configure_routers
 from backend.core.composition_root import CompositionRoot
 from backend.core.config import Settings, get_settings, is_real_secret
-from backend.core.guardrail_coordinator import GuardrailCoordinator
 from backend.core.logging_config import configure_unified_logging, setup_early_logging
 from backend.core.metrics import initialize_backend_metrics
 from backend.core.security_config_validator import validate_security_config
 from backend.core.security_hardening import configure_security_hardening
-from backend.core.service_registry import ServiceStatus
 
 # CAN Tools Services
 # from backend.integrations.registration import register_custom_features  # No longer needed - all services in ServiceRegistry
@@ -87,39 +85,6 @@ def _resolve_csrf_secret(settings: Settings) -> str:
     raise RuntimeError(msg)
 
 
-async def _configure_service_startup_stages(service_registry: GuardrailCoordinator) -> None:
-    """Core service-startup-stage configuration.
-
-    Extracted to ``backend/core/registrations/core_startup`` in
-    audit cycle 2026-05-13 PR A8.
-    """
-    from backend.core.registrations.core_startup import configure
-
-    await configure(service_registry)
-
-
-def _register_group2_repositories(service_registry: GuardrailCoordinator) -> None:
-    """Group-2 repository registrations.
-
-    Extracted to ``backend/core/registrations/group2_repositories``
-    in audit cycle 2026-05-13 PR A8.
-    """
-    from backend.core.registrations.group2_repositories import register
-
-    register(service_registry)
-
-
-def _register_group2_services(service_registry: GuardrailCoordinator) -> None:
-    """Group-2 service registrations.
-
-    Extracted to ``backend/core/registrations/group2_services`` in
-    audit cycle 2026-05-13 PR A8.
-    """
-    from backend.core.registrations.group2_services import register
-
-    register(service_registry)
-
-
 def _create_database_engine():
     """Create a database engine instance."""
     from backend.core.config import get_settings
@@ -129,32 +94,17 @@ def _create_database_engine():
     return DatabaseEngine(settings)
 
 
-def _register_phase4_services(service_registry: GuardrailCoordinator) -> None:
-    """Phase-4 service registrations.
-
-    Extracted to ``backend/core/registrations/phase4`` in audit
-    cycle 2026-05-13 PR A8. This shim is kept so existing call
-    sites in `lifespan()` need no changes.
-    """
-    from backend.core.registrations.phase4 import register
-
-    register(service_registry)
-
-
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     """
-    Application lifespan manager with ServiceRegistry integration.
+    Application lifespan manager with composition-root integration.
 
-    Handles startup and shutdown logic using the new ServiceRegistry for
+    Handles startup and shutdown logic using the composition root for
     improved dependency management and orchestrated service lifecycle.
     """
     logger.info("Starting coachiq backend application")
 
-    # Initialize the Phase-A composition root. It owns typed service handles
-    # while preserving the GuardrailCoordinator registry as a compatibility layer.
     composition_root = CompositionRoot()
-    compat_registry = composition_root.compat_registry
 
     # Initialize the module-level composition root for dependency injection.
     from backend.core.dependencies import initialize_composition_root
@@ -165,8 +115,8 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     initialize_backend_metrics()
 
     try:
-        # Configure and execute orchestrated startup through the composition root.
-        await composition_root.startup(_configure_service_startup_stages)
+        # Execute orchestrated startup through the composition root.
+        await composition_root.startup()
 
         # CRITICAL: Inject service_registry into command_guardrail_service after startup to avoid circular dependency
         command_guardrail_service = composition_root.services.command_guardrail_service
@@ -178,7 +128,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
             logger.info("GuardrailRuntimeCoordinator assigned to CommandGuardrailService")
         else:
             logger.error(
-                "CommandGuardrailService not found in ServiceRegistry - emergency stop coordination unavailable"
+                "CommandGuardrailService not found in CompositionRoot - emergency stop coordination unavailable"
             )
 
         # Get services from registry
@@ -198,32 +148,10 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         persistence_service = composition_root.services.persistence_service
         database_manager = composition_root.services.database_manager
 
-        logger.info("ServiceRegistry startup completed successfully")
+        logger.info("CompositionRoot startup completed successfully")
         logger.info(f"RVC Config Summary: {rvc_config_provider.get_configuration_summary()}")
 
-        # Phase 0: Add dependency visualization
-        try:
-            # Get dependency diagram
-            diagram = compat_registry.export_dependency_diagram()
-            logger.info("ServiceRegistry Dependency Diagram:\n%s", diagram)
-
-            # Get startup metrics
-            metrics = compat_registry.get_enhanced_metrics()
-            logger.info("ServiceRegistry Startup Metrics:")
-            logger.info(f"  Total startup time: {metrics.get('total_startup_time_ms', 0):.2f}ms")
-            logger.info(f"  Service count: {metrics.get('service_count', 0)}")
-            logger.info(f"  Total stages: {metrics.get('total_stages', 0)}")
-            logger.info(f"  Startup errors: {metrics.get('startup_errors', 0)}")
-
-            # Show slowest services
-            slowest = metrics.get("slowest_services", [])
-            if slowest:
-                logger.info("  Slowest services:")
-                for service_name, timing in slowest[:5]:
-                    logger.info(f"    - {service_name}: {timing:.2f}ms")
-
-        except Exception as e:
-            logger.warning(f"Could not generate dependency visualization: {e}")
+        logger.info("CompositionRoot service count: %d", len(composition_root.list_services()))
 
         # Get services from ServiceRegistry
         websocket_manager = composition_root.services.websocket_manager

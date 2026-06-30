@@ -1,13 +1,12 @@
 """Typed composition root for backend service construction."""
 
 import logging
-from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from typing import Any, cast
 
 from backend.core.config import Settings
 from backend.core.config_provider import RVCConfigProvider
-from backend.core.guardrail_coordinator import GuardrailCoordinator
+from backend.core.guardrail_interfaces import GuardrailTier
 from backend.core.guardrail_runtime_coordinator import GuardrailRuntimeCoordinator
 from backend.core.performance import PerformanceMonitor
 from backend.services.database.database_manager import DatabaseManager
@@ -17,7 +16,76 @@ from backend.services.updates.edge_proxy_monitor_service import EdgeProxyMonitor
 
 logger = logging.getLogger(__name__)
 
-ConfigureServices = Callable[[GuardrailCoordinator], Awaitable[None]]
+
+@dataclass(frozen=True, slots=True)
+class GuardrailServiceMetadata:
+    """Root-owned guardrail metadata for a service."""
+
+    tier: GuardrailTier
+    command_halt_participant: bool
+    description: str
+    tags: frozenset[str] = frozenset()
+
+
+ROOT_GUARDRAIL_METADATA: dict[str, GuardrailServiceMetadata] = {
+    "command_guardrail_service": GuardrailServiceMetadata(
+        tier=GuardrailTier.CRITICAL,
+        command_halt_participant=False,
+        description=(
+            "API command-validation guardrails and emergency stop on the "
+            "orchestration loop (see ADR-0004)"
+        ),
+        tags=frozenset({"service", "guardrail", "critical", "api-guardrail"}),
+    ),
+    "websocket_manager": GuardrailServiceMetadata(
+        tier=GuardrailTier.OPERATIONAL,
+        command_halt_participant=False,
+        description="WebSocket connection management service",
+        tags=frozenset({"service", "websocket", "realtime"}),
+    ),
+    "auth_manager": GuardrailServiceMetadata(
+        tier=GuardrailTier.CRITICAL,
+        command_halt_participant=False,
+        description="Authentication service with JWT, magic links, and MFA",
+        tags=frozenset({"service", "auth", "security"}),
+    ),
+    "can_bus_service": GuardrailServiceMetadata(
+        tier=GuardrailTier.CRITICAL,
+        command_halt_participant=False,
+        description="CAN bus integration service for message processing",
+        tags=frozenset({"service", "can", "hardware", "realtime"}),
+    ),
+    "can_message_injector": GuardrailServiceMetadata(
+        tier=GuardrailTier.CRITICAL,
+        command_halt_participant=False,
+        description="Safe CAN message injection service for testing and diagnostics",
+        tags=frozenset({"service", "can", "testing", "diagnostics", "safety-critical"}),
+    ),
+    "can_message_filter": GuardrailServiceMetadata(
+        tier=GuardrailTier.OPERATIONAL,
+        command_halt_participant=False,
+        description="CAN message filtering system with real-time monitoring and alerting",
+        tags=frozenset({"service", "can", "filtering", "monitoring", "safety"}),
+    ),
+    "can_bus_recorder": GuardrailServiceMetadata(
+        tier=GuardrailTier.OPERATIONAL,
+        command_halt_participant=False,
+        description="CAN bus traffic recorder with replay capabilities",
+        tags=frozenset({"service", "can", "recording", "replay", "diagnostics"}),
+    ),
+    "can_protocol_analyzer": GuardrailServiceMetadata(
+        tier=GuardrailTier.OPERATIONAL,
+        command_halt_participant=False,
+        description="CAN protocol analyzer for deep packet inspection and protocol detection",
+        tags=frozenset({"service", "can", "analysis", "protocol", "diagnostics"}),
+    ),
+    "can_facade": GuardrailServiceMetadata(
+        tier=GuardrailTier.CRITICAL,
+        command_halt_participant=True,
+        description="Unified facade for all CAN operations with safety coordination",
+        tags=frozenset({"facade", "can", "safety-critical", "coordination"}),
+    ),
+}
 
 
 @dataclass(slots=True)
@@ -180,11 +248,11 @@ class CompositionRoot:
         "entity_domain_service",
     )
 
-    def __init__(self, compat_registry: GuardrailCoordinator | None = None) -> None:
-        self.compat_registry = compat_registry or GuardrailCoordinator()
+    def __init__(self, service_catalog: set[str] | None = None) -> None:
         self.guardrail_coordinator = GuardrailRuntimeCoordinator()
         self._constructed_services: dict[str, Any] = {}
         self._constructing_services: set[str] = set()
+        self._service_catalog = service_catalog or set(self._root_service_order)
         self.services = CompositionServices(
             settings=cast("Settings", None),
             rvc_config=cast("RVCConfigProvider", None),
@@ -198,32 +266,25 @@ class CompositionRoot:
         self._started = False
 
     @property
-    def service_registry(self) -> GuardrailCoordinator:
-        """Temporary compatibility alias for pre-HOF-052 call sites."""
-        return self.compat_registry
+    def _root_service_order(self) -> tuple[str, ...]:
+        """Return the root-owned service construction catalog."""
+        return (
+            *self._FOUNDATION_SERVICE_ORDER,
+            *self._REPOSITORY_SUBSTRATE_SERVICE_ORDER,
+            *self._FACADE_SERVICE_ORDER,
+            *self._A2_SERVICE_ORDER,
+            *self._A3_SERVICE_ORDER,
+            *self._A4_SERVICE_ORDER,
+        )
 
-    async def configure(self, configure_services: ConfigureServices) -> None:
-        """Register services with the compatibility registry."""
-        if self._configured:
-            return
-
-        await configure_services(self.compat_registry)
-        self._configured = True
-
-    async def startup(self, configure_services: ConfigureServices | None = None) -> None:
+    async def startup(self) -> None:
         """Start all services and capture typed handles for migrated clusters."""
-        if configure_services is not None:
-            await self.configure(configure_services)
-
         await self._construct_foundation_services()
         await self._construct_repository_substrate_services()
         await self._construct_facade_services()
         await self._construct_a2_services()
         await self._construct_a3_services()
         await self._construct_a4_services()
-        await self.compat_registry.startup_all()
-        self._mirror_remaining_guardrail_services()
-        self._capture_registry_services()
         self._started = True
 
     async def shutdown(self) -> None:
@@ -231,25 +292,36 @@ class CompositionRoot:
         if not self._started:
             return
 
-        await self.compat_registry.shutdown_all()
+        for service_name in reversed(self._root_service_order):
+            service = self._constructed_services.get(service_name)
+            if service is None or not hasattr(service, "shutdown"):
+                continue
+            try:
+                shutdown = service.shutdown
+                if callable(shutdown):
+                    result = shutdown()
+                    if hasattr(result, "__await__"):
+                        await result
+            except Exception:
+                logger.exception("Error shutting down service %s", service_name)
         self._started = False
 
     def set_constructed_service(self, service_name: str, service: Any) -> None:
         """Store a root-constructed service without registry capture."""
         self._constructed_services[service_name] = service
         self._apply_constructed_service_handle(service_name, service)
+        self._mirror_guardrail_service(service_name, service)
 
     def has_service(self, service_name: str) -> bool:
         """Return whether a service is available."""
-        return service_name in self._constructed_services or self.compat_registry.has_service(
-            service_name
-        )
+        return service_name in self._constructed_services
 
     def get_service(self, service_name: str) -> Any:
-        """Return a service by name from root construction or compatibility registry."""
+        """Return a root-constructed service by name."""
         if service_name in self._constructed_services:
             return self._constructed_services[service_name]
-        return self.compat_registry.get_service(service_name)
+        msg = f"Service '{service_name}' not available"
+        raise RuntimeError(msg)
 
     def get_optional_service(self, service_name: str) -> Any | None:
         """Return a service by name, or None if it is unavailable."""
@@ -257,56 +329,24 @@ class CompositionRoot:
             return None
         return self.get_service(service_name)
 
-    def __getattr__(self, name: str) -> Any:
-        """Delegate legacy registry APIs during Phase A compatibility."""
-        return getattr(self.compat_registry, name)
-
-    def _capture_registry_services(self) -> None:
-        """Temporarily cache registry handles during HOF-052 Phase A.
-
-        This is transitional scaffolding for ADR-0014 only. Each migrated
-        cluster must replace these string-lookups with root construction via
-        ``set_constructed_service`` and make the corresponding field
-        non-optional once the handle no longer comes from the compatibility
-        registry.
-        """
-        self.services = CompositionServices(
-            settings=self.get_service("app_settings"),
-            rvc_config=self.get_service("rvc_config"),
-            performance_monitor=self.get_service("performance_monitor"),
-            database_manager=self.get_service("database_manager"),
-            edge_proxy_monitor=self.get_service("edge_proxy_monitor"),
-            persistence_service=self.get_service("persistence_service"),
-            rvc_config_facade=self.get_service("rvc_config_facade"),
-        )
-        logger.info("CompositionRoot captured typed service handles")
+    def list_services(self) -> list[str]:
+        """Return root-constructed service names."""
+        return sorted(self._constructed_services)
 
     async def _construct_foundation_services(self) -> None:
         """Construct A0 foundation services with typed constructors."""
-        if (
-            "app_settings" not in self._constructed_services
-            and self.compat_registry.has_service_definition("app_settings")
-        ):
+        if self._should_construct("app_settings"):
             self._set_root_constructed_service("app_settings", Settings())
 
-        if (
-            "performance_monitor" not in self._constructed_services
-            and self.compat_registry.has_service_definition("performance_monitor")
-        ):
+        if self._should_construct("performance_monitor"):
             self._set_root_constructed_service("performance_monitor", PerformanceMonitor())
 
-        if (
-            "rvc_config" not in self._constructed_services
-            and self.compat_registry.has_service_definition("rvc_config")
-        ):
+        if self._should_construct("rvc_config"):
             rvc_config = RVCConfigProvider()
             await rvc_config.initialize()
             self._set_root_constructed_service("rvc_config", rvc_config)
 
-        if (
-            "database_manager" not in self._constructed_services
-            and self.compat_registry.has_service_definition("database_manager")
-        ):
+        if self._should_construct("database_manager"):
             database_manager = DatabaseManager(
                 performance_monitor=self.get_service("performance_monitor")
             )
@@ -315,14 +355,15 @@ class CompositionRoot:
                 raise RuntimeError(msg)
             self._set_root_constructed_service("database_manager", database_manager)
 
-        if (
-            "edge_proxy_monitor" not in self._constructed_services
-            and self.compat_registry.has_service_definition("edge_proxy_monitor")
-        ):
+        if self._should_construct("edge_proxy_monitor"):
             self._set_root_constructed_service("edge_proxy_monitor", EdgeProxyMonitorService())
 
     async def _construct_repository_substrate_services(self) -> None:
         """Construct A0 repository substrate with typed constructors."""
+        if not any(
+            self._should_construct(name) for name in self._REPOSITORY_SUBSTRATE_SERVICE_ORDER
+        ):
+            return
         if all(
             name in self._constructed_services for name in self._REPOSITORY_SUBSTRATE_SERVICE_ORDER
         ):
@@ -452,25 +493,16 @@ class CompositionRoot:
         }
 
         for service_name, factory in repository_factories.items():
-            if (
-                service_name not in self._constructed_services
-                and self.compat_registry.has_service_definition(service_name)
-            ):
+            if self._should_construct(service_name):
                 self._set_root_constructed_service(service_name, factory())
 
     async def _construct_facade_services(self) -> None:
         """Construct A1 persistence/config facades with typed constructors."""
-        if (
-            "rvc_config_facade" not in self._constructed_services
-            and self.compat_registry.has_service_definition("rvc_config_facade")
-        ):
+        if self._should_construct("rvc_config_facade"):
             rvc_config_facade = RVCConfigFacade(self.get_service("rvc_config_repository"))
             self._set_root_constructed_service("rvc_config_facade", rvc_config_facade)
 
-        if (
-            "persistence_service" not in self._constructed_services
-            and self.compat_registry.has_service_definition("persistence_service")
-        ):
+        if self._should_construct("persistence_service"):
             persistence_service = PersistenceService(
                 persistence_repository=self.get_service("persistence_repository"),
                 performance_monitor=self.get_service("performance_monitor"),
@@ -480,6 +512,8 @@ class CompositionRoot:
 
     async def _construct_a2_services(self) -> None:  # noqa: C901
         """Construct A2 protocol/facade/database services with typed constructors."""
+        if not any(self._should_construct(name) for name in self._A2_SERVICE_ORDER):
+            return
         from backend.services.database.database_engine import DatabaseEngine
         from backend.services.database.database_services import (
             DatabaseConnectionService,
@@ -570,7 +604,7 @@ class CompositionRoot:
                 DeviceDiscoveryService(can_facade=None, config=self.get_service("rvc_config")),
             )
 
-        if self.compat_registry.has_service_definition("can_facade"):
+        if "can_facade" in self._service_catalog:
             await self._construct_lower_can_services()
 
         if self._should_construct("can_facade"):
@@ -592,6 +626,8 @@ class CompositionRoot:
 
     async def _construct_a3_services(self) -> None:  # noqa: C901
         """Construct A3 auth/security/guardrail services with typed constructors."""
+        if not any(self._should_construct(name) for name in self._A3_SERVICE_ORDER):
+            return
         from backend.services.auth.attempt_tracker_service import AttemptTrackerService
         from backend.services.auth.lockout import LockoutService
         from backend.services.auth.mfa import MfaService
@@ -740,6 +776,8 @@ class CompositionRoot:
 
     async def _construct_a4_services(self) -> None:
         """Construct A4 websocket/entity/dashboard services with typed constructors."""
+        if not any(self._should_construct(name) for name in self._A4_SERVICE_ORDER):
+            return
         from backend.services.analytics.analytics_dashboard_service import (
             AnalyticsDashboardService,
         )
@@ -917,50 +955,36 @@ class CompositionRoot:
             self._set_root_constructed_service("websocket_manager", websocket_manager)
 
     def _set_root_constructed_service(self, service_name: str, service: Any) -> None:
-        """Store a root-constructed service and mirror it for compatibility startup."""
+        """Store a root-constructed service and mirror guardrail metadata."""
         self.set_constructed_service(service_name, service)
-        self._replace_compat_init_func(service_name, service)
-        self._mirror_guardrail_service(service_name, service)
 
     def _should_construct(self, service_name: str) -> bool:
         """Return whether a service should be constructed for the current graph."""
         return (
             service_name not in self._constructed_services
-            and self.compat_registry.has_service_definition(service_name)
+            and service_name in self._service_catalog
         )
 
-    def _replace_compat_init_func(self, service_name: str, service: Any) -> None:
-        """Make the compatibility registry return a root-constructed service."""
-        self.compat_registry.provide_service_instance(service_name, service)
-
     def _mirror_guardrail_service(self, service_name: str, service: Any) -> None:
-        """Mirror guardrail metadata into the guardrail-only coordinator."""
-        guardrail_tiers = self.compat_registry._guardrail_tiers  # noqa: SLF001
-        if service_name not in guardrail_tiers:
+        """Mirror root guardrail metadata into the guardrail-only coordinator."""
+        metadata = ROOT_GUARDRAIL_METADATA.get(service_name)
+        if metadata is None:
             return
 
         self.guardrail_coordinator.register_guardrail_service(
             service_name=service_name,
             service=service,
-            tier=guardrail_tiers[service_name],
-            command_halt_participant=(
-                service_name in self.compat_registry.get_command_halt_targets()
-            ),
-            metadata=self.compat_registry.get_guardrail_metadata(service_name),
+            tier=metadata.tier,
+            command_halt_participant=metadata.command_halt_participant,
+            metadata={
+                "tier": metadata.tier,
+                "command_halt_participant": metadata.command_halt_participant,
+                "description": metadata.description,
+                "tags": sorted(metadata.tags),
+            },
         )
         if service_name == "command_guardrail_service":
             service.service_registry = self.guardrail_coordinator
-
-    def _mirror_remaining_guardrail_services(self) -> None:
-        """Mirror guardrail services outside the normal construction order."""
-        for service_name in self.compat_registry.list_guardrail_services():
-            if service_name in self._constructed_services:
-                continue
-            if not self.compat_registry.has_service(service_name):
-                continue
-            service = self.compat_registry.get_service(service_name)
-            self.set_constructed_service(service_name, service)
-            self._mirror_guardrail_service(service_name, service)
 
     def _apply_constructed_service_handle(self, service_name: str, service: Any) -> None:
         """Update typed handles for services that have migrated to root construction."""

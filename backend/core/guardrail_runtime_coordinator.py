@@ -45,6 +45,31 @@ class GuardrailRuntimeCoordinator:
             metadata=metadata or {},
         )
 
+    def has_service(self, service_name: str) -> bool:
+        """Return whether a guardrail-aware service is registered."""
+        return service_name in self._entries
+
+    def get_service(self, service_name: str) -> Any:
+        """Return a guardrail-aware service by name."""
+        entry = self._entries.get(service_name)
+        if entry is None:
+            msg = f"Service '{service_name}' not available"
+            raise RuntimeError(msg)
+        return entry.service
+
+    def get_service_status(self, service_name: str) -> str:
+        """Return a synchronous guardrail service status snapshot."""
+        if service_name not in self._entries:
+            return "PENDING"
+        return "HEALTHY"
+
+    def get_health_summary(self) -> dict[str, dict[str, str]]:
+        """Return a synchronous health summary for guardrail monitoring."""
+        return {
+            service_name: {"status": self.get_service_status(service_name)}
+            for service_name in self._entries
+        }
+
     def get_command_halt_targets(self) -> list[str]:
         """Return explicit command-halt participants."""
         return sorted(

@@ -131,7 +131,7 @@ _SERVICE_HANDLE_NAMES = {
 
 def initialize_service_registry(registry: Any) -> None:
     """Compatibility shim for callers still passing the root's legacy catalog."""
-    if _composition_root is not None and registry is not _composition_root.compat_registry:
+    if _composition_root is not None and registry is not _composition_root:
         msg = "Cannot initialize a divergent ServiceRegistry after CompositionRoot startup."
         raise RuntimeError(msg)
 

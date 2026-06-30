@@ -7,10 +7,7 @@ import pytest
 from backend.core import dependencies
 from backend.core.composition_root import CompositionRoot
 from backend.core.config import Settings, get_settings
-from backend.core.guardrail_coordinator import GuardrailCoordinator
-from backend.core.guardrail_interfaces import GuardrailTier
 from backend.core.performance import PerformanceMonitor
-from backend.core.service_dependency_resolver import DependencyType, ServiceDependency
 from backend.repositories.security_config_repository import SecurityConfigRepository
 from backend.services.persistence.persistence_service import PersistenceService
 from backend.services.rvc.rvc_config_facade import RVCConfigFacade
@@ -40,21 +37,12 @@ def _seed_foundation_fakes(root: CompositionRoot) -> None:
 
 
 @pytest.mark.asyncio
-async def test_composition_root_starts_registry_and_captures_typed_settings() -> None:
-    """CompositionRoot starts the compatibility registry and captures typed services."""
-    root = CompositionRoot()
+async def test_composition_root_starts_and_captures_typed_settings() -> None:
+    """CompositionRoot starts from its root-owned catalog and captures typed services."""
+    root = CompositionRoot(service_catalog={"app_settings"})
     settings = get_settings()
-    _seed_foundation_fakes(root)
 
-    async def configure(registry: GuardrailCoordinator) -> None:
-        registry.register_service(
-            name="app_settings",
-            init_func=lambda: settings,
-            dependencies=[],
-            description="Test settings service",
-        )
-
-    await root.startup(configure)
+    await root.startup()
     try:
         assert root.has_service("app_settings")
         assert isinstance(root.get_service("app_settings"), Settings)
@@ -66,7 +54,7 @@ async def test_composition_root_starts_registry_and_captures_typed_settings() ->
 @pytest.mark.asyncio
 async def test_repository_substrate_receives_root_constructed_dependencies() -> None:
     """A0 repository substrate construction uses root-owned foundation services."""
-    root = CompositionRoot()
+    root = CompositionRoot(service_catalog={"security_config_repository"})
     settings = get_settings()
     performance_monitor = PerformanceMonitor()
     database_manager = object()
@@ -79,39 +67,12 @@ async def test_repository_substrate_receives_root_constructed_dependencies() -> 
     root.set_constructed_service("persistence_service", object())
     root.set_constructed_service("rvc_config_facade", object())
 
-    async def configure(registry: GuardrailCoordinator) -> None:
-        registry.register_service(
-            name="performance_monitor",
-            init_func=lambda: performance_monitor,
-            dependencies=[],
-            description="Test performance monitor",
-        )
-        registry.register_service(
-            name="database_manager",
-            init_func=lambda: database_manager,
-            dependencies=[],
-            description="Test database manager",
-        )
-        registry.register_service(
-            name="security_config_repository",
-            init_func=lambda database_manager, performance_monitor: {
-                "database_manager": database_manager,
-                "performance_monitor": performance_monitor,
-            },
-            dependencies=[
-                ServiceDependency("database_manager", DependencyType.REQUIRED),
-                ServiceDependency("performance_monitor", DependencyType.REQUIRED),
-            ],
-            description="Test repository service",
-        )
-
-    await root.startup(configure)
+    await root.startup()
     try:
         repository = root.get_service("security_config_repository")
         assert isinstance(repository, SecurityConfigRepository)
         assert repository._db_manager is database_manager
         assert repository._monitor is performance_monitor
-        assert root.compat_registry.get_service("security_config_repository") is repository
     finally:
         await root.shutdown()
 
@@ -119,7 +80,7 @@ async def test_repository_substrate_receives_root_constructed_dependencies() -> 
 @pytest.mark.asyncio
 async def test_facade_services_receive_root_constructed_repositories() -> None:
     """A1 facades are constructed from root-owned repository substrate handles."""
-    root = CompositionRoot()
+    root = CompositionRoot(service_catalog={"rvc_config_facade", "persistence_service"})
     rvc_config_repository = object()
     persistence_repository = object()
     performance_monitor = PerformanceMonitor()
@@ -132,47 +93,7 @@ async def test_facade_services_receive_root_constructed_repositories() -> None:
     root.set_constructed_service("rvc_config_repository", rvc_config_repository)
     root.set_constructed_service("persistence_repository", persistence_repository)
 
-    async def configure(registry: GuardrailCoordinator) -> None:
-        registry.register_service(
-            name="performance_monitor",
-            init_func=lambda: performance_monitor,
-            dependencies=[],
-            description="Test performance monitor",
-        )
-        registry.register_service(
-            name="rvc_config_repository",
-            init_func=lambda: rvc_config_repository,
-            dependencies=[],
-            description="Test RV-C config repository",
-        )
-        registry.register_service(
-            name="persistence_repository",
-            init_func=lambda: persistence_repository,
-            dependencies=[],
-            description="Test persistence repository",
-        )
-        registry.register_service(
-            name="rvc_config_facade",
-            init_func=lambda rvc_config_repository: {
-                "rvc_config_repository": rvc_config_repository
-            },
-            dependencies=[ServiceDependency("rvc_config_repository", DependencyType.REQUIRED)],
-            description="Test RV-C config facade",
-        )
-        registry.register_service(
-            name="persistence_service",
-            init_func=lambda persistence_repository, performance_monitor: {
-                "persistence_repository": persistence_repository,
-                "performance_monitor": performance_monitor,
-            },
-            dependencies=[
-                ServiceDependency("persistence_repository", DependencyType.REQUIRED),
-                ServiceDependency("performance_monitor", DependencyType.REQUIRED),
-            ],
-            description="Test persistence service",
-        )
-
-    await root.startup(configure)
+    await root.startup()
     try:
         assert isinstance(root.get_service("rvc_config_facade"), RVCConfigFacade)
         assert isinstance(root.get_service("persistence_service"), PersistenceService)
@@ -183,7 +104,7 @@ async def test_facade_services_receive_root_constructed_repositories() -> None:
 @pytest.mark.asyncio
 async def test_a0_a1_services_bypass_registry_factories() -> None:
     """Converted A0/A1 services are built by typed constructors, not registry factories."""
-    root = CompositionRoot()
+    root = CompositionRoot(service_catalog={"app_settings", "rvc_config_facade"})
     rvc_config_repository = object()
 
     root.set_constructed_service("rvc_config", object())
@@ -193,30 +114,7 @@ async def test_a0_a1_services_bypass_registry_factories() -> None:
     root.set_constructed_service("persistence_service", object())
     root.set_constructed_service("rvc_config_repository", rvc_config_repository)
 
-    def factory_must_not_run():
-        raise AssertionError("registry factory should not run for converted services")
-
-    async def configure(registry: GuardrailCoordinator) -> None:
-        registry.register_service(
-            name="app_settings",
-            init_func=factory_must_not_run,
-            dependencies=[],
-            description="Poison settings factory",
-        )
-        registry.register_service(
-            name="rvc_config_repository",
-            init_func=lambda: rvc_config_repository,
-            dependencies=[],
-            description="Test RV-C config repository",
-        )
-        registry.register_service(
-            name="rvc_config_facade",
-            init_func=factory_must_not_run,
-            dependencies=[ServiceDependency("rvc_config_repository", DependencyType.REQUIRED)],
-            description="Poison RV-C config facade factory",
-        )
-
-    await root.startup(configure)
+    await root.startup()
     try:
         assert isinstance(root.services.settings, Settings)
         assert isinstance(root.services.rvc_config_facade, RVCConfigFacade)
@@ -235,30 +133,18 @@ async def test_guardrail_metadata_reads_from_runtime_coordinator() -> None:
         async def halt_command_emission(self, reason: str) -> None:
             self.reasons.append(reason)
 
-    root = CompositionRoot()
-    _seed_foundation_fakes(root)
-    root.set_constructed_service("app_settings", get_settings())
     target = HaltTarget()
+    root = CompositionRoot(service_catalog=set())
+    root.set_constructed_service("can_facade", target)
 
-    async def configure(registry: GuardrailCoordinator) -> None:
-        registry.register_guardrail_service(
-            name="test_halt_target",
-            init_func=lambda: target,
-            guardrail_tier=GuardrailTier.CRITICAL,
-            command_halt_participant=True,
-            dependencies=[],
-            description="Test command halt target",
-        )
-
-    await root.startup(configure)
     try:
-        assert root.guardrail_coordinator.get_command_halt_targets() == ["test_halt_target"]
-        metadata = root.guardrail_coordinator.get_guardrail_metadata("test_halt_target")
+        assert root.guardrail_coordinator.get_command_halt_targets() == ["can_facade"]
+        metadata = root.guardrail_coordinator.get_guardrail_metadata("can_facade")
         assert metadata is not None
         assert metadata["command_halt_participant"] is True
 
         result = await root.guardrail_coordinator.halt_command_emission("test", "pytest")
-        assert result == {"test_halt_target": True}
+        assert result == {"can_facade": True}
         assert target.reasons == ["test"]
     finally:
         await root.shutdown()
@@ -268,19 +154,10 @@ async def test_guardrail_metadata_reads_from_runtime_coordinator() -> None:
 async def test_service_dependency_delegates_to_composition_root() -> None:
     """Dependency providers resolve through CompositionRoot when it is initialized."""
     _reset_dependency_globals()
-    root = CompositionRoot()
+    root = CompositionRoot(service_catalog={"app_settings"})
     settings = get_settings()
-    _seed_foundation_fakes(root)
 
-    async def configure(registry: GuardrailCoordinator) -> None:
-        registry.register_service(
-            name="app_settings",
-            init_func=lambda: settings,
-            dependencies=[],
-            description="Test settings service",
-        )
-
-    await root.startup(configure)
+    await root.startup()
     dependencies.initialize_composition_root(root)
     try:
         provider = dependencies.root_service_dependency("app_settings")
@@ -307,14 +184,14 @@ def test_root_constructed_service_is_settable_without_registry_capture() -> None
         _reset_dependency_globals()
 
 
-def test_initialize_service_registry_accepts_composition_root_compat_registry() -> None:
-    """The compatibility registry remains the only registry source after root init."""
+def test_initialize_service_registry_accepts_composition_root_alias() -> None:
+    """The legacy initializer accepts the root during the transition."""
     _reset_dependency_globals()
     root = CompositionRoot()
 
     dependencies.initialize_composition_root(root)
     try:
-        dependencies.initialize_service_registry(root.compat_registry)
+        dependencies.initialize_service_registry(root)
         assert dependencies.get_service_registry() is root
     finally:
         _reset_dependency_globals()
@@ -324,7 +201,7 @@ def test_initialize_service_registry_rejects_divergent_registry() -> None:
     """A second registry cannot silently diverge after the root is initialized."""
     _reset_dependency_globals()
     root = CompositionRoot()
-    other_registry = GuardrailCoordinator()
+    other_registry = object()
 
     dependencies.initialize_composition_root(root)
     try:
