@@ -7,7 +7,8 @@ Uses repository injection pattern for all dependencies.
 
 from typing import Any
 
-from backend.core.structured_logging import get_logger, log_execution_time
+from backend.core.config import AuthenticationSettings
+from backend.core.structured_logging import get_logger
 from backend.repositories.auth_repository import (
     AuthEventRepository,
     CredentialRepository,
@@ -31,11 +32,12 @@ class AuthService:
     using repository injection for all dependencies.
     """
 
-    def __init__(
+    def __init__(  # noqa: PLR0913
         self,
         credential_repository: CredentialRepository,
         session_repository: SessionRepository,
         auth_event_repository: AuthEventRepository,
+        auth_settings: AuthenticationSettings,
         mfa_repository: MfaRepository | None = None,
         notification_service: Any | None = None,
         performance_monitor: Any | None = None,
@@ -44,7 +46,6 @@ class AuthService:
         session_service: SessionService | None = None,
         mfa_service: MfaService | None = None,
         lockout_service: LockoutService | None = None,
-        auth_config: dict[str, Any] | None = None,
     ):
         """
         Initialize the authentication service with repository dependencies and sub-services.
@@ -53,6 +54,7 @@ class AuthService:
             credential_repository: Repository for credential management
             session_repository: Repository for session management
             auth_event_repository: Repository for auth event tracking
+            auth_settings: Typed authentication settings from the canonical app settings
             mfa_repository: Optional repository for MFA management
             notification_service: Optional notification service for magic links
             performance_monitor: Optional performance monitor for service monitoring
@@ -61,7 +63,6 @@ class AuthService:
             session_service: Injected SessionService instance
             mfa_service: Optional injected MfaService instance
             lockout_service: Injected LockoutService instance
-            auth_config: Authentication configuration from SecurityConfigService
         """
         self._credential_repository = credential_repository
         self._session_repository = session_repository
@@ -76,7 +77,7 @@ class AuthService:
         self._session_service = session_service
         self._mfa_service = mfa_service
         self._lockout_service = lockout_service
-        self._auth_config = auth_config or {}
+        self._auth_settings = auth_settings
 
         self._running = False
         self._auth_manager: AuthManager | None = None
@@ -93,42 +94,14 @@ class AuthService:
         try:
             # Validate that required sub-services are injected
             if not self._token_service or not self._session_service or not self._lockout_service:
-                raise RuntimeError(
-                    "AuthService requires TokenService, SessionService, and LockoutService to be injected"
+                msg = (
+                    "AuthService requires TokenService, SessionService, and LockoutService "
+                    "to be injected"
                 )
-
-            # Initialize the auth manager facade with all services
-            # Create auth settings from config with proper attributes
-            auth_settings_dict = {
-                "enabled": self._auth_config.get(
-                    "enabled", False
-                ),  # Use config value for auth enabled
-                "secret_key": self._auth_config.get(
-                    "jwt_secret", ""
-                ),  # Map jwt_secret to secret_key
-                "jwt_algorithm": self._auth_config.get("jwt_algorithm", "HS256"),
-                "jwt_expire_minutes": self._auth_config.get("access_token_expire_minutes", 60),
-                "magic_link_expire_minutes": self._auth_config.get("magic_link_expire_minutes", 15),
-                "enable_magic_links": self._auth_config.get(
-                    "enable_magic_links", False
-                ),  # Default to False
-                "enable_oauth": self._auth_config.get("enable_oauth", False),
-                "enable_mfa": self._auth_config.get("enable_mfa", False),
-                "enable_refresh_tokens": self._auth_config.get("enable_refresh_tokens", True),
-                "enable_account_lockout": self._auth_config.get("enable_account_lockout", True),
-                "admin_email": self._auth_config.get("admin_email"),  # Use config value
-                "admin_username": self._auth_config.get("admin_username"),  # Add admin username
-                "admin_password": self._auth_config.get("admin_password"),  # Add admin password
-                "notification_from_email": "noreply@coachiq.local",
-                "refresh_token_secret": self._auth_config.get(
-                    "refresh_token_secret", self._auth_config.get("jwt_secret", "")
-                ),
-                **self._auth_config,  # Include any additional config
-            }
-            auth_settings = type("AuthSettings", (), auth_settings_dict)
+                raise RuntimeError(msg)
 
             self._auth_manager = AuthManager(
-                auth_settings=auth_settings,
+                auth_settings=self._auth_settings,
                 notification_manager=self._notification_service,
                 auth_repository=self._auth_repository,  # Use injected legacy repository
                 token_service=self._token_service,
@@ -144,9 +117,11 @@ class AuthService:
                     "AuthManager initialized with a valid AuthRepository for legacy operations."
                 )
             else:
-                logger.warning(
-                    "AuthManager initialized without an AuthRepository. Legacy refresh token operations will fail."
+                msg = (
+                    "AuthManager initialized without an AuthRepository. "
+                    "Legacy refresh token operations will fail."
                 )
+                logger.warning(msg)
 
             await self._auth_manager.startup()
 
@@ -241,14 +216,12 @@ class AuthService:
                 info["auth_mode"] = stats.get("auth_mode")
                 info["dependencies_available"] = stats.get("jwt_available")
                 info["configuration"] = {
-                    "jwt_algorithm": self._auth_config.get("jwt_algorithm", "HS256"),
-                    "jwt_expire_minutes": self._auth_config.get("access_token_expire_minutes", 60),
-                    "magic_link_expire_minutes": self._auth_config.get(
-                        "magic_link_expire_minutes", 15
-                    ),
-                    "enable_magic_links": self._auth_config.get("enable_magic_links", True),
-                    "enable_oauth": self._auth_config.get("enable_oauth", False),
-                    "enable_mfa": self._auth_config.get("enable_mfa", False),
+                    "jwt_algorithm": self._auth_settings.jwt_algorithm,
+                    "jwt_expire_minutes": self._auth_settings.jwt_expire_minutes,
+                    "magic_link_expire_minutes": self._auth_settings.magic_link_expire_minutes,
+                    "enable_magic_links": self._auth_settings.enable_magic_links,
+                    "enable_oauth": self._auth_settings.enable_oauth,
+                    "enable_mfa": self._auth_settings.enable_mfa,
                 }
             except Exception as e:
                 info["error"] = str(e)

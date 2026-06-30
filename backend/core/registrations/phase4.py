@@ -159,16 +159,13 @@ def register(service_registry: SafetyServiceRegistry) -> None:
         session_service,
         mfa_service,
         lockout_service,
-        security_config_service,
+        app_settings,
         notification_service=None,
     ):
         # Create legacy AuthRepository for backward compatibility
         from backend.services.auth.repository import AuthRepository
 
         auth_repository = AuthRepository(database_manager) if database_manager else None
-
-        # Get authentication configuration from SecurityConfigService
-        auth_config = await security_config_service.get_auth_config()
 
         service = AuthService(
             credential_repository=credential_repository,
@@ -182,7 +179,7 @@ def register(service_registry: SafetyServiceRegistry) -> None:
             session_service=session_service,
             mfa_service=mfa_service,
             lockout_service=lockout_service,
-            auth_config=auth_config,
+            auth_settings=app_settings.auth,
         )
         await service.start()
         return service
@@ -206,7 +203,7 @@ def register(service_registry: SafetyServiceRegistry) -> None:
             ServiceDependency("session_service", DependencyType.REQUIRED),
             ServiceDependency("mfa_service", DependencyType.OPTIONAL),
             ServiceDependency("lockout_service", DependencyType.REQUIRED),
-            ServiceDependency("security_config_service", DependencyType.REQUIRED),
+            ServiceDependency("app_settings", DependencyType.REQUIRED),
         ],
         description="Authentication service with JWT, magic links, and MFA",
         tags={"service", "auth", "security"},

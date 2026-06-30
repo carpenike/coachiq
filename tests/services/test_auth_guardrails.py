@@ -207,14 +207,14 @@ def auth_service_dependencies() -> dict[str, object]:
         "session_service": Mock(),
         "mfa_service": Mock(),
         "lockout_service": Mock(),
-        "auth_config": {
-            "enabled": True,
-            "jwt_secret": "test-secret-key-that-is-long-enough",
-            "admin_username": "admin",
-            "admin_password": "password",
-            "enable_magic_links": False,
-            "enable_mfa": True,
-        },
+        "auth_settings": auth_settings(
+            enabled=True,
+            secret_key="test-secret-key-that-is-long-enough",
+            admin_username="admin",
+            admin_password="password",
+            enable_magic_links=False,
+            enable_mfa=True,
+        ),
     }
 
 
@@ -268,6 +268,44 @@ async def test_auth_service_start_stop_and_service_info(
     assert info["auth_mode"] == "single"
     assert health["healthy"] is True
     assert service.get_auth_manager() is fake_manager
+
+
+@pytest.mark.asyncio
+async def test_auth_service_passes_typed_settings_to_auth_manager(
+    auth_service_dependencies: dict[str, object], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """AuthService passes canonical typed auth settings to the runtime AuthManager."""
+    typed_settings = auth_settings(
+        enabled=True,
+        secret_key="typed-secret-key-that-is-long-enough",
+        admin_username="typed-admin",
+        admin_password="typed-password",
+        enable_magic_links=True,
+        jwt_expire_minutes=23,
+        refresh_token_expire_days=11,
+    )
+    auth_service_dependencies["auth_settings"] = typed_settings
+    captured: dict[str, object] = {}
+
+    class FakeAuthManager:
+        def __new__(cls, **kwargs: object) -> AsyncMock:
+            captured["auth_settings"] = kwargs["auth_settings"]
+            fake_manager = AsyncMock()
+            fake_manager.startup = AsyncMock()
+            return fake_manager
+
+    monkeypatch.setattr("backend.services.auth.service.AuthManager", FakeAuthManager)
+    service = AuthService(**auth_service_dependencies)
+
+    await service.start()
+
+    assert captured["auth_settings"] is typed_settings
+    assert typed_settings.enabled is True
+    assert typed_settings.admin_username == "typed-admin"
+    assert typed_settings.admin_password == "typed-password"  # noqa: S105
+    assert typed_settings.enable_magic_links is True
+    assert typed_settings.jwt_expire_minutes == 23
+    assert typed_settings.refresh_token_expire_days == 11
 
 
 def test_create_auth_service_factory_is_registry_only() -> None:

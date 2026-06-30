@@ -157,20 +157,20 @@ def register(service_registry: SafetyServiceRegistry) -> None:
     )
 
     # Auth Services
-    async def _init_token_service(security_config_service):
-        """Initialize token service with config from SecurityConfigService."""
-        auth_config = await security_config_service.get_auth_config()
+    async def _init_token_service(app_settings):
+        """Initialize token service with typed auth settings."""
+        auth_settings = app_settings.auth
         return TokenService(
-            jwt_secret=auth_config.get("jwt_secret"),
-            jwt_algorithm=auth_config.get("jwt_algorithm", "HS256"),
-            access_token_expire_minutes=auth_config.get("access_token_expire_minutes", 60),
-            magic_link_expire_minutes=auth_config.get("magic_link_expire_minutes", 15),
+            jwt_secret=auth_settings.secret_key,
+            jwt_algorithm=auth_settings.jwt_algorithm,
+            access_token_expire_minutes=auth_settings.jwt_expire_minutes,
+            magic_link_expire_minutes=auth_settings.magic_link_expire_minutes,
         )
 
     service_registry.register_service(
         name="token_service",
         init_func=_init_token_service,
-        dependencies=[ServiceDependency("security_config_service", DependencyType.REQUIRED)],
+        dependencies=[ServiceDependency("app_settings", DependencyType.REQUIRED)],
         description="Stateless JWT token generation and validation",
         tags={"service", "auth", "tokens", "stateless"},
         health_check=lambda s: {"healthy": s is not None, "algorithm": s._jwt_algorithm},

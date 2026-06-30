@@ -17,7 +17,6 @@ The OEM Firefly MIRA panel owns the actual vehicle safety case. See
 """
 
 import logging
-import os
 import time
 from datetime import UTC, datetime
 from pathlib import Path
@@ -427,31 +426,12 @@ class SecurityConfigService:
         return await self._repository.get_rate_limit_config(config_data)
 
     async def get_auth_config(self) -> dict[str, Any]:
-        """Get authentication configuration with secure JWT secret handling."""
+        """Get authentication policy configuration."""
         config = await self.get_config()
 
         # Convert to dict and use repository method for consistency
         config_data = config.model_dump()
-        auth_config = await self._repository.get_auth_config(config_data)
-
-        # Securely inject JWT secret from environment variable
-        # This overrides any value from YAML for security reasons
-        jwt_secret = os.environ.get("COACHIQ_AUTH__SECRET_KEY")
-        if jwt_secret:
-            auth_config["jwt_secret"] = jwt_secret
-        else:
-            # No fallback - JWT secret MUST be provided via environment variable
-            logger.error(
-                "CRITICAL: JWT secret not found in environment variable COACHIQ_AUTH__SECRET_KEY. "
-                "This is required for secure authentication. "
-                "Please set COACHIQ_AUTH__SECRET_KEY to a secure random value."
-            )
-            raise ValueError(
-                "JWT secret must be provided via COACHIQ_AUTH__SECRET_KEY environment variable. "
-                "Generate a secure secret with: openssl rand -hex 32"
-            )
-
-        return auth_config
+        return await self._repository.get_auth_config(config_data)
 
     async def update_security_mode(self, mode: str, updated_by: str = "admin") -> bool:
         """
