@@ -14,8 +14,8 @@ import xml.etree.ElementTree as ET
 from pathlib import Path
 
 MODULE_FLOORS = {
-    "backend/services/can_facade.py": 65.0,
-    "backend/services/safety_service.py": 42.0,
+    "backend/services/can/can_facade.py": 65.0,
+    "backend/services/safety/safety_service.py": 42.0,
     "backend/services/auth/service.py": 80.0,
     "backend/services/auth/manager.py": 32.0,
     "backend/middleware/secure_auth.py": 60.0,
