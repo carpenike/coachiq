@@ -33,8 +33,8 @@ class CompositionServices:
     rvc_config: RVCConfigProvider
     performance_monitor: PerformanceMonitor
     database_manager: DatabaseManager
-    persistence_service: PersistenceService | None = None
-    rvc_config_facade: RVCConfigFacade | None = None
+    persistence_service: PersistenceService
+    rvc_config_facade: RVCConfigFacade
 
 
 class CompositionRoot:
@@ -75,6 +75,10 @@ class CompositionRoot:
         "session_repository",
         "token_service",
     )
+    _FACADE_SERVICE_ORDER = (
+        "rvc_config_facade",
+        "persistence_service",
+    )
 
     def __init__(self, compat_registry: GuardrailCoordinator | None = None) -> None:
         self.compat_registry = compat_registry or GuardrailCoordinator()
@@ -84,6 +88,8 @@ class CompositionRoot:
             rvc_config=cast("RVCConfigProvider", None),
             performance_monitor=cast("PerformanceMonitor", None),
             database_manager=cast("DatabaseManager", None),
+            persistence_service=cast("PersistenceService", None),
+            rvc_config_facade=cast("RVCConfigFacade", None),
         )
         self._configured = False
         self._started = False
@@ -108,6 +114,7 @@ class CompositionRoot:
 
         await self._construct_foundation_services()
         await self._construct_repository_substrate_services()
+        await self._construct_facade_services()
         await self.compat_registry.startup_all()
         self._capture_registry_services()
         self._started = True
@@ -157,8 +164,8 @@ class CompositionRoot:
             rvc_config=self.get_service("rvc_config"),
             performance_monitor=self.get_service("performance_monitor"),
             database_manager=self.get_service("database_manager"),
-            persistence_service=self.get_optional_service("persistence_service"),
-            rvc_config_facade=self.get_optional_service("rvc_config_facade"),
+            persistence_service=self.get_service("persistence_service"),
+            rvc_config_facade=self.get_service("rvc_config_facade"),
         )
         logger.info("CompositionRoot captured typed service handles")
 
@@ -170,6 +177,11 @@ class CompositionRoot:
     async def _construct_repository_substrate_services(self) -> None:
         """Construct the A0 repository substrate before compatibility startup."""
         for service_name in self._REPOSITORY_SUBSTRATE_SERVICE_ORDER:
+            await self._construct_registered_service(service_name)
+
+    async def _construct_facade_services(self) -> None:
+        """Construct the A1 persistence/config facades before compatibility startup."""
+        for service_name in self._FACADE_SERVICE_ORDER:
             await self._construct_registered_service(service_name)
 
     async def _construct_registered_service(self, service_name: str) -> None:

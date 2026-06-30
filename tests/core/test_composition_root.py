@@ -20,6 +20,8 @@ def _seed_foundation_fakes(root: CompositionRoot) -> None:
     root.set_constructed_service("rvc_config", object())
     root.set_constructed_service("performance_monitor", object())
     root.set_constructed_service("database_manager", object())
+    root.set_constructed_service("persistence_service", object())
+    root.set_constructed_service("rvc_config_facade", object())
 
 
 @pytest.mark.asyncio
@@ -58,6 +60,8 @@ async def test_repository_substrate_receives_root_constructed_dependencies() -> 
     root.set_constructed_service("rvc_config", object())
     root.set_constructed_service("performance_monitor", performance_monitor)
     root.set_constructed_service("database_manager", database_manager)
+    root.set_constructed_service("persistence_service", object())
+    root.set_constructed_service("rvc_config_facade", object())
 
     async def configure(registry: GuardrailCoordinator) -> None:
         registry.register_service(
@@ -93,6 +97,74 @@ async def test_repository_substrate_receives_root_constructed_dependencies() -> 
             "performance_monitor": performance_monitor,
         }
         assert root.compat_registry.get_service("security_config_repository") is repository
+    finally:
+        await root.shutdown()
+
+
+@pytest.mark.asyncio
+async def test_facade_services_receive_root_constructed_repositories() -> None:
+    """A1 facades are constructed from root-owned repository substrate handles."""
+    root = CompositionRoot()
+    rvc_config_repository = object()
+    persistence_repository = object()
+    performance_monitor = object()
+
+    root.set_constructed_service("app_settings", get_settings())
+    root.set_constructed_service("rvc_config", object())
+    root.set_constructed_service("performance_monitor", performance_monitor)
+    root.set_constructed_service("database_manager", object())
+    root.set_constructed_service("rvc_config_repository", rvc_config_repository)
+    root.set_constructed_service("persistence_repository", persistence_repository)
+
+    async def configure(registry: GuardrailCoordinator) -> None:
+        registry.register_service(
+            name="performance_monitor",
+            init_func=lambda: performance_monitor,
+            dependencies=[],
+            description="Test performance monitor",
+        )
+        registry.register_service(
+            name="rvc_config_repository",
+            init_func=lambda: rvc_config_repository,
+            dependencies=[],
+            description="Test RV-C config repository",
+        )
+        registry.register_service(
+            name="persistence_repository",
+            init_func=lambda: persistence_repository,
+            dependencies=[],
+            description="Test persistence repository",
+        )
+        registry.register_service(
+            name="rvc_config_facade",
+            init_func=lambda rvc_config_repository: {
+                "rvc_config_repository": rvc_config_repository
+            },
+            dependencies=[ServiceDependency("rvc_config_repository", DependencyType.REQUIRED)],
+            description="Test RV-C config facade",
+        )
+        registry.register_service(
+            name="persistence_service",
+            init_func=lambda persistence_repository, performance_monitor: {
+                "persistence_repository": persistence_repository,
+                "performance_monitor": performance_monitor,
+            },
+            dependencies=[
+                ServiceDependency("persistence_repository", DependencyType.REQUIRED),
+                ServiceDependency("performance_monitor", DependencyType.REQUIRED),
+            ],
+            description="Test persistence service",
+        )
+
+    await root.startup(configure)
+    try:
+        assert root.get_service("rvc_config_facade") == {
+            "rvc_config_repository": rvc_config_repository
+        }
+        assert root.get_service("persistence_service") == {
+            "persistence_repository": persistence_repository,
+            "performance_monitor": performance_monitor,
+        }
     finally:
         await root.shutdown()
 
