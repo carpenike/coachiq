@@ -114,10 +114,12 @@
           ps.pandas
           ps.cryptography
           ps.networkx
+          ps.apprise
+          ps."sqlite-vec"
         ] ++ pkgs.lib.optionals (pkgs.stdenv.isLinux || pkgs.stdenv.isDarwin) [
           ps.uvloop
         ] ++ pkgs.lib.optionals pkgs.stdenv.isLinux [
-          ps.apprise
+          ps.cantools
         ]);
 
         # Read version from VERSION file (source of truth)
@@ -151,6 +153,7 @@
             pythonPackages.passlib
             pythonPackages.python-multipart
             pythonPackages.email-validator
+            pythonPackages.apprise
             # MFA and rate limiting dependencies
             pythonPackages.pyotp
             pythonPackages.qrcode
@@ -174,6 +177,7 @@
             pythonPackages."langchain-openai"
             pythonPackages.pymupdf  # PyMuPDF, imported as fitz
             pythonPackages."faiss"
+            pythonPackages."sqlite-vec"
 
             # --- Advanced analytics and diagnostics dependencies ---
             pythonPackages.numpy
@@ -198,9 +202,7 @@
             pkgs.iproute2
             pkgs.stdenv.cc.cc.lib
             pkgs.zlib
-            # Notification system dependencies (Linux only due to platform constraints)
-            pythonPackages.apprise
-            # CAN protocol handling (Linux only due to platform constraints)
+            # CAN protocol handling (Linux only due to crccheck platform constraints)
             pythonPackages.cantools
             # CAN system utilities for debugging and management
             pkgs.can-utils
@@ -294,6 +296,7 @@ EOF
             pythonPackages."langchain-openai"
             pythonPackages.pymupdf  # PyMuPDF, imported as fitz
             pythonPackages."faiss"
+            pythonPackages."sqlite-vec"
             # --- Advanced analytics and diagnostics dependencies ---
             pythonPackages.numpy
             pythonPackages.scipy
@@ -301,6 +304,7 @@ EOF
             pythonPackages.pandas
             pythonPackages.cryptography
             pythonPackages.networkx
+            pythonPackages.apprise
             nodejs
           ] ++ pkgs.lib.optionals (pkgs.stdenv.isLinux || pkgs.stdenv.isDarwin) [
             pythonPackages.uvloop
@@ -308,9 +312,7 @@ EOF
             pkgs.can-utils
             pythonPackages.pyroute2
             pkgs.iproute2
-            # Notification system dependencies (Linux only due to platform constraints)
-            pythonPackages.apprise
-            # CAN protocol handling (Linux only due to platform constraints)
+            # CAN protocol handling (Linux only due to crccheck platform constraints)
             pythonPackages.cantools
           ];
           shellHook = ''

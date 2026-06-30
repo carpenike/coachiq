@@ -111,7 +111,7 @@ One repo, two halves. A single feature commonly spans both.
   `coach_mapping.default.yml` (generic device→entity map),
   `2021_Entegra_Aspire_44R.yml` (reference coach), `security.yml`,
   `Caddyfile.example`.
-- **`docs/`** — `docs/adr/` (the 9 formal ADRs — see §4), `docs/architecture/`,
+- **`docs/`** — `docs/adr/` (the formal ADR set — see §4), `docs/architecture/`,
   `docs/api/`, `docs/safety.md` (the operational-safety policy), MkDocs site.
 - **`.github/`** — `copilot-instructions.md` + the modular
   `.github/instructions/*.instructions.md` set + `.github/prompts/` (audit /
@@ -213,6 +213,7 @@ proposing anything that touches the area.
 | ADR-0009 | Nix module hybrid options             | `services.coachiq` keeps a small typed surface; long-tail config flows through env vars    |
 | ADR-0010 | Pre-1.0 no backward compatibility     | No external-compat obligation before 1.0; ADR-0003/0005 compat pacing is relaxed           |
 | ADR-0011 | Public API v1 naming                  | Domain API launches at `/api/v1/*`; the internal v2 migration label is retired             |
+| ADR-0012 | Knowledge & Maintenance boundary      | Offline-first coach knowledge/maintenance context; sqlite-vec vector substrate             |
 
 ---
 

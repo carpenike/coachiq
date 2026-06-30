@@ -1,8 +1,9 @@
 """
 Vector service for the CoachIQ backend.
 
-This is a simplified version that provides a consistent interface for vector search
-functionality. Currently acts as a placeholder until full vector search is implemented.
+This service provides a consistent async interface for vector search
+functionality. Phase 0 initializes the sqlite-vec substrate; document ingestion
+and non-empty search results arrive in later knowledge subsystem phases.
 """
 
 import logging
@@ -18,8 +19,8 @@ class VectorService:
     """
     Service for managing vector embeddings and semantic search.
 
-    This is a simplified implementation that provides status information
-    and error handling for vector search functionality.
+    Service for status, initialization, and search calls against the vector
+    repository.
     """
 
     def __init__(
@@ -39,6 +40,7 @@ class VectorService:
         self._repository = vector_repository
         self._monitor = performance_monitor
         self.index_path = index_path
+        self._set_index_path_task: object | None = None
 
         # Apply performance monitoring
         self._apply_monitoring()
@@ -47,9 +49,11 @@ class VectorService:
         if index_path:
             import asyncio
 
-            asyncio.create_task(self._repository.set_index_path(index_path))
+            self._set_index_path_task = asyncio.create_task(
+                self._repository.set_index_path(index_path)
+            )
 
-        logger.info("VectorService initialized (stub implementation)")
+        logger.info("VectorService initialized")
 
     def _apply_monitoring(self) -> None:
         """Apply performance monitoring to service methods."""
@@ -66,7 +70,7 @@ class VectorService:
         Check if the vector service is available.
 
         Returns:
-            False - vector search is not currently implemented
+            True when the underlying vector repository is initialized.
         """
         return await self._repository.is_available()
 
@@ -75,7 +79,7 @@ class VectorService:
         Get the status of the vector service.
 
         Returns:
-            Dictionary with status information indicating service is unavailable
+            Dictionary with vector-store status information.
         """
         return await self._repository.get_status()
 
@@ -88,10 +92,7 @@ class VectorService:
             k: Number of results to return
 
         Returns:
-            Empty list since search is not implemented
-
-        Raises:
-            RuntimeError: Always raises since functionality is not implemented
+            Search results. Empty until document ingestion is implemented.
         """
         return await self._repository.search(query, k)
 
@@ -103,7 +104,7 @@ class VectorService:
             index_path: Path to the index
 
         Returns:
-            False for stub implementation
+            True when the repository initializes the vector store.
         """
         return await self._repository.initialize_index(index_path)
 

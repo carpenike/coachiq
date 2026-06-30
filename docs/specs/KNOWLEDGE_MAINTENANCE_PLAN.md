@@ -45,13 +45,12 @@ no backward-compat) explicitly permits decisive removal.
   `all-MiniLM-L6-v2` fallback in `query_faiss.py`. Index generation in
   `enhanced_document_processor.py` is still OpenAI-only and errors when no
   OpenAI API key is configured. PoC quality.
-- **Runtime is stubbed.** `backend/services/knowledge/vector_service.py` and
-  `backend/repositories/vector_repository.py` are explicit stubs —
-  `is_available()` returns `False`, `initialize_index()` returns `False`, and
-  `get_index_stats()` reports zero documents. `search()` raises
-  `RuntimeError("Vector search functionality not implemented in backend structure")`
-  while uninitialized, so the empty-list branch is not reachable in normal
-  current runtime state. The index was never bridged into the running backend.
+- **Runtime substrate is initialized but empty.** HOF-038 replaced the
+  `backend/services/knowledge/vector_service.py` /
+  `backend/repositories/vector_repository.py` stub with a sqlite-vec empty store:
+  `initialize_index()` creates the SQLite database and `vec0` table,
+  `is_available()` reflects the loaded substrate, and `search()` returns `[]`
+  until Phase 1 adds ingestion.
 - **Original intent was different.** `docs/specs/faiss-integration-plan.md` scoped
   FAISS to *RV-C decoder validation* (DGN/spec checks), not operator
   manual/maintenance lookup. Conversational + offline operation appear there only
@@ -120,13 +119,13 @@ available one.
 - **Embeddings default to local** (MiniLM or a better small model) so semantic
   search works offline. Cloud embeddings are an *ingest-time* option only, never
   a runtime dependency.
-- **Vector store:** prefer **`sqlite-vec`** so vectors, FTS, and the records DB
+- **Vector store:** use **`sqlite-vec`** so vectors, FTS, and the records DB
   share one SQLite substrate on the Pi (one file to back up, one
-  `PersistenceService` path). `sqlite-vec` is not currently declared in
-  `pyproject.toml` or `flake.nix`, so Phase 0 must prove packaging/install
-  support in Poetry + Nix on Darwin and Linux before locking it. Alternative:
-  keep FAISS as a packaged index artifact; FAISS is already present in the
-  devtools dependency group but is not wired into runtime.
+  `PersistenceService` path). Phase 0 proved stdlib SQLite extension loading on
+  macOS arm64 and the aarch64 NixOS deploy target, so sqlite-vec is the locked
+  runtime substrate. FAISS remains historical fallback/provenance for the older
+  RV-C documentation search spike, not the Knowledge & Maintenance runtime
+  substrate.
 - **Index generation is build/provisioning time.** Cloud embeddings are allowed
   while producing the shipped corpus/index artifact. The device's runtime path
   is offline: deterministic FTS5, structured facts, and prebuilt-vector query.
@@ -182,9 +181,8 @@ design constraint, not an afterthought.
 
 ## 4. Phasing
 
-- **Phase 0 (substrate proof + ADR):** prove `sqlite-vec` packaging in Poetry +
-  Nix on Darwin and Linux, or choose packaged FAISS fallback; reserve and land
-  ADR-0012 with the implementation HOF; inventory the legacy
+- **Phase 0 (substrate proof + ADR):** prove and declare `sqlite-vec` packaging
+  in Poetry + Nix on Darwin and Linux, land ADR-0012, and inventory the legacy
   `predictive_maintenance` surface for migration.
 - **Phase 1 — deterministic tier (highest offline value, no model):** models +
   Alembic migration, `structured_facts` + FTS5, an ingestion CLI, v1 read
@@ -203,8 +201,8 @@ design constraint, not an afterthought.
 
 No existing ADR is violated; this extends scope within ADR-0004's consumer-grade
 framing and leans on ADR-0010 to discard the PoC and legacy router decisively.
-Once the bounded-context boundary and storage substrate lock, this warrants a new
-ADR (candidate **ADR-0012 — Knowledge & Maintenance subsystem boundary**).
+The bounded-context boundary and storage substrate are recorded in
+ADR-0012 — Knowledge & Maintenance subsystem boundary.
 
 ## 6. Resolved questions
 
@@ -212,9 +210,9 @@ ADR (candidate **ADR-0012 — Knowledge & Maintenance subsystem boundary**).
   prebuilt-vector query are always offline. Index generation is a
   build/provisioning step and may use cloud embeddings; the device ships a
   prebuilt index.
-2. **Storage substrate:** `sqlite-vec` is preferred because it fits the unified
-  SQLite/persistence/backup story from HOF-032. Phase 0 must prove packaging on
-  Darwin and Linux; FAISS remains the fallback.
+2. **Storage substrate:** `sqlite-vec` is selected because it fits the unified
+  SQLite/persistence/backup story from HOF-032 and Phase 0 proved extension
+  loading on Darwin and the aarch64 NixOS deploy target.
 3. **Legacy `predictive_maintenance`:** absorb useful concepts and API
   affordances into the `/api/v1` maintenance domain with real persistence, then
   retire the legacy in-memory router.

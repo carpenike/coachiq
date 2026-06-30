@@ -92,6 +92,36 @@ retirements follow the HOF-016 plan.
 
 ## Build Log
 
+### HOF-038 — Knowledge Subsystem Phase 0 Substrate Proof
+
+- [shipped] same commit as this entry · 2026-06-29
+- [component] backend
+- [handoff] HOF-038
+- [adr] ADR-0012
+
+**What changed.** Locked `sqlite-vec` as the Knowledge & Maintenance vector
+substrate, declared it as a runtime dependency in Poetry and Nix, and wired a
+real empty sqlite-vec store behind `VectorRepository`/`VectorService`. The store
+now initializes a SQLite database with a `vec0` table, reports real availability,
+and returns an empty search result set until Phase 1 adds ingestion. ADR-0012
+graduates the bounded-context decision and records the Darwin + nixpi proof.
+
+**Why.** HOF-035 reserved the substrate decision for Phase 0. RECON-005 found the
+general Nix extension-loading risk, then RECON-006 proved the actual deployed
+aarch64 NixOS Python can enable SQLite extensions. With both the dev box and Pi
+green on stdlib SQLite, sqlite-vec wins over the FAISS fallback because it keeps
+vectors in the same SQLite-oriented data-root and backup story.
+
+**Validation.** `nix develop --command python` sqlite-vec load probe; `poetry
+install`; `poetry run pytest tests/services/test_vector_service.py
+tests/services/test_vector_repository.py`; `scripts/ci-quality-gate.sh`.
+
+**Files.** `backend/repositories/vector_repository.py`,
+`backend/services/knowledge/vector_service.py`, `tests/services/test_vector_repository.py`,
+`pyproject.toml`, `poetry.lock`, `flake.nix`, `nix/package.nix`,
+`docs/adr/ADR-0012-knowledge-maintenance-subsystem-boundary.md`,
+`docs/adr/README.md`, `PROJECT_CONTEXT.md`.
+
 ### HOF-010 — Release Please PR-Creation Permission
 
 - [shipped] same commit as this entry · 2026-06-29

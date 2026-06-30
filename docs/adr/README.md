@@ -82,6 +82,9 @@ Keep ADRs short -- 50-150 lines is typical. If you find yourself writing
 - [ADR-0011](ADR-0011-public-api-v1-naming.md) -- Launch the public
   Domain API at `/api/v1/*`; retire the internal v2 migration label
   before 1.0 while keeping URL versioning.
+- [ADR-0012](ADR-0012-knowledge-maintenance-subsystem-boundary.md) -- Keep
+  Knowledge & Maintenance as a separate offline-first bounded context and
+  use sqlite-vec as its proven local vector substrate.
 
 ## Status
 

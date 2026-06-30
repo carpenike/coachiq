@@ -45,6 +45,7 @@
       pythonPackages.asyncpg
       pythonPackages.alembic
       # Notification system dependencies
+      pythonPackages.apprise
       pythonPackages.jinja2
       # Authentication system dependencies
       pythonPackages.pyjwt
@@ -65,13 +66,13 @@
       pythonPackages.cryptography
       # Network analysis for fault isolation
       pythonPackages.networkx
+      # Knowledge subsystem vector store
+      pythonPackages."sqlite-vec"
     ] ++ pkgs.lib.optionals (pkgs.stdenv.isLinux || pkgs.stdenv.isDarwin) [
       pythonPackages.uvloop   # Uvicorn standard extra (conditional)
     ] ++ pkgs.lib.optionals pkgs.stdenv.isLinux [
       pythonPackages.pyroute2
-      # Notification system dependencies (Linux only due to platform constraints)
-      pythonPackages.apprise
-      # CAN protocol handling (Linux only due to platform constraints)
+      # CAN protocol handling (Linux only due to crccheck platform constraints)
       pythonPackages.cantools
       # pkgs.can-utils removed - will be added to PATH via makeWrapper
     ];
