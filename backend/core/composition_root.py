@@ -31,6 +31,68 @@ class CompositionServices:
     edge_proxy_monitor: EdgeProxyMonitorService
     persistence_service: PersistenceService
     rvc_config_facade: RVCConfigFacade
+    rvc_config_repository: Any = None
+    system_state_repository: Any = None
+    can_tracking_repository: Any = None
+    diagnostics_repository: Any = None
+    database_connection_repository: Any = None
+    database_session_repository: Any = None
+    migration_repository: Any = None
+    database_backup_repository: Any = None
+    database_migration_repository: Any = None
+    migration_history_repository: Any = None
+    safety_repository: Any = None
+    analytics_repository: Any = None
+    auth_event_repository: Any = None
+    can_command_repository: Any = None
+    credential_repository: Any = None
+    entity_config_repository: Any = None
+    entity_history_repository: Any = None
+    entity_manager_service: Any = None
+    entity_state_repository: Any = None
+    mfa_repository: Any = None
+    persistence_repository: Any = None
+    security_audit_repository: Any = None
+    security_config_repository: Any = None
+    security_event_repository: Any = None
+    security_listener_repository: Any = None
+    session_repository: Any = None
+    token_service: Any = None
+    database_connection_service: Any = None
+    database_session_service: Any = None
+    database_migration_service: Any = None
+    migration_safety_validator: Any = None
+    database_update_service: Any = None
+    protocol_manager: Any = None
+    rvc_service: Any = None
+    device_discovery_service: Any = None
+    can_facade: Any = None
+    security_event_service: Any = None
+    attempt_tracker_service: Any = None
+    mfa_service: Any = None
+    session_service: Any = None
+    security_config_service: Any = None
+    lockout_service: Any = None
+    pin_manager: Any = None
+    security_audit_service: Any = None
+    auth_manager: Any = None
+    security_event_manager: Any = None
+    command_guardrail_service: Any = None
+    can_anomaly_detector: Any = None
+    can_bus_recorder: Any = None
+    can_interface_service: Any = None
+    can_message_filter: Any = None
+    can_message_injector: Any = None
+    can_protocol_analyzer: Any = None
+    dashboard_service: Any = None
+    diagnostic_handler: Any = None
+    websocket_manager: Any = None
+    analytics_dashboard_service: Any = None
+    can_bus_service: Any = None
+    can_network_telemetry_service: Any = None
+    entity_initialization_service: Any = None
+    entity_service: Any = None
+    entity_domain_service: Any = None
 
 
 class CompositionRoot:
@@ -914,3 +976,5 @@ class CompositionRoot:
             self.services.database_manager = service
         elif service_name == "rvc_config_facade":
             self.services.rvc_config_facade = service
+        elif hasattr(self.services, service_name):
+            setattr(self.services, service_name, service)

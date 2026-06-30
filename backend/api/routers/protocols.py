@@ -6,13 +6,13 @@ Allows runtime protocol management without requiring application restarts.
 """
 
 import logging
-from typing import Annotated, ClassVar
+from typing import ClassVar
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, Field
 from starlette import status
 
-from backend.core.dependencies import ServiceRegistry, get_service_registry
+from backend.core.dependencies import CompositionRoot, ProtocolManager
 from backend.middleware.auth import require_admin_role
 from backend.models.protocol_config import ProtocolRuntimeStatus
 
@@ -72,23 +72,16 @@ router = APIRouter(
     description="Get list of all protocols with their runtime status",
 )
 async def list_protocols(
-    service_registry: Annotated[ServiceRegistry, Depends(get_service_registry)],
+    protocol_manager: ProtocolManager,
+    composition_root: CompositionRoot,
 ) -> ProtocolListResponse:
     """List all protocols with runtime status."""
     protocols = []
 
-    # Get protocol manager from service registry
-    protocol_manager = service_registry.get_service("protocol_manager")
-    if not protocol_manager:
-        raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="Protocol manager service not available",
-        )
-
     # Get status for each known protocol
     for protocol_name in ["rvc", "j1939", "firefly"]:
         protocol_status = await protocol_manager.get_protocol_status(
-            protocol_name, service_registry
+            protocol_name, composition_root
         )
         protocols.append(protocol_status)
 
@@ -109,7 +102,8 @@ async def list_protocols(
 )
 async def get_protocol_status(
     protocol_name: str,
-    service_registry: Annotated[ServiceRegistry, Depends(get_service_registry)],
+    protocol_manager: ProtocolManager,
+    composition_root: CompositionRoot,
 ) -> ProtocolRuntimeStatus:
     """Get detailed status for a specific protocol."""
     if protocol_name not in ["rvc", "j1939", "firefly"]:
@@ -118,15 +112,7 @@ async def get_protocol_status(
             detail=f"Protocol '{protocol_name}' not found",
         )
 
-    # Get protocol manager from service registry
-    protocol_manager = service_registry.get_service("protocol_manager")
-    if not protocol_manager:
-        raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="Protocol manager service not available",
-        )
-
-    return await protocol_manager.get_protocol_status(protocol_name, service_registry)
+    return await protocol_manager.get_protocol_status(protocol_name, composition_root)
 
 
 @router.put(
@@ -140,21 +126,14 @@ async def update_protocol(
     protocol_name: str,
     update: ProtocolUpdateRequest,
     request: Request,
-    service_registry: Annotated[ServiceRegistry, Depends(get_service_registry)],
+    protocol_manager: ProtocolManager,
+    composition_root: CompositionRoot,
 ) -> ProtocolUpdateResponse:
     """Update protocol configuration."""
     if protocol_name not in ["rvc", "j1939", "firefly"]:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"Protocol '{protocol_name}' not found",
-        )
-
-    # Get protocol manager from service registry
-    protocol_manager = service_registry.get_service("protocol_manager")
-    if not protocol_manager:
-        raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="Protocol manager service not available",
         )
 
     # Get user info for audit
@@ -187,7 +166,7 @@ async def update_protocol(
         )
 
     # Get updated status
-    updated_status = await protocol_manager.get_protocol_status(protocol_name, service_registry)
+    updated_status = await protocol_manager.get_protocol_status(protocol_name, composition_root)
 
     # Check if restart required
     requires_restart = protocol_manager.requires_restart(protocol_name)
@@ -221,7 +200,8 @@ async def update_protocol(
 )
 async def reload_protocol(
     protocol_name: str,
-    service_registry: Annotated[ServiceRegistry, Depends(get_service_registry)],
+    protocol_manager: ProtocolManager,
+    composition_root: CompositionRoot,
 ) -> ProtocolUpdateResponse:
     """Reload protocol configuration from database."""
     if protocol_name not in ["rvc", "j1939", "firefly"]:
@@ -230,20 +210,12 @@ async def reload_protocol(
             detail=f"Protocol '{protocol_name}' not found",
         )
 
-    # Get protocol manager from service registry
-    protocol_manager = service_registry.get_service("protocol_manager")
-    if not protocol_manager:
-        raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="Protocol manager service not available",
-        )
-
     try:
         # Force reload from database
         await protocol_manager._load_configuration()  # noqa: SLF001
 
         # Get updated status
-        updated_status = await protocol_manager.get_protocol_status(protocol_name, service_registry)
+        updated_status = await protocol_manager.get_protocol_status(protocol_name, composition_root)
 
         return ProtocolUpdateResponse(
             success=True,

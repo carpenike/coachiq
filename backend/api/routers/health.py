@@ -23,6 +23,7 @@ from pydantic import BaseModel
 
 from backend.core.config import get_settings
 from backend.core.dependencies import (
+    CommandGuardrailService,
     get_service_registry,
 )
 from backend.core.service_registry import ServiceStatus
@@ -104,6 +105,7 @@ def service_status_to_health(status: ServiceStatus) -> HealthStatus:
 )
 async def health_check(
     service_registry: Annotated[Any, Depends(get_service_registry)],
+    command_guardrail_service: CommandGuardrailService,
     include_registry: bool = Query(True, description="Include ServiceRegistry details"),
     include_metrics: bool = Query(True, description="Include startup metrics"),
     include_components: bool = Query(True, description="Include component health details"),
@@ -172,7 +174,6 @@ async def health_check(
                         )
 
         # 4. Check safety-critical components if enabled
-        command_guardrail_service = service_registry.get_service("command_guardrail_service")
         if command_guardrail_service:
             safety_health = await check_command_guardrail_service_health(command_guardrail_service)
             if safety_health["status"] == HealthStatus.FAIL:

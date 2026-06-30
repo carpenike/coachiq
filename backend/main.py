@@ -28,7 +28,6 @@ from slowapi.middleware import SlowAPIMiddleware
 from backend.api.router_config import configure_routers
 from backend.core.composition_root import CompositionRoot
 from backend.core.config import Settings, get_settings, is_real_secret
-from backend.core.dependencies import ServiceRegistry
 from backend.core.guardrail_coordinator import GuardrailCoordinator
 from backend.core.logging_config import configure_unified_logging, setup_early_logging
 from backend.core.metrics import initialize_backend_metrics
@@ -170,7 +169,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         await composition_root.startup(_configure_service_startup_stages)
 
         # CRITICAL: Inject service_registry into command_guardrail_service after startup to avoid circular dependency
-        command_guardrail_service = composition_root.get_service("command_guardrail_service")
+        command_guardrail_service = composition_root.services.command_guardrail_service
         if command_guardrail_service and hasattr(command_guardrail_service, "set_service_registry"):
             command_guardrail_service.set_service_registry(composition_root.guardrail_coordinator)
             logger.info("GuardrailRuntimeCoordinator injected into CommandGuardrailService")
@@ -183,13 +182,9 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
             )
 
         # Get services from registry
-        settings = composition_root.services.settings or composition_root.get_service(
-            "app_settings"
-        )
-        rvc_config_provider = composition_root.services.rvc_config or composition_root.get_service(
-            "rvc_config"
-        )
-        security_event_manager = composition_root.get_service("security_event_manager")
+        settings = composition_root.services.settings
+        rvc_config_provider = composition_root.services.rvc_config
+        security_event_manager = composition_root.services.security_event_manager
 
         # Validate security configuration
         if not settings.is_development():
@@ -199,12 +194,9 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
                 # In production, we should fail fast on security misconfigurations
                 # For now, just log the error and continue
 
-        device_discovery_service = composition_root.get_service("device_discovery_service")
-        persistence_service = composition_root.get_service("persistence_service")
-        database_manager = (
-            composition_root.services.database_manager
-            or composition_root.get_service("database_manager")
-        )
+        device_discovery_service = composition_root.services.device_discovery_service
+        persistence_service = composition_root.services.persistence_service
+        database_manager = composition_root.services.database_manager
 
         logger.info("ServiceRegistry startup completed successfully")
         logger.info(f"RVC Config Summary: {rvc_config_provider.get_configuration_summary()}")
@@ -234,8 +226,8 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
             logger.warning(f"Could not generate dependency visualization: {e}")
 
         # Get services from ServiceRegistry
-        websocket_manager = composition_root.get_service("websocket_manager")
-        entity_manager_service = composition_root.get_service("entity_manager_service")
+        websocket_manager = composition_root.services.websocket_manager
+        entity_manager_service = composition_root.services.entity_manager_service
 
         if not websocket_manager or not entity_manager_service:
             msg = "Required services (websocket, entity_manager) failed to initialize"
@@ -254,10 +246,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         vector_service = None  # VectorService() - needs vector_repository, performance_monitor
         can_interface_service = None  # CANInterfaceService() - needs performance_monitor
         # Get database_manager from ServiceRegistry
-        database_manager = (
-            composition_root.services.database_manager
-            or composition_root.get_service("database_manager")
-        )
+        database_manager = composition_root.services.database_manager
         # TODO: Migrate these services to ServiceRegistry
         # For now, create with None until properly migrated
         predictive_maintenance_service = (
@@ -266,18 +255,12 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         # analytics_dashboard_service now registered in ServiceRegistry
 
         # Get security services from ServiceRegistry (already initialized)
-        security_config_service = composition_root.get_service("security_config_service")
-        pin_manager = composition_root.get_service("pin_manager")
-        security_audit_service = composition_root.get_service("security_audit_service")
+        security_config_service = composition_root.services.security_config_service
+        pin_manager = composition_root.services.pin_manager
+        security_audit_service = composition_root.services.security_audit_service
 
         logger.info("Security services retrieved from ServiceRegistry")
 
-        # Get services from ServiceRegistry
-        pin_manager = composition_root.get_service("pin_manager")
-        security_audit_service = composition_root.get_service("security_audit_service")
-
-        # CommandGuardrailService is now registered in ServiceRegistry
-        command_guardrail_service = composition_root.get_service("command_guardrail_service")
         logger.info("Backend services initialized")
 
         # Authentication middleware will be configured dynamically via the middleware itself
@@ -490,14 +473,14 @@ async def health_check(request: Request):
         version = "unknown"
 
     # Get enabled protocols from the protocol manager
-    from backend.core.dependencies import get_service_registry
+    from backend.core.dependencies import get_composition_root
 
-    service_registry = get_service_registry()
-    protocol_manager = service_registry.get_service("protocol_manager")
+    composition_root = get_composition_root()
+    protocol_manager = composition_root.services.protocol_manager
 
     if protocol_manager:
         # Get enabled protocols with runtime health checks
-        enabled_protocols = protocol_manager.get_enabled_protocols(service_registry)
+        enabled_protocols = protocol_manager.get_enabled_protocols(composition_root)
     else:
         # Fallback if protocol manager not available
         enabled_protocols = ["rvc"]  # RVC is always enabled
@@ -643,7 +626,7 @@ async def healthz(request: Request) -> Response:
     summary="Startup probe",
     description="Returns IETF-compliant health status for hardware initialization. Succeeds when CAN transceivers are initialized.",
 )
-async def startupz(request: Request, service_registry: ServiceRegistry) -> Response:
+async def startupz(request: Request) -> Response:
     """
     Startup probe for hardware initialization following Kubernetes patterns.
 
@@ -654,16 +637,11 @@ async def startupz(request: Request, service_registry: ServiceRegistry) -> Respo
     start_time = time.time()
 
     try:
-        # Check CAN bus service status from ServiceRegistry
-        can_interface_ready = (
-            service_registry.has_service("can_interface_service")
-            and service_registry.get_service_status("can_interface_service")
-            == ServiceStatus.HEALTHY
-        )
-        can_bus_ready = (
-            service_registry.has_service("can_bus_service")
-            and service_registry.get_service_status("can_bus_service") == ServiceStatus.HEALTHY
-        )
+        from backend.core.dependencies import get_composition_root
+
+        services = get_composition_root().services
+        can_interface_ready = services.can_interface_service is not None
+        can_bus_ready = services.can_bus_service is not None
 
         # Hardware is considered ready when CAN services are initialized
         # This is the minimum requirement for the application to start receiving traffic
@@ -790,60 +768,29 @@ async def readyz(request: Request, details: bool = False) -> Response:
         critical_failures = []
         warning_failures = []
 
-        # Get ServiceRegistry for health checks
-        service_registry = None
-        try:
-            from backend.core.dependencies import get_service_registry
+        from backend.core.dependencies import get_composition_root
 
-            service_registry = get_service_registry()
-        except Exception:
-            pass
-
-        # ServiceRegistry health aggregation
-        if service_registry:
-            try:
-                service_counts = service_registry.get_service_count_by_status()
-                healthy_services = service_counts.get(ServiceStatus.HEALTHY, 0)
-                total_services = sum(service_counts.values())
-
-                readiness_checks["service_registry"] = {
-                    "status": "pass" if healthy_services >= 3 else "fail",
-                    "details": {
-                        "healthy_services": healthy_services,
-                        "total_services": total_services,
-                        "service_breakdown": {
-                            status.value: count for status, count in service_counts.items()
-                        },
-                    },
-                }
-                if healthy_services < 3:
-                    critical_failures.append("service_registry")
-            except Exception:
-                readiness_checks["service_registry"] = {
-                    "status": "fail",
-                    "details": {"error": "ServiceRegistry error"},
-                }
-                critical_failures.append("service_registry")
-        else:
-            readiness_checks["service_registry"] = {
-                "status": "fail",
-                "details": {"error": "ServiceRegistry not available"},
-            }
-            critical_failures.append("service_registry")
+        services = get_composition_root().services
+        core_handles = [
+            services.settings,
+            services.database_manager,
+            services.persistence_service,
+            services.websocket_manager,
+            services.entity_manager_service,
+        ]
+        healthy_services = sum(service is not None for service in core_handles)
+        readiness_checks["composition_root"] = {
+            "status": "pass" if healthy_services >= 5 else "fail",
+            "details": {"healthy_core_handles": healthy_services, "total_core_handles": 5},
+        }
+        if healthy_services < 5:
+            critical_failures.append("composition_root")
 
         # 1. Hardware initialization (from startup probe)
         can_interface_ready = False
         can_bus_ready = False
-        if service_registry:
-            can_interface_ready = (
-                service_registry.has_service("can_interface_service")
-                and service_registry.get_service_status("can_interface_service")
-                == ServiceStatus.HEALTHY
-            )
-            can_bus_ready = (
-                service_registry.has_service("can_bus_service")
-                and service_registry.get_service_status("can_bus_service") == ServiceStatus.HEALTHY
-            )
+        can_interface_ready = services.can_interface_service is not None
+        can_bus_ready = services.can_bus_service is not None
         hardware_ready = can_interface_ready and can_bus_ready
         readiness_checks["hardware_initialization"] = {
             "status": "pass" if hardware_ready else "fail",
@@ -852,20 +799,13 @@ async def readyz(request: Request, details: bool = False) -> Response:
         if not hardware_ready:
             critical_failures.append("hardware_initialization")
 
-        # 2. Core services operational (now using ServiceRegistry)
-        entity_manager_ready = (
-            service_registry.has_service("entity_manager_service")
-            and service_registry.get_service_status("entity_manager_service")
-            == ServiceStatus.HEALTHY
-        )
+        # 2. Core services operational
+        entity_manager_ready = services.entity_manager_service is not None
         # app_state_service removed - check repositories instead
         app_state_ready = True  # Now using repositories directly
-        websocket_ready = (
-            service_registry.has_service("websocket_service")
-            and service_registry.get_service_status("websocket_service") == ServiceStatus.HEALTHY
-        )
-        persistence_ready = service_registry.has_service("persistence_service")
-        database_ready = service_registry.has_service("database_manager")
+        websocket_ready = services.websocket_manager is not None
+        persistence_ready = services.persistence_service is not None
+        database_ready = services.database_manager is not None
 
         core_services_ready = (
             entity_manager_ready and websocket_ready and persistence_ready and database_ready
@@ -883,9 +823,7 @@ async def readyz(request: Request, details: bool = False) -> Response:
             critical_failures.append("core_services")
 
         # 3. Entity discovery (traffic readiness indicator)
-        entity_manager = (
-            service_registry.get_service("entity_manager_service") if service_registry else None
-        )
+        entity_manager = services.entity_manager_service
         entity_count = (
             len(entity_manager.get_entity_ids())
             if entity_manager and hasattr(entity_manager, "get_entity_ids")
@@ -920,16 +858,8 @@ async def readyz(request: Request, details: bool = False) -> Response:
             critical_failures.append("protocol_systems")
 
         # 5. Safety-critical systems
-        # Check safety service and auth service from ServiceRegistry
-        command_guardrail_service_ready = (
-            service_registry.has_service("command_guardrail_service")
-            and service_registry.get_service_status("command_guardrail_service")
-            == ServiceStatus.HEALTHY
-        )
-        auth_ready = (
-            service_registry.has_service("auth_manager")
-            and service_registry.get_service_status("auth_manager") == ServiceStatus.HEALTHY
-        )
+        command_guardrail_service_ready = services.command_guardrail_service is not None
+        auth_ready = services.auth_manager is not None
 
         safety_systems_ready = command_guardrail_service_ready and auth_ready
         readiness_checks["safety_systems"] = {
@@ -1015,7 +945,7 @@ async def readyz(request: Request, details: bool = False) -> Response:
             response_data["metrics"] = {
                 "entity_count": entity_count,
                 "enabled_services": healthy_services,
-                "total_services": total_services,
+                "total_services": len(core_handles),
                 "critical_systems_healthy": len(critical_failures) == 0,
                 "warning_systems_healthy": len(warning_failures) == 0,
             }

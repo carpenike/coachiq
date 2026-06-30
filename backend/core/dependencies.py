@@ -1,9 +1,7 @@
 """
 Modern dependencies for dependency injection.
 
-This module provides FastAPI dependency access through the Phase-A composition
-root when initialized. The existing ServiceRegistry remains as a compatibility
-source only before CompositionRoot startup and for legacy tests.
+This module provides FastAPI dependency access through the composition root.
 """
 
 import logging
@@ -12,7 +10,6 @@ from typing import Annotated, Any, TypeVar
 from fastapi import Depends, Header, HTTPException, status
 
 from backend.core.composition_root import CompositionRoot as _CompositionRootClass
-from backend.core.service_registry import ServiceRegistry as _ServiceRegistryClass
 
 # Real service classes for typed DI aliases (ADR-0006).
 # Imported under underscore-prefixed names so the public alias name
@@ -125,27 +122,20 @@ logger = logging.getLogger(__name__)
 # Type variables for better type safety
 T = TypeVar("T")
 
-# Module-level service registry instance
-_service_registry: _ServiceRegistryClass | None = None
 _composition_root: _CompositionRootClass | None = None
 
+_SERVICE_HANDLE_NAMES = {
+    "app_settings": "settings",
+}
 
-def initialize_service_registry(registry: _ServiceRegistryClass) -> None:
-    """
-    Initialize the module-level service registry.
 
-    This should be called once during application startup.
-
-    Args:
-        registry: The service registry instance to use
-    """
+def initialize_service_registry(registry: Any) -> None:
+    """Compatibility shim for callers still passing the root's legacy catalog."""
     if _composition_root is not None and registry is not _composition_root.compat_registry:
         msg = "Cannot initialize a divergent ServiceRegistry after CompositionRoot startup."
         raise RuntimeError(msg)
 
-    global _service_registry  # noqa: PLW0603 - intentional module-level state
-    _service_registry = registry
-    logger.info("Service registry initialized for dependency injection")
+    logger.info("Compatibility service registry ignored; composition root is authoritative")
 
 
 def initialize_composition_root(composition_root: _CompositionRootClass) -> None:
@@ -156,7 +146,6 @@ def initialize_composition_root(composition_root: _CompositionRootClass) -> None
         raise RuntimeError(msg)
 
     _composition_root = composition_root
-    initialize_service_registry(composition_root.compat_registry)
     logger.info("Composition root initialized for dependency injection")
 
 
@@ -169,34 +158,16 @@ def get_composition_root() -> _CompositionRootClass:
     return _composition_root
 
 
-def get_service_registry() -> Any:
-    """
-    Get the service registry instance.
-
-    This is the foundation of our clean service access pattern.
-    All service access goes through ServiceRegistry.
-
-    Returns:
-        The service registry instance
-
-    Raises:
-        RuntimeError: If the service registry is not initialized
-    """
-    if _composition_root is not None:
-        return _composition_root
-
-    if _service_registry is None:
-        msg = "Service registry not initialized. Call initialize_service_registry() during startup."
-        raise RuntimeError(msg)
-
-    return _service_registry
+def get_service_registry() -> _CompositionRootClass:
+    """Temporary root alias for callers not yet migrated to get_composition_root."""
+    return get_composition_root()
 
 
 def create_service_dependency(service_name: str):
     """
     Factory function to create service dependencies.
 
-    This creates FastAPI dependency functions that get services from ServiceRegistry.
+    This creates FastAPI dependency functions that get services from the composition root.
 
     Args:
         service_name: Name of the service in ServiceRegistry
@@ -206,17 +177,13 @@ def create_service_dependency(service_name: str):
     """
 
     def dependency() -> Any:
-        if _composition_root is not None:
-            if not _composition_root.has_service(service_name):
-                msg = f"Service '{service_name}' not available in CompositionRoot"
-                raise RuntimeError(msg)
-            return _composition_root.get_service(service_name)
-
-        service_registry = get_service_registry()
-        if not service_registry.has_service(service_name):
-            msg = f"Service '{service_name}' not available in ServiceRegistry"
+        root = get_composition_root()
+        handle_name = _SERVICE_HANDLE_NAMES.get(service_name, service_name)
+        service = getattr(root.services, handle_name, None)
+        if service is None:
+            msg = f"Service '{service_name}' not available in CompositionRoot"
             raise RuntimeError(msg)
-        return service_registry.get_service(service_name)
+        return service
 
     dependency.__name__ = f"get_{service_name}"
     return dependency
@@ -226,7 +193,7 @@ def create_optional_service_dependency(service_name: str):
     """
     Factory function to create optional service dependencies.
 
-    This creates FastAPI dependency functions that get services from ServiceRegistry,
+    This creates FastAPI dependency functions that get services from the composition root,
     returning None if the service is not available instead of raising an error.
 
     Args:
@@ -237,13 +204,9 @@ def create_optional_service_dependency(service_name: str):
     """
 
     def dependency() -> Any | None:
-        if _composition_root is not None:
-            return _composition_root.get_optional_service(service_name)
-
-        service_registry = get_service_registry()
-        if not service_registry.has_service(service_name):
-            return None
-        return service_registry.get_service(service_name)
+        root = get_composition_root()
+        handle_name = _SERVICE_HANDLE_NAMES.get(service_name, service_name)
+        return getattr(root.services, handle_name, None)
 
     dependency.__name__ = f"get_optional_{service_name}"
     return dependency
@@ -416,6 +379,11 @@ def get_rvc_service() -> _RVCService:
     return create_service_dependency("rvc_service")()
 
 
+def get_protocol_manager() -> Any:
+    """Get the protocol manager from the composition root."""
+    return create_service_dependency("protocol_manager")()
+
+
 # ==================================================================================
 # REPOSITORY DEPENDENCIES
 # ==================================================================================
@@ -547,6 +515,10 @@ CANMessageFilter = Annotated[_MessageFilter, Depends(get_can_message_filter)]
 CANBusRecorder = Annotated[_CANBusRecorder, Depends(get_can_bus_recorder)]
 CANProtocolAnalyzer = Annotated[_ProtocolAnalyzer, Depends(get_can_protocol_analyzer)]
 RVCService = Annotated[_RVCService, Depends(get_rvc_service)]
+ProtocolManager = Annotated[Any, Depends(get_protocol_manager)]
+CommandGuardrailService = Annotated[
+    _CommandGuardrailService, Depends(get_command_guardrail_service)
+]
 
 # Repository dependencies
 EntityStateRepository = Annotated[_EntityStateRepository, Depends(get_entity_state_repository)]
@@ -591,8 +563,8 @@ PredictiveMaintenanceService = Annotated[
     _PredictiveMaintenanceService, Depends(get_predictive_maintenance_service)
 ]
 
-ServiceRegistry = Annotated[_ServiceRegistryClass, Depends(get_service_registry)]
 CompositionRoot = Annotated[_CompositionRootClass, Depends(get_composition_root)]
+ServiceRegistry = CompositionRoot
 
 
 # ==================================================================================
