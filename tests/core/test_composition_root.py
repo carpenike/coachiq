@@ -260,7 +260,7 @@ def test_initialize_service_registry_accepts_composition_root_compat_registry() 
     dependencies.initialize_composition_root(root)
     try:
         dependencies.initialize_service_registry(root.compat_registry)
-        assert dependencies.get_service_registry() is root.compat_registry
+        assert dependencies.get_service_registry() is root
     finally:
         _reset_dependency_globals()
 
@@ -275,6 +275,6 @@ def test_initialize_service_registry_rejects_divergent_registry() -> None:
     try:
         with pytest.raises(RuntimeError, match="divergent ServiceRegistry"):
             dependencies.initialize_service_registry(other_registry)
-        assert dependencies.get_service_registry() is root.compat_registry
+        assert dependencies.get_service_registry() is root
     finally:
         _reset_dependency_globals()

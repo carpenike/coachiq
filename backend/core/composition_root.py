@@ -198,6 +198,10 @@ class CompositionRoot:
             return None
         return self.get_service(service_name)
 
+    def __getattr__(self, name: str) -> Any:
+        """Delegate legacy registry APIs during Phase A compatibility."""
+        return getattr(self.compat_registry, name)
+
     def _capture_registry_services(self) -> None:
         """Temporarily cache registry handles during HOF-052 Phase A.
 

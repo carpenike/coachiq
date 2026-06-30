@@ -169,7 +169,7 @@ def get_composition_root() -> _CompositionRootClass:
     return _composition_root
 
 
-def get_service_registry() -> _ServiceRegistryClass:
+def get_service_registry() -> Any:
     """
     Get the service registry instance.
 
@@ -183,7 +183,7 @@ def get_service_registry() -> _ServiceRegistryClass:
         RuntimeError: If the service registry is not initialized
     """
     if _composition_root is not None:
-        return _composition_root.compat_registry
+        return _composition_root
 
     if _service_registry is None:
         msg = "Service registry not initialized. Call initialize_service_registry() during startup."

@@ -170,12 +170,10 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         await composition_root.startup(_configure_service_startup_stages)
 
         # CRITICAL: Inject service_registry into command_guardrail_service after startup to avoid circular dependency
-        command_guardrail_service = compat_registry.get_service("command_guardrail_service")
+        command_guardrail_service = composition_root.get_service("command_guardrail_service")
         if command_guardrail_service and hasattr(command_guardrail_service, "set_service_registry"):
             command_guardrail_service.set_service_registry(composition_root.guardrail_coordinator)
-            logger.info(
-                "GuardrailRuntimeCoordinator injected into CommandGuardrailService"
-            )
+            logger.info("GuardrailRuntimeCoordinator injected into CommandGuardrailService")
         elif command_guardrail_service:
             command_guardrail_service.service_registry = composition_root.guardrail_coordinator
             logger.info("GuardrailRuntimeCoordinator assigned to CommandGuardrailService")
@@ -185,11 +183,13 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
             )
 
         # Get services from registry
-        settings = composition_root.services.settings or compat_registry.get_service("app_settings")
-        rvc_config_provider = composition_root.services.rvc_config or compat_registry.get_service(
+        settings = composition_root.services.settings or composition_root.get_service(
+            "app_settings"
+        )
+        rvc_config_provider = composition_root.services.rvc_config or composition_root.get_service(
             "rvc_config"
         )
-        security_event_manager = compat_registry.get_service("security_event_manager")
+        security_event_manager = composition_root.get_service("security_event_manager")
 
         # Validate security configuration
         if not settings.is_development():
@@ -199,11 +199,11 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
                 # In production, we should fail fast on security misconfigurations
                 # For now, just log the error and continue
 
-        device_discovery_service = compat_registry.get_service("device_discovery_service")
-        persistence_service = compat_registry.get_service("persistence_service")
+        device_discovery_service = composition_root.get_service("device_discovery_service")
+        persistence_service = composition_root.get_service("persistence_service")
         database_manager = (
             composition_root.services.database_manager
-            or compat_registry.get_service("database_manager")
+            or composition_root.get_service("database_manager")
         )
 
         logger.info("ServiceRegistry startup completed successfully")
@@ -234,8 +234,8 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
             logger.warning(f"Could not generate dependency visualization: {e}")
 
         # Get services from ServiceRegistry
-        websocket_manager = compat_registry.get_service("websocket_manager")
-        entity_manager_service = compat_registry.get_service("entity_manager_service")
+        websocket_manager = composition_root.get_service("websocket_manager")
+        entity_manager_service = composition_root.get_service("entity_manager_service")
 
         if not websocket_manager or not entity_manager_service:
             msg = "Required services (websocket, entity_manager) failed to initialize"
@@ -256,7 +256,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         # Get database_manager from ServiceRegistry
         database_manager = (
             composition_root.services.database_manager
-            or compat_registry.get_service("database_manager")
+            or composition_root.get_service("database_manager")
         )
         # TODO: Migrate these services to ServiceRegistry
         # For now, create with None until properly migrated
@@ -266,18 +266,18 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         # analytics_dashboard_service now registered in ServiceRegistry
 
         # Get security services from ServiceRegistry (already initialized)
-        security_config_service = compat_registry.get_service("security_config_service")
-        pin_manager = compat_registry.get_service("pin_manager")
-        security_audit_service = compat_registry.get_service("security_audit_service")
+        security_config_service = composition_root.get_service("security_config_service")
+        pin_manager = composition_root.get_service("pin_manager")
+        security_audit_service = composition_root.get_service("security_audit_service")
 
         logger.info("Security services retrieved from ServiceRegistry")
 
         # Get services from ServiceRegistry
-        pin_manager = compat_registry.get_service("pin_manager")
-        security_audit_service = compat_registry.get_service("security_audit_service")
+        pin_manager = composition_root.get_service("pin_manager")
+        security_audit_service = composition_root.get_service("security_audit_service")
 
         # CommandGuardrailService is now registered in ServiceRegistry
-        command_guardrail_service = compat_registry.get_service("command_guardrail_service")
+        command_guardrail_service = composition_root.get_service("command_guardrail_service")
         logger.info("Backend services initialized")
 
         # Authentication middleware will be configured dynamically via the middleware itself
