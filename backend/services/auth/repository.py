@@ -18,8 +18,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from backend.models.auth import (
     AdminSettings,
     AuthEvent,
+    AuthProvider,
     MagicLinkToken,
     User,
+    UserAuthProvider,
+    UserRole,
     UserMFA,
     UserMFABackupCode,
     UserSession,
@@ -402,6 +405,144 @@ class AuthRepository:
 
         return await self._execute_with_session(
             _create_user, email, username, display_name, is_admin, preferences
+        )
+
+    async def get_user_by_auth_provider(
+        self,
+        provider: AuthProvider | str,
+        provider_user_id: str,
+    ) -> User | None:
+        """Get a user by a stable external provider subject identifier."""
+        provider_value = provider.value if isinstance(provider, AuthProvider) else provider
+
+        async def _get_user(
+            session: AsyncSession, provider_name: str, external_user_id: str
+        ) -> User | None:
+            result = await session.execute(
+                select(User)
+                .join(UserAuthProvider, UserAuthProvider.user_id == User.id)
+                .where(
+                    and_(
+                        UserAuthProvider.provider == provider_name,
+                        UserAuthProvider.provider_user_id == external_user_id,
+                    )
+                )
+            )
+            return result.scalar_one_or_none()
+
+        return await self._execute_with_session(_get_user, provider_value, provider_user_id)
+
+    async def upsert_federated_user(  # noqa: PLR0913
+        self,
+        *,
+        provider: AuthProvider | str,
+        provider_user_id: str,
+        email: str,
+        username: str | None = None,
+        display_name: str | None = None,
+        role: UserRole = UserRole.USER,
+        provider_data: dict[str, Any] | None = None,
+    ) -> User | None:
+        """Create or update a user bound to a stable federated provider subject."""
+        provider_value = provider.value if isinstance(provider, AuthProvider) else provider
+
+        async def _upsert_user(  # noqa: PLR0913
+            session: AsyncSession,
+            provider_name: str,
+            external_user_id: str,
+            user_email: str,
+            user_username: str | None,
+            user_display_name: str | None,
+            user_role: UserRole,
+            external_data: dict[str, Any] | None,
+        ) -> User | None:
+            try:
+                now = datetime.now(UTC)
+                provider_result = await session.execute(
+                    select(UserAuthProvider).where(
+                        and_(
+                            UserAuthProvider.provider == provider_name,
+                            UserAuthProvider.provider_user_id == external_user_id,
+                        )
+                    )
+                )
+                auth_provider = provider_result.scalar_one_or_none()
+
+                if auth_provider:
+                    user = await session.get(User, auth_provider.user_id)
+                    if not user:
+                        return None
+                else:
+                    user_result = await session.execute(
+                        select(User).where(User.email == user_email)
+                    )
+                    user = user_result.scalar_one_or_none()
+                    if not user:
+                        user = User(
+                            id=str(uuid4()),
+                            email=user_email,
+                            username=user_username,
+                            display_name=user_display_name,
+                            is_admin=user_role == UserRole.ADMIN,
+                            role=user_role,
+                            preferences=None,
+                        )
+                        session.add(user)
+                        await session.flush()
+
+                    auth_provider = UserAuthProvider(
+                        id=str(uuid4()),
+                        user_id=user.id,
+                        provider=AuthProvider(provider_name),
+                        provider_user_id=external_user_id,
+                        is_verified=True,
+                        is_primary=False,
+                    )
+                    session.add(auth_provider)
+
+                user.email = user_email
+                user.username = user_username
+                user.display_name = user_display_name
+                user.role = user_role
+                user.is_admin = user_role == UserRole.ADMIN
+                user.last_login_at = now
+                auth_provider.provider_username = user_username
+                auth_provider.provider_email = user_email
+                auth_provider.provider_data = external_data
+                auth_provider.is_verified = True
+                auth_provider.last_used_at = now
+
+                await session.commit()
+                await session.refresh(user)
+                return user
+            except IntegrityError as e:
+                await session.rollback()
+                self.logger.error(
+                    "Federated provider binding conflict for %s:%s: %s",
+                    provider_name,
+                    external_user_id,
+                    e,
+                )
+                return None
+            except Exception as e:
+                await session.rollback()
+                self.logger.error(
+                    "Failed to upsert federated user for %s:%s: %s",
+                    provider_name,
+                    external_user_id,
+                    e,
+                )
+                return None
+
+        return await self._execute_with_session(
+            _upsert_user,
+            provider_value,
+            provider_user_id,
+            email,
+            username,
+            display_name,
+            role,
+            provider_data,
         )
 
     # User Session Operations

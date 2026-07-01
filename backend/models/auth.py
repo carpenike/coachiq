@@ -13,7 +13,7 @@ The OEM Firefly MIRA panel owns the actual vehicle safety case. See
 from datetime import UTC, datetime
 from enum import Enum
 
-from sqlalchemy import JSON, Boolean, DateTime, ForeignKey, Integer, String, Text
+from sqlalchemy import JSON, Boolean, DateTime, ForeignKey, Integer, String, Text, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from backend.models.database import Base
@@ -42,7 +42,9 @@ class AuthProvider(str, Enum):
     GITHUB = "github"
     GOOGLE = "google"
     MICROSOFT = "microsoft"
-    PASSWORD = "password"
+    POCKETID = "pocketid"
+    OIDC = "oidc"
+    PASSWORD = "password"  # noqa: S105
 
 
 class User(Base):
@@ -105,6 +107,9 @@ class UserAuthProvider(Base):
     """Links users to their authentication providers (OAuth, magic link, etc.)."""
 
     __tablename__ = "user_auth_providers"
+    __table_args__ = (
+        UniqueConstraint("provider", "provider_user_id", name="uq_user_auth_provider_identity"),
+    )
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True)
     user_id: Mapped[str] = mapped_column(
