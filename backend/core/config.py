@@ -1749,6 +1749,31 @@ class APIDomainSettings(BaseSettings):
             raise ValueError(msg)
         return v.lower() if isinstance(v, str) else v
 
+class McpSettings(BaseSettings):
+    """MCP OAuth Authorization Server configuration."""
+
+    model_config = SettingsConfigDict(env_prefix="COACHIQ_MCP__", case_sensitive=False)
+
+    as_enabled: bool = Field(default=False, description="Enable embedded MCP OAuth AS")
+    path: str = Field(default="/api/mcp", description="MCP resource path")
+    access_token_ttl_days: int = Field(
+        default=90,
+        description="MCP OAuth opaque access token TTL in days",
+        ge=1,
+        le=365,
+    )
+
+    @field_validator("path", mode="before")
+    @classmethod
+    def parse_path(cls, value):
+        """Normalize blank MCP path values to the default."""
+        if value is None:
+            return "/api/mcp"
+        if isinstance(value, str):
+            stripped = value.strip()
+            return stripped or "/api/mcp"
+        return value
+
 
 class Settings(BaseSettings):
     """
@@ -1823,6 +1848,7 @@ class Settings(BaseSettings):
     features: FeaturesSettings = Field(default_factory=FeaturesSettings)
     notifications: NotificationSettings = Field(default_factory=NotificationSettings)
     auth: AuthenticationSettings = Field(default_factory=AuthenticationSettings)
+    mcp: McpSettings = Field(default_factory=McpSettings)
     api_domains: APIDomainSettings = Field(default_factory=APIDomainSettings)
 
     def __init__(self, **data):
@@ -1935,16 +1961,27 @@ class Settings(BaseSettings):
     @model_validator(mode="after")
     def validate_non_development_security_secret(self) -> "Settings":
         """Validate cross-section security settings."""
-        if self.auth.oidc_enabled:
+        if self.auth.oidc_enabled or self.mcp.as_enabled:
             parsed_origin = urlparse(self.server.public_origin)
             if not parsed_origin.scheme or not parsed_origin.netloc or parsed_origin.path:
                 msg = (
                     "COACHIQ_SERVER__PUBLIC_ORIGIN must be an absolute origin without a path "
-                    "when OIDC is enabled"
+                    "when OIDC or MCP AS is enabled"
                 )
                 raise ValueError(msg)
             if self.server.public_origin.endswith("/"):
                 msg = "COACHIQ_SERVER__PUBLIC_ORIGIN must not have a trailing slash"
+                raise ValueError(msg)
+
+        if self.mcp.as_enabled:
+            if not self.mcp.path.startswith("/"):
+                msg = "COACHIQ_MCP__PATH must be an absolute path"
+                raise ValueError(msg)
+            if self.mcp.path == "/":
+                msg = "COACHIQ_MCP__PATH must not be the root path"
+                raise ValueError(msg)
+            if self.mcp.path.endswith("/"):
+                msg = "COACHIQ_MCP__PATH must not have a trailing slash"
                 raise ValueError(msg)
 
         if self.is_development() or self.is_testing():
