@@ -6,6 +6,7 @@
  */
 
 import {
+  completeOidcLogin as apiCompleteOidcLogin,
   login as apiLogin,
   logout as apiLogout,
   getAdminCredentials,
@@ -42,6 +43,7 @@ interface AuthContextType {
 
   // Authentication actions
   login: (credentials: LoginCredentials) => Promise<LoginResponse>;
+  completeOidcLogin: (sessionCode: string) => Promise<LoginResponse>;
   logout: () => Promise<void>;
   sendMagicLink: (request: MagicLinkRequest) => Promise<void>;
 
@@ -147,6 +149,25 @@ export function AuthProvider({ children }: AuthProviderProps) {
     },
   });
 
+  const oidcLoginMutation = useMutation({
+    mutationFn: (sessionCode: string) => apiCompleteOidcLogin(sessionCode),
+    onSuccess: (data) => {
+      tokenStorage.storeTokens({
+        access_token: data.access_token,
+        refresh_token: data.refresh_token,
+        expires_in: data.expires_in,
+        refresh_expires_in: data.refresh_expires_in,
+      });
+      void queryClient.invalidateQueries({ queryKey: queryKeys.auth.all });
+    },
+    onError: (error) => {
+      console.error('PocketID login failed:', error);
+      tokenStorage.clearTokens().catch((clearError: unknown) => {
+        console.error('Failed to clear tokens after PocketID login failure:', clearError);
+      });
+    },
+  });
+
   // Logout mutation
   const logoutMutation = useMutation({
     mutationFn: apiLogout,
@@ -177,6 +198,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
 
   // Destructure mutation functions for stable references
   const { mutateAsync: loginMutateAsync, error: loginError } = loginMutation;
+  const { mutateAsync: oidcLoginMutateAsync } = oidcLoginMutation;
   const { mutateAsync: logoutMutateAsync } = logoutMutation;
   const { mutateAsync: magicLinkMutateAsync } = magicLinkMutation;
 
@@ -231,6 +253,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
 
     // Authentication actions
     login: loginMutateAsync,
+    completeOidcLogin: oidcLoginMutateAsync,
     logout: async () => {
       await logoutMutateAsync();
     },
@@ -252,6 +275,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
     isLoading,
     isAuthenticated,
     loginMutateAsync,
+    oidcLoginMutateAsync,
     loginError,
     logoutMutateAsync,
     magicLinkMutateAsync,

@@ -1,5 +1,5 @@
-import { IconLoader2, IconMail, IconShield, IconUser } from "@tabler/icons-react"
-import { useState } from "react"
+import { IconFingerprint, IconLoader2, IconMail, IconShield, IconUser } from "@tabler/icons-react"
+import { useEffect, useState } from "react"
 
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { Button } from "@/components/ui/button"
@@ -36,6 +36,13 @@ export function LoginForm({
   const [error, setError] = useState<string | null>(null)
   const [magicLinkSent, setMagicLinkSent] = useState(false)
   const [loginMode, setLoginMode] = useState<"password" | "magic">("password")
+
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search)
+    if (params.get("oidc_error") || params.get("reason")) {
+      setError("SSO unavailable. Use local login.")
+    }
+  }, [])
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const { name, value } = e.target
@@ -107,6 +114,10 @@ export function LoginForm({
     }
   }
 
+  const handlePocketIdLogin = () => {
+    window.location.assign("/api/v1/auth/oidc/login")
+  }
+
   // Show loading state while auth status is being determined
   if (isLoading || !authStatus) {
     return (
@@ -126,7 +137,19 @@ export function LoginForm({
   // Handle different authentication modes
   const isPasswordMode = authStatus.mode === "single" && authStatus.jwt_available
   const isMagicLinkMode = authStatus.mode === "multi" && authStatus.magic_links_enabled
+  const isOidcMode = authStatus.oidc_enabled
+  const hasLocalLoginMode = isPasswordMode || isMagicLinkMode
   const isNoAuthMode = authStatus.mode === "none"
+  let authDescription = "Enter your email for a magic link"
+  if (isOidcMode) {
+    authDescription = hasLocalLoginMode
+      ? "Choose your preferred sign-in method"
+      : "Use PocketID to sign in"
+  } else if (isPasswordMode && isMagicLinkMode) {
+    authDescription = "Choose your preferred sign-in method"
+  } else if (isPasswordMode) {
+    authDescription = "Enter your username and password"
+  }
 
   if (isNoAuthMode) {
     return (
@@ -163,11 +186,7 @@ export function LoginForm({
             Sign in to CoachIQ
           </CardTitle>
           <CardDescription>
-            {isPasswordMode && isMagicLinkMode
-              ? "Choose your preferred sign-in method"
-              : isPasswordMode
-              ? "Enter your username and password"
-              : "Enter your email for a magic link"}
+            {authDescription}
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -198,6 +217,21 @@ export function LoginForm({
             </div>
           ) : (
             <div className="space-y-4">
+              {isOidcMode && (
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={handlePocketIdLogin}
+                  className="w-full"
+                  disabled={isSubmitting || isSendingMagicLink}
+                >
+                  <IconFingerprint className="mr-2 h-4 w-4" />
+                  Sign in with PocketID
+                </Button>
+              )}
+
+              {isOidcMode && hasLocalLoginMode && <Separator />}
+
               {/* Mode toggle buttons if both modes are available */}
               {isPasswordMode && isMagicLinkMode && (
                 <div className="flex gap-2 p-1 bg-muted rounded-md">

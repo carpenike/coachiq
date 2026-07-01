@@ -18,6 +18,7 @@ import Lights from "@/pages/lights";
 import LoginPage from "@/pages/login";
 import LogsPage from "@/pages/logs";
 import NetworkMap from "@/pages/network-map";
+import OidcCallbackPage from "@/pages/oidc-callback";
 import PerformancePage from "@/pages/performance";
 import ProfilePage from "@/pages/profile";
 import AdminSettingsPage from "@/pages/admin-settings";
@@ -59,6 +60,7 @@ createRoot(document.getElementById("root")!).render(
             <Routes>
               {/* Public routes */}
               <Route path="/login" element={<LoginPage />} />
+              <Route path="/auth/oidc/callback" element={<OidcCallbackPage />} />
 
               {/* Protected routes */}
               <Route path="/" element={<Navigate to="/dashboard" replace />} />

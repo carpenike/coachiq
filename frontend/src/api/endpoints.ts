@@ -1450,6 +1450,21 @@ export async function login(username: string, password: string): Promise<LoginRe
 }
 
 /**
+ * Complete PocketID OIDC local session handoff.
+ *
+ * @param sessionCode - One-time session handoff code from the backend callback
+ * @returns Promise resolving to local CoachIQ tokens
+ */
+export async function completeOidcLogin(sessionCode: string): Promise<LoginResponse> {
+  const url = `/api/v1/auth/oidc/callback?session_code=${encodeURIComponent(sessionCode)}`;
+
+  logApiRequest('GET', url);
+  const result = await apiGet<LoginResponse>(url);
+  logApiResponse(url, { ...result, refresh_token: '[REDACTED]', access_token: '[REDACTED]' });
+  return result;
+}
+
+/**
  * Refresh access token using refresh token
  *
  * @param refreshToken - Valid refresh token
