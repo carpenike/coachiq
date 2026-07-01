@@ -2,7 +2,8 @@
 
 from typing import Annotated, Any
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
+from fastapi import APIRouter, Depends, Form, HTTPException, Query, Request, status
+from fastapi.security.utils import get_authorization_scheme_param
 from fastapi.responses import JSONResponse, RedirectResponse, Response
 from pydantic import BaseModel, Field
 
@@ -18,7 +19,7 @@ from backend.services.auth.mcp_contract import (
     MCP_DCR_REDIRECT_URI_PREFIXES,
 )
 from backend.services.auth.mcp_oauth_repository import McpOAuthRepository
-from backend.services.auth.mcp_oauth_service import create_upstream_login_state
+from backend.services.auth.mcp_oauth_service import create_upstream_login_state, verify_pkce_s256
 from backend.services.auth.mcp_oauth_security import McpOAuthRateLimiter, audit_mcp_oauth_event
 from backend.services.auth.oidc import OIDCError, OIDCValidationError
 from backend.services.auth.service import AuthService
@@ -26,6 +27,7 @@ from backend.services.auth.service import AuthService
 router = APIRouter(tags=["MCP OAuth"])
 _dcr_rate_limiter = McpOAuthRateLimiter(limit=10, window_seconds=3600)
 _authorize_rate_limiter = McpOAuthRateLimiter(limit=30, window_seconds=3600)
+_token_rate_limiter = McpOAuthRateLimiter(limit=60, window_seconds=3600)
 
 
 class ClientRegistrationRequest(BaseModel):
@@ -41,6 +43,15 @@ class ClientRegistrationResponse(BaseModel):
     client_secret: str
     client_secret_expires_at: int = 0
     redirect_uris: list[str]
+
+
+class TokenResponse(BaseModel):
+    """OAuth token endpoint response for opaque-no-refresh profile."""
+
+    access_token: str
+    token_type: str = "Bearer"  # noqa: S105
+    expires_in: int
+    scope: str
 
 
 def get_mcp_oauth_repository() -> McpOAuthRepository:
@@ -177,6 +188,102 @@ def oauth_error_response(
         content={"error": error, "error_description": error_description},
         headers={"Cache-Control": "no-store"},
     )
+
+
+@router.post("/oauth/token", response_model=TokenResponse)
+async def issue_oauth_token(  # noqa: PLR0913
+    request: Request,
+    response: Response,
+    repository: Annotated[McpOAuthRepository, Depends(get_mcp_oauth_repository)],
+    grant_type: Annotated[str, Form()],
+    code: Annotated[str | None, Form()] = None,
+    redirect_uri: Annotated[str | None, Form()] = None,
+    client_id: Annotated[str | None, Form()] = None,
+    client_secret: Annotated[str | None, Form()] = None,
+    code_verifier: Annotated[str | None, Form()] = None,
+) -> TokenResponse | JSONResponse:
+    """Exchange a single-use authorization code for an opaque MCP token."""
+    source = request.client.host if request.client else "unknown"
+    if not _token_rate_limiter.allow(source):
+        return oauth_error_response(
+            "temporarily_unavailable",
+            "Token endpoint rate limit exceeded",
+            status.HTTP_429_TOO_MANY_REQUESTS,
+        )
+    if grant_type != "authorization_code":
+        return oauth_error_response(
+            "unsupported_grant_type",
+            "Only authorization_code is supported",
+            status.HTTP_400_BAD_REQUEST,
+        )
+    basic_client_id, basic_secret = _basic_client_credentials(request)
+    effective_client_id = basic_client_id or client_id
+    effective_secret = basic_secret or client_secret
+    if not effective_client_id or not code or not redirect_uri or not code_verifier:
+        return oauth_error_response(
+            "invalid_request",
+            "client_id, code, redirect_uri, and code_verifier are required",
+            status.HTTP_400_BAD_REQUEST,
+        )
+    client = await repository.get_client(effective_client_id)
+    if client is None:
+        return oauth_error_response(
+            "invalid_client", "Invalid client", status.HTTP_401_UNAUTHORIZED
+        )
+    if effective_secret is not None and not repository.verify_client_secret(
+        client, effective_secret
+    ):
+        audit_mcp_oauth_event("invalid_client", client_id=effective_client_id, source=source)
+        return oauth_error_response(
+            "invalid_client", "Invalid client", status.HTTP_401_UNAUTHORIZED
+        )
+
+    auth_code = await repository.consume_authorization_code(code)
+    if (
+        auth_code is None
+        or auth_code.client_id != effective_client_id
+        or auth_code.redirect_uri != redirect_uri
+        or not verify_pkce_s256(code_verifier, auth_code.code_challenge)
+    ):
+        audit_mcp_oauth_event("invalid_grant", client_id=effective_client_id, source=source)
+        return oauth_error_response("invalid_grant", "Invalid authorization code", 400)
+
+    scope = "openid email profile"
+    ttl_days = get_settings().mcp.access_token_ttl_days
+    minted = await repository.mint_access_token(
+        user_id=auth_code.user_id,
+        client_id=effective_client_id,
+        scope=scope,
+        ttl_days=ttl_days,
+    )
+    if minted is None:
+        return oauth_error_response("server_error", "Unable to mint access token", 500)
+    _access_token, token = minted
+    audit_mcp_oauth_event("token_issued", client_id=effective_client_id, source=source)
+    response.headers["Cache-Control"] = "no-store"
+    return TokenResponse(
+        access_token=token,
+        expires_in=ttl_days * 24 * 60 * 60,
+        scope=scope,
+    )
+
+
+def _basic_client_credentials(request: Request) -> tuple[str | None, str | None]:
+    """Parse HTTP Basic client credentials from Authorization header."""
+    authorization = request.headers.get("Authorization")
+    scheme, credentials = get_authorization_scheme_param(authorization)
+    if scheme.lower() != "basic" or not credentials:
+        return None, None
+    try:
+        import base64
+
+        decoded = base64.b64decode(credentials).decode()
+    except Exception:
+        return None, None
+    client_id, separator, secret = decoded.partition(":")
+    if not separator:
+        return None, None
+    return client_id, secret
 
 
 @router.get("/oauth/authorize", response_model=None)

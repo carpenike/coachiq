@@ -2,6 +2,7 @@
 
 import base64
 import hashlib
+import hmac
 import secrets
 from dataclasses import dataclass
 
@@ -31,3 +32,8 @@ def pkce_s256_challenge(verifier: str) -> str:
     """Return BASE64URL(SHA256(verifier)) without padding."""
     digest = hashlib.sha256(verifier.encode()).digest()
     return base64.urlsafe_b64encode(digest).rstrip(b"=").decode()
+
+
+def verify_pkce_s256(verifier: str, expected_challenge: str) -> bool:
+    """Constant-time verification of a PKCE S256 verifier."""
+    return hmac.compare_digest(pkce_s256_challenge(verifier), expected_challenge)
