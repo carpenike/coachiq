@@ -29,6 +29,7 @@ from backend.api.routers import (
     health,
     logs,
     multi_network,
+    mcp_oauth,
     notification_analytics,
     notification_dashboard,
     pattern_analysis,
@@ -75,6 +76,7 @@ def configure_routers(app: FastAPI) -> None:
     app.include_router(health.router)
     app.include_router(logs.router)
     app.include_router(multi_network.router)
+    app.include_router(mcp_oauth.router)
     app.include_router(
         performance_analytics.router, prefix="/api/performance", tags=["performance"]
     )
