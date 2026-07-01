@@ -1974,6 +1974,9 @@ class Settings(BaseSettings):
                 raise ValueError(msg)
 
         if self.mcp.as_enabled:
+            if self.mcp.path != "/api/mcp":
+                msg = "COACHIQ_MCP__PATH must be /api/mcp while the MCP route is mounted literally"
+                raise ValueError(msg)
             if not self.mcp.path.startswith("/"):
                 msg = "COACHIQ_MCP__PATH must be an absolute path"
                 raise ValueError(msg)

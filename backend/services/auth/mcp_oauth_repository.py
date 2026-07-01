@@ -6,7 +6,7 @@ import secrets
 from datetime import UTC, datetime, timedelta
 from uuid import uuid4
 
-from sqlalchemy import select
+from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.models.mcp_oauth import (
@@ -102,17 +102,24 @@ class McpOAuthRepository:
         """Consume AS transaction state exactly once."""
 
         async def _consume(session: AsyncSession) -> McpOAuthTransaction | None:
+            now = datetime.now(UTC)
             result = await session.execute(
-                select(McpOAuthTransaction).where(
-                    McpOAuthTransaction.transaction_state == transaction_state
+                update(McpOAuthTransaction)
+                .where(
+                    McpOAuthTransaction.transaction_state == transaction_state,
+                    McpOAuthTransaction.consumed_at.is_(None),
+                    McpOAuthTransaction.expires_at > now,
                 )
+                .values(consumed_at=now)
+                .returning(McpOAuthTransaction.id)
             )
-            transaction = result.scalar_one_or_none()
-            if not transaction or transaction.consumed_at or _is_expired(transaction.expires_at):
+            transaction_id = result.scalar_one_or_none()
+            if transaction_id is None:
                 return None
-            transaction.consumed_at = datetime.now(UTC)
+            transaction = await session.get(McpOAuthTransaction, transaction_id)
+            if transaction is None:
+                return None
             await session.commit()
-            await session.refresh(transaction)
             return transaction
 
         return await self._execute(_consume)
@@ -152,17 +159,24 @@ class McpOAuthRepository:
         """Consume an authorization code exactly once."""
 
         async def _consume(session: AsyncSession) -> McpOAuthAuthorizationCode | None:
+            now = datetime.now(UTC)
             result = await session.execute(
-                select(McpOAuthAuthorizationCode).where(
-                    McpOAuthAuthorizationCode.code_hash == self.hash_secret(code)
+                update(McpOAuthAuthorizationCode)
+                .where(
+                    McpOAuthAuthorizationCode.code_hash == self.hash_secret(code),
+                    McpOAuthAuthorizationCode.consumed_at.is_(None),
+                    McpOAuthAuthorizationCode.expires_at > now,
                 )
+                .values(consumed_at=now)
+                .returning(McpOAuthAuthorizationCode.id)
             )
-            auth_code = result.scalar_one_or_none()
-            if not auth_code or auth_code.consumed_at or _is_expired(auth_code.expires_at):
+            auth_code_id = result.scalar_one_or_none()
+            if auth_code_id is None:
                 return None
-            auth_code.consumed_at = datetime.now(UTC)
+            auth_code = await session.get(McpOAuthAuthorizationCode, auth_code_id)
+            if auth_code is None:
+                return None
             await session.commit()
-            await session.refresh(auth_code)
             return auth_code
 
         return await self._execute(_consume)

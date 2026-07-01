@@ -1,6 +1,7 @@
 """MCP OAuth AS discovery and protected-resource metadata routes."""
 
 from typing import Annotated, Any
+from urllib.parse import quote
 
 from fastapi import APIRouter, Depends, Form, HTTPException, Query, Request, status
 from fastapi.security.utils import get_authorization_scheme_param
@@ -444,7 +445,7 @@ async def complete_oauth_federation(
 def _redirect_with_code(redirect_uri: str, code: str, state: str | None) -> RedirectResponse:
     """Redirect back to the MCP client with an authorization code."""
     separator = "&" if "?" in redirect_uri else "?"
-    state_part = f"&state={state}" if state else ""
+    state_part = f"&state={quote(state, safe='')}" if state else ""
     return RedirectResponse(
         f"{redirect_uri}{separator}code={code}{state_part}",
         status_code=status.HTTP_302_FOUND,

@@ -2,12 +2,13 @@
 
 from dataclasses import dataclass
 from types import SimpleNamespace
+from urllib.parse import parse_qs, urlparse
 
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 import backend.api.routers.mcp_oauth as mcp_oauth_router
-from backend.api.routers.mcp_oauth import get_mcp_oauth_repository, router
+from backend.api.routers.mcp_oauth import _redirect_with_code, get_mcp_oauth_repository, router
 from backend.core.config import AuthenticationSettings
 from backend.core.dependencies import get_auth_service
 from backend.models.auth import UserRole
@@ -225,6 +226,20 @@ def test_callback_reuses_oidc_client_and_issues_single_use_as_code() -> None:
     assert oidc_client.exchange_state is not None
     assert oidc_client.exchange_state.code_verifier == "as-pocketid-verifier"
     assert oidc_client.exchange_state.code_verifier != "client-challenge"
+
+
+def test_callback_redirect_quotes_client_state_round_trip() -> None:
+    """Client state containing query/fragment characters remains one query value."""
+    response = _redirect_with_code(
+        "https://claude.ai/callback",
+        "as-auth-code",
+        "state with spaces & symbols #1",
+    )
+    location = response.headers["location"]
+    parsed = urlparse(location)
+
+    assert parsed.fragment == ""
+    assert parse_qs(parsed.query)["state"] == ["state with spaces & symbols #1"]
 
 
 def test_callback_transaction_is_single_use() -> None:

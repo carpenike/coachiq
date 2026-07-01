@@ -49,6 +49,16 @@ def test_mcp_path_must_be_non_root_absolute_path_without_trailing_slash(bad_path
         )
 
 
+def test_non_default_mcp_path_fails_loudly_while_route_is_literal() -> None:
+    """Non-default MCP path cannot be advertised until the resource route is dynamic."""
+    with pytest.raises(ValidationError, match="must be /api/mcp"):
+        Settings(
+            testing=True,
+            mcp=McpSettings(as_enabled=True, path="/mcp"),
+            server=ServerSettings(public_origin="https://iq.holtel.io"),
+        )
+
+
 def test_mcp_contract_constants_are_verbatim() -> None:
     """Contract constants preserve load-bearing field values and redirect prefixes."""
     assert MCP_AS_SCOPES_SUPPORTED == ("openid", "email", "profile")
