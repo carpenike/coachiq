@@ -12,7 +12,6 @@ The OEM Firefly MIRA panel owns the actual vehicle safety case. See
 """
 
 import logging
-from typing import Optional
 
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request
@@ -55,6 +54,7 @@ class SecureAuthenticationMiddleware(BaseHTTPMiddleware):
         "/api/auth/logout",
         "/api/v1/auth/oidc/login",
         "/api/v1/auth/oidc/callback",
+        "/api/mcp",
         "/api/schemas",
         "/docs",
         "/redoc",

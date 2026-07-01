@@ -10,8 +10,8 @@ Handles data access for security event management including:
 import logging
 import time
 from collections import defaultdict
-from datetime import UTC, datetime, timedelta
-from typing import Any, Dict, List, Optional, Set
+from datetime import UTC, datetime
+from typing import Any
 
 from backend.repositories.base import MonitoredRepository
 
@@ -54,13 +54,15 @@ class SecurityEventRepository(MonitoredRepository):
 
         # Update indexes
         self._events_by_type[event.event_type].append(index)
-        self._events_by_component[event.component].append(index)
+        self._events_by_component[event.source_component].append(index)
 
         # Trim if necessary (in production, would archive old events)
         if len(self._events) > self._max_events:
             self._trim_old_events()
 
-        logger.debug(f"Stored security event: {event.event_type} from {event.component}")
+        logger.debug(
+            f"Stored security event: {event.event_type} from {event.source_component}"
+        )
         return event.event_id
 
     @MonitoredRepository._monitored_operation("get_recent_events")
@@ -177,7 +179,7 @@ class SecurityEventRepository(MonitoredRepository):
             if hasattr(event, "timestamp") and event.timestamp > cutoff:
                 total_events += 1
                 type_counts[event.event_type] += 1
-                component_counts[event.component] += 1
+                component_counts[event.source_component] += 1
 
         return {
             "total_events": total_events,
@@ -204,7 +206,7 @@ class SecurityEventRepository(MonitoredRepository):
 
         for idx, event in enumerate(self._events):
             self._events_by_type[event.event_type].append(idx)
-            self._events_by_component[event.component].append(idx)
+            self._events_by_component[event.source_component].append(idx)
 
     def _get_oldest_event_age(self) -> float:
         """Get age of oldest event in seconds."""

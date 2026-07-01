@@ -17,9 +17,8 @@ import hmac
 import logging
 import secrets
 import time
-from typing import Any, Optional, Set
 
-from fastapi import HTTPException, Request, Response, status
+from fastapi import Request, Response, status
 from fastapi.responses import JSONResponse
 from starlette.middleware.base import BaseHTTPMiddleware
 
@@ -52,6 +51,7 @@ class CSRFProtectionMiddleware(BaseHTTPMiddleware):
         "/api/auth/magic-link/verify",
         "/api/v1/auth/oidc/login",
         "/api/v1/auth/oidc/callback",
+        "/api/mcp",
         "/docs",
         "/openapi.json",
         "/redoc",

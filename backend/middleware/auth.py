@@ -10,6 +10,7 @@ import logging
 from typing import Annotated, ClassVar
 
 from fastapi import Depends, HTTPException, Request, Response, status
+from fastapi.responses import JSONResponse
 from fastapi.security.utils import get_authorization_scheme_param
 from starlette.middleware.base import BaseHTTPMiddleware
 
@@ -63,6 +64,8 @@ class AuthenticationMiddleware(BaseHTTPMiddleware):
         # PocketID OIDC flow (state/nonce/PKCE validated in the OIDC handler)
         "/api/v1/auth/oidc/login",
         "/api/v1/auth/oidc/callback",
+        # MCP OAuth has its own Bearer-token guard and challenge
+        "/api/mcp",
         # WebSocket endpoints (handled separately)
         "/ws",
     }
@@ -100,8 +103,8 @@ class AuthenticationMiddleware(BaseHTTPMiddleware):
         Returns:
             Response: HTTP response from the route handler
 
-        Raises:
-            HTTPException: If authentication is required but fails
+        Returns a response directly on auth failure because exceptions raised
+        inside BaseHTTPMiddleware.dispatch bypass FastAPI exception handlers.
         """
         # Get auth manager from composition root if not provided during init
         # We need to check this each time because AuthService might not be started initially
@@ -147,9 +150,9 @@ class AuthenticationMiddleware(BaseHTTPMiddleware):
             token = self._extract_token_from_request(request)
 
             if not token:
-                raise HTTPException(
+                return _auth_error_response(
                     status_code=status.HTTP_401_UNAUTHORIZED,
-                    detail="Authentication required",
+                    message="Authentication required",
                     headers={"WWW-Authenticate": "Bearer"},
                 )
 
@@ -169,20 +172,23 @@ class AuthenticationMiddleware(BaseHTTPMiddleware):
 
         except InvalidTokenError as e:
             self.logger.warning(f"Invalid token for {request.url.path}: {e}")
-            raise HTTPException(
+            return _auth_error_response(
                 status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Invalid or expired token",
+                message="Invalid or expired token",
                 headers={"WWW-Authenticate": "Bearer"},
-            ) from e
-        except HTTPException:
-            # Re-raise HTTP exceptions
-            raise
+            )
+        except HTTPException as e:
+            return _auth_error_response(
+                status_code=e.status_code,
+                message=str(e.detail),
+                headers=e.headers,
+            )
         except Exception as e:
             self.logger.error(f"Authentication error for {request.url.path}: {e}")
-            raise HTTPException(
+            return _auth_error_response(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail="Authentication service error",
-            ) from e
+                message="Authentication service error",
+            )
 
         # Continue to the next middleware or route handler
         return await call_next(request)
@@ -223,6 +229,26 @@ class AuthenticationMiddleware(BaseHTTPMiddleware):
             return None
 
         return param
+
+
+def _auth_error_response(
+    *,
+    status_code: int,
+    message: str,
+    headers: dict[str, str] | None = None,
+) -> JSONResponse:
+    """Return an ADR-0005-compatible auth error response from middleware."""
+    return JSONResponse(
+        status_code=status_code,
+        content={
+            "detail": message,
+            "error": {
+                "code": "authentication_error",
+                "message": message,
+            },
+        },
+        headers=headers,
+    )
 
 
 class OptionalAuthenticationMiddleware(AuthenticationMiddleware):

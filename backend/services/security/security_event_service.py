@@ -9,7 +9,7 @@ import logging
 import time
 from collections.abc import Callable
 from datetime import UTC, datetime
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 from backend.core.performance import PerformanceMonitor
 from backend.models.security_events import SecurityEvent, SecurityEventStats
@@ -102,7 +102,7 @@ class SecurityEventService:
 
         logger.debug(
             f"Published security event: type={event.event_type}, "
-            f"component={event.component}, listeners={len(self._listeners)}"
+            f"component={event.source_component}, listeners={len(self._listeners)}"
         )
 
     async def _distribute_event(self, event: SecurityEvent) -> None:
