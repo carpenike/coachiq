@@ -9,7 +9,11 @@ from backend.api.domains.auth import register_auth_domain_router
 from backend.core.config import AuthenticationSettings
 from backend.core.dependencies import get_auth_service
 from backend.models.auth import UserRole
-from backend.services.auth.oidc import OIDCLoginState, OIDCSessionCodeStore
+from backend.services.auth.oidc import (
+    OIDCLoginState,
+    OIDCProviderUnavailableError,
+    OIDCSessionCodeStore,
+)
 
 ID_TOKEN = "id-token"  # noqa: S105
 LOCAL_ACCESS_TOKEN = "local-access-token"  # noqa: S105
@@ -17,6 +21,7 @@ LOCAL_REFRESH_TOKEN = "local-refresh-token"  # noqa: S105
 TEST_ACCESS_TOKEN = "access"  # noqa: S105
 TEST_REFRESH_TOKEN = "refresh"  # noqa: S105
 TOKEN_TYPE_BEARER = "bearer"  # noqa: S105
+EXISTING_SESSION_TOKEN = "existing-session-token"  # noqa: S105
 
 
 @dataclass
@@ -48,6 +53,11 @@ class _AuthManager:
     async def generate_refresh_token(self, **_kwargs) -> str:
         """Return a deterministic refresh token."""
         return LOCAL_REFRESH_TOKEN
+
+    def validate_token(self, token: str) -> dict[str, str]:
+        """Return deterministic claims for an existing local session."""
+        assert token == EXISTING_SESSION_TOKEN
+        return {"sub": "local-user", "role": "admin"}
 
 
 class _AuthRepository:
@@ -86,8 +96,26 @@ class _OIDCClient:
         return UserRole.ADMIN
 
 
+class _UnavailableOIDCClient:
+    """OIDC client facade that simulates a PocketID outage."""
+
+    async def get_authorization_url(self, _login_state):
+        """Raise the same error as an unreachable discovery endpoint."""
+        raise OIDCProviderUnavailableError("PocketID unavailable")
+
+
 class _StateStore:
     """Minimal single-use state store facade."""
+
+    def create(self, redirect_uri: str) -> OIDCLoginState:
+        """Return a deterministic login state for login initiation."""
+        return OIDCLoginState(
+            state="state-value",
+            nonce="nonce-value",
+            code_verifier="verifier",
+            redirect_uri=redirect_uri,
+            expires_at=999999.0,
+        )
 
     def consume(self, state: str) -> OIDCLoginState:
         """Return a deterministic login state."""
@@ -104,7 +132,7 @@ class _StateStore:
 class _AuthService:
     """Minimal AuthService facade for the OIDC domain router."""
 
-    def __init__(self, *, oidc_enabled: bool = True) -> None:
+    def __init__(self, *, oidc_enabled: bool = True, oidc_unavailable: bool = False) -> None:
         """Initialize fake auth service."""
         self.settings = AuthenticationSettings(
             oidc_enabled=oidc_enabled,
@@ -115,6 +143,8 @@ class _AuthService:
             oidc_frontend_callback_path="/auth/oidc/callback",
         )
         self.session_store = OIDCSessionCodeStore(ttl_seconds=60)
+        self.oidc_unavailable = oidc_unavailable
+        self.auth_manager = _AuthManager()
 
     def get_auth_settings(self):
         """Return fake typed auth settings."""
@@ -122,7 +152,11 @@ class _AuthService:
 
     def get_oidc_client(self):
         """Return fake OIDC client when enabled."""
-        return _OIDCClient() if self.settings.oidc_enabled else None
+        if not self.settings.oidc_enabled:
+            return None
+        if self.oidc_unavailable:
+            return _UnavailableOIDCClient()
+        return _OIDCClient()
 
     def get_oidc_state_store(self):
         """Return fake OIDC state store when enabled."""
@@ -134,7 +168,7 @@ class _AuthService:
 
     def get_auth_manager(self):
         """Return fake AuthManager."""
-        return _AuthManager()
+        return self.auth_manager
 
     def get_auth_repository(self):
         """Return fake auth repository."""
@@ -159,6 +193,21 @@ def test_oidc_login_unavailable_redirects_to_local_login() -> None:
     assert response.headers["location"] == (
         "/login?oidc_error=sso_unavailable&reason=sso_unavailable"
     )
+
+
+def test_oidc_unreachable_preserves_existing_local_sessions() -> None:
+    """PocketID outage only blocks fresh SSO and leaves local sessions valid."""
+    auth_service = _AuthService(oidc_unavailable=True)
+    client = _client_for(auth_service)
+
+    response = client.get("/api/v1/auth/oidc/login")
+    existing_session = auth_service.get_auth_manager().validate_token(EXISTING_SESSION_TOKEN)
+
+    assert response.status_code == 307
+    assert response.headers["location"] == (
+        "/login?oidc_error=sso_unavailable&reason=sso_unavailable"
+    )
+    assert existing_session == {"sub": "local-user", "role": "admin"}
 
 
 def test_oidc_session_code_exchange_is_single_use() -> None:
