@@ -123,6 +123,7 @@ async def complete_oidc_login(  # noqa: PLR0911, PLR0913
             username=claims.get("preferred_username"),
             display_name=claims.get("name"),
             role=role,
+            email_verified=claims.get("email_verified") is True,
             provider_data={
                 "groups": groups,
                 "email_verified": claims.get("email_verified"),

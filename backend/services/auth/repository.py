@@ -6,6 +6,7 @@ Provides data access methods for all auth-related operations following
 the established patterns in the CoachIQ codebase.
 """
 
+import hashlib
 import logging
 from datetime import UTC, datetime
 from typing import Any
@@ -30,6 +31,12 @@ from backend.models.auth import (
 from backend.services.database.database_manager import DatabaseManager
 
 logger = logging.getLogger(__name__)
+
+
+def _federated_account_email(provider_name: str, provider_user_id: str) -> str:
+    """Return a stable local-account email surrogate for unverified federated email."""
+    subject_hash = hashlib.sha256(provider_user_id.encode()).hexdigest()[:32]
+    return f"{provider_name}-{subject_hash}@federated.coachiq.local"
 
 
 class AuthRepository:
@@ -441,6 +448,7 @@ class AuthRepository:
         username: str | None = None,
         display_name: str | None = None,
         role: UserRole = UserRole.USER,
+        email_verified: bool = False,
         provider_data: dict[str, Any] | None = None,
     ) -> User | None:
         """Create or update a user bound to a stable federated provider subject."""
@@ -454,6 +462,7 @@ class AuthRepository:
             user_username: str | None,
             user_display_name: str | None,
             user_role: UserRole,
+            user_email_verified: bool,
             external_data: dict[str, Any] | None,
         ) -> User | None:
             try:
@@ -473,15 +482,22 @@ class AuthRepository:
                     if not user:
                         return None
                 else:
-                    user_result = await session.execute(
-                        select(User).where(User.email == user_email)
-                    )
-                    user = user_result.scalar_one_or_none()
+                    user = None
+                    if user_email_verified:
+                        user_result = await session.execute(
+                            select(User).where(User.email == user_email)
+                        )
+                        user = user_result.scalar_one_or_none()
                     if not user:
+                        account_email = (
+                            user_email
+                            if user_email_verified
+                            else _federated_account_email(provider_name, external_user_id)
+                        )
                         user = User(
                             id=str(uuid4()),
-                            email=user_email,
-                            username=user_username,
+                            email=account_email,
+                            username=user_username if user_email_verified else None,
                             display_name=user_display_name,
                             is_admin=user_role == UserRole.ADMIN,
                             role=user_role,
@@ -500,8 +516,9 @@ class AuthRepository:
                     )
                     session.add(auth_provider)
 
-                user.email = user_email
-                user.username = user_username
+                if user_email_verified:
+                    user.email = user_email
+                    user.username = user_username
                 user.display_name = user_display_name
                 user.role = user_role
                 user.is_admin = user_role == UserRole.ADMIN
@@ -542,6 +559,7 @@ class AuthRepository:
             username,
             display_name,
             role,
+            email_verified,
             provider_data,
         )
 
