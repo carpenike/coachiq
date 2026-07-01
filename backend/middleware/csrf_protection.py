@@ -116,6 +116,9 @@ class CSRFProtectionMiddleware(BaseHTTPMiddleware):
         if path.startswith("/docs") or path.startswith("/redoc"):
             return True
 
+        if path.startswith("/.well-known/oauth-") or path.startswith("/oauth/"):
+            return True
+
         # WebSocket connections are exempt (have their own auth)
         if path.startswith("/ws"):
             return True

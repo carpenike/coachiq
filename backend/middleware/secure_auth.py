@@ -48,6 +48,8 @@ class SecureAuthenticationMiddleware(BaseHTTPMiddleware):
 
     # Endpoints that bypass authentication
     PUBLIC_ENDPOINTS = [
+        "/.well-known/oauth-",
+        "/oauth/",
         "/api/auth/login",
         "/api/auth/refresh",
         "/api/auth/logout",

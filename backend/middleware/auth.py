@@ -69,6 +69,8 @@ class AuthenticationMiddleware(BaseHTTPMiddleware):
 
     # Path prefixes that don't require authentication
     EXCLUDED_PREFIXES: ClassVar[set[str]] = {
+        "/.well-known/oauth-",
+        "/oauth/",
         "/static",
         "/assets",
         "/favicon",
