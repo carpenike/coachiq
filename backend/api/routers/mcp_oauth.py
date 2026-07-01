@@ -2,12 +2,13 @@
 
 from typing import Annotated, Any
 
-from fastapi import APIRouter, Depends, HTTPException, Request, status
-from fastapi.responses import JSONResponse, Response
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
+from fastapi.responses import JSONResponse, RedirectResponse, Response
 from pydantic import BaseModel, Field
 
 from backend.core.config import Settings, get_settings
-from backend.core.dependencies import get_composition_root
+from backend.core.dependencies import get_auth_service, get_composition_root
+from backend.models.auth import AuthProvider
 from backend.services.auth.mcp_contract import (
     MCP_AS_CODE_CHALLENGE_METHODS,
     MCP_AS_GRANT_TYPES,
@@ -17,10 +18,14 @@ from backend.services.auth.mcp_contract import (
     MCP_DCR_REDIRECT_URI_PREFIXES,
 )
 from backend.services.auth.mcp_oauth_repository import McpOAuthRepository
+from backend.services.auth.mcp_oauth_service import create_upstream_login_state
 from backend.services.auth.mcp_oauth_security import McpOAuthRateLimiter, audit_mcp_oauth_event
+from backend.services.auth.oidc import OIDCError, OIDCValidationError
+from backend.services.auth.service import AuthService
 
 router = APIRouter(tags=["MCP OAuth"])
 _dcr_rate_limiter = McpOAuthRateLimiter(limit=10, window_seconds=3600)
+_authorize_rate_limiter = McpOAuthRateLimiter(limit=30, window_seconds=3600)
 
 
 class ClientRegistrationRequest(BaseModel):
@@ -42,6 +47,11 @@ def get_mcp_oauth_repository() -> McpOAuthRepository:
     """Return an MCP OAuth repository backed by the composition root database manager."""
     root = get_composition_root()
     return McpOAuthRepository(root.require_service("database_manager"))
+
+
+def _oauth_callback_uri(settings: Settings) -> str:
+    """Return the absolute AS callback URI."""
+    return f"{_origin(settings)}/oauth/callback"
 
 
 def _origin(settings: Settings) -> str:
@@ -167,3 +177,170 @@ def oauth_error_response(
         content={"error": error, "error_description": error_description},
         headers={"Cache-Control": "no-store"},
     )
+
+
+@router.get("/oauth/authorize", response_model=None)
+async def authorize_oauth_client(  # noqa: PLR0913
+    request: Request,
+    repository: Annotated[McpOAuthRepository, Depends(get_mcp_oauth_repository)],
+    auth_service: Annotated[AuthService, Depends(get_auth_service)],
+    client_id: Annotated[str | None, Query()] = None,
+    redirect_uri: Annotated[str | None, Query()] = None,
+    response_type: Annotated[str | None, Query()] = None,
+    scope: Annotated[str | None, Query()] = None,
+    state: Annotated[str | None, Query()] = None,
+    code_challenge: Annotated[str | None, Query()] = None,
+    code_challenge_method: Annotated[str | None, Query()] = None,
+) -> RedirectResponse | JSONResponse:
+    """Validate client authorization request and redirect to PocketID."""
+    source = request.client.host if request.client else "unknown"
+    if not _authorize_rate_limiter.allow(source):
+        return oauth_error_response(
+            "temporarily_unavailable",
+            "Authorization initiation rate limit exceeded",
+            status.HTTP_429_TOO_MANY_REQUESTS,
+        )
+    if response_type != "code":
+        return oauth_error_response(
+            "unsupported_response_type",
+            "Only response_type=code is supported",
+            status.HTTP_400_BAD_REQUEST,
+        )
+    if not client_id or not redirect_uri or not code_challenge:
+        return oauth_error_response(
+            "invalid_request",
+            "client_id, redirect_uri, and code_challenge are required",
+            status.HTTP_400_BAD_REQUEST,
+        )
+    if code_challenge_method != "S256":
+        return oauth_error_response(
+            "invalid_request",
+            "PKCE S256 code_challenge_method is required",
+            status.HTTP_400_BAD_REQUEST,
+        )
+    client = await repository.get_client(client_id)
+    if not client or redirect_uri not in client.redirect_uris:
+        return oauth_error_response(
+            "invalid_request",
+            "Unknown client or redirect_uri",
+            status.HTTP_400_BAD_REQUEST,
+        )
+
+    settings = get_settings()
+    upstream_state = create_upstream_login_state(_oauth_callback_uri(settings))
+    transaction = await repository.create_transaction(
+        client_id=client_id,
+        redirect_uri=redirect_uri,
+        client_state=state,
+        client_code_challenge=code_challenge,
+        client_code_challenge_method=code_challenge_method,
+        upstream_code_verifier=upstream_state.code_verifier,
+        upstream_nonce=upstream_state.nonce,
+        ttl_seconds=300,
+    )
+    if transaction is None:
+        return oauth_error_response("server_error", "Unable to create AS transaction", 500)
+    pocketid_state = type(upstream_state)(
+        state=transaction.transaction_state,
+        nonce=upstream_state.nonce,
+        code_verifier=upstream_state.code_verifier,
+        redirect_uri=upstream_state.redirect_uri,
+        expires_at=upstream_state.expires_at,
+    )
+    oidc_client = auth_service.get_oidc_client()
+    if not oidc_client:
+        return oauth_error_response("temporarily_unavailable", "OIDC client unavailable", 503)
+    authorization_url = await oidc_client.get_authorization_url(pocketid_state)
+    audit_mcp_oauth_event("authorize_started", client_id=client_id, source=source, scope=scope)
+    return RedirectResponse(authorization_url, status_code=status.HTTP_302_FOUND)
+
+
+@router.get("/oauth/callback", response_model=None)
+async def complete_oauth_federation(
+    repository: Annotated[McpOAuthRepository, Depends(get_mcp_oauth_repository)],
+    auth_service: Annotated[AuthService, Depends(get_auth_service)],
+    code: Annotated[str | None, Query()] = None,
+    state: Annotated[str | None, Query()] = None,
+    iss: Annotated[str | None, Query()] = None,
+) -> RedirectResponse | JSONResponse:
+    """Complete the AS-to-PocketID leg and issue a client authorization code."""
+    if not code or not state or not iss:
+        return oauth_error_response("invalid_request", "code, state, and iss are required", 400)
+    settings = get_settings()
+    if iss.rstrip("/") != auth_service.get_auth_settings().oidc_issuer.rstrip("/"):
+        return oauth_error_response("invalid_request", "Issuer mismatch", 400)
+    transaction = await repository.consume_transaction(state)
+    if transaction is None:
+        return oauth_error_response("invalid_request", "Invalid or expired transaction", 400)
+
+    oidc_client = auth_service.get_oidc_client()
+    auth_repository = auth_service.get_auth_repository()
+    if not oidc_client or not auth_repository:
+        return oauth_error_response("temporarily_unavailable", "OIDC client unavailable", 503)
+    try:
+        login_state = type(create_upstream_login_state(_oauth_callback_uri(settings)))(
+            state=state,
+            nonce=transaction.upstream_nonce,
+            code_verifier=transaction.upstream_code_verifier,
+            redirect_uri=_oauth_callback_uri(settings),
+            expires_at=0.0,
+        )
+        token_response = await oidc_client.exchange_code(code, login_state)
+        claims = await oidc_client.validate_id_token(
+            token_response["id_token"], transaction.upstream_nonce
+        )
+        groups = _claim_groups(claims.get("groups"))
+        role = oidc_client.map_groups_to_role(groups)
+        user = await auth_repository.upsert_federated_user(
+            provider=AuthProvider.POCKETID,
+            provider_user_id=str(claims["sub"]),
+            email=_required_claim(claims, "email"),
+            username=claims.get("preferred_username"),
+            display_name=claims.get("name"),
+            role=role,
+            email_verified=claims.get("email_verified") is True,
+            provider_data={"groups": groups, "email_verified": claims.get("email_verified")},
+        )
+        if user is None:
+            raise OIDCValidationError("Unable to bind PocketID user")
+        auth_code = await repository.create_authorization_code(
+            user_id=user.id,
+            client_id=transaction.client_id,
+            redirect_uri=transaction.redirect_uri,
+            code_challenge=transaction.client_code_challenge,
+            code_challenge_method=transaction.client_code_challenge_method,
+            ttl_seconds=300,
+        )
+        if auth_code is None:
+            return oauth_error_response("server_error", "Unable to create authorization code", 500)
+        audit_mcp_oauth_event("authorization_code_issued", client_id=transaction.client_id)
+        return _redirect_with_code(transaction.redirect_uri, auth_code, transaction.client_state)
+    except OIDCError as exc:
+        return oauth_error_response("temporarily_unavailable", str(exc), 503)
+
+
+def _redirect_with_code(redirect_uri: str, code: str, state: str | None) -> RedirectResponse:
+    """Redirect back to the MCP client with an authorization code."""
+    separator = "&" if "?" in redirect_uri else "?"
+    state_part = f"&state={state}" if state else ""
+    return RedirectResponse(
+        f"{redirect_uri}{separator}code={code}{state_part}",
+        status_code=status.HTTP_302_FOUND,
+    )
+
+
+def _claim_groups(value: Any) -> list[str]:
+    """Normalize group claims to a list of strings."""
+    if isinstance(value, list):
+        return [str(group) for group in value]
+    if isinstance(value, str):
+        return [value]
+    return []
+
+
+def _required_claim(claims: dict[str, Any], claim_name: str) -> str:
+    """Return a required non-empty string claim."""
+    claim_value = claims.get(claim_name)
+    if not claim_value:
+        raise OIDCValidationError(f"Missing required claim: {claim_name}")
+    return str(claim_value)
