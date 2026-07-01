@@ -17,7 +17,16 @@ from backend.services.rvc.rvc_config_facade import RVCConfigFacade
 def test_composition_root_has_no_registry_bridge_tokens() -> None:
     """Permanent ratchet: composition root must not regress to registry bridge construction."""
     source = Path("backend/core/composition_root.py").read_text(encoding="utf-8")
-    forbidden_tokens = ["inspect.signature", "definition.init_func", "_service_definitions"]
+    forbidden_tokens = [
+        "inspect.signature",
+        "definition.init_func",
+        "_service_definitions",
+        "compat_registry",
+        "startup_all",
+        "shutdown_all",
+        "configure_services",
+        "ServiceRegistry",
+    ]
     assert not any(token in source for token in forbidden_tokens)
 
 
