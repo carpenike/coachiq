@@ -45,7 +45,7 @@ langchain-community = ">=0.3"
 apprise           = ">=1.8.0"
 jinja2            = ">=3.1.0"
 # Authentication system dependencies
-pyjwt             = ">=2.8.0"
+pyjwt             = {version = ">=2.8.0", extras = ["crypto"]}
 passlib           = { version = ">=1.7.4", extras = ["bcrypt"] }
 python-multipart  = ">=0.0.9"
 # CAN utilities dependencies

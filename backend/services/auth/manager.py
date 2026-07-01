@@ -226,6 +226,7 @@ class AuthManager:
         # Check for multi-user indicators
         if (
             self.settings.enable_oauth
+            or self.settings.oidc_enabled
             or self.settings.enable_magic_links
             or self.settings.admin_email
         ):

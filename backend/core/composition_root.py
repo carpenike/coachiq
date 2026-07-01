@@ -146,6 +146,9 @@ class CompositionServices:
     pin_manager: Any = None
     security_audit_service: Any = None
     auth_manager: Any = None
+    oidc_client: Any = None
+    oidc_state_store: Any = None
+    oidc_session_code_store: Any = None
     security_event_manager: Any = None
     command_guardrail_service: Any = None
     can_anomaly_detector: Any = None
@@ -227,6 +230,9 @@ class CompositionRoot:
         "lockout_service",
         "pin_manager",
         "security_audit_service",
+        "oidc_client",
+        "oidc_state_store",
+        "oidc_session_code_store",
         "auth_manager",
         "security_event_manager",
         "command_guardrail_service",
@@ -739,6 +745,7 @@ class CompositionRoot:
         from backend.services.auth.attempt_tracker_service import AttemptTrackerService
         from backend.services.auth.lockout import LockoutService
         from backend.services.auth.mfa import MfaService
+        from backend.services.auth.oidc import OIDCClient, OIDCSessionCodeStore, OIDCStateStore
         from backend.services.auth.pin_manager import PINConfig, PINManager
         from backend.services.auth.service import AuthService
         from backend.services.auth.sessions import SessionService
@@ -834,6 +841,21 @@ class CompositionRoot:
                 ),
             )
 
+        auth_settings = self.require_service("app_settings").auth
+        if self._should_construct("oidc_client"):
+            self._set_root_constructed_service("oidc_client", OIDCClient(auth_settings))
+
+        if self._should_construct("oidc_state_store"):
+            self._set_root_constructed_service(
+                "oidc_state_store", OIDCStateStore(auth_settings.oidc_state_ttl_seconds)
+            )
+
+        if self._should_construct("oidc_session_code_store"):
+            self._set_root_constructed_service(
+                "oidc_session_code_store",
+                OIDCSessionCodeStore(auth_settings.oidc_session_code_ttl_seconds),
+            )
+
         if self._should_construct("auth_manager"):
             from backend.services.auth.repository import AuthRepository
 
@@ -849,7 +871,10 @@ class CompositionRoot:
                 session_service=self.require_service("session_service"),
                 mfa_service=self.require_service("mfa_service"),
                 lockout_service=self.require_service("lockout_service"),
-                auth_settings=self.require_service("app_settings").auth,
+                auth_settings=auth_settings,
+                oidc_client=self.require_service("oidc_client"),
+                oidc_state_store=self.require_service("oidc_state_store"),
+                oidc_session_code_store=self.require_service("oidc_session_code_store"),
             )
             await auth_service.start()
             self._set_root_constructed_service("auth_manager", auth_service)

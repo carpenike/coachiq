@@ -18,6 +18,7 @@ from backend.repositories.auth_repository import (
 from backend.services.auth.lockout import LockoutService
 from backend.services.auth.manager import AuthManager
 from backend.services.auth.mfa import MfaService
+from backend.services.auth.oidc import OIDCClient, OIDCSessionCodeStore, OIDCStateStore
 from backend.services.auth.sessions import SessionService
 from backend.services.auth.tokens import TokenService
 
@@ -46,6 +47,9 @@ class AuthService:
         session_service: SessionService | None = None,
         mfa_service: MfaService | None = None,
         lockout_service: LockoutService | None = None,
+        oidc_client: OIDCClient | None = None,
+        oidc_state_store: OIDCStateStore | None = None,
+        oidc_session_code_store: OIDCSessionCodeStore | None = None,
     ):
         """
         Initialize the authentication service with repository dependencies and sub-services.
@@ -63,6 +67,9 @@ class AuthService:
             session_service: Injected SessionService instance
             mfa_service: Optional injected MfaService instance
             lockout_service: Injected LockoutService instance
+            oidc_client: Optional PocketID OIDC client
+            oidc_state_store: Optional OIDC state store
+            oidc_session_code_store: Optional OIDC session handoff store
         """
         self._credential_repository = credential_repository
         self._session_repository = session_repository
@@ -77,6 +84,9 @@ class AuthService:
         self._session_service = session_service
         self._mfa_service = mfa_service
         self._lockout_service = lockout_service
+        self._oidc_client = oidc_client
+        self._oidc_state_store = oidc_state_store
+        self._oidc_session_code_store = oidc_session_code_store
         self._auth_settings = auth_settings
 
         self._running = False
@@ -145,6 +155,9 @@ class AuthService:
             except Exception as e:
                 logger.error("Error shutting down auth manager: %s", e)
 
+        if self._oidc_client:
+            await self._oidc_client.close()
+
         self._running = False
         logger.info("Authentication service stopped")
 
@@ -195,6 +208,18 @@ class AuthService:
             The AuthManager instance or None if not initialized
         """
         return self._auth_manager
+
+    def get_oidc_client(self) -> OIDCClient | None:
+        """Get the configured OIDC client, if available."""
+        return self._oidc_client
+
+    def get_oidc_state_store(self) -> OIDCStateStore | None:
+        """Get the configured OIDC state store, if available."""
+        return self._oidc_state_store
+
+    def get_oidc_session_code_store(self) -> OIDCSessionCodeStore | None:
+        """Get the configured OIDC session handoff store, if available."""
+        return self._oidc_session_code_store
 
     async def get_service_info(self) -> dict[str, Any]:
         """

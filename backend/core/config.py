@@ -21,10 +21,12 @@ The OEM Firefly MIRA panel owns the actual vehicle safety case. See
 `docs/adr/ADR-0004-coachiq-is-not-the-safety-system.md`.
 """
 
+import json
 from functools import lru_cache
 from importlib import resources
 from pathlib import Path
 from typing import Any
+from urllib.parse import urlparse
 
 from pydantic import Field, SecretStr, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -99,6 +101,10 @@ class ServerSettings(BaseSettings):
     access_log: bool = Field(default=True, description="Enable access logging")
     debug: bool = Field(default=False, description="Enable server debug mode")
     root_path: str = Field(default="", description="Root path for the application")
+    public_origin: str = Field(
+        default="",
+        description="Externally reachable origin for redirect URI generation",
+    )
 
     @field_validator("root_path", mode="before")
     @classmethod
@@ -903,6 +909,47 @@ class AuthenticationSettings(BaseSettings):
     enable_magic_links: bool = Field(default=True, description="Enable magic link authentication")
     enable_oauth: bool = Field(default=False, description="Enable OAuth authentication")
 
+    # PocketID OIDC settings
+    oidc_enabled: bool = Field(default=False, description="Enable PocketID OIDC login")
+    oidc_issuer: str = Field(default="https://id.holthome.net", description="PocketID issuer")
+    oidc_client_id: str = Field(default="", description="PocketID OIDC client ID")
+    oidc_client_secret: str = Field(default="", description="PocketID OIDC client secret")
+    oidc_client_secret_file: Path | None = Field(
+        default=None,
+        description="Path to a file containing the PocketID OIDC client secret",
+    )
+    oidc_scopes: list[str] = Field(
+        default_factory=lambda: ["openid", "profile", "email", "groups"],
+        description="OIDC scopes requested from PocketID",
+    )
+    oidc_group_role_map: dict[str, str] = Field(
+        default_factory=dict,
+        description="Mapping of PocketID group names to CoachIQ roles",
+    )
+    oidc_discovery_ttl_seconds: int = Field(
+        default=300, description="OIDC discovery cache TTL in seconds", ge=30
+    )
+    oidc_jwks_ttl_seconds: int = Field(
+        default=300, description="OIDC JWKS cache TTL in seconds", ge=30
+    )
+    oidc_request_timeout_seconds: float = Field(
+        default=3.0, description="OIDC HTTP request timeout in seconds", gt=0, le=30
+    )
+    oidc_state_ttl_seconds: int = Field(
+        default=300, description="OIDC login state TTL in seconds", ge=60
+    )
+    oidc_session_code_ttl_seconds: int = Field(
+        default=60, description="OIDC local session handoff code TTL in seconds", ge=15
+    )
+    oidc_frontend_callback_path: str = Field(
+        default="/auth/oidc/callback",
+        description="Frontend route that completes OIDC local token handoff",
+    )
+    oidc_failure_redirect_path: str = Field(
+        default="/login?oidc_error=sso_unavailable",
+        description="Frontend route for graceful OIDC failure redirects",
+    )
+
     # OAuth provider settings
     oauth_github_client_id: str = Field(default="", description="GitHub OAuth client ID")
     oauth_github_client_secret: str = Field(default="", description="GitHub OAuth client secret")
@@ -969,6 +1016,11 @@ class AuthenticationSettings(BaseSettings):
         if not self.secret_key and self.secret_key_file:
             self.secret_key = read_secret_file(self.secret_key_file).get_secret_value()
 
+        if not self.oidc_client_secret and self.oidc_client_secret_file:
+            self.oidc_client_secret = read_secret_file(
+                self.oidc_client_secret_file
+            ).get_secret_value()
+
         if self.enabled and not self.secret_key:
             msg = (
                 "JWT secret key is required when authentication is enabled. "
@@ -981,13 +1033,50 @@ class AuthenticationSettings(BaseSettings):
         if self.enabled and self.enable_refresh_tokens and not self.refresh_token_secret:
             self.refresh_token_secret = self.secret_key
 
+        if self.oidc_enabled:
+            if not self.oidc_client_id:
+                msg = "OIDC client ID is required when OIDC is enabled"
+                raise ValueError(msg)
+            if not self.oidc_client_secret:
+                msg = "OIDC client secret is required when OIDC is enabled"
+                raise ValueError(msg)
+            valid_roles = {"admin", "user", "readonly"}
+            invalid_roles = set(self.oidc_group_role_map.values()) - valid_roles
+            if invalid_roles:
+                msg = f"OIDC group role map contains invalid roles: {sorted(invalid_roles)}"
+                raise ValueError(msg)
+
         return self
 
-    @field_validator("secret_key_file", mode="before")
+    @field_validator("secret_key_file", "oidc_client_secret_file", mode="before")
     @classmethod
     def parse_secret_key_file(cls, v):
-        """Parse optional JWT secret key file path from environment variables."""
+        """Parse optional secret file paths from environment variables."""
         return parse_optional_path(v)
+
+    @field_validator("oidc_scopes", mode="before")
+    @classmethod
+    def parse_oidc_scopes(cls, value):
+        """Parse OIDC scopes from comma- or space-separated text."""
+        if isinstance(value, str):
+            normalized = value.replace(",", " ")
+            return [scope.strip() for scope in normalized.split() if scope.strip()]
+        return value
+
+    @field_validator("oidc_group_role_map", mode="before")
+    @classmethod
+    def parse_oidc_group_role_map(cls, value):
+        """Parse OIDC group role map from JSON text."""
+        if isinstance(value, str):
+            stripped = value.strip()
+            if not stripped:
+                return {}
+            parsed = json.loads(stripped)
+            if not isinstance(parsed, dict):
+                msg = "OIDC group role map must be a JSON object"
+                raise ValueError(msg)
+            return parsed
+        return value
 
     require_mfa_for_admin: bool = Field(default=False, description="Require MFA for admin users")
     allow_mfa_bypass: bool = Field(default=True, description="Allow MFA bypass during grace period")
@@ -1856,7 +1945,19 @@ class Settings(BaseSettings):
 
     @model_validator(mode="after")
     def validate_non_development_security_secret(self) -> "Settings":
-        """Require a real security secret outside development and testing."""
+        """Validate cross-section security settings."""
+        if self.auth.oidc_enabled:
+            parsed_origin = urlparse(self.server.public_origin)
+            if not parsed_origin.scheme or not parsed_origin.netloc or parsed_origin.path:
+                msg = (
+                    "COACHIQ_SERVER__PUBLIC_ORIGIN must be an absolute origin without a path "
+                    "when OIDC is enabled"
+                )
+                raise ValueError(msg)
+            if self.server.public_origin.endswith("/"):
+                msg = "COACHIQ_SERVER__PUBLIC_ORIGIN must not have a trailing slash"
+                raise ValueError(msg)
+
         if self.is_development() or self.is_testing():
             return self
 
