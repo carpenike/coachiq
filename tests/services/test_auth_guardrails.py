@@ -28,7 +28,6 @@ def auth_settings(**overrides: object) -> AuthenticationSettings:
         "enabled": True,
         "secret_key": "test-secret-key-that-is-long-enough",
         "enable_magic_links": False,
-        "enable_oauth": False,
         "admin_email": "",
         "admin_username": "",
         "admin_password": "",

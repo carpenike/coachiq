@@ -177,7 +177,6 @@ class AuthenticationPolicy(BaseModel):
 
     # Feature Flags
     enable_magic_links: bool = Field(True, description="Enable magic link authentication")
-    enable_oauth: bool = Field(False, description="Enable OAuth authentication")
     enable_mfa: bool = Field(False, description="Enable multi-factor authentication")
 
 

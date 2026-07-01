@@ -39,9 +39,6 @@ class AuthProvider(str, Enum):
     """Authentication providers."""
 
     MAGIC_LINK = "magic_link"
-    GITHUB = "github"
-    GOOGLE = "google"
-    MICROSOFT = "microsoft"
     POCKETID = "pocketid"
     OIDC = "oidc"
     PASSWORD = "password"  # noqa: S105

@@ -93,25 +93,28 @@ def test_magic_links_require_base_url_in_production() -> None:
     assert "AUTH: base_url is required when magic links are enabled" in errors
 
 
-def test_oauth_requires_complete_provider_config() -> None:
-    """OAuth validation requires complete provider credentials when enabled."""
-    settings = _production_settings(
-        {
-            "enabled": True,
-            "secret_key": AUTH_SECRET,
+def test_oidc_enabled_while_auth_disabled_warns() -> None:
+    """OIDC settings are reported when authentication is disabled."""
+    settings = _settings(
+        environment="production",
+        security={"secret_key": SECURITY_SECRET},
+        server={"public_origin": "https://iq.holtel.io"},
+        auth={
+            "enabled": False,
             "enable_magic_links": False,
-            "enable_oauth": True,
-            "oauth_github_client_id": "github-client",
-        }
+            "oidc_enabled": True,
+            "oidc_client_id": "coachiq-client",
+            "oidc_client_secret": "client-secret",
+            "oidc_group_role_map": {"coachiq-users": "user"},
+        },
     )
 
     validator = SecurityConfigValidator(settings)
 
-    is_valid, errors, _warnings = validator.validate()
+    is_valid, _errors, warnings = validator.validate()
 
-    assert is_valid is False
-    assert "AUTH: OAuth provider github requires both client ID and secret" in errors
-    assert "AUTH: OAuth is enabled but no complete provider is configured" in errors
+    assert is_valid is True
+    assert "AUTH: Authentication is disabled but OIDC is enabled" in warnings
 
 
 def test_session_expiry_uses_current_hour_field() -> None:

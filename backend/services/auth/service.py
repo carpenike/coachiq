@@ -253,7 +253,7 @@ class AuthService:
                     "jwt_expire_minutes": self._auth_settings.jwt_expire_minutes,
                     "magic_link_expire_minutes": self._auth_settings.magic_link_expire_minutes,
                     "enable_magic_links": self._auth_settings.enable_magic_links,
-                    "enable_oauth": self._auth_settings.enable_oauth,
+                    "oidc_enabled": self._auth_settings.oidc_enabled,
                     "enable_mfa": self._auth_settings.enable_mfa,
                 }
             except Exception as e:

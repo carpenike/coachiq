@@ -1524,7 +1524,7 @@ export async function getAuthStatus(): Promise<{
   mode: string;
   jwt_available: boolean;
   magic_links_enabled: boolean;
-  oauth_enabled: boolean;
+  oidc_enabled: boolean;
 }> {
   const url = '/api/auth/status';
 
@@ -1534,7 +1534,7 @@ export async function getAuthStatus(): Promise<{
     mode: string;
     jwt_available: boolean;
     magic_links_enabled: boolean;
-    oauth_enabled: boolean;
+    oidc_enabled: boolean;
   }>(url);
   logApiResponse(url, result);
 

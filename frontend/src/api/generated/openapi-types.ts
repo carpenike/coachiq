@@ -1135,7 +1135,7 @@ export interface paths {
          * @description Get basic health status of the CAN subsystem.
          *
          *     Returns a simple health check suitable for monitoring systems.
-         *     Includes overall health status, safety status, and emergency stop state.
+         *     Includes overall health status, guardrail status, and command-halt state.
          */
         get: operations["get_can_health_api_can_health_get"];
         put?: never;
@@ -1158,7 +1158,7 @@ export interface paths {
          * @description Get comprehensive health status including all subsystems.
          *
          *     Returns detailed health information including:
-         *     - Facade safety status and emergency stop state
+         *     - Facade guardrail status and command-halt state
          *     - Individual service health statuses
          *     - Performance metrics
          *     - Queue depths and resource utilization
@@ -1174,7 +1174,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/can/emergency-stop": {
+    "/api/can/command-halt": {
         parameters: {
             query?: never;
             header?: never;
@@ -1184,18 +1184,18 @@ export interface paths {
         get?: never;
         put?: never;
         /**
-         * Trigger Emergency Stop
-         * @description Trigger an emergency stop across all CAN services.
+         * Halt Command Emission
+         * @description Trigger command halt across CAN command emitters.
          *
-         *     This is a safety-critical operation that will:
+         *     This is a guardrail-critical operation that will:
          *     - Stop all CAN message transmission
          *     - Halt all recording operations
          *     - Disable message injection
-         *     - Put the system in a safe state
+         *     - Put the CAN facade in command-halt state
          *
-         *     The system must be manually reset after an emergency stop.
+         *     The system must be manually cleared after command halt.
          */
-        post: operations["trigger_emergency_stop_api_can_emergency_stop_post"];
+        post: operations["halt_command_emission_api_can_command_halt_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -2729,7 +2729,7 @@ export interface paths {
         };
         /**
          * Comprehensive health check
-         * @description Returns detailed health status including ServiceRegistry information
+         * @description Returns detailed health status including composition-root information
          */
         get: operations["health_check_api_health_get"];
         put?: never;
@@ -2768,8 +2768,8 @@ export interface paths {
             cookie?: never;
         };
         /**
-         * Readiness check with ServiceRegistry
-         * @description Lightweight readiness check based on ServiceRegistry status
+         * Readiness check with composition root
+         * @description Lightweight readiness check based on composition-root status
          */
         get: operations["readiness_check_api_health_ready_get"];
         put?: never;
@@ -2789,7 +2789,7 @@ export interface paths {
         };
         /**
          * Startup metrics and timing
-         * @description Returns detailed startup performance metrics from ServiceRegistry
+         * @description Returns detailed startup performance metrics from the composition root
          */
         get: operations["startup_metrics_api_health_startup_get"];
         put?: never;
@@ -3822,7 +3822,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/safety/status": {
+    "/api/guardrails/status": {
         parameters: {
             query?: never;
             header?: never;
@@ -3830,18 +3830,17 @@ export interface paths {
             cookie?: never;
         };
         /**
-         * Get Safety Status
-         * @description Get comprehensive safety system status.
+         * Get Guardrail Status
+         * @description Get comprehensive guardrail status.
          *
-         *     Returns current state of all safety systems including:
-         *     - Safe state status
-         *     - Emergency stop status
+         *     Returns current state of guardrail checks including:
+         *     - Command halt state
          *     - Watchdog timer status
-         *     - Safety interlock states
-         *     - System state information
+         *     - Command preconditions
+         *     - Operator-supplied state information
          *     - Audit log entry count
          */
-        get: operations["get_safety_status_api_safety_status_get"];
+        get: operations["get_guardrail_status_api_guardrails_status_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -3850,7 +3849,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/safety/update-state": {
+    "/api/guardrails/update-state": {
         parameters: {
             query?: never;
             header?: never;
@@ -3861,19 +3860,19 @@ export interface paths {
         put?: never;
         /**
          * Update System State
-         * @description Update system state information used by safety interlocks.
+         * @description Update operator-supplied state information used by command preconditions.
          *
-         *     This endpoint allows updating vehicle state information that
-         *     safety interlocks use to determine if operations are safe.
+         *     This endpoint accepts operator-supplied context; it is not the vehicle
+         *     safety source of truth.
          */
-        post: operations["update_system_state_api_safety_update_state_post"];
+        post: operations["update_system_state_api_guardrails_update_state_post"];
         delete?: never;
         options?: never;
         head?: never;
         patch?: never;
         trace?: never;
     };
-    "/api/safety/interlocks": {
+    "/api/guardrails/interlocks": {
         parameters: {
             query?: never;
             header?: never;
@@ -3882,15 +3881,15 @@ export interface paths {
         };
         /**
          * Get Interlock Status
-         * @description Get status of all safety interlocks.
+         * @description Get status of all command preconditions.
          *
-         *     Returns detailed information about each safety interlock including:
+         *     Returns detailed information about each command precondition including:
          *     - Engagement status
          *     - Protected feature
          *     - Required conditions
          *     - Engagement time and reason
          */
-        get: operations["get_interlock_status_api_safety_interlocks_get"];
+        get: operations["get_interlock_status_api_guardrails_interlocks_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -3899,7 +3898,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/safety/interlocks/check": {
+    "/api/guardrails/interlocks/check": {
         parameters: {
             query?: never;
             header?: never;
@@ -3910,19 +3909,19 @@ export interface paths {
         put?: never;
         /**
          * Check Interlocks
-         * @description Manually trigger safety interlock checks.
+         * @description Manually trigger command precondition checks.
          *
-         *     Forces an immediate check of all safety interlocks and returns
+         *     Forces an immediate check of all command preconditions and returns
          *     the results. Interlocks will be engaged/disengaged as needed.
          */
-        post: operations["check_interlocks_api_safety_interlocks_check_post"];
+        post: operations["check_interlocks_api_guardrails_interlocks_check_post"];
         delete?: never;
         options?: never;
         head?: never;
         patch?: never;
         trace?: never;
     };
-    "/api/safety/emergency-stop": {
+    "/api/guardrails/command-halt": {
         parameters: {
             query?: never;
             header?: never;
@@ -3932,26 +3931,26 @@ export interface paths {
         get?: never;
         put?: never;
         /**
-         * Trigger Emergency Stop
-         * @description Trigger emergency stop for all position-critical features.
+         * Halt Command Emission
+         * @description Trigger command halt for all position-critical features.
          *
          *     This will:
          *     - Stop all position-critical features
-         *     - Engage all safety interlocks
-         *     - Enter system-wide safe state
+         *     - Engage all command preconditions
+         *     - Enter system-wide command halt state
          *     - Log the event to audit trail
          *
-         *     WARNING: This is a safety-critical operation that requires
-         *     manual reset with authorization.
+         *     WARNING: This is a guardrail-critical operation that requires
+         *     manual clearing with authorization.
          */
-        post: operations["trigger_emergency_stop_api_safety_emergency_stop_post"];
+        post: operations["halt_command_emission_api_guardrails_command_halt_post"];
         delete?: never;
         options?: never;
         head?: never;
         patch?: never;
         trace?: never;
     };
-    "/api/safety/emergency-stop/reset": {
+    "/api/guardrails/command-halt/clear": {
         parameters: {
             query?: never;
             header?: never;
@@ -3961,20 +3960,20 @@ export interface paths {
         get?: never;
         put?: never;
         /**
-         * Reset Emergency Stop
-         * @description Reset emergency stop with authorization.
+         * Clear Command Halt
+         * @description Clear command halt with authorization.
          *
-         *     Requires valid authorization code. After reset, individual
-         *     features and interlocks must be manually re-enabled.
+         *     Requires valid authorization code. After clearing, individual
+         *     features and command preconditions must be manually re-enabled.
          */
-        post: operations["reset_emergency_stop_api_safety_emergency_stop_reset_post"];
+        post: operations["clear_command_halt_api_guardrails_command_halt_clear_post"];
         delete?: never;
         options?: never;
         head?: never;
         patch?: never;
         trace?: never;
     };
-    "/api/safety/audit-log": {
+    "/api/guardrails/audit-log": {
         parameters: {
             query?: never;
             header?: never;
@@ -3983,18 +3982,18 @@ export interface paths {
         };
         /**
          * Get Audit Log
-         * @description Get safety audit log entries.
+         * @description Get guardrails audit log entries.
          *
-         *     Returns recent safety-critical events including:
+         *     Returns recent guardrail-critical events including:
          *     - Interlock engagements/disengagements
-         *     - Emergency stops
-         *     - Safe state entries
+         *     - Command halts
+         *     - Command halt state entries
          *     - System errors
          *
          *     Args:
          *         max_entries: Maximum number of entries to return (default: 100)
          */
-        get: operations["get_audit_log_api_safety_audit_log_get"];
+        get: operations["get_audit_log_api_guardrails_audit_log_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -4003,7 +4002,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/safety/health": {
+    "/api/guardrails/health": {
         parameters: {
             query?: never;
             header?: never;
@@ -4011,15 +4010,15 @@ export interface paths {
             cookie?: never;
         };
         /**
-         * Get Safety Health
-         * @description Get safety service health status.
+         * Get Guardrail Health
+         * @description Get guardrails service health status.
          *
-         *     Returns information about the safety monitoring system itself:
+         *     Returns information about the guardrails monitoring system itself:
          *     - Monitoring task status
          *     - Watchdog timer health
          *     - Last check timestamps
          */
-        get: operations["get_safety_health_api_safety_health_get"];
+        get: operations["get_guardrail_health_api_guardrails_health_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -4028,7 +4027,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/safety/pin/emergency-stop": {
+    "/api/guardrails/pin/command-halt": {
         parameters: {
             query?: never;
             header?: never;
@@ -4038,20 +4037,20 @@ export interface paths {
         get?: never;
         put?: never;
         /**
-         * Pin Emergency Stop
-         * @description Trigger emergency stop using PIN authorization (Admin Only).
+         * Pin Halt Command Emission
+         * @description Trigger command halt using PIN authorization (Admin Only).
          *
-         *     Requires valid PIN session for emergency operations.
-         *     Provides enhanced security for safety-critical operations.
+         *     Requires valid PIN session for command-halt operations.
+         *     Provides enhanced security for guardrail-critical operations.
          */
-        post: operations["pin_emergency_stop_api_safety_pin_emergency_stop_post"];
+        post: operations["pin_halt_command_emission_api_guardrails_pin_command_halt_post"];
         delete?: never;
         options?: never;
         head?: never;
         patch?: never;
         trace?: never;
     };
-    "/api/safety/pin/emergency-stop/reset": {
+    "/api/guardrails/pin/command-halt/clear": {
         parameters: {
             query?: never;
             header?: never;
@@ -4061,20 +4060,20 @@ export interface paths {
         get?: never;
         put?: never;
         /**
-         * Pin Emergency Reset
-         * @description Reset emergency stop using PIN authorization (Admin Only).
+         * Pin Clear Command Halt
+         * @description Clear command halt using PIN authorization (Admin Only).
          *
-         *     Requires valid PIN session for reset operations.
-         *     Provides enhanced security for safety-critical operations.
+         *     Requires valid PIN session for command-halt clear operations.
+         *     Provides enhanced security for guardrail-critical operations.
          */
-        post: operations["pin_emergency_reset_api_safety_pin_emergency_stop_reset_post"];
+        post: operations["pin_clear_command_halt_api_guardrails_pin_command_halt_clear_post"];
         delete?: never;
         options?: never;
         head?: never;
         patch?: never;
         trace?: never;
     };
-    "/api/safety/pin/interlocks/override": {
+    "/api/guardrails/pin/interlocks/override": {
         parameters: {
             query?: never;
             header?: never;
@@ -4085,20 +4084,20 @@ export interface paths {
         put?: never;
         /**
          * Pin Override Interlock
-         * @description Override a safety interlock using PIN authorization (Admin Only).
+         * @description Override a command precondition using PIN authorization (Admin Only).
          *
-         *     Allows temporary override of safety interlocks for maintenance or
+         *     Allows temporary override of command preconditions for maintenance or
          *     diagnostic operations. Requires valid PIN session with override permissions.
          *     Override will automatically expire after the specified duration.
          */
-        post: operations["pin_override_interlock_api_safety_pin_interlocks_override_post"];
+        post: operations["pin_override_interlock_api_guardrails_pin_interlocks_override_post"];
         delete?: never;
         options?: never;
         head?: never;
         patch?: never;
         trace?: never;
     };
-    "/api/safety/interlocks/clear-override": {
+    "/api/guardrails/interlocks/clear-override": {
         parameters: {
             query?: never;
             header?: never;
@@ -4114,14 +4113,14 @@ export interface paths {
          *     Immediately removes any active override on the specified interlock,
          *     returning it to normal operation.
          */
-        post: operations["clear_interlock_override_api_safety_interlocks_clear_override_post"];
+        post: operations["clear_interlock_override_api_guardrails_interlocks_clear_override_post"];
         delete?: never;
         options?: never;
         head?: never;
         patch?: never;
         trace?: never;
     };
-    "/api/safety/interlocks/overrides": {
+    "/api/guardrails/interlocks/overrides": {
         parameters: {
             query?: never;
             header?: never;
@@ -4135,7 +4134,7 @@ export interface paths {
          *     Returns information about currently active interlock overrides including
          *     who authorized them, when they expire, and the reason for override.
          */
-        get: operations["get_active_overrides_api_safety_interlocks_overrides_get"];
+        get: operations["get_active_overrides_api_guardrails_interlocks_overrides_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -4144,7 +4143,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/safety/pin/maintenance-mode/enter": {
+    "/api/guardrails/pin/maintenance-mode/enter": {
         parameters: {
             query?: never;
             header?: never;
@@ -4158,21 +4157,21 @@ export interface paths {
          * @description Enter maintenance mode using PIN authorization (Admin Only).
          *
          *     In maintenance mode:
-         *     - Safety interlocks can be temporarily overridden
-         *     - Certain safety checks may be relaxed for service operations
+         *     - Guardrail interlocks can be temporarily overridden
+         *     - Certain guardrails checks may be relaxed for service operations
          *     - All actions are fully audited
          *     - Mode automatically expires after the specified duration
          *
          *     Requires valid PIN session with maintenance permissions.
          */
-        post: operations["pin_enter_maintenance_mode_api_safety_pin_maintenance_mode_enter_post"];
+        post: operations["pin_enter_maintenance_mode_api_guardrails_pin_maintenance_mode_enter_post"];
         delete?: never;
         options?: never;
         head?: never;
         patch?: never;
         trace?: never;
     };
-    "/api/safety/pin/maintenance-mode/exit": {
+    "/api/guardrails/pin/maintenance-mode/exit": {
         parameters: {
             query?: never;
             header?: never;
@@ -4186,20 +4185,20 @@ export interface paths {
          * @description Exit maintenance mode using PIN authorization (Admin Only).
          *
          *     Returns system to normal operational mode:
-         *     - All safety interlocks return to normal operation
+         *     - All command preconditions return to normal operation
          *     - Any active overrides are cleared
-         *     - Full safety validation resumes
+         *     - Full guardrails validation resumes
          *
          *     Requires valid PIN session.
          */
-        post: operations["pin_exit_maintenance_mode_api_safety_pin_maintenance_mode_exit_post"];
+        post: operations["pin_exit_maintenance_mode_api_guardrails_pin_maintenance_mode_exit_post"];
         delete?: never;
         options?: never;
         head?: never;
         patch?: never;
         trace?: never;
     };
-    "/api/safety/operational-mode": {
+    "/api/guardrails/operational-mode": {
         parameters: {
             query?: never;
             header?: never;
@@ -4216,7 +4215,7 @@ export interface paths {
          *     - When it was activated and when it expires
          *     - Active overrides count
          */
-        get: operations["get_operational_mode_api_safety_operational_mode_get"];
+        get: operations["get_operational_mode_api_guardrails_operational_mode_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -4225,7 +4224,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/safety/pin/diagnostic-mode/enter": {
+    "/api/guardrails/pin/diagnostic-mode/enter": {
         parameters: {
             query?: never;
             header?: never;
@@ -4240,23 +4239,23 @@ export interface paths {
          *
          *     In diagnostic mode:
          *     - System diagnostics and testing can be performed
-         *     - Test procedures may temporarily modify safety constraints
+         *     - Test procedures may temporarily modify guardrails constraints
          *     - All actions are fully audited
          *     - Mode automatically expires after the specified duration
          *
          *     WARNING: Diagnostic mode is intended for troubleshooting only.
-         *     Safety constraints may be modified during diagnostics.
+         *     Guardrail constraints may be modified during diagnostics.
          *
          *     Requires valid PIN session with diagnostic permissions.
          */
-        post: operations["pin_enter_diagnostic_mode_api_safety_pin_diagnostic_mode_enter_post"];
+        post: operations["pin_enter_diagnostic_mode_api_guardrails_pin_diagnostic_mode_enter_post"];
         delete?: never;
         options?: never;
         head?: never;
         patch?: never;
         trace?: never;
     };
-    "/api/safety/pin/diagnostic-mode/exit": {
+    "/api/guardrails/pin/diagnostic-mode/exit": {
         parameters: {
             query?: never;
             header?: never;
@@ -4270,13 +4269,13 @@ export interface paths {
          * @description Exit diagnostic mode using PIN authorization (Admin Only).
          *
          *     Returns system to normal operational mode:
-         *     - All safety constraints return to normal operation
+         *     - All guardrails constraints return to normal operation
          *     - Any diagnostic overrides are cleared
-         *     - Full safety validation resumes
+         *     - Full guardrails validation resumes
          *
          *     Requires valid PIN session.
          */
-        post: operations["pin_exit_diagnostic_mode_api_safety_pin_diagnostic_mode_exit_post"];
+        post: operations["pin_exit_diagnostic_mode_api_guardrails_pin_diagnostic_mode_exit_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -5957,6 +5956,46 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/auth/oidc/login": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Start PocketID OIDC login
+         * @description Start a PocketID OIDC authorization-code flow.
+         */
+        get: operations["start_oidc_login_api_v1_auth_oidc_login_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/auth/oidc/callback": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Complete PocketID OIDC login or local token handoff
+         * @description Complete OIDC callback validation or exchange a one-time local session code.
+         */
+        get: operations["complete_oidc_login_api_v1_auth_oidc_callback_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/diagnostics/health": {
         parameters: {
             query?: never;
@@ -6237,7 +6276,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/v1/entities/safety-status": {
+    "/api/v1/entities/guardrail-status": {
         parameters: {
             query?: never;
             header?: never;
@@ -6245,10 +6284,10 @@ export interface paths {
             cookie?: never;
         };
         /**
-         * Get Safety Status
-         * @description Get current safety system status
+         * Get Guardrail Status
+         * @description Get current guardrail status
          */
-        get: operations["get_safety_status_api_v1_entities_safety_status_get"];
+        get: operations["get_guardrail_status_api_v1_entities_guardrail_status_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -6441,7 +6480,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/v1/entities/emergency-stop": {
+    "/api/v1/entities/command-halt": {
         parameters: {
             query?: never;
             header?: never;
@@ -6451,17 +6490,17 @@ export interface paths {
         get?: never;
         put?: never;
         /**
-         * Emergency Stop
-         * @description Emergency stop - immediately halt all entity operations (Admin Only)
+         * Halt Command Emission
+         * @description Command halt - immediately halt all entity operations (Admin Only)
          */
-        post: operations["emergency_stop_api_v1_entities_emergency_stop_post"];
+        post: operations["halt_command_emission_api_v1_entities_command_halt_post"];
         delete?: never;
         options?: never;
         head?: never;
         patch?: never;
         trace?: never;
     };
-    "/api/v1/entities/clear-emergency-stop": {
+    "/api/v1/entities/command-halt/clear": {
         parameters: {
             query?: never;
             header?: never;
@@ -6471,10 +6510,10 @@ export interface paths {
         get?: never;
         put?: never;
         /**
-         * Clear Emergency Stop
-         * @description Clear emergency stop condition (Admin Only)
+         * Clear Command Halt
+         * @description Clear command halt condition (Admin Only)
          */
-        post: operations["clear_emergency_stop_api_v1_entities_clear_emergency_stop_post"];
+        post: operations["clear_command_halt_api_v1_entities_command_halt_clear_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -7146,8 +7185,8 @@ export interface components {
             jwt_available: boolean;
             /** Magic Links Enabled */
             magic_links_enabled: boolean;
-            /** Oauth Enabled */
-            oauth_enabled: boolean;
+            /** Oidc Enabled */
+            oidc_enabled: boolean;
         };
         /**
          * AuthenticationPolicy
@@ -7250,12 +7289,6 @@ export interface components {
              * @default true
              */
             enable_magic_links?: boolean;
-            /**
-             * Enable Oauth
-             * @description Enable OAuth authentication
-             * @default false
-             */
-            enable_oauth?: boolean;
             /**
              * Enable Mfa
              * @description Enable multi-factor authentication
@@ -7971,6 +8004,35 @@ export interface components {
             overall_success_rate: number;
         };
         /**
+         * ClearCommandHaltRequest
+         * @description Command halt clear request model.
+         */
+        ClearCommandHaltRequest: {
+            /**
+             * Authorization Code
+             * @description Legacy authorization code for clear
+             * @default
+             */
+            authorization_code?: string;
+            /**
+             * Pin Session Id
+             * @description PIN session ID for enhanced authorization
+             * @default
+             */
+            pin_session_id?: string;
+        };
+        /**
+         * CommandHaltRequest
+         * @description Command halt request model.
+         */
+        CommandHaltRequest: {
+            /**
+             * Reason
+             * @description Reason for command halt
+             */
+            reason: string;
+        };
+        /**
          * CommunicationPatternResponse
          * @description Communication pattern.
          */
@@ -8023,10 +8085,10 @@ export interface components {
              */
             last_checked: number;
             /**
-             * Safety Classification
+             * Guardrail Tier
              * @description Safety classification if applicable
              */
-            safety_classification?: string | null;
+            guardrail_tier?: string | null;
         };
         /**
          * ComponentHealthResponse
@@ -8499,35 +8561,6 @@ export interface components {
              * @default rvc
              */
             protocol?: string;
-        };
-        /**
-         * EmergencyStopRequest
-         * @description Emergency stop request model.
-         */
-        EmergencyStopRequest: {
-            /**
-             * Reason
-             * @description Reason for emergency stop
-             */
-            reason: string;
-        };
-        /**
-         * EmergencyStopResetRequest
-         * @description Emergency stop reset request model.
-         */
-        EmergencyStopResetRequest: {
-            /**
-             * Authorization Code
-             * @description Legacy authorization code for reset
-             * @default
-             */
-            authorization_code?: string;
-            /**
-             * Pin Session Id
-             * @description PIN session ID for enhanced authorization
-             * @default
-             */
-            pin_session_id?: string;
         };
         /**
          * EntityCollectionV2
@@ -9869,6 +9902,33 @@ export interface components {
             session_consumed?: boolean;
         };
         /**
+         * PINClearCommandHaltRequest
+         * @description PIN-based command halt clear request model.
+         */
+        PINClearCommandHaltRequest: {
+            /**
+             * Pin Session Id
+             * @description PIN session ID for authorization
+             */
+            pin_session_id: string;
+        };
+        /**
+         * PINCommandHaltRequest
+         * @description PIN-based command halt request model.
+         */
+        PINCommandHaltRequest: {
+            /**
+             * Pin Session Id
+             * @description PIN session ID for authorization
+             */
+            pin_session_id: string;
+            /**
+             * Reason
+             * @description Reason for command halt
+             */
+            reason: string;
+        };
+        /**
          * PINDiagnosticModeExitRequest
          * @description PIN-based diagnostic mode exit request model.
          */
@@ -9900,33 +9960,6 @@ export interface components {
              * @default 60
              */
             duration_minutes?: number;
-        };
-        /**
-         * PINEmergencyResetRequest
-         * @description PIN-based emergency reset request model.
-         */
-        PINEmergencyResetRequest: {
-            /**
-             * Pin Session Id
-             * @description PIN session ID for authorization
-             */
-            pin_session_id: string;
-        };
-        /**
-         * PINEmergencyStopRequest
-         * @description PIN-based emergency stop request model.
-         */
-        PINEmergencyStopRequest: {
-            /**
-             * Pin Session Id
-             * @description PIN session ID for authorization
-             */
-            pin_session_id: string;
-            /**
-             * Reason
-             * @description Reason for emergency stop
-             */
-            reason: string;
         };
         /**
          * PINInfo
@@ -11117,7 +11150,7 @@ export interface components {
         ServiceHealthDetail: {
             /** Name */
             name: string;
-            status: components["schemas"]["backend__core__service_registry__ServiceStatus"];
+            status: components["schemas"]["backend__core__service_status__ServiceStatus"];
             health_status: components["schemas"]["HealthStatus"];
             /** Message */
             message?: string | null;
@@ -11162,17 +11195,6 @@ export interface components {
         /**
          * ServiceStatus
          * @description Service lifecycle status.
-         *
-         *     Lifecycle order during a normal run:
-         *         PENDING -> STARTING -> HEALTHY (-> DEGRADED) -> STOPPED
-         *     Failure paths transition to FAILED at any step.
-         *
-         *     STOPPED is used both pre-startup (initial state for services that
-         *     have been registered but not yet brought up) and post-shutdown
-         *     (after _shutdown_service successfully tears a service down). The
-         *     enum's previous omission of STOPPED meant services kept their last
-         *     runtime status forever after shutdown, which broke any caller that
-         *     needed to distinguish 'still running' from 'cleanly stopped'.
          * @enum {string}
          */
         "ServiceStatus-Input": "PENDING" | "STARTING" | "HEALTHY" | "DEGRADED" | "FAILED" | "STOPPED";
@@ -11302,7 +11324,7 @@ export interface components {
             total_startup_time_ms: number;
             /**
              * Service Registry Time Ms
-             * @description ServiceRegistry initialization time
+             * @description Startup initialization time
              */
             service_registry_time_ms: number;
             /**
@@ -11549,25 +11571,6 @@ export interface components {
             expires_in: number;
         };
         /**
-         * TokenPair
-         * @description Access and refresh token pair response model.
-         */
-        TokenPair: {
-            /** Access Token */
-            access_token: string;
-            /** Refresh Token */
-            refresh_token: string;
-            /**
-             * Token Type
-             * @default bearer
-             */
-            token_type?: string;
-            /** Expires In */
-            expires_in: number;
-            /** Refresh Expires In */
-            refresh_expires_in: number;
-        };
-        /**
          * UnlockAccountRequest
          * @description Account unlock request model.
          */
@@ -11696,6 +11699,38 @@ export interface components {
              * @description Connection identifier
              */
             connection_id?: string | null;
+        };
+        /**
+         * TokenPair
+         * @description Access and refresh token pair response model.
+         */
+        backend__api__domains__auth__TokenPair: {
+            /**
+             * Access Token
+             * @description Local CoachIQ access token
+             */
+            access_token: string;
+            /**
+             * Refresh Token
+             * @description Local CoachIQ refresh token
+             */
+            refresh_token: string;
+            /**
+             * Token Type
+             * @description Token type
+             * @default bearer
+             */
+            token_type?: string;
+            /**
+             * Expires In
+             * @description Access token lifetime in seconds
+             */
+            expires_in: number;
+            /**
+             * Refresh Expires In
+             * @description Refresh token lifetime in seconds
+             */
+            refresh_expires_in: number;
         };
         /**
          * SystemMetrics
@@ -11837,6 +11872,25 @@ export interface components {
              * @description Human-readable status description
              */
             description?: string | null;
+        };
+        /**
+         * TokenPair
+         * @description Access and refresh token pair response model.
+         */
+        backend__api__routers__auth__TokenPair: {
+            /** Access Token */
+            access_token: string;
+            /** Refresh Token */
+            refresh_token: string;
+            /**
+             * Token Type
+             * @default bearer
+             */
+            token_type?: string;
+            /** Expires In */
+            expires_in: number;
+            /** Refresh Expires In */
+            refresh_expires_in: number;
         };
         /**
          * DashboardMetrics
@@ -11987,20 +12041,9 @@ export interface components {
         /**
          * ServiceStatus
          * @description Service lifecycle status.
-         *
-         *     Lifecycle order during a normal run:
-         *         PENDING -> STARTING -> HEALTHY (-> DEGRADED) -> STOPPED
-         *     Failure paths transition to FAILED at any step.
-         *
-         *     STOPPED is used both pre-startup (initial state for services that
-         *     have been registered but not yet brought up) and post-shutdown
-         *     (after _shutdown_service successfully tears a service down). The
-         *     enum's previous omission of STOPPED meant services kept their last
-         *     runtime status forever after shutdown, which broke any caller that
-         *     needed to distinguish 'still running' from 'cleanly stopped'.
          * @enum {string}
          */
-        backend__core__service_registry__ServiceStatus: "PENDING" | "STARTING" | "HEALTHY" | "DEGRADED" | "FAILED" | "STOPPED";
+        backend__core__service_status__ServiceStatus: "PENDING" | "STARTING" | "HEALTHY" | "DEGRADED" | "FAILED" | "STOPPED";
         /**
          * SystemMetrics
          * @description System performance metrics.
@@ -12093,7 +12136,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["TokenPair"];
+                    "application/json": components["schemas"]["backend__api__routers__auth__TokenPair"];
                 };
             };
             /** @description Validation Error */
@@ -12159,7 +12202,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["TokenPair"];
+                    "application/json": components["schemas"]["backend__api__routers__auth__TokenPair"];
                 };
             };
             /** @description Validation Error */
@@ -12192,7 +12235,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["TokenPair"];
+                    "application/json": components["schemas"]["backend__api__routers__auth__TokenPair"];
                 };
             };
             /** @description Validation Error */
@@ -13210,10 +13253,10 @@ export interface operations {
             };
         };
     };
-    trigger_emergency_stop_api_can_emergency_stop_post: {
+    halt_command_emission_api_can_command_halt_post: {
         parameters: {
             query: {
-                /** @description Reason for emergency stop */
+                /** @description Reason for command halt */
                 reason: string;
             };
             header?: never;
@@ -15277,7 +15320,7 @@ export interface operations {
     health_check_api_health_get: {
         parameters: {
             query?: {
-                /** @description Include ServiceRegistry details */
+                /** @description Include composition-root service details */
                 include_registry?: boolean;
                 /** @description Include startup metrics */
                 include_metrics?: boolean;
@@ -16775,7 +16818,7 @@ export interface operations {
             };
         };
     };
-    get_safety_status_api_safety_status_get: {
+    get_guardrail_status_api_guardrails_status_get: {
         parameters: {
             query?: never;
             header?: {
@@ -16808,7 +16851,7 @@ export interface operations {
             };
         };
     };
-    update_system_state_api_safety_update_state_post: {
+    update_system_state_api_guardrails_update_state_post: {
         parameters: {
             query?: never;
             header?: {
@@ -16845,7 +16888,7 @@ export interface operations {
             };
         };
     };
-    get_interlock_status_api_safety_interlocks_get: {
+    get_interlock_status_api_guardrails_interlocks_get: {
         parameters: {
             query?: never;
             header?: {
@@ -16878,7 +16921,7 @@ export interface operations {
             };
         };
     };
-    check_interlocks_api_safety_interlocks_check_post: {
+    check_interlocks_api_guardrails_interlocks_check_post: {
         parameters: {
             query?: never;
             header?: {
@@ -16911,7 +16954,7 @@ export interface operations {
             };
         };
     };
-    trigger_emergency_stop_api_safety_emergency_stop_post: {
+    halt_command_emission_api_guardrails_command_halt_post: {
         parameters: {
             query?: never;
             header?: {
@@ -16922,7 +16965,7 @@ export interface operations {
         };
         requestBody: {
             content: {
-                "application/json": components["schemas"]["EmergencyStopRequest"];
+                "application/json": components["schemas"]["CommandHaltRequest"];
             };
         };
         responses: {
@@ -16948,7 +16991,7 @@ export interface operations {
             };
         };
     };
-    reset_emergency_stop_api_safety_emergency_stop_reset_post: {
+    clear_command_halt_api_guardrails_command_halt_clear_post: {
         parameters: {
             query?: never;
             header?: {
@@ -16959,7 +17002,7 @@ export interface operations {
         };
         requestBody: {
             content: {
-                "application/json": components["schemas"]["EmergencyStopResetRequest"];
+                "application/json": components["schemas"]["ClearCommandHaltRequest"];
             };
         };
         responses: {
@@ -16985,7 +17028,7 @@ export interface operations {
             };
         };
     };
-    get_audit_log_api_safety_audit_log_get: {
+    get_audit_log_api_guardrails_audit_log_get: {
         parameters: {
             query?: {
                 max_entries?: number;
@@ -17020,7 +17063,7 @@ export interface operations {
             };
         };
     };
-    get_safety_health_api_safety_health_get: {
+    get_guardrail_health_api_guardrails_health_get: {
         parameters: {
             query?: never;
             header?: {
@@ -17053,7 +17096,7 @@ export interface operations {
             };
         };
     };
-    pin_emergency_stop_api_safety_pin_emergency_stop_post: {
+    pin_halt_command_emission_api_guardrails_pin_command_halt_post: {
         parameters: {
             query?: never;
             header?: {
@@ -17064,7 +17107,7 @@ export interface operations {
         };
         requestBody: {
             content: {
-                "application/json": components["schemas"]["PINEmergencyStopRequest"];
+                "application/json": components["schemas"]["PINCommandHaltRequest"];
             };
         };
         responses: {
@@ -17090,7 +17133,7 @@ export interface operations {
             };
         };
     };
-    pin_emergency_reset_api_safety_pin_emergency_stop_reset_post: {
+    pin_clear_command_halt_api_guardrails_pin_command_halt_clear_post: {
         parameters: {
             query?: never;
             header?: {
@@ -17101,7 +17144,7 @@ export interface operations {
         };
         requestBody: {
             content: {
-                "application/json": components["schemas"]["PINEmergencyResetRequest"];
+                "application/json": components["schemas"]["PINClearCommandHaltRequest"];
             };
         };
         responses: {
@@ -17127,7 +17170,7 @@ export interface operations {
             };
         };
     };
-    pin_override_interlock_api_safety_pin_interlocks_override_post: {
+    pin_override_interlock_api_guardrails_pin_interlocks_override_post: {
         parameters: {
             query?: never;
             header?: {
@@ -17164,7 +17207,7 @@ export interface operations {
             };
         };
     };
-    clear_interlock_override_api_safety_interlocks_clear_override_post: {
+    clear_interlock_override_api_guardrails_interlocks_clear_override_post: {
         parameters: {
             query?: never;
             header?: {
@@ -17201,7 +17244,7 @@ export interface operations {
             };
         };
     };
-    get_active_overrides_api_safety_interlocks_overrides_get: {
+    get_active_overrides_api_guardrails_interlocks_overrides_get: {
         parameters: {
             query?: never;
             header?: {
@@ -17234,7 +17277,7 @@ export interface operations {
             };
         };
     };
-    pin_enter_maintenance_mode_api_safety_pin_maintenance_mode_enter_post: {
+    pin_enter_maintenance_mode_api_guardrails_pin_maintenance_mode_enter_post: {
         parameters: {
             query?: never;
             header?: {
@@ -17271,7 +17314,7 @@ export interface operations {
             };
         };
     };
-    pin_exit_maintenance_mode_api_safety_pin_maintenance_mode_exit_post: {
+    pin_exit_maintenance_mode_api_guardrails_pin_maintenance_mode_exit_post: {
         parameters: {
             query?: never;
             header?: {
@@ -17308,7 +17351,7 @@ export interface operations {
             };
         };
     };
-    get_operational_mode_api_safety_operational_mode_get: {
+    get_operational_mode_api_guardrails_operational_mode_get: {
         parameters: {
             query?: never;
             header?: {
@@ -17341,7 +17384,7 @@ export interface operations {
             };
         };
     };
-    pin_enter_diagnostic_mode_api_safety_pin_diagnostic_mode_enter_post: {
+    pin_enter_diagnostic_mode_api_guardrails_pin_diagnostic_mode_enter_post: {
         parameters: {
             query?: never;
             header?: {
@@ -17378,7 +17421,7 @@ export interface operations {
             };
         };
     };
-    pin_exit_diagnostic_mode_api_safety_pin_diagnostic_mode_exit_post: {
+    pin_exit_diagnostic_mode_api_guardrails_pin_diagnostic_mode_exit_post: {
         parameters: {
             query?: never;
             header?: {
@@ -19597,6 +19640,64 @@ export interface operations {
             };
         };
     };
+    start_oidc_login_api_v1_auth_oidc_login_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            307: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    complete_oidc_login_api_v1_auth_oidc_callback_get: {
+        parameters: {
+            query?: {
+                /** @description PocketID authorization code */
+                code?: string | null;
+                /** @description OIDC state value */
+                state?: string | null;
+                /** @description Authorization response issuer */
+                iss?: string | null;
+                /** @description One-time local session handoff code */
+                session_code?: string | null;
+                /** @description PocketID authorization error */
+                error?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["backend__api__domains__auth__TokenPair"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     health_check_api_v1_diagnostics_health_get: {
         parameters: {
             query?: never;
@@ -19980,7 +20081,7 @@ export interface operations {
             };
         };
     };
-    get_safety_status_api_v1_entities_safety_status_get: {
+    get_guardrail_status_api_v1_entities_guardrail_status_get: {
         parameters: {
             query?: never;
             header?: never;
@@ -20254,7 +20355,7 @@ export interface operations {
             };
         };
     };
-    emergency_stop_api_v1_entities_emergency_stop_post: {
+    halt_command_emission_api_v1_entities_command_halt_post: {
         parameters: {
             query?: never;
             header?: {
@@ -20287,7 +20388,7 @@ export interface operations {
             };
         };
     };
-    clear_emergency_stop_api_v1_entities_clear_emergency_stop_post: {
+    clear_command_halt_api_v1_entities_command_halt_clear_post: {
         parameters: {
             query?: never;
             header?: {

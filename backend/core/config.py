@@ -907,7 +907,6 @@ class AuthenticationSettings(BaseSettings):
     # Multi-user mode settings
     admin_email: str = Field(default="", description="Admin email for multi-user mode")
     enable_magic_links: bool = Field(default=True, description="Enable magic link authentication")
-    enable_oauth: bool = Field(default=False, description="Enable OAuth authentication")
 
     # PocketID OIDC settings
     oidc_enabled: bool = Field(default=False, description="Enable PocketID OIDC login")
@@ -948,16 +947,6 @@ class AuthenticationSettings(BaseSettings):
     oidc_failure_redirect_path: str = Field(
         default="/login?oidc_error=sso_unavailable",
         description="Frontend route for graceful OIDC failure redirects",
-    )
-
-    # OAuth provider settings
-    oauth_github_client_id: str = Field(default="", description="GitHub OAuth client ID")
-    oauth_github_client_secret: str = Field(default="", description="GitHub OAuth client secret")
-    oauth_google_client_id: str = Field(default="", description="Google OAuth client ID")
-    oauth_google_client_secret: str = Field(default="", description="Google OAuth client secret")
-    oauth_microsoft_client_id: str = Field(default="", description="Microsoft OAuth client ID")
-    oauth_microsoft_client_secret: str = Field(
-        default="", description="Microsoft OAuth client secret"
     )
 
     # Magic link settings

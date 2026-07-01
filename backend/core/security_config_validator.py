@@ -21,11 +21,6 @@ MAX_SESSION_EXPIRE_HOURS = 24
 MAX_PRODUCTION_READY_WARNINGS = 3
 DEFAULT_AUTH_SECRET_PLACEHOLDER = "your-secret-key-here"  # noqa: S105
 RECOMMENDED_JWT_ALGORITHMS = {"RS256", "ES256"}
-OAUTH_PROVIDER_FIELDS = (
-    ("github", "oauth_github_client_id", "oauth_github_client_secret"),
-    ("google", "oauth_google_client_id", "oauth_google_client_secret"),
-    ("microsoft", "oauth_microsoft_client_id", "oauth_microsoft_client_secret"),
-)
 
 
 class SecurityConfigValidator:
@@ -87,14 +82,13 @@ class SecurityConfigValidator:
         self._validate_jwt_lifetime(auth)
         self._validate_admin_credentials(auth)
         self._validate_magic_links(auth)
-        self._validate_oauth(auth)
 
     def _warn_on_disabled_auth_config(self, auth: AuthenticationSettings) -> None:
         """Warn about auth-specific settings that are ignored while auth is disabled."""
         if auth.admin_username or auth.admin_password or auth.admin_email:
             self.warnings.append("AUTH: Authentication is disabled but auth credentials are set")
-        if auth.enable_oauth:
-            self.warnings.append("AUTH: Authentication is disabled but OAuth is enabled")
+        if auth.oidc_enabled:
+            self.warnings.append("AUTH: Authentication is disabled but OIDC is enabled")
 
     def _validate_auth_secret(self, auth: AuthenticationSettings) -> None:
         """Validate the JWT secret used when authentication is enabled."""
@@ -121,22 +115,6 @@ class SecurityConfigValidator:
         """Validate magic-link prerequisites."""
         if auth.enable_magic_links and not auth.base_url and not self.settings.is_development():
             self.errors.append("AUTH: base_url is required when magic links are enabled")
-
-    def _validate_oauth(self, auth: AuthenticationSettings) -> None:
-        """Validate OAuth provider completeness when OAuth is enabled."""
-        complete_oauth_providers = 0
-        for provider_name, client_id_field, client_secret_field in OAUTH_PROVIDER_FIELDS:
-            client_id = getattr(auth, client_id_field)
-            client_secret = getattr(auth, client_secret_field)
-            if bool(client_id) != bool(client_secret):
-                self.errors.append(
-                    f"AUTH: OAuth provider {provider_name} requires both client ID and secret"
-                )
-            elif client_id and client_secret:
-                complete_oauth_providers += 1
-
-        if auth.enable_oauth and complete_oauth_providers == 0:
-            self.errors.append("AUTH: OAuth is enabled but no complete provider is configured")
 
     def _validate_encryption_settings(self) -> None:
         """Validate encryption and crypto settings."""

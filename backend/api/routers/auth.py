@@ -131,7 +131,7 @@ class AuthStatus(BaseModel):
     mode: str
     jwt_available: bool
     magic_links_enabled: bool
-    oauth_enabled: bool
+    oidc_enabled: bool
 
 
 class AdminCredentials(BaseModel):
@@ -797,7 +797,7 @@ async def get_auth_status(
         mode=auth_manager.auth_mode.value,
         jwt_available=bool(auth_manager.settings.secret_key),
         magic_links_enabled=auth_manager.settings.enable_magic_links,
-        oauth_enabled=auth_manager.settings.enable_oauth,
+        oidc_enabled=auth_manager.settings.oidc_enabled,
     )
 
 
@@ -1072,7 +1072,7 @@ async def get_auth_stats(
         "endpoints": {
             "login_enabled": auth_manager.auth_mode == AuthMode.SINGLE_USER,
             "magic_links_enabled": auth_manager.settings.enable_magic_links,
-            "oauth_enabled": auth_manager.settings.enable_oauth,
+            "oidc_enabled": auth_manager.settings.oidc_enabled,
             "invitations_enabled": auth_manager.auth_mode == AuthMode.MULTI_USER,
         },
     }

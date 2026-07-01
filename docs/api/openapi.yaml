@@ -27,7 +27,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/TokenPair'
+                $ref: '#/components/schemas/backend__api__routers__auth__TokenPair'
         '422':
           description: Validation Error
           content:
@@ -87,7 +87,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/TokenPair'
+                $ref: '#/components/schemas/backend__api__routers__auth__TokenPair'
         '422':
           description: Validation Error
           content:
@@ -119,7 +119,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/TokenPair'
+                $ref: '#/components/schemas/backend__api__routers__auth__TokenPair'
         '422':
           description: Validation Error
           content:
@@ -1048,7 +1048,7 @@ paths:
 
         Returns a simple health check suitable for monitoring systems.
 
-        Includes overall health status, safety status, and emergency stop state.'
+        Includes overall health status, guardrail status, and command-halt state.'
       operationId: get_can_health_api_can_health_get
       responses:
         '200':
@@ -1069,7 +1069,7 @@ paths:
 
         Returns detailed health information including:
 
-        - Facade safety status and emergency stop state
+        - Facade guardrail status and command-halt state
 
         - Individual service health statuses
 
@@ -1090,15 +1090,15 @@ paths:
                 type: object
                 title: Response Get Can Comprehensive Health Api Can Health Comprehensive
                   Get
-  /api/can/emergency-stop:
+  /api/can/command-halt:
     post:
       tags:
       - can
-      summary: Trigger Emergency Stop
-      description: 'Trigger an emergency stop across all CAN services.
+      summary: Halt Command Emission
+      description: 'Trigger command halt across CAN command emitters.
 
 
-        This is a safety-critical operation that will:
+        This is a guardrail-critical operation that will:
 
         - Stop all CAN message transmission
 
@@ -1106,20 +1106,20 @@ paths:
 
         - Disable message injection
 
-        - Put the system in a safe state
+        - Put the CAN facade in command-halt state
 
 
-        The system must be manually reset after an emergency stop.'
-      operationId: trigger_emergency_stop_api_can_emergency_stop_post
+        The system must be manually cleared after command halt.'
+      operationId: halt_command_emission_api_can_command_halt_post
       parameters:
       - name: reason
         in: query
         required: true
         schema:
           type: string
-          description: Reason for emergency stop
+          description: Reason for command halt
           title: Reason
-        description: Reason for emergency stop
+        description: Reason for command halt
       responses:
         '200':
           description: Successful Response
@@ -1128,7 +1128,7 @@ paths:
               schema:
                 type: object
                 additionalProperties: true
-                title: Response Trigger Emergency Stop Api Can Emergency Stop Post
+                title: Response Halt Command Emission Api Can Command Halt Post
         '422':
           description: Validation Error
           content:
@@ -2967,7 +2967,7 @@ paths:
       - health
       - monitoring
       summary: Comprehensive health check
-      description: Returns detailed health status including ServiceRegistry information
+      description: Returns detailed health status including composition-root information
       operationId: health_check_api_health_get
       parameters:
       - name: include_registry
@@ -2975,10 +2975,10 @@ paths:
         required: false
         schema:
           type: boolean
-          description: Include ServiceRegistry details
+          description: Include composition-root service details
           default: true
           title: Include Registry
-        description: Include ServiceRegistry details
+        description: Include composition-root service details
       - name: include_metrics
         in: query
         required: false
@@ -3064,8 +3064,8 @@ paths:
       tags:
       - health
       - monitoring
-      summary: Readiness check with ServiceRegistry
-      description: Lightweight readiness check based on ServiceRegistry status
+      summary: Readiness check with composition root
+      description: Lightweight readiness check based on composition-root status
       operationId: readiness_check_api_health_ready_get
       parameters:
       - name: min_healthy_services
@@ -3102,7 +3102,8 @@ paths:
       - health
       - monitoring
       summary: Startup metrics and timing
-      description: Returns detailed startup performance metrics from ServiceRegistry
+      description: Returns detailed startup performance metrics from the composition
+        root
       operationId: startup_metrics_api_health_startup_get
       responses:
         '200':
@@ -4459,28 +4460,26 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/HTTPValidationError'
-  /api/safety/status:
+  /api/guardrails/status:
     get:
       tags:
-      - safety
-      summary: Get Safety Status
-      description: 'Get comprehensive safety system status.
+      - guardrails
+      summary: Get Guardrail Status
+      description: 'Get comprehensive guardrail status.
 
 
-        Returns current state of all safety systems including:
+        Returns current state of guardrail checks including:
 
-        - Safe state status
-
-        - Emergency stop status
+        - Command halt state
 
         - Watchdog timer status
 
-        - Safety interlock states
+        - Command preconditions
 
-        - System state information
+        - Operator-supplied state information
 
         - Audit log entry count'
-      operationId: get_safety_status_api_safety_status_get
+      operationId: get_guardrail_status_api_guardrails_status_get
       parameters:
       - name: authorization
         in: header
@@ -4498,25 +4497,25 @@ paths:
               schema:
                 type: object
                 additionalProperties: true
-                title: Response Get Safety Status Api Safety Status Get
+                title: Response Get Guardrail Status Api Guardrails Status Get
         '422':
           description: Validation Error
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/HTTPValidationError'
-  /api/safety/update-state:
+  /api/guardrails/update-state:
     post:
       tags:
-      - safety
+      - guardrails
       summary: Update System State
-      description: 'Update system state information used by safety interlocks.
+      description: 'Update operator-supplied state information used by command preconditions.
 
 
-        This endpoint allows updating vehicle state information that
+        This endpoint accepts operator-supplied context; it is not the vehicle
 
-        safety interlocks use to determine if operations are safe.'
-      operationId: update_system_state_api_safety_update_state_post
+        safety source of truth.'
+      operationId: update_system_state_api_guardrails_update_state_post
       parameters:
       - name: authorization
         in: header
@@ -4540,22 +4539,22 @@ paths:
               schema:
                 type: object
                 additionalProperties: true
-                title: Response Update System State Api Safety Update State Post
+                title: Response Update System State Api Guardrails Update State Post
         '422':
           description: Validation Error
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/HTTPValidationError'
-  /api/safety/interlocks:
+  /api/guardrails/interlocks:
     get:
       tags:
-      - safety
+      - guardrails
       summary: Get Interlock Status
-      description: 'Get status of all safety interlocks.
+      description: 'Get status of all command preconditions.
 
 
-        Returns detailed information about each safety interlock including:
+        Returns detailed information about each command precondition including:
 
         - Engagement status
 
@@ -4564,7 +4563,7 @@ paths:
         - Required conditions
 
         - Engagement time and reason'
-      operationId: get_interlock_status_api_safety_interlocks_get
+      operationId: get_interlock_status_api_guardrails_interlocks_get
       parameters:
       - name: authorization
         in: header
@@ -4582,25 +4581,25 @@ paths:
               schema:
                 type: object
                 additionalProperties: true
-                title: Response Get Interlock Status Api Safety Interlocks Get
+                title: Response Get Interlock Status Api Guardrails Interlocks Get
         '422':
           description: Validation Error
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/HTTPValidationError'
-  /api/safety/interlocks/check:
+  /api/guardrails/interlocks/check:
     post:
       tags:
-      - safety
+      - guardrails
       summary: Check Interlocks
-      description: 'Manually trigger safety interlock checks.
+      description: 'Manually trigger command precondition checks.
 
 
-        Forces an immediate check of all safety interlocks and returns
+        Forces an immediate check of all command preconditions and returns
 
         the results. Interlocks will be engaged/disengaged as needed.'
-      operationId: check_interlocks_api_safety_interlocks_check_post
+      operationId: check_interlocks_api_guardrails_interlocks_check_post
       parameters:
       - name: authorization
         in: header
@@ -4618,36 +4617,36 @@ paths:
               schema:
                 type: object
                 additionalProperties: true
-                title: Response Check Interlocks Api Safety Interlocks Check Post
+                title: Response Check Interlocks Api Guardrails Interlocks Check Post
         '422':
           description: Validation Error
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/HTTPValidationError'
-  /api/safety/emergency-stop:
+  /api/guardrails/command-halt:
     post:
       tags:
-      - safety
-      summary: Trigger Emergency Stop
-      description: 'Trigger emergency stop for all position-critical features.
+      - guardrails
+      summary: Halt Command Emission
+      description: 'Trigger command halt for all position-critical features.
 
 
         This will:
 
         - Stop all position-critical features
 
-        - Engage all safety interlocks
+        - Engage all command preconditions
 
-        - Enter system-wide safe state
+        - Enter system-wide command halt state
 
         - Log the event to audit trail
 
 
-        WARNING: This is a safety-critical operation that requires
+        WARNING: This is a guardrail-critical operation that requires
 
-        manual reset with authorization.'
-      operationId: trigger_emergency_stop_api_safety_emergency_stop_post
+        manual clearing with authorization.'
+      operationId: halt_command_emission_api_guardrails_command_halt_post
       parameters:
       - name: authorization
         in: header
@@ -4662,7 +4661,7 @@ paths:
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/EmergencyStopRequest'
+              $ref: '#/components/schemas/CommandHaltRequest'
       responses:
         '200':
           description: Successful Response
@@ -4672,50 +4671,7 @@ paths:
                 type: object
                 additionalProperties:
                   type: string
-                title: Response Trigger Emergency Stop Api Safety Emergency Stop Post
-        '422':
-          description: Validation Error
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/HTTPValidationError'
-  /api/safety/emergency-stop/reset:
-    post:
-      tags:
-      - safety
-      summary: Reset Emergency Stop
-      description: 'Reset emergency stop with authorization.
-
-
-        Requires valid authorization code. After reset, individual
-
-        features and interlocks must be manually re-enabled.'
-      operationId: reset_emergency_stop_api_safety_emergency_stop_reset_post
-      parameters:
-      - name: authorization
-        in: header
-        required: false
-        schema:
-          anyOf:
-          - type: string
-          - type: 'null'
-          title: Authorization
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/EmergencyStopResetRequest'
-      responses:
-        '200':
-          description: Successful Response
-          content:
-            application/json:
-              schema:
-                type: object
-                additionalProperties:
-                  type: string
-                title: Response Reset Emergency Stop Api Safety Emergency Stop Reset
+                title: Response Halt Command Emission Api Guardrails Command Halt
                   Post
         '422':
           description: Validation Error
@@ -4723,16 +4679,60 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/HTTPValidationError'
-  /api/safety/audit-log:
+  /api/guardrails/command-halt/clear:
+    post:
+      tags:
+      - guardrails
+      summary: Clear Command Halt
+      description: 'Clear command halt with authorization.
+
+
+        Requires valid authorization code. After clearing, individual
+
+        features and command preconditions must be manually re-enabled.'
+      operationId: clear_command_halt_api_guardrails_command_halt_clear_post
+      parameters:
+      - name: authorization
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ClearCommandHaltRequest'
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties:
+                  type: string
+                title: Response Clear Command Halt Api Guardrails Command Halt Clear
+                  Post
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/guardrails/audit-log:
     get:
       tags:
-      - safety
+      - guardrails
       summary: Get Audit Log
-      description: "Get safety audit log entries.\n\nReturns recent safety-critical\
-        \ events including:\n- Interlock engagements/disengagements\n- Emergency stops\n\
-        - Safe state entries\n- System errors\n\nArgs:\n    max_entries: Maximum number\
-        \ of entries to return (default: 100)"
-      operationId: get_audit_log_api_safety_audit_log_get
+      description: "Get guardrails audit log entries.\n\nReturns recent guardrail-critical\
+        \ events including:\n- Interlock engagements/disengagements\n- Command halts\n\
+        - Command halt state entries\n- System errors\n\nArgs:\n    max_entries: Maximum\
+        \ number of entries to return (default: 100)"
+      operationId: get_audit_log_api_guardrails_audit_log_get
       parameters:
       - name: max_entries
         in: query
@@ -4757,29 +4757,29 @@ paths:
               schema:
                 type: object
                 additionalProperties: true
-                title: Response Get Audit Log Api Safety Audit Log Get
+                title: Response Get Audit Log Api Guardrails Audit Log Get
         '422':
           description: Validation Error
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/HTTPValidationError'
-  /api/safety/health:
+  /api/guardrails/health:
     get:
       tags:
-      - safety
-      summary: Get Safety Health
-      description: 'Get safety service health status.
+      - guardrails
+      summary: Get Guardrail Health
+      description: 'Get guardrails service health status.
 
 
-        Returns information about the safety monitoring system itself:
+        Returns information about the guardrails monitoring system itself:
 
         - Monitoring task status
 
         - Watchdog timer health
 
         - Last check timestamps'
-      operationId: get_safety_health_api_safety_health_get
+      operationId: get_guardrail_health_api_guardrails_health_get
       parameters:
       - name: authorization
         in: header
@@ -4797,67 +4797,25 @@ paths:
               schema:
                 type: object
                 additionalProperties: true
-                title: Response Get Safety Health Api Safety Health Get
+                title: Response Get Guardrail Health Api Guardrails Health Get
         '422':
           description: Validation Error
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/HTTPValidationError'
-  /api/safety/pin/emergency-stop:
+  /api/guardrails/pin/command-halt:
     post:
       tags:
-      - safety
-      summary: Pin Emergency Stop
-      description: 'Trigger emergency stop using PIN authorization (Admin Only).
+      - guardrails
+      summary: Pin Halt Command Emission
+      description: 'Trigger command halt using PIN authorization (Admin Only).
 
 
-        Requires valid PIN session for emergency operations.
+        Requires valid PIN session for command-halt operations.
 
-        Provides enhanced security for safety-critical operations.'
-      operationId: pin_emergency_stop_api_safety_pin_emergency_stop_post
-      parameters:
-      - name: authorization
-        in: header
-        required: false
-        schema:
-          anyOf:
-          - type: string
-          - type: 'null'
-          title: Authorization
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/PINEmergencyStopRequest'
-      responses:
-        '200':
-          description: Successful Response
-          content:
-            application/json:
-              schema:
-                type: object
-                additionalProperties: true
-                title: Response Pin Emergency Stop Api Safety Pin Emergency Stop Post
-        '422':
-          description: Validation Error
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/HTTPValidationError'
-  /api/safety/pin/emergency-stop/reset:
-    post:
-      tags:
-      - safety
-      summary: Pin Emergency Reset
-      description: 'Reset emergency stop using PIN authorization (Admin Only).
-
-
-        Requires valid PIN session for reset operations.
-
-        Provides enhanced security for safety-critical operations.'
-      operationId: pin_emergency_reset_api_safety_pin_emergency_stop_reset_post
+        Provides enhanced security for guardrail-critical operations.'
+      operationId: pin_halt_command_emission_api_guardrails_pin_command_halt_post
       parameters:
       - name: authorization
         in: header
@@ -4872,7 +4830,7 @@ paths:
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/PINEmergencyResetRequest'
+              $ref: '#/components/schemas/PINCommandHaltRequest'
       responses:
         '200':
           description: Successful Response
@@ -4881,28 +4839,72 @@ paths:
               schema:
                 type: object
                 additionalProperties: true
-                title: Response Pin Emergency Reset Api Safety Pin Emergency Stop
-                  Reset Post
+                title: Response Pin Halt Command Emission Api Guardrails Pin Command
+                  Halt Post
         '422':
           description: Validation Error
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/HTTPValidationError'
-  /api/safety/pin/interlocks/override:
+  /api/guardrails/pin/command-halt/clear:
     post:
       tags:
-      - safety
+      - guardrails
+      summary: Pin Clear Command Halt
+      description: 'Clear command halt using PIN authorization (Admin Only).
+
+
+        Requires valid PIN session for command-halt clear operations.
+
+        Provides enhanced security for guardrail-critical operations.'
+      operationId: pin_clear_command_halt_api_guardrails_pin_command_halt_clear_post
+      parameters:
+      - name: authorization
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PINClearCommandHaltRequest'
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+                title: Response Pin Clear Command Halt Api Guardrails Pin Command
+                  Halt Clear Post
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/guardrails/pin/interlocks/override:
+    post:
+      tags:
+      - guardrails
       summary: Pin Override Interlock
-      description: 'Override a safety interlock using PIN authorization (Admin Only).
+      description: 'Override a command precondition using PIN authorization (Admin
+        Only).
 
 
-        Allows temporary override of safety interlocks for maintenance or
+        Allows temporary override of command preconditions for maintenance or
 
         diagnostic operations. Requires valid PIN session with override permissions.
 
         Override will automatically expire after the specified duration.'
-      operationId: pin_override_interlock_api_safety_pin_interlocks_override_post
+      operationId: pin_override_interlock_api_guardrails_pin_interlocks_override_post
       parameters:
       - name: authorization
         in: header
@@ -4926,18 +4928,18 @@ paths:
               schema:
                 type: object
                 additionalProperties: true
-                title: Response Pin Override Interlock Api Safety Pin Interlocks Override
-                  Post
+                title: Response Pin Override Interlock Api Guardrails Pin Interlocks
+                  Override Post
         '422':
           description: Validation Error
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/HTTPValidationError'
-  /api/safety/interlocks/clear-override:
+  /api/guardrails/interlocks/clear-override:
     post:
       tags:
-      - safety
+      - guardrails
       summary: Clear Interlock Override
       description: 'Clear an active interlock override (Admin Only).
 
@@ -4945,7 +4947,7 @@ paths:
         Immediately removes any active override on the specified interlock,
 
         returning it to normal operation.'
-      operationId: clear_interlock_override_api_safety_interlocks_clear_override_post
+      operationId: clear_interlock_override_api_guardrails_interlocks_clear_override_post
       parameters:
       - name: authorization
         in: header
@@ -4969,18 +4971,18 @@ paths:
               schema:
                 type: object
                 additionalProperties: true
-                title: Response Clear Interlock Override Api Safety Interlocks Clear
-                  Override Post
+                title: Response Clear Interlock Override Api Guardrails Interlocks
+                  Clear Override Post
         '422':
           description: Validation Error
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/HTTPValidationError'
-  /api/safety/interlocks/overrides:
+  /api/guardrails/interlocks/overrides:
     get:
       tags:
-      - safety
+      - guardrails
       summary: Get Active Overrides
       description: 'Get all active interlock overrides (Admin Only).
 
@@ -4988,7 +4990,7 @@ paths:
         Returns information about currently active interlock overrides including
 
         who authorized them, when they expire, and the reason for override.'
-      operationId: get_active_overrides_api_safety_interlocks_overrides_get
+      operationId: get_active_overrides_api_guardrails_interlocks_overrides_get
       parameters:
       - name: authorization
         in: header
@@ -5006,7 +5008,7 @@ paths:
               schema:
                 type: object
                 additionalProperties: true
-                title: Response Get Active Overrides Api Safety Interlocks Overrides
+                title: Response Get Active Overrides Api Guardrails Interlocks Overrides
                   Get
         '422':
           description: Validation Error
@@ -5014,19 +5016,19 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/HTTPValidationError'
-  /api/safety/pin/maintenance-mode/enter:
+  /api/guardrails/pin/maintenance-mode/enter:
     post:
       tags:
-      - safety
+      - guardrails
       summary: Pin Enter Maintenance Mode
       description: 'Enter maintenance mode using PIN authorization (Admin Only).
 
 
         In maintenance mode:
 
-        - Safety interlocks can be temporarily overridden
+        - Guardrail interlocks can be temporarily overridden
 
-        - Certain safety checks may be relaxed for service operations
+        - Certain guardrails checks may be relaxed for service operations
 
         - All actions are fully audited
 
@@ -5034,7 +5036,7 @@ paths:
 
 
         Requires valid PIN session with maintenance permissions.'
-      operationId: pin_enter_maintenance_mode_api_safety_pin_maintenance_mode_enter_post
+      operationId: pin_enter_maintenance_mode_api_guardrails_pin_maintenance_mode_enter_post
       parameters:
       - name: authorization
         in: header
@@ -5058,7 +5060,7 @@ paths:
               schema:
                 type: object
                 additionalProperties: true
-                title: Response Pin Enter Maintenance Mode Api Safety Pin Maintenance
+                title: Response Pin Enter Maintenance Mode Api Guardrails Pin Maintenance
                   Mode Enter Post
         '422':
           description: Validation Error
@@ -5066,25 +5068,25 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/HTTPValidationError'
-  /api/safety/pin/maintenance-mode/exit:
+  /api/guardrails/pin/maintenance-mode/exit:
     post:
       tags:
-      - safety
+      - guardrails
       summary: Pin Exit Maintenance Mode
       description: 'Exit maintenance mode using PIN authorization (Admin Only).
 
 
         Returns system to normal operational mode:
 
-        - All safety interlocks return to normal operation
+        - All command preconditions return to normal operation
 
         - Any active overrides are cleared
 
-        - Full safety validation resumes
+        - Full guardrails validation resumes
 
 
         Requires valid PIN session.'
-      operationId: pin_exit_maintenance_mode_api_safety_pin_maintenance_mode_exit_post
+      operationId: pin_exit_maintenance_mode_api_guardrails_pin_maintenance_mode_exit_post
       parameters:
       - name: authorization
         in: header
@@ -5108,7 +5110,7 @@ paths:
               schema:
                 type: object
                 additionalProperties: true
-                title: Response Pin Exit Maintenance Mode Api Safety Pin Maintenance
+                title: Response Pin Exit Maintenance Mode Api Guardrails Pin Maintenance
                   Mode Exit Post
         '422':
           description: Validation Error
@@ -5116,10 +5118,10 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/HTTPValidationError'
-  /api/safety/operational-mode:
+  /api/guardrails/operational-mode:
     get:
       tags:
-      - safety
+      - guardrails
       summary: Get Operational Mode
       description: 'Get current operational mode and session details.
 
@@ -5133,7 +5135,7 @@ paths:
         - When it was activated and when it expires
 
         - Active overrides count'
-      operationId: get_operational_mode_api_safety_operational_mode_get
+      operationId: get_operational_mode_api_guardrails_operational_mode_get
       parameters:
       - name: authorization
         in: header
@@ -5151,17 +5153,18 @@ paths:
               schema:
                 type: object
                 additionalProperties: true
-                title: Response Get Operational Mode Api Safety Operational Mode Get
+                title: Response Get Operational Mode Api Guardrails Operational Mode
+                  Get
         '422':
           description: Validation Error
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/HTTPValidationError'
-  /api/safety/pin/diagnostic-mode/enter:
+  /api/guardrails/pin/diagnostic-mode/enter:
     post:
       tags:
-      - safety
+      - guardrails
       summary: Pin Enter Diagnostic Mode
       description: 'Enter diagnostic mode using PIN authorization (Admin Only).
 
@@ -5170,7 +5173,7 @@ paths:
 
         - System diagnostics and testing can be performed
 
-        - Test procedures may temporarily modify safety constraints
+        - Test procedures may temporarily modify guardrails constraints
 
         - All actions are fully audited
 
@@ -5179,11 +5182,11 @@ paths:
 
         WARNING: Diagnostic mode is intended for troubleshooting only.
 
-        Safety constraints may be modified during diagnostics.
+        Guardrail constraints may be modified during diagnostics.
 
 
         Requires valid PIN session with diagnostic permissions.'
-      operationId: pin_enter_diagnostic_mode_api_safety_pin_diagnostic_mode_enter_post
+      operationId: pin_enter_diagnostic_mode_api_guardrails_pin_diagnostic_mode_enter_post
       parameters:
       - name: authorization
         in: header
@@ -5207,7 +5210,7 @@ paths:
               schema:
                 type: object
                 additionalProperties: true
-                title: Response Pin Enter Diagnostic Mode Api Safety Pin Diagnostic
+                title: Response Pin Enter Diagnostic Mode Api Guardrails Pin Diagnostic
                   Mode Enter Post
         '422':
           description: Validation Error
@@ -5215,25 +5218,25 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/HTTPValidationError'
-  /api/safety/pin/diagnostic-mode/exit:
+  /api/guardrails/pin/diagnostic-mode/exit:
     post:
       tags:
-      - safety
+      - guardrails
       summary: Pin Exit Diagnostic Mode
       description: 'Exit diagnostic mode using PIN authorization (Admin Only).
 
 
         Returns system to normal operational mode:
 
-        - All safety constraints return to normal operation
+        - All guardrails constraints return to normal operation
 
         - Any diagnostic overrides are cleared
 
-        - Full safety validation resumes
+        - Full guardrails validation resumes
 
 
         Requires valid PIN session.'
-      operationId: pin_exit_diagnostic_mode_api_safety_pin_diagnostic_mode_exit_post
+      operationId: pin_exit_diagnostic_mode_api_guardrails_pin_diagnostic_mode_exit_post
       parameters:
       - name: authorization
         in: header
@@ -5257,7 +5260,7 @@ paths:
               schema:
                 type: object
                 additionalProperties: true
-                title: Response Pin Exit Diagnostic Mode Api Safety Pin Diagnostic
+                title: Response Pin Exit Diagnostic Mode Api Guardrails Pin Diagnostic
                   Mode Exit Post
         '422':
           description: Validation Error
@@ -7622,6 +7625,88 @@ paths:
                 type: object
                 title: Response Get Baseline Comparison Api Startup Baseline Comparison
                   Get
+  /api/v1/auth/oidc/login:
+    get:
+      tags:
+      - Authentication
+      summary: Start PocketID OIDC login
+      description: Start a PocketID OIDC authorization-code flow.
+      operationId: start_oidc_login_api_v1_auth_oidc_login_get
+      responses:
+        '307':
+          description: Successful Response
+  /api/v1/auth/oidc/callback:
+    get:
+      tags:
+      - Authentication
+      summary: Complete PocketID OIDC login or local token handoff
+      description: Complete OIDC callback validation or exchange a one-time local
+        session code.
+      operationId: complete_oidc_login_api_v1_auth_oidc_callback_get
+      parameters:
+      - name: code
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          description: PocketID authorization code
+          title: Code
+        description: PocketID authorization code
+      - name: state
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          description: OIDC state value
+          title: State
+        description: OIDC state value
+      - name: iss
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          description: Authorization response issuer
+          title: Iss
+        description: Authorization response issuer
+      - name: session_code
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          description: One-time local session handoff code
+          title: Session Code
+        description: One-time local session handoff code
+      - name: error
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          description: PocketID authorization error
+          title: Error
+        description: PocketID authorization error
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/backend__api__domains__auth__TokenPair'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
   /api/v1/diagnostics/health:
     get:
       tags:
@@ -8008,13 +8093,13 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/HTTPValidationError'
-  /api/v1/entities/safety-status:
+  /api/v1/entities/guardrail-status:
     get:
       tags:
       - entities
-      summary: Get Safety Status
-      description: Get current safety system status
-      operationId: get_safety_status_api_v1_entities_safety_status_get
+      summary: Get Guardrail Status
+      description: Get current guardrail status
+      operationId: get_guardrail_status_api_v1_entities_guardrail_status_get
       responses:
         '200':
           description: Successful Response
@@ -8023,7 +8108,8 @@ paths:
               schema:
                 additionalProperties: true
                 type: object
-                title: Response Get Safety Status Api V1 Entities Safety Status Get
+                title: Response Get Guardrail Status Api V1 Entities Guardrail Status
+                  Get
   /api/v1/entities/metadata:
     get:
       tags:
@@ -8258,14 +8344,13 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/HTTPValidationError'
-  /api/v1/entities/emergency-stop:
+  /api/v1/entities/command-halt:
     post:
       tags:
       - entities
-      summary: Emergency Stop
-      description: Emergency stop - immediately halt all entity operations (Admin
-        Only)
-      operationId: emergency_stop_api_v1_entities_emergency_stop_post
+      summary: Halt Command Emission
+      description: Command halt - immediately halt all entity operations (Admin Only)
+      operationId: halt_command_emission_api_v1_entities_command_halt_post
       parameters:
       - name: authorization
         in: header
@@ -8283,20 +8368,21 @@ paths:
               schema:
                 type: object
                 additionalProperties: true
-                title: Response Emergency Stop Api V1 Entities Emergency Stop Post
+                title: Response Halt Command Emission Api V1 Entities Command Halt
+                  Post
         '422':
           description: Validation Error
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/HTTPValidationError'
-  /api/v1/entities/clear-emergency-stop:
+  /api/v1/entities/command-halt/clear:
     post:
       tags:
       - entities
-      summary: Clear Emergency Stop
-      description: Clear emergency stop condition (Admin Only)
-      operationId: clear_emergency_stop_api_v1_entities_clear_emergency_stop_post
+      summary: Clear Command Halt
+      description: Clear command halt condition (Admin Only)
+      operationId: clear_command_halt_api_v1_entities_command_halt_clear_post
       parameters:
       - name: authorization
         in: header
@@ -8314,8 +8400,8 @@ paths:
               schema:
                 type: object
                 additionalProperties: true
-                title: Response Clear Emergency Stop Api V1 Entities Clear Emergency
-                  Stop Post
+                title: Response Clear Command Halt Api V1 Entities Command Halt Clear
+                  Post
         '422':
           description: Validation Error
           content:
@@ -9073,16 +9159,16 @@ components:
         magic_links_enabled:
           type: boolean
           title: Magic Links Enabled
-        oauth_enabled:
+        oidc_enabled:
           type: boolean
-          title: Oauth Enabled
+          title: Oidc Enabled
       type: object
       required:
       - enabled
       - mode
       - jwt_available
       - magic_links_enabled
-      - oauth_enabled
+      - oidc_enabled
       title: AuthStatus
       description: Authentication status response model.
     AuthenticationPolicy:
@@ -9187,11 +9273,6 @@ components:
           title: Enable Magic Links
           description: Enable magic link authentication
           default: true
-        enable_oauth:
-          type: boolean
-          title: Enable Oauth
-          description: Enable OAuth authentication
-          default: false
         enable_mfa:
           type: boolean
           title: Enable Mfa
@@ -10088,6 +10169,32 @@ components:
       - overall_success_rate
       title: ChannelMetricsResponse
       description: Response model for channel metrics.
+    ClearCommandHaltRequest:
+      properties:
+        authorization_code:
+          type: string
+          title: Authorization Code
+          description: Legacy authorization code for clear
+          default: ''
+        pin_session_id:
+          type: string
+          title: Pin Session Id
+          description: PIN session ID for enhanced authorization
+          default: ''
+      type: object
+      title: ClearCommandHaltRequest
+      description: Command halt clear request model.
+    CommandHaltRequest:
+      properties:
+        reason:
+          type: string
+          title: Reason
+          description: Reason for command halt
+      type: object
+      required:
+      - reason
+      title: CommandHaltRequest
+      description: Command halt request model.
     CommunicationPatternResponse:
       properties:
         pattern_type:
@@ -10141,11 +10248,11 @@ components:
           type: number
           title: Last Checked
           description: Last health check timestamp
-        safety_classification:
+        guardrail_tier:
           anyOf:
           - type: string
           - type: 'null'
-          title: Safety Classification
+          title: Guardrail Tier
           description: Safety classification if applicable
       type: object
       required:
@@ -10727,32 +10834,6 @@ components:
       type: object
       title: DiscoverDevicesRequest
       description: Request model for device discovery.
-    EmergencyStopRequest:
-      properties:
-        reason:
-          type: string
-          title: Reason
-          description: Reason for emergency stop
-      type: object
-      required:
-      - reason
-      title: EmergencyStopRequest
-      description: Emergency stop request model.
-    EmergencyStopResetRequest:
-      properties:
-        authorization_code:
-          type: string
-          title: Authorization Code
-          description: Legacy authorization code for reset
-          default: ''
-        pin_session_id:
-          type: string
-          title: Pin Session Id
-          description: PIN session ID for enhanced authorization
-          default: ''
-      type: object
-      title: EmergencyStopResetRequest
-      description: Emergency stop reset request model.
     EntityCollectionV2:
       properties:
         entities:
@@ -12474,6 +12555,33 @@ components:
       - message
       title: OperationAuthorizationResponse
       description: Operation authorization response.
+    PINClearCommandHaltRequest:
+      properties:
+        pin_session_id:
+          type: string
+          title: Pin Session Id
+          description: PIN session ID for authorization
+      type: object
+      required:
+      - pin_session_id
+      title: PINClearCommandHaltRequest
+      description: PIN-based command halt clear request model.
+    PINCommandHaltRequest:
+      properties:
+        pin_session_id:
+          type: string
+          title: Pin Session Id
+          description: PIN session ID for authorization
+        reason:
+          type: string
+          title: Reason
+          description: Reason for command halt
+      type: object
+      required:
+      - pin_session_id
+      - reason
+      title: PINCommandHaltRequest
+      description: PIN-based command halt request model.
     PINDiagnosticModeExitRequest:
       properties:
         pin_session_id:
@@ -12508,33 +12616,6 @@ components:
       - reason
       title: PINDiagnosticModeRequest
       description: PIN-based diagnostic mode request model.
-    PINEmergencyResetRequest:
-      properties:
-        pin_session_id:
-          type: string
-          title: Pin Session Id
-          description: PIN session ID for authorization
-      type: object
-      required:
-      - pin_session_id
-      title: PINEmergencyResetRequest
-      description: PIN-based emergency reset request model.
-    PINEmergencyStopRequest:
-      properties:
-        pin_session_id:
-          type: string
-          title: Pin Session Id
-          description: PIN session ID for authorization
-        reason:
-          type: string
-          title: Reason
-          description: Reason for emergency stop
-      type: object
-      required:
-      - pin_session_id
-      - reason
-      title: PINEmergencyStopRequest
-      description: PIN-based emergency stop request model.
     PINInfo:
       properties:
         pin_type:
@@ -13947,7 +14028,7 @@ components:
           type: string
           title: Name
         status:
-          $ref: '#/components/schemas/backend__core__service_registry__ServiceStatus'
+          $ref: '#/components/schemas/backend__core__service_status__ServiceStatus'
         health_status:
           $ref: '#/components/schemas/HealthStatus'
         message:
@@ -14015,14 +14096,7 @@ components:
       - FAILED
       - STOPPED
       title: ServiceStatus
-      description: "Service lifecycle status.\n\nLifecycle order during a normal run:\n\
-        \    PENDING -> STARTING -> HEALTHY (-> DEGRADED) -> STOPPED\nFailure paths\
-        \ transition to FAILED at any step.\n\nSTOPPED is used both pre-startup (initial\
-        \ state for services that\nhave been registered but not yet brought up) and\
-        \ post-shutdown\n(after _shutdown_service successfully tears a service down).\
-        \ The\nenum's previous omission of STOPPED meant services kept their last\n\
-        runtime status forever after shutdown, which broke any caller that\nneeded\
-        \ to distinguish 'still running' from 'cleanly stopped'."
+      description: Service lifecycle status.
     ServiceTimingInfo:
       properties:
         name:
@@ -14154,7 +14228,7 @@ components:
         service_registry_time_ms:
           type: number
           title: Service Registry Time Ms
-          description: ServiceRegistry initialization time
+          description: Startup initialization time
         service_count:
           type: integer
           title: Service Count
@@ -14423,32 +14497,6 @@ components:
       - expires_in
       title: Token
       description: JWT token response model.
-    TokenPair:
-      properties:
-        access_token:
-          type: string
-          title: Access Token
-        refresh_token:
-          type: string
-          title: Refresh Token
-        token_type:
-          type: string
-          title: Token Type
-          default: bearer
-        expires_in:
-          type: integer
-          title: Expires In
-        refresh_expires_in:
-          type: integer
-          title: Refresh Expires In
-      type: object
-      required:
-      - access_token
-      - refresh_token
-      - expires_in
-      - refresh_expires_in
-      title: TokenPair
-      description: Access and refresh token pair response model.
     UnlockAccountRequest:
       properties:
         username:
@@ -14617,6 +14665,37 @@ components:
       - latency_ms
       title: WebSocketLatencyRequest
       description: Request model for recording WebSocket latency.
+    backend__api__domains__auth__TokenPair:
+      properties:
+        access_token:
+          type: string
+          title: Access Token
+          description: Local CoachIQ access token
+        refresh_token:
+          type: string
+          title: Refresh Token
+          description: Local CoachIQ refresh token
+        token_type:
+          type: string
+          title: Token Type
+          description: Token type
+          default: bearer
+        expires_in:
+          type: integer
+          title: Expires In
+          description: Access token lifetime in seconds
+        refresh_expires_in:
+          type: integer
+          title: Refresh Expires In
+          description: Refresh token lifetime in seconds
+      type: object
+      required:
+      - access_token
+      - refresh_token
+      - expires_in
+      - refresh_expires_in
+      title: TokenPair
+      description: Access and refresh token pair response model.
     backend__api__domains__diagnostics__SystemMetrics:
       properties:
         cpu_usage:
@@ -14769,6 +14848,32 @@ components:
       - timestamp
       title: SystemStatus
       description: Overall system status with enhanced metadata
+    backend__api__routers__auth__TokenPair:
+      properties:
+        access_token:
+          type: string
+          title: Access Token
+        refresh_token:
+          type: string
+          title: Refresh Token
+        token_type:
+          type: string
+          title: Token Type
+          default: bearer
+        expires_in:
+          type: integer
+          title: Expires In
+        refresh_expires_in:
+          type: integer
+          title: Refresh Expires In
+      type: object
+      required:
+      - access_token
+      - refresh_token
+      - expires_in
+      - refresh_expires_in
+      title: TokenPair
+      description: Access and refresh token pair response model.
     backend__api__routers__notification_analytics__DashboardMetrics:
       properties:
         summary:
@@ -14919,7 +15024,7 @@ components:
       - last_updated
       title: SystemHealthResponse
       description: System health status response.
-    backend__core__service_registry__ServiceStatus:
+    backend__core__service_status__ServiceStatus:
       type: string
       enum:
       - PENDING
@@ -14929,14 +15034,7 @@ components:
       - FAILED
       - STOPPED
       title: ServiceStatus
-      description: "Service lifecycle status.\n\nLifecycle order during a normal run:\n\
-        \    PENDING -> STARTING -> HEALTHY (-> DEGRADED) -> STOPPED\nFailure paths\
-        \ transition to FAILED at any step.\n\nSTOPPED is used both pre-startup (initial\
-        \ state for services that\nhave been registered but not yet brought up) and\
-        \ post-shutdown\n(after _shutdown_service successfully tears a service down).\
-        \ The\nenum's previous omission of STOPPED meant services kept their last\n\
-        runtime status forever after shutdown, which broke any caller that\nneeded\
-        \ to distinguish 'still running' from 'cleanly stopped'."
+      description: Service lifecycle status.
     backend__models__dashboard__SystemMetrics:
       properties:
         uptime_seconds:

@@ -1315,7 +1315,7 @@ export interface AuthStatus {
   mode: 'none' | 'single' | 'multi';
   jwt_available: boolean;
   magic_links_enabled: boolean;
-  oauth_enabled: boolean;
+  oidc_enabled: boolean;
 }
 
 export interface LoginCredentials {
