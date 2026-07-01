@@ -18,6 +18,7 @@ from backend.services.auth.mcp_contract import (
     MCP_AS_TOKEN_AUTH_METHODS,
     MCP_DCR_REDIRECT_URI_PREFIXES,
 )
+from backend.services.auth.mcp_oauth_guard import require_mcp_oauth_token
 from backend.services.auth.mcp_oauth_repository import McpOAuthRepository
 from backend.services.auth.mcp_oauth_service import create_upstream_login_state, verify_pkce_s256
 from backend.services.auth.mcp_oauth_security import McpOAuthRateLimiter, audit_mcp_oauth_event
@@ -284,6 +285,20 @@ def _basic_client_credentials(request: Request) -> tuple[str | None, str | None]
     if not separator:
         return None, None
     return client_id, secret
+
+
+@router.post("/api/mcp")
+async def minimal_mcp_resource(
+    request: Request,
+    repository: Annotated[McpOAuthRepository, Depends(get_mcp_oauth_repository)],
+) -> dict[str, Any]:
+    """Minimal authenticated MCP resource boundary for OAuth conformance."""
+    token_context = await require_mcp_oauth_token(
+        request,
+        settings=get_settings(),
+        repository=repository,
+    )
+    return {"jsonrpc": "2.0", "result": {"authenticated": True, **token_context}}
 
 
 @router.get("/oauth/authorize", response_model=None)

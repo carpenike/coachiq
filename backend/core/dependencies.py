@@ -78,6 +78,7 @@ from backend.services.analytics.analytics_dashboard_service import (
 from backend.services.auth.manager import AuthManager as _AuthManager
 from backend.services.auth.pin_manager import PINManager as _PINManager
 from backend.services.auth.service import AuthService as _AuthService
+from backend.services.auth.mcp_oauth_guard import reject_mcp_token_on_rest
 from backend.services.can.can_facade import CANFacade as _CANFacade
 from backend.services.can.can_network_telemetry_service import (
     CANNetworkTelemetryService as _CANNetworkTelemetryService,
@@ -638,6 +639,7 @@ async def get_authenticated_user(
             detail="Authorization header missing",
             headers={"WWW-Authenticate": "Bearer"},
         )
+    reject_mcp_token_on_rest(authorization)
 
     # Extract token from Bearer scheme
     scheme, _, token = authorization.partition(" ")
