@@ -3267,6 +3267,262 @@ paths:
                 type: object
                 title: Response Get Multi Network Health Api Multi Network Health
                   Get
+  /.well-known/oauth-authorization-server:
+    get:
+      tags:
+      - MCP OAuth
+      summary: Get Authorization Server Metadata
+      description: Return OAuth authorization-server metadata with contract-exact
+        field names.
+      operationId: get_authorization_server_metadata__well_known_oauth_authorization_server_get
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                additionalProperties: true
+                type: object
+                title: Response Get Authorization Server Metadata  Well Known Oauth
+                  Authorization Server Get
+  /.well-known/oauth-protected-resource:
+    get:
+      tags:
+      - MCP OAuth
+      summary: Get Origin Protected Resource Metadata
+      description: Return origin-root protected-resource metadata for older clients.
+      operationId: get_origin_protected_resource_metadata__well_known_oauth_protected_resource_get
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                additionalProperties: true
+                type: object
+                title: Response Get Origin Protected Resource Metadata  Well Known
+                  Oauth Protected Resource Get
+  /.well-known/oauth-protected-resource{resource_path}:
+    get:
+      tags:
+      - MCP OAuth
+      summary: Get Path Protected Resource Metadata
+      description: Return path-suffixed protected-resource metadata for spec-strict
+        clients.
+      operationId: get_path_protected_resource_metadata__well_known_oauth_protected_resource_resource_path__get
+      parameters:
+      - name: resource_path
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Resource Path
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+                title: Response Get Path Protected Resource Metadata  Well Known Oauth
+                  Protected Resource Resource Path  Get
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /oauth/register:
+    post:
+      tags:
+      - MCP OAuth
+      summary: Register Oauth Client
+      description: Register an MCP OAuth client using allowlist-filtered redirect
+        URIs.
+      operationId: register_oauth_client_oauth_register_post
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ClientRegistrationRequest'
+        required: true
+      responses:
+        '201':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ClientRegistrationResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /oauth/token:
+    post:
+      tags:
+      - MCP OAuth
+      summary: Issue Oauth Token
+      description: Exchange a single-use authorization code for an opaque MCP token.
+      operationId: issue_oauth_token_oauth_token_post
+      requestBody:
+        content:
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/Body_issue_oauth_token_oauth_token_post'
+        required: true
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TokenResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/mcp:
+    post:
+      tags:
+      - MCP OAuth
+      summary: Minimal Mcp Resource
+      description: Minimal authenticated MCP resource boundary for OAuth conformance.
+      operationId: minimal_mcp_resource_api_mcp_post
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                additionalProperties: true
+                type: object
+                title: Response Minimal Mcp Resource Api Mcp Post
+  /oauth/authorize:
+    get:
+      tags:
+      - MCP OAuth
+      summary: Authorize Oauth Client
+      description: Validate client authorization request and redirect to PocketID.
+      operationId: authorize_oauth_client_oauth_authorize_get
+      parameters:
+      - name: client_id
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Client Id
+      - name: redirect_uri
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Redirect Uri
+      - name: response_type
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Response Type
+      - name: scope
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Scope
+      - name: state
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: State
+      - name: code_challenge
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Code Challenge
+      - name: code_challenge_method
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Code Challenge Method
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /oauth/callback:
+    get:
+      tags:
+      - MCP OAuth
+      summary: Complete Oauth Federation
+      description: Complete the AS-to-PocketID leg and issue a client authorization
+        code.
+      operationId: complete_oauth_federation_oauth_callback_get
+      parameters:
+      - name: code
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Code
+      - name: state
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: State
+      - name: iss
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Iss
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
   /api/performance/health-computed:
     get:
       tags:
@@ -9565,6 +9821,40 @@ components:
       required:
       - file
       title: Body_convert_dbc_to_rvc_api_dbc_convert_dbc_to_rvc_post
+    Body_issue_oauth_token_oauth_token_post:
+      properties:
+        grant_type:
+          type: string
+          title: Grant Type
+        code:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Code
+        redirect_uri:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Redirect Uri
+        client_id:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Client Id
+        client_secret:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Client Secret
+        code_verifier:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Code Verifier
+      type: object
+      required:
+      - grant_type
+      title: Body_issue_oauth_token_oauth_token_post
     Body_login_for_access_token_api_auth_login_post:
       properties:
         grant_type:
@@ -10184,6 +10474,43 @@ components:
       type: object
       title: ClearCommandHaltRequest
       description: Command halt clear request model.
+    ClientRegistrationRequest:
+      properties:
+        redirect_uris:
+          items:
+            type: string
+          type: array
+          title: Redirect Uris
+          description: Requested redirect URIs
+      type: object
+      required:
+      - redirect_uris
+      title: ClientRegistrationRequest
+      description: Dynamic client registration request.
+    ClientRegistrationResponse:
+      properties:
+        client_id:
+          type: string
+          title: Client Id
+        client_secret:
+          type: string
+          title: Client Secret
+        client_secret_expires_at:
+          type: integer
+          title: Client Secret Expires At
+          default: 0
+        redirect_uris:
+          items:
+            type: string
+          type: array
+          title: Redirect Uris
+      type: object
+      required:
+      - client_id
+      - client_secret
+      - redirect_uris
+      title: ClientRegistrationResponse
+      description: Dynamic client registration response.
     CommandHaltRequest:
       properties:
         reason:
@@ -14497,6 +14824,28 @@ components:
       - expires_in
       title: Token
       description: JWT token response model.
+    TokenResponse:
+      properties:
+        access_token:
+          type: string
+          title: Access Token
+        token_type:
+          type: string
+          title: Token Type
+          default: Bearer
+        expires_in:
+          type: integer
+          title: Expires In
+        scope:
+          type: string
+          title: Scope
+      type: object
+      required:
+      - access_token
+      - expires_in
+      - scope
+      title: TokenResponse
+      description: OAuth token endpoint response for opaque-no-refresh profile.
     UnlockAccountRequest:
       properties:
         username:

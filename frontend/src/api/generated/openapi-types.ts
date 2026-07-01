@@ -2914,6 +2914,166 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/.well-known/oauth-authorization-server": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Authorization Server Metadata
+         * @description Return OAuth authorization-server metadata with contract-exact field names.
+         */
+        get: operations["get_authorization_server_metadata__well_known_oauth_authorization_server_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/.well-known/oauth-protected-resource": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Origin Protected Resource Metadata
+         * @description Return origin-root protected-resource metadata for older clients.
+         */
+        get: operations["get_origin_protected_resource_metadata__well_known_oauth_protected_resource_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/.well-known/oauth-protected-resource{resource_path}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Path Protected Resource Metadata
+         * @description Return path-suffixed protected-resource metadata for spec-strict clients.
+         */
+        get: operations["get_path_protected_resource_metadata__well_known_oauth_protected_resource_resource_path__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/oauth/register": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Register Oauth Client
+         * @description Register an MCP OAuth client using allowlist-filtered redirect URIs.
+         */
+        post: operations["register_oauth_client_oauth_register_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/oauth/token": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Issue Oauth Token
+         * @description Exchange a single-use authorization code for an opaque MCP token.
+         */
+        post: operations["issue_oauth_token_oauth_token_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/mcp": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Minimal Mcp Resource
+         * @description Minimal authenticated MCP resource boundary for OAuth conformance.
+         */
+        post: operations["minimal_mcp_resource_api_mcp_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/oauth/authorize": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Authorize Oauth Client
+         * @description Validate client authorization request and redirect to PocketID.
+         */
+        get: operations["authorize_oauth_client_oauth_authorize_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/oauth/callback": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Complete Oauth Federation
+         * @description Complete the AS-to-PocketID leg and issue a client authorization code.
+         */
+        get: operations["complete_oauth_federation_oauth_callback_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/performance/health-computed": {
         parameters: {
             query?: never;
@@ -7580,6 +7740,21 @@ export interface components {
              */
             file: string;
         };
+        /** Body_issue_oauth_token_oauth_token_post */
+        Body_issue_oauth_token_oauth_token_post: {
+            /** Grant Type */
+            grant_type: string;
+            /** Code */
+            code?: string | null;
+            /** Redirect Uri */
+            redirect_uri?: string | null;
+            /** Client Id */
+            client_id?: string | null;
+            /** Client Secret */
+            client_secret?: string | null;
+            /** Code Verifier */
+            code_verifier?: string | null;
+        };
         /** Body_login_for_access_token_api_auth_login_post */
         Body_login_for_access_token_api_auth_login_post: {
             /** Grant Type */
@@ -8020,6 +8195,34 @@ export interface components {
              * @default
              */
             pin_session_id?: string;
+        };
+        /**
+         * ClientRegistrationRequest
+         * @description Dynamic client registration request.
+         */
+        ClientRegistrationRequest: {
+            /**
+             * Redirect Uris
+             * @description Requested redirect URIs
+             */
+            redirect_uris: string[];
+        };
+        /**
+         * ClientRegistrationResponse
+         * @description Dynamic client registration response.
+         */
+        ClientRegistrationResponse: {
+            /** Client Id */
+            client_id: string;
+            /** Client Secret */
+            client_secret: string;
+            /**
+             * Client Secret Expires At
+             * @default 0
+             */
+            client_secret_expires_at?: number;
+            /** Redirect Uris */
+            redirect_uris: string[];
         };
         /**
          * CommandHaltRequest
@@ -11569,6 +11772,23 @@ export interface components {
             token_type?: string;
             /** Expires In */
             expires_in: number;
+        };
+        /**
+         * TokenResponse
+         * @description OAuth token endpoint response for opaque-no-refresh profile.
+         */
+        TokenResponse: {
+            /** Access Token */
+            access_token: string;
+            /**
+             * Token Type
+             * @default Bearer
+             */
+            token_type?: string;
+            /** Expires In */
+            expires_in: number;
+            /** Scope */
+            scope: string;
         };
         /**
          * UnlockAccountRequest
@@ -15618,6 +15838,241 @@ export interface operations {
                     "application/json": {
                         [key: string]: unknown;
                     };
+                };
+            };
+        };
+    };
+    get_authorization_server_metadata__well_known_oauth_authorization_server_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+        };
+    };
+    get_origin_protected_resource_metadata__well_known_oauth_protected_resource_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+        };
+    };
+    get_path_protected_resource_metadata__well_known_oauth_protected_resource_resource_path__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                resource_path: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    register_oauth_client_oauth_register_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ClientRegistrationRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ClientRegistrationResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    issue_oauth_token_oauth_token_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/x-www-form-urlencoded": components["schemas"]["Body_issue_oauth_token_oauth_token_post"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TokenResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    minimal_mcp_resource_api_mcp_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+        };
+    };
+    authorize_oauth_client_oauth_authorize_get: {
+        parameters: {
+            query?: {
+                client_id?: string | null;
+                redirect_uri?: string | null;
+                response_type?: string | null;
+                scope?: string | null;
+                state?: string | null;
+                code_challenge?: string | null;
+                code_challenge_method?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    complete_oauth_federation_oauth_callback_get: {
+        parameters: {
+            query?: {
+                code?: string | null;
+                state?: string | null;
+                iss?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };
