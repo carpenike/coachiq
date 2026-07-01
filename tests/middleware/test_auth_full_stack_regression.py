@@ -4,8 +4,10 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 import backend.api.routers.mcp_oauth as mcp_oauth_router
-from backend.api.routers.mcp_oauth import get_mcp_oauth_repository, router as mcp_oauth_router_obj
+from backend.api.routers.mcp_oauth import get_mcp_oauth_repository
+from backend.api.routers.mcp_oauth import router as mcp_oauth_router_obj
 from backend.core.config import McpSettings, ServerSettings, Settings
+from backend.core.exception_handlers import register_exception_handlers
 from backend.middleware.auth import AuthenticationMiddleware
 from backend.middleware.csrf_protection import CSRFProtectionMiddleware
 from backend.services.auth.manager import AuthMode, InvalidTokenError
@@ -27,7 +29,7 @@ class _McpRepository:
 
     async def validate_access_token(self, _token: str):
         """Reject all MCP tokens."""
-        return None
+        return
 
 
 def _settings() -> Settings:
@@ -42,6 +44,7 @@ def _settings() -> Settings:
 def _client() -> TestClient:
     """Build an app that exercises the real ASGI middleware stack."""
     app = FastAPI()
+    register_exception_handlers(app)
     app.add_middleware(AuthenticationMiddleware, auth_manager=_AuthManager())
     app.add_middleware(CSRFProtectionMiddleware, secret_key="test-secret", secure_cookie=False)
 

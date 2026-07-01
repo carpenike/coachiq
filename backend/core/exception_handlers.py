@@ -187,12 +187,15 @@ async def http_exception_handler(request: Request, exc: StarletteHTTPException) 
         extra={"request_id": request_id},
     )
 
-    return create_error_response(
+    response = create_error_response(
         status_code=exc.status_code,
         error_code=f"HTTP_{exc.status_code}",
         message=exc.detail,
         request_id=request_id,
     )
+    if exc.headers:
+        response.headers.update(exc.headers)
+    return response
 
 
 async def database_exception_handler(request: Request, exc: Exception) -> JSONResponse:
