@@ -60,6 +60,9 @@ class AuthenticationMiddleware(BaseHTTPMiddleware):
         "/api/auth/invitation/accept",  # Accept invitation via link
         # Admin credential retrieval (one-time display of auto-generated credentials)
         "/api/auth/admin/credentials",  # Auto-generated admin credentials
+        # PocketID OIDC flow (state/nonce/PKCE validated in the OIDC handler)
+        "/api/v1/auth/oidc/login",
+        "/api/v1/auth/oidc/callback",
         # WebSocket endpoints (handled separately)
         "/ws",
     }

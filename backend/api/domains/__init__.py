@@ -58,10 +58,10 @@ def register_all_domain_routers(app: FastAPI) -> None:
 
 # Import domain modules to trigger registration
 try:
-    from . import diagnostics, entities, networks, system
+    from . import auth, diagnostics, entities, networks, system
 
     # Explicitly reference imported modules to satisfy linter
-    _domain_modules = [entities, diagnostics, networks, system]
+    _domain_modules = [auth, entities, diagnostics, networks, system]
 except ImportError as e:
     logger.warning("⚠️  Some domain modules not available: %s", e)
     _domain_modules = []

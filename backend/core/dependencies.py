@@ -77,6 +77,7 @@ from backend.services.analytics.analytics_dashboard_service import (
 # fix likely requires making entity_service's websocket import lazy.
 from backend.services.auth.manager import AuthManager as _AuthManager
 from backend.services.auth.pin_manager import PINManager as _PINManager
+from backend.services.auth.service import AuthService as _AuthService
 from backend.services.can.can_facade import CANFacade as _CANFacade
 from backend.services.can.can_network_telemetry_service import (
     CANNetworkTelemetryService as _CANNetworkTelemetryService,
@@ -579,6 +580,15 @@ def get_auth_manager() -> _AuthManager:
     raise RuntimeError(msg)
 
 
+def get_auth_service() -> _AuthService:
+    """Get the AuthService wrapper from the composition root."""
+    auth_service = root_service_dependency("auth_manager")()
+    if isinstance(auth_service, _AuthService):
+        return auth_service
+    msg = "Registered auth_manager service is not an AuthService instance."
+    raise RuntimeError(msg)
+
+
 def get_pin_manager() -> _PINManager:
     """Get the PIN manager from composition root."""
     return root_service_dependency("pin_manager")()
@@ -687,6 +697,7 @@ async def get_authenticated_admin(
 
 # Type aliases for authentication dependencies
 AuthManager = Annotated[_AuthManager, Depends(get_auth_manager)]
+AuthService = Annotated[_AuthService, Depends(get_auth_service)]
 PINManager = Annotated[_PINManager, Depends(get_pin_manager)]
 SecurityAuditService = Annotated[_SecurityAuditService, Depends(get_security_audit_service)]
 SecurityConfigService = Annotated[_SecurityConfigService, Depends(get_security_config_service)]

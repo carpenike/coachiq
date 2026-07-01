@@ -51,6 +51,8 @@ class SecureAuthenticationMiddleware(BaseHTTPMiddleware):
         "/api/auth/login",
         "/api/auth/refresh",
         "/api/auth/logout",
+        "/api/v1/auth/oidc/login",
+        "/api/v1/auth/oidc/callback",
         "/api/schemas",
         "/docs",
         "/redoc",

@@ -209,6 +209,14 @@ class AuthService:
         """
         return self._auth_manager
 
+    def get_auth_settings(self) -> AuthenticationSettings:
+        """Get the typed authentication settings used by this service."""
+        return self._auth_settings
+
+    def get_auth_repository(self) -> Any | None:
+        """Get the auth repository used by the AuthManager."""
+        return self._auth_repository
+
     def get_oidc_client(self) -> OIDCClient | None:
         """Get the configured OIDC client, if available."""
         return self._oidc_client

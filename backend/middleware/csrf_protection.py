@@ -50,6 +50,8 @@ class CSRFProtectionMiddleware(BaseHTTPMiddleware):
         "/api/auth/logout",
         "/api/auth/magic-link",
         "/api/auth/magic-link/verify",
+        "/api/v1/auth/oidc/login",
+        "/api/v1/auth/oidc/callback",
         "/docs",
         "/openapi.json",
         "/redoc",
