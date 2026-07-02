@@ -947,15 +947,15 @@ class CompositionRoot:
             )
 
         if self._should_construct("entity_initialization_service"):
+            entity_initialization_service = EntityInitializationService(
+                entity_state_repository=self.require_service("entity_state_repository"),
+                rvc_config_repository=self.require_service("rvc_config_repository"),
+                entity_manager=self.require_service("entity_manager_service").get_entity_manager(),
+            )
+            await entity_initialization_service.startup()
             self._set_root_constructed_service(
                 "entity_initialization_service",
-                EntityInitializationService(
-                    entity_state_repository=self.require_service("entity_state_repository"),
-                    rvc_config_repository=self.require_service("rvc_config_repository"),
-                    entity_manager=self.require_service(
-                        "entity_manager_service"
-                    ).get_entity_manager(),
-                ),
+                entity_initialization_service,
             )
 
         if self._should_construct("entity_service"):

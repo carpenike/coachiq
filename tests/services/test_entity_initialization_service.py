@@ -1,14 +1,16 @@
 """Tests for EntityInitializationService loading into the async runtime state repo."""
 
 from types import SimpleNamespace
-from typing import Any, cast
+from typing import TYPE_CHECKING, Any, cast
 
 import pytest
 
 import backend.services.entities.entity_initialization_service as initialization_module
-from backend.repositories.entity_repository import EntityRuntimeStateRepository
-from backend.repositories.rvc_config_repository import RVCConfigRepository
 from backend.services.entities.entity_initialization_service import EntityInitializationService
+
+if TYPE_CHECKING:
+    from backend.repositories.entity_repository import EntityRuntimeStateRepository
+    from backend.repositories.rvc_config_repository import RVCConfigRepository
 
 pytestmark = pytest.mark.unit
 
@@ -49,7 +51,6 @@ class _RVCConfigRepositoryFake:
 
     def get_coach_info(self) -> None:
         """Return no coach info."""
-        return None
 
 
 def _rvc_config() -> SimpleNamespace:

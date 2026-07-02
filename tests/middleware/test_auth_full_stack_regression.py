@@ -1,7 +1,7 @@
 """Full-stack regressions for auth middleware deployment failures."""
 
 import time
-from typing import Any, cast
+from typing import TYPE_CHECKING, Any, cast
 
 import pytest
 from fastapi import FastAPI
@@ -20,11 +20,13 @@ from backend.core.exception_handlers import register_exception_handlers
 from backend.core.performance import PerformanceMonitor
 from backend.middleware.auth import AuthenticationMiddleware
 from backend.middleware.csrf_protection import CSRFProtectionMiddleware
-from backend.repositories.entity_repository import EntityRuntimeStateRepository
 from backend.services.auth.manager import AuthMode, InvalidTokenError
 from backend.services.auth.mcp_oauth_guard import mcp_www_authenticate_header
 from backend.services.entities.entity_service import EntityService
 from backend.services.system.dashboard_service import DashboardService
+
+if TYPE_CHECKING:
+    from backend.repositories.entity_repository import EntityRuntimeStateRepository
 
 pytestmark = pytest.mark.auth
 

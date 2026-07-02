@@ -1,17 +1,27 @@
 """Tests for the Phase A composition-root compatibility seam."""
 
 from pathlib import Path
+from types import SimpleNamespace
+from typing import Any, cast
 
 import pytest
+from fastapi import FastAPI
+from fastapi.testclient import TestClient
 
 from backend.core import dependencies
 from backend.core.composition_root import CompositionRoot
 from backend.core.config import Settings, get_settings
 from backend.core.performance import PerformanceMonitor
 from backend.core.service_status import ServiceStatus
+from backend.api.domains import entities as entities_mod
+from backend.core.exception_handlers import register_exception_handlers
+from backend.middleware.auth import AuthenticationMiddleware
+from backend.repositories.entity_repository import EntityRuntimeStateRepository
+from backend.services.auth.manager import AuthMode, InvalidTokenError
 from backend.repositories.security_config_repository import SecurityConfigRepository
 from backend.services.persistence.persistence_service import PersistenceService
 from backend.services.rvc.rvc_config_facade import RVCConfigFacade
+import backend.services.entities.entity_initialization_service as initialization_module
 
 
 def test_composition_root_has_no_registry_bridge_tokens() -> None:
@@ -52,6 +62,119 @@ def _seed_foundation_fakes(root: CompositionRoot) -> None:
     root.set_constructed_service("edge_proxy_monitor", object())
     root.set_constructed_service("persistence_service", object())
     root.set_constructed_service("rvc_config_facade", object())
+
+
+class _AuthManager:
+    """Enabled auth manager for composition-root request tests."""
+
+    auth_mode = AuthMode.SINGLE_USER
+
+    def validate_token(self, credential: str) -> dict[str, str]:
+        """Accept the known good token."""
+        if credential == "good":
+            return {"sub": "user", "username": "user", "role": "admin"}
+        raise InvalidTokenError("invalid token")
+
+
+class _WebSocketManager:
+    """Minimal websocket manager for EntityService construction."""
+
+    async def broadcast_to_data_clients(self, _data: dict[str, Any]) -> None:
+        """No-op broadcast."""
+
+
+class _RVCConfigRepository:
+    """RVC config repository fake used by entity initialization."""
+
+    def load_configuration(self, **_kwargs: Any) -> None:
+        """Accept loaded configuration."""
+
+
+class _EntityRuntimeStateRepository:
+    """Async runtime state repository fake shared by initialization and EntityService."""
+
+    def __init__(self) -> None:
+        self.states: dict[str, dict[str, Any]] = {}
+
+    async def save_bulk_states(self, states: dict[str, dict[str, Any]]) -> int:
+        """Persist initialized state dictionaries."""
+        self.states = dict(states)
+        return len(self.states)
+
+    async def get_all_states(self) -> dict[str, dict[str, Any]]:
+        """Return all initialized state dictionaries."""
+        return dict(self.states)
+
+    async def get_entity_state(self, entity_id: str) -> dict[str, Any] | None:
+        """Return one initialized state dictionary."""
+        return self.states.get(entity_id)
+
+
+class _DiagnosticsRepository:
+    """Diagnostics repository fake used by EntityService."""
+
+    def get_unmapped_entries(self) -> dict[str, Any]:
+        """Return no unmapped entries."""
+        return {}
+
+    def get_unknown_pgns(self) -> dict[str, Any]:
+        """Return no unknown PGNs."""
+        return {}
+
+
+class _EntityManagerService:
+    """Expose the EntityManager instance used during initialization."""
+
+    def __init__(self):
+        from backend.core.entity_manager import EntityManager
+
+        self._entity_manager = EntityManager()
+
+    def get_entity_manager(self):
+        """Return the test entity manager."""
+        return self._entity_manager
+
+
+class _SpecMeta:
+    """Minimal spec metadata object."""
+
+    def dict(self) -> dict[str, Any]:
+        """Return empty spec metadata."""
+        return {}
+
+
+def _seeded_rvc_config() -> SimpleNamespace:
+    """Return a minimal coach mapping payload with seeded entities."""
+    entity_map = {
+        "light": {
+            "entity_id": "light_1",
+            "device_type": "light",
+            "suggested_area": "Kitchen",
+            "friendly_name": "Kitchen Light",
+            "capabilities": ["brightness"],
+            "groups": ["main"],
+        },
+        "tank": {
+            "entity_id": "tank_1",
+            "device_type": "tank",
+            "suggested_area": "Bay",
+            "friendly_name": "Fresh Tank",
+            "capabilities": ["level"],
+            "groups": [],
+        },
+    }
+    return SimpleNamespace(
+        dgn_dict={},
+        spec_meta=_SpecMeta(),
+        mapping_dict={},
+        entity_map=entity_map,
+        entity_ids=list(entity_map),
+        inst_map={},
+        unique_instances=[],
+        pgn_hex_to_name_map={},
+        dgn_pairs=[],
+        coach_info=None,
+    )
 
 
 @pytest.mark.asyncio
@@ -219,6 +342,60 @@ async def test_root_startup_metrics_are_owned_by_composition_root() -> None:
 
 
 @pytest.mark.asyncio
+async def test_composition_root_startup_seeds_entities_for_authenticated_api(
+    monkeypatch,
+) -> None:
+    """CompositionRoot boot seeds configured entities into the API-visible repo."""
+    _reset_dependency_globals()
+    monkeypatch.setattr(initialization_module, "get_default_paths", lambda: ("spec", "mapping"))
+    monkeypatch.setattr(
+        initialization_module,
+        "load_config_data_v2",
+        lambda *_args: _seeded_rvc_config(),
+    )
+
+    root = CompositionRoot(service_catalog={"entity_initialization_service", "entity_service"})
+    root.set_constructed_service("performance_monitor", PerformanceMonitor())
+    root.set_constructed_service(
+        "entity_state_repository",
+        cast("EntityRuntimeStateRepository", _EntityRuntimeStateRepository()),
+    )
+    root.set_constructed_service("rvc_config_repository", _RVCConfigRepository())
+    root.set_constructed_service("entity_manager_service", _EntityManagerService())
+    root.set_constructed_service("websocket_manager", _WebSocketManager())
+    root.set_constructed_service("diagnostics_repository", _DiagnosticsRepository())
+
+    await root.startup()
+    dependencies.initialize_composition_root(root)
+    try:
+        states = await root.services.entity_state_repository.get_all_states()
+        assert len(states) == 2
+
+        app = FastAPI()
+        register_exception_handlers(app)
+        app.add_middleware(AuthenticationMiddleware, auth_manager=_AuthManager())
+        app.include_router(entities_mod.create_entities_router(), prefix="/api/v1/entities")
+
+        client = TestClient(app)
+        response = client.get(
+            "/api/v1/entities",
+            headers={"Accept": "application/json", "Authorization": "Bearer good"},
+        )
+
+        assert response.status_code == 200
+        payload = response.json()
+        assert payload["total_count"] == 2
+        assert [entity["entity_id"] for entity in payload["entities"]] == [
+            "light_1",
+            "tank_1",
+        ]
+        assert payload["entities"][0]["name"] == "Kitchen Light"
+    finally:
+        await root.shutdown()
+        _reset_dependency_globals()
+
+
+@pytest.mark.asyncio
 async def test_root_shutdown_uses_service_specific_teardown_methods() -> None:
     """Root shutdown fixes services that expose stop-only teardown methods."""
     events: list[str] = []
@@ -254,7 +431,9 @@ def test_root_guardrail_metadata_declares_only_can_facade_as_halt_participant() 
     from backend.core.composition_root import ROOT_GUARDRAIL_METADATA
 
     halt_targets = sorted(
-        name for name, metadata in ROOT_GUARDRAIL_METADATA.items() if metadata.command_halt_participant
+        name
+        for name, metadata in ROOT_GUARDRAIL_METADATA.items()
+        if metadata.command_halt_participant
     )
 
     assert halt_targets == ["can_facade"]
