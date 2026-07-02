@@ -14,9 +14,10 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 from uuid import uuid4
 
-from jinja2 import Environment, FileSystemLoader
+from jinja2 import Environment, FileSystemLoader, TemplateNotFound
 from sqlalchemy import select
 
+from backend.core.config import resolve_project_path
 from backend.models.notification_analytics import (
     AggregationPeriod,
     MetricType,
@@ -314,11 +315,17 @@ class NotificationReportingService:
         self.reports_dir = reports_dir
         self.reports_dir.mkdir(parents=True, exist_ok=True)
 
-        # Template environment for HTML generation
+        # Template environment for optional HTML report overrides.
+        self.report_templates_dir = resolve_project_path("templates/reports")
         try:
             self.jinja_env = Environment(
-                loader=FileSystemLoader("templates/reports"), autoescape=True
+                loader=FileSystemLoader(str(self.report_templates_dir)), autoescape=True
             )
+            if not any(self.report_templates_dir.glob("*.html")):
+                self.logger.info(
+                    "No report HTML templates found at %s; using built-in HTML fallback",
+                    self.report_templates_dir,
+                )
         except Exception:
             self.jinja_env = None
             self.logger.warning("Could not initialize Jinja2 environment")
@@ -602,6 +609,13 @@ class NotificationReportingService:
             try:
                 template = self.jinja_env.get_template(f"{template_name}.html")
                 html_content = template.render(data=data, report_id=report_id)
+            except TemplateNotFound:
+                self.logger.info(
+                    "Report HTML template %s.html not found in %s; using built-in HTML fallback",
+                    template_name,
+                    self.report_templates_dir,
+                )
+                html_content = self._generate_basic_html(data)
             except Exception:
                 # Fallback to basic HTML
                 html_content = self._generate_basic_html(data)

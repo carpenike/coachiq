@@ -1,5 +1,6 @@
 """Regression tests for cwd-independent runtime write paths."""
 
+import logging
 from pathlib import Path
 from unittest.mock import MagicMock
 
@@ -16,6 +17,7 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 RUNTIME_WRITE_NAMES = (
     Path("recordings"),
     Path("reports"),
+    Path("templates") / "reports",
     Path("data") / "notifications.db",
 )
 
@@ -73,6 +75,37 @@ async def test_runtime_write_paths_self_anchor_across_process_cwd(tmp_path, monk
         _assert_no_new_cwd_targets(cwd_snapshot)
 
     assert len(set(observed_paths)) == 1
+
+
+@pytest.mark.asyncio
+async def test_reporting_html_fallback_is_cwd_independent(
+    tmp_path,
+    monkeypatch,
+    caplog,
+) -> None:
+    """HTML reports use the resolved optional-template path and built-in fallback."""
+    working_directory = tmp_path / "cwd"
+    working_directory.mkdir()
+    reports_dir = tmp_path / "coachiq-data" / "reports"
+    cwd_snapshot = _snapshot_cwd_targets(working_directory)
+    monkeypatch.chdir(working_directory)
+
+    reporting_service = NotificationReportingService(MagicMock(), MagicMock(), reports_dir)
+
+    caplog.set_level(logging.INFO)
+    file_path, file_size = await reporting_service._generate_html_report(
+        report_id="fallback-report",
+        data={"report_type": "daily_digest", "summary": {"total_sent": 0}},
+        template_name="daily_digest",
+    )
+
+    assert reporting_service.report_templates_dir == REPO_ROOT / "templates" / "reports"
+    assert file_path == reports_dir / "fallback-report.html"
+    assert file_path.is_file()
+    assert file_size > 0
+    assert "Daily Digest" in file_path.read_text(encoding="utf-8")
+    assert "using built-in HTML fallback" in caplog.text
+    _assert_no_new_cwd_targets(cwd_snapshot)
 
 
 def test_runtime_path_settings_preserve_explicit_overrides(tmp_path):
