@@ -19,7 +19,7 @@ from backend.models.entity_model import EntityConfig
 logger = logging.getLogger(__name__)
 
 
-class EntityStateRepository:
+class EntityAggregateRepository:
     """
     Repository for entity state management.
 
@@ -36,7 +36,7 @@ class EntityStateRepository:
                           a new one will be created.
         """
         self.entity_manager = entity_manager or EntityManager()
-        logger.info("EntityStateRepository initialized")
+        logger.info("EntityAggregateRepository initialized")
 
     def get_entity_count(self) -> int:
         """Get the total number of entities."""

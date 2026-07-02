@@ -31,17 +31,8 @@ from backend.integrations.can.protocol_analyzer import (
 # composition root lookup remains string-keyed; these imports exist
 # purely so pyright + IDEs see real return types.
 #
-# NOTE: ``EntityStateRepository`` exists in TWO files under the same
-# class name -- the canonical one (re-exported by
-# ``backend/repositories/__init__.py`` and registered by
-# ``backend/repositories/service_registration.py``) AND a competing
-# subclass in ``backend/repositories/entity_repository.py`` that
-# main.py registers later (overriding the first registration with a
-# different constructor signature). Tracked as #167. The typed alias
-# here points at the canonical one; if #167 picks the other class,
-# this single import is the one-line update.
-from backend.repositories.entity_state_repository import (
-    EntityStateRepository as _EntityStateRepository,
+from backend.repositories.entity_repository import (
+    EntityRuntimeStateRepository as _EntityRuntimeStateRepository,
 )
 from backend.repositories.rvc_config_repository import (
     RVCConfigRepository as _RVCConfigRepository,
@@ -377,7 +368,7 @@ def get_protocol_manager() -> Any:
 # ==================================================================================
 
 
-def get_entity_state_repository() -> _EntityStateRepository:
+def get_entity_state_repository() -> _EntityRuntimeStateRepository:
     """
     Get the entity state repository from composition root.
 
@@ -509,7 +500,9 @@ CommandGuardrailService = Annotated[
 ]
 
 # Repository dependencies
-EntityStateRepository = Annotated[_EntityStateRepository, Depends(get_entity_state_repository)]
+EntityRuntimeStateRepository = Annotated[
+    _EntityRuntimeStateRepository, Depends(get_entity_state_repository)
+]
 RVCConfigRepository = Annotated[_RVCConfigRepository, Depends(get_rvc_config_repository)]
 SystemStateRepository = Annotated[_SystemStateRepository, Depends(get_system_state_repository)]
 

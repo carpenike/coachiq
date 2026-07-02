@@ -30,9 +30,10 @@ from backend.models.dashboard import (
     SystemMetrics,
 )
 from backend.repositories.dashboard_config_repository import DashboardConfigRepository
-from backend.repositories.entity_repository import EntityStateRepository
+from backend.repositories.entity_repository import EntityRuntimeStateRepository
 
 logger = logging.getLogger(__name__)
+_ENTITY_ONLINE_WINDOW_SECONDS = 300
 
 
 class ActivityTracker:
@@ -100,7 +101,7 @@ class DashboardService:
     def __init__(
         self,
         dashboard_repository: DashboardConfigRepository,
-        entity_repository: EntityStateRepository,
+        entity_repository: EntityRuntimeStateRepository,
         performance_monitor: PerformanceMonitor,
         # These will be injected by dependency injection later
         entity_service: Any | None = None,
@@ -251,7 +252,10 @@ class DashboardService:
 
             # Check if online (seen in last 5 minutes)
             timestamp = entity_state.get("timestamp")
-            if isinstance(timestamp, int | float) and (current_time - timestamp) < 300:
+            if (
+                isinstance(timestamp, int | float)
+                and (current_time - timestamp) < _ENTITY_ONLINE_WINDOW_SECONDS
+            ):
                 online_entities += 1
 
             # Check if active (entity is considered active if it has a state other than 'unknown')

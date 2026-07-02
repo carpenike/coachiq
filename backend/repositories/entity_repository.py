@@ -115,7 +115,7 @@ class EntityConfigRepository(MonitoredRepository):
         return dict(self._coach_metadata)
 
 
-class EntityStateRepository(MonitoredRepository):
+class EntityRuntimeStateRepository(MonitoredRepository):
     """Repository for runtime entity state management."""
 
     def __init__(self, database_manager, performance_monitor):

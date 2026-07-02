@@ -511,7 +511,7 @@ class CompositionRoot:
             CanCommandRepository,
             EntityConfigRepository,
             EntityHistoryRepository,
-            EntityStateRepository,
+            EntityRuntimeStateRepository,
         )
         from backend.repositories.persistence_repository import PersistenceRepository
         from backend.repositories.security_audit_repository import SecurityAuditRepository
@@ -576,7 +576,7 @@ class CompositionRoot:
                 rvc_config_provider=self.require_service("rvc_config"),
                 config={},
             ),
-            "entity_state_repository": lambda: EntityStateRepository(
+            "entity_state_repository": lambda: EntityRuntimeStateRepository(
                 database_manager, performance_monitor
             ),
             "mfa_repository": lambda: MfaRepository(database_manager, performance_monitor),
@@ -920,6 +920,7 @@ class CompositionRoot:
         )
         from backend.services.entities.entity_service import EntityService
         from backend.services.system.dashboard_service import DashboardService
+
         performance_monitor = self.require_service("performance_monitor")
 
         await self._construct_websocket_manager()
@@ -951,7 +952,9 @@ class CompositionRoot:
                 EntityInitializationService(
                     entity_state_repository=self.require_service("entity_state_repository"),
                     rvc_config_repository=self.require_service("rvc_config_repository"),
-                    entity_manager=self.require_service("entity_manager_service").get_entity_manager(),
+                    entity_manager=self.require_service(
+                        "entity_manager_service"
+                    ).get_entity_manager(),
                 ),
             )
 
@@ -1094,8 +1097,7 @@ class CompositionRoot:
     def _should_construct(self, service_name: str) -> bool:
         """Return whether a service should be constructed for the current graph."""
         should_construct = (
-            service_name not in self._constructed_services
-            and service_name in self._service_catalog
+            service_name not in self._constructed_services and service_name in self._service_catalog
         )
         if should_construct:
             self._service_status[service_name] = ServiceStatus.STARTING

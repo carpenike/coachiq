@@ -192,6 +192,14 @@ access; services call repositories rather than issuing raw SQLAlchemy.
 and durable storage. Persistence has memory-only (default), dev (local files),
 and production (system dir) modes.
 
+**Entity repository naming (#167 closed).** The composition root's
+`entity_state_repository` service is the async runtime state repository
+`backend.repositories.entity_repository.EntityRuntimeStateRepository`; typed
+DI aliases must point at that class. The older EntityManager-backed aggregate
+adapter is `backend.repositories.entity_state_repository.EntityAggregateRepository`
+and is not the runtime DI service. Do not reintroduce a shared
+`EntityStateRepository` class name across these two responsibilities.
+
 **HTTP error envelope (ADR-0005).** Error responses carry both FastAPI's
 `detail` field and a custom `error.{code, message}` shape for backward compat.
 Don't "clean this up" to one or the other.

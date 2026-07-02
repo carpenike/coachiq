@@ -10,15 +10,17 @@ from fastapi.testclient import TestClient
 
 import backend.api.routers.mcp_oauth as mcp_oauth_router
 from backend.api.domains import entities as entities_mod
+from backend.api.routers import config as config_router_mod
 from backend.api.routers import dashboard as dashboard_mod
 from backend.api.routers.mcp_oauth import get_mcp_oauth_repository
 from backend.api.routers.mcp_oauth import router as mcp_oauth_router_obj
 from backend.core.config import McpSettings, ServerSettings, Settings
+from backend.core.dependencies import get_entity_state_repository
 from backend.core.exception_handlers import register_exception_handlers
 from backend.core.performance import PerformanceMonitor
 from backend.middleware.auth import AuthenticationMiddleware
 from backend.middleware.csrf_protection import CSRFProtectionMiddleware
-from backend.repositories.entity_repository import EntityStateRepository
+from backend.repositories.entity_repository import EntityRuntimeStateRepository
 from backend.services.auth.manager import AuthMode, InvalidTokenError
 from backend.services.auth.mcp_oauth_guard import mcp_www_authenticate_header
 from backend.services.entities.entity_service import EntityService
@@ -82,6 +84,19 @@ class _DiagnosticsRepositoryFake:
     def get_unknown_pgns(self) -> dict[str, Any]:
         """Return no unknown PGNs."""
         return {}
+
+
+class _RVCConfigFacadeFake:
+    """Config facade fake for application status endpoint."""
+
+    async def get_config_status(self) -> dict[str, Any]:
+        """Return loaded configuration status."""
+        return {
+            "spec_loaded": True,
+            "spec_path": "config/rvc.json",
+            "mapping_loaded": True,
+            "mapping_path": "config/coach_mapping.default.yml",
+        }
 
 
 def _settings() -> Settings:
@@ -196,7 +211,7 @@ def _authenticated_data_client() -> TestClient:
     app.add_middleware(AuthenticationMiddleware, auth_manager=_SpaAuthManager())
 
     entity_repository = cast(
-        "EntityStateRepository",
+        "EntityRuntimeStateRepository",
         _EntityStateRepositoryFake(_seeded_entity_states()),
     )
     entity_service = EntityService(
@@ -213,8 +228,14 @@ def _authenticated_data_client() -> TestClient:
 
     app.include_router(entities_mod.create_entities_router(), prefix="/api/v1/entities")
     app.include_router(dashboard_mod.router)
+    app.include_router(config_router_mod.router)
     app.dependency_overrides[entities_mod.get_entity_service] = lambda: entity_service
     app.dependency_overrides[dashboard_mod.get_dashboard_service] = lambda: dashboard_service
+    app.dependency_overrides[get_entity_state_repository] = lambda: entity_repository
+    app.dependency_overrides[config_router_mod.get_rvc_config_facade] = (
+        lambda: _RVCConfigFacadeFake()
+    )
+    app.dependency_overrides[config_router_mod.get_can_tracking_repository] = lambda: object()
     return TestClient(app)
 
 
@@ -347,3 +368,17 @@ def test_authenticated_dashboard_analytics_returns_seeded_health() -> None:
     assert payload["alerts"] == []
     assert payload["health_checks"]["entity_manager"] is True
     assert payload["recommendations"] == []
+
+
+def test_authenticated_application_status_returns_seeded_entity_count() -> None:
+    """Authenticated application status counts async repository states correctly."""
+    response = _authenticated_data_client().get(
+        "/api/status/application",
+        headers=_auth_headers(),
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["known_entity_count"] == 2
+    assert payload["active_entity_state_count"] == 2
+    assert payload["can_listeners_status"] == "likely_active"

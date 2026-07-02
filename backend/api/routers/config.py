@@ -27,12 +27,11 @@ from fastapi.responses import PlainTextResponse
 from backend.core.config import get_settings
 from backend.core.dependencies import (
     root_service_dependency,
-    get_entity_state_repository,
+    EntityRuntimeStateRepository,
     get_rvc_config_facade,
 )
 from backend.models.github_update import GitHubUpdateStatus
 from backend.repositories.can_tracking_repository import CANTrackingRepository
-from backend.repositories.entity_state_repository import EntityStateRepository
 from backend.services.updates.github_update_checker import GitHubUpdateChecker
 from backend.services.rvc.rvc_config_facade import RVCConfigFacade
 
@@ -141,7 +140,7 @@ async def get_server_status() -> dict[str, Any]:
 )
 async def get_application_status(
     config_service: Annotated[RVCConfigFacade, Depends(get_rvc_config_facade)],
-    entity_state_repo: Annotated[EntityStateRepository, Depends(get_entity_state_repository)],
+    entity_state_repo: EntityRuntimeStateRepository,
     can_tracking_repo: Annotated[CANTrackingRepository, Depends(get_can_tracking_repository)],
 ) -> dict[str, Any]:
     """Returns application-specific status information."""
@@ -153,17 +152,19 @@ async def get_application_status(
     # Basic check for CAN listeners (simple proxy: if entities exist, listeners likely ran)
     entity_count = 0
     if entity_state_repo:
-        entity_count = len(entity_state_repo.get_all_entity_ids())
+        entity_count = len(await entity_state_repo.get_all_states())
     else:
         # If repository not available, default to 0
         entity_count = 0
     can_listeners_active = entity_count > 0
+    config_loaded = bool(config_status.get("spec_loaded", config_status.get("loaded", False)))
+    mapping_loaded = bool(config_status.get("mapping_loaded", config_loaded))
 
     status_data = {
         "status": "ok",
-        "rvc_spec_file_loaded": config_status["spec_loaded"],
+        "rvc_spec_file_loaded": config_loaded,
         "rvc_spec_file_path": config_status.get("spec_path"),
-        "device_mapping_file_loaded": config_status["mapping_loaded"],
+        "device_mapping_file_loaded": mapping_loaded,
         "device_mapping_file_path": config_status.get("mapping_path"),
         "known_entity_count": entity_count,
         "active_entity_state_count": entity_count,
@@ -185,8 +186,8 @@ async def get_application_status(
         f"Application status retrieved - entities: {entity_count}, "
         f"unmapped: 0, "  # Deprecated
         f"unknown_pgns: 0, "  # Deprecated
-        f"spec_loaded: {config_status['spec_loaded']}, "
-        f"mapping_loaded: {config_status['mapping_loaded']}"
+        f"spec_loaded: {config_loaded}, "
+        f"mapping_loaded: {mapping_loaded}"
     )
 
     return status_data

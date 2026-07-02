@@ -14,6 +14,7 @@ from backend.core.entity_manager import EntityManager
 from backend.integrations.rvc.config_loader import get_default_paths
 from backend.integrations.rvc.decode import decode_payload, load_config_data_v2
 from backend.models.entity_model import EntityConfig
+from backend.repositories.entity_repository import EntityRuntimeStateRepository
 from backend.repositories.rvc_config_repository import RVCConfigRepository
 
 logger = logging.getLogger(__name__)
@@ -24,7 +25,7 @@ class EntityInitializationService:
 
     def __init__(
         self,
-        entity_state_repository: Any,  # EntityStateRepository from entity_repository.py
+        entity_state_repository: EntityRuntimeStateRepository,
         rvc_config_repository: RVCConfigRepository,
         entity_manager: EntityManager | None = None,
     ):
@@ -144,15 +145,17 @@ class EntityInitializationService:
                 )
                 entity_config_objs[entity_id] = entity_config
 
-            # Bulk load entities into the repository
-            self._entity_state_repo.bulk_load_entities(entity_config_objs)
-
-            # Also register with local entity manager for preseeding
+            # Register with local entity manager for preseeding and then persist
+            # the same dict-shaped state payloads EntityService reads.
             for entity_id, entity_config in entity_config_objs.items():
                 self._entity_manager.register_entity(entity_id, entity_config)
 
             # Preseed light states
             self._entity_manager.preseed_light_states(decode_payload, entity_map)
+            saved_count = await self._entity_state_repo.save_bulk_states(
+                self._entity_manager.to_api_response()
+            )
+            logger.info("Saved %d initialized entity states", saved_count)
 
             self._initialized = True
             logger.info("Entity initialization completed successfully")

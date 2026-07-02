@@ -35,7 +35,7 @@ from backend.models.entity import (
 )
 from backend.models.unmapped import UnknownPGNEntry, UnmappedEntryModel
 from backend.repositories import DiagnosticsRepository, RVCConfigRepository
-from backend.repositories.entity_repository import EntityStateRepository
+from backend.repositories.entity_repository import EntityRuntimeStateRepository
 from backend.websocket.handlers import WebSocketManager
 
 logger = logging.getLogger(__name__)
@@ -206,7 +206,7 @@ class EntityService:
     def __init__(
         self,
         websocket_manager: WebSocketManager,
-        entity_state_repository: EntityStateRepository,
+        entity_state_repository: EntityRuntimeStateRepository,
         rvc_config_repository: RVCConfigRepository,
         diagnostics_repository: DiagnosticsRepository,
     ):

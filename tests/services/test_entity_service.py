@@ -1,11 +1,13 @@
 """Tests for EntityService against the wired async entity repository interface."""
 
-from typing import cast
+from typing import TYPE_CHECKING, cast
 
 import pytest
 
-from backend.repositories.entity_repository import EntityStateRepository
 from backend.services.entities.entity_service import EntityService
+
+if TYPE_CHECKING:
+    from backend.repositories.entity_repository import EntityRuntimeStateRepository
 
 pytestmark = pytest.mark.unit
 
@@ -41,7 +43,9 @@ def _service(states: dict[str, dict]) -> EntityService:
     """Create EntityService with a typed async entity repository fake."""
     return EntityService(
         websocket_manager=cast("object", None),
-        entity_state_repository=cast("EntityStateRepository", _EntityStateRepositoryFake(states)),
+        entity_state_repository=cast(
+            "EntityRuntimeStateRepository", _EntityStateRepositoryFake(states)
+        ),
         rvc_config_repository=cast("object", None),
         diagnostics_repository=cast("object", _DiagnosticsRepositoryFake()),
     )
