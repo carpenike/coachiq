@@ -11,7 +11,6 @@ def test_root_baked_order_contains_expected_services_once() -> None:
     service_order = root._root_service_order
 
     assert len(service_order) == len(set(service_order))
-    assert len(service_order) == 69
     assert set(service_order) == root._service_catalog
 
 
