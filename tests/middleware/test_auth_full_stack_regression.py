@@ -1,6 +1,8 @@
 """Full-stack regressions for auth middleware deployment failures."""
 
+import pytest
 from fastapi import FastAPI
+from fastapi.responses import HTMLResponse
 from fastapi.testclient import TestClient
 
 import backend.api.routers.mcp_oauth as mcp_oauth_router
@@ -12,6 +14,8 @@ from backend.middleware.auth import AuthenticationMiddleware
 from backend.middleware.csrf_protection import CSRFProtectionMiddleware
 from backend.services.auth.manager import AuthMode, InvalidTokenError
 from backend.services.auth.mcp_oauth_guard import mcp_www_authenticate_header
+
+pytestmark = pytest.mark.auth
 
 
 class _AuthManager:
@@ -30,6 +34,18 @@ class _McpRepository:
     async def validate_access_token(self, _token: str):
         """Reject all MCP tokens."""
         return
+
+
+class _SpaAuthManager:
+    """Fake auth manager that accepts one bearer token for SPA middleware tests."""
+
+    auth_mode = AuthMode.SINGLE_USER
+
+    def validate_token(self, credential: str):
+        """Accept the known good token and reject everything else."""
+        if credential == "good":
+            return {"sub": "user", "username": "user", "role": "admin"}
+        raise InvalidTokenError("invalid token")
 
 
 def _settings() -> Settings:
@@ -59,6 +75,44 @@ def _client() -> TestClient:
     app.include_router(mcp_oauth_router_obj)
     app.dependency_overrides[get_mcp_oauth_repository] = lambda: _McpRepository()
     mcp_oauth_router.get_settings = _settings
+    return TestClient(app)
+
+
+def _spa_client(*, mounted: bool = True) -> TestClient:
+    """Build an auth-enabled app with a minimal SPA fallback route."""
+    app = FastAPI()
+    register_exception_handlers(app)
+    app.add_middleware(AuthenticationMiddleware, auth_manager=_SpaAuthManager())
+
+    if mounted:
+        app.state.spa_static_dir = "mounted"
+        app.state.spa_reserved_route_families = frozenset(
+            {
+                "/api",
+                "/ws",
+                "/oauth",
+                "/.well-known",
+                "/docs",
+                "/redoc",
+                "/openapi.json",
+                "/health",
+                "/healthz",
+                "/readyz",
+                "/startupz",
+                "/metrics",
+            }
+        )
+
+    @app.get("/api/v1/protected")
+    async def protected_route() -> dict[str, bool]:
+        return {"ok": True}
+
+    @app.get("/{path:path}")
+    async def spa_fallback(path: str) -> HTMLResponse:
+        return HTMLResponse(
+            '<!doctype html><html><head><title>CoachIQ SPA</title></head><body id="spa-root"></body></html>'
+        )
+
     return TestClient(app)
 
 
@@ -93,3 +147,51 @@ def test_mcp_resource_returns_bearer_challenge_not_csrf_or_500() -> None:
     assert response.status_code == 401
     assert response.headers["www-authenticate"] == mcp_www_authenticate_header(_settings())
     assert "resource_metadata" in response.headers["www-authenticate"]
+
+
+@pytest.mark.parametrize("path", ["/dashboard", "/auth/oidc/callback"])
+def test_spa_document_navigation_bypasses_auth_when_spa_is_mounted(path: str) -> None:
+    """Mounted SPA document navigations reach the fallback without a bearer token."""
+    response = _spa_client().get(path, headers={"Accept": "text/html"})
+
+    assert response.status_code == 200
+    assert "CoachIQ SPA" in response.text
+
+
+def test_spa_json_fetch_does_not_bypass_auth() -> None:
+    """Non-document requests to SPA paths still require authentication."""
+    response = _spa_client().get("/dashboard", headers={"Accept": "application/json"})
+
+    assert response.status_code == 401
+    assert response.headers["www-authenticate"] == "Bearer"
+    assert response.json()["error"]["message"] == "Authentication required"
+
+
+@pytest.mark.parametrize("accept", ["text/html", "application/json"])
+def test_protected_api_without_bearer_does_not_bypass_auth(accept: str) -> None:
+    """Reserved API route families never use the SPA document exemption."""
+    response = _spa_client().get("/api/v1/protected", headers={"Accept": accept})
+
+    assert response.status_code == 401
+    assert response.headers["www-authenticate"] == "Bearer"
+    assert response.json()["error"]["message"] == "Authentication required"
+
+
+def test_protected_api_with_valid_bearer_still_reaches_route() -> None:
+    """Bearer authentication still authorizes protected API routes."""
+    response = _spa_client().get(
+        "/api/v1/protected",
+        headers={"Accept": "application/json", "Authorization": "Bearer good"},
+    )
+
+    assert response.status_code == 200
+    assert response.json() == {"ok": True}
+
+
+def test_unmounted_spa_keeps_current_auth_gating() -> None:
+    """Without HOF-056 SPA state, document navigations remain auth-gated."""
+    response = _spa_client(mounted=False).get("/dashboard", headers={"Accept": "text/html"})
+
+    assert response.status_code == 401
+    assert response.headers["www-authenticate"] == "Bearer"
+    assert response.json()["error"]["message"] == "Authentication required"

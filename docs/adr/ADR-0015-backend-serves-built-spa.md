@@ -52,6 +52,15 @@ pass-through reverse proxy for the unified backend origin, while still owning
 edge duties such as TLS termination, proxy headers, compression, logging, and
 security headers.
 
+Authentication middleware must allow the same public SPA document navigations
+that the fallback would serve. When the SPA is mounted, unauthenticated
+`GET`/`HEAD` requests that accept `text/html` and whose root route family is not
+backend-owned are allowed through to the SPA fallback. API, WebSocket, OAuth,
+well-known, docs, health, readiness, startup, and metrics route families remain
+outside this exemption and keep their normal authentication behavior. The
+middleware reads the reserved route-family set derived by the SPA fallback at
+startup so the two checks cannot drift.
+
 ## Consequences
 
 ### Becomes easier
@@ -67,6 +76,8 @@ security headers.
 - FastAPI now has responsibility for serving production static assets.
 - The fallback route must stay registered last; moving route registration around
   can change which paths are treated as SPA navigations.
+- Authentication middleware must keep its SPA document-navigation exemption in
+  sync with the fallback's derived reserved route-family set.
 - Edge-layer rate limits need to be designed as optional proxy policy rather than
   as part of the canonical static/API split.
 
@@ -76,6 +87,8 @@ security headers.
   backend prefix carve-out to use the built UI.
 - Do not maintain a second hard-coded SPA reserved-prefix list in the proxy or
   backend fallback.
+- Do not require authentication for public SPA document navigations while still
+  requiring bearer tokens for backend-owned data routes.
 - Do not rely on `StaticFiles(html=True)` alone for client-side route fallback.
 
 ## Alternatives considered

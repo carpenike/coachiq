@@ -7,6 +7,7 @@ configured authentication mode.
 """
 
 import logging
+from collections.abc import Set as AbstractSet
 from typing import Annotated, ClassVar
 
 from fastapi import Depends, HTTPException, Request, Response, status
@@ -14,6 +15,7 @@ from fastapi.responses import JSONResponse
 from fastapi.security.utils import get_authorization_scheme_param
 from starlette.middleware.base import BaseHTTPMiddleware
 
+from backend.core.http_navigation import accepts_html, route_family
 from backend.services.auth.manager import AuthManager, AuthMode, InvalidTokenError
 
 logger = logging.getLogger(__name__)
@@ -127,8 +129,8 @@ class AuthenticationMiddleware(BaseHTTPMiddleware):
             self.logger.debug("No auth manager available, skipping authentication")
             return await call_next(request)
 
-        # Skip authentication for excluded paths
-        if self._is_excluded_path(request.url.path):
+        # Skip authentication for excluded paths and mounted SPA document navigations
+        if self._is_excluded_path(request.url.path) or self._is_spa_document_navigation(request):
             self.logger.debug(f"Skipping authentication for excluded path: {request.url.path}")
             return await call_next(request)
 
@@ -209,6 +211,21 @@ class AuthenticationMiddleware(BaseHTTPMiddleware):
 
         # Check prefix matches
         return any(path.startswith(prefix) for prefix in self.EXCLUDED_PREFIXES)
+
+    def _is_spa_document_navigation(self, request: Request) -> bool:
+        """Return true when a mounted SPA browser navigation should bypass auth."""
+        if request.method not in {"GET", "HEAD"}:
+            return False
+
+        reserved_families = getattr(request.app.state, "spa_reserved_route_families", None)
+        if not isinstance(reserved_families, AbstractSet):
+            return False
+
+        if not accepts_html(request):
+            return False
+
+        route_family_value = route_family(request.url.path)
+        return route_family_value not in reserved_families
 
     def _extract_token_from_request(self, request: Request) -> str | None:
         """

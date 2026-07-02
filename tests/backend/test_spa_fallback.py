@@ -23,11 +23,10 @@ def spa_client(tmp_path) -> Generator[TestClient, None, None]:
     original_routes = list(app.router.routes)
     previous_state = {
         name: getattr(app.state, name, None)
-        for name in ("spa_static_dir", "spa_index_path", "spa_reserved_route_families")
+        for name in ("spa_static_dir", "spa_reserved_route_families")
     }
     previous_state_present = {
-        name: hasattr(app.state, name)
-        for name in ("spa_static_dir", "spa_index_path", "spa_reserved_route_families")
+        name: hasattr(app.state, name) for name in ("spa_static_dir", "spa_reserved_route_families")
     }
 
     try:

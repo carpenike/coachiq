@@ -30,6 +30,7 @@ from slowapi.middleware import SlowAPIMiddleware
 from backend.api.router_config import configure_routers
 from backend.core.composition_root import CompositionRoot
 from backend.core.config import Settings, get_settings, is_real_secret, resolve_project_path
+from backend.core.http_navigation import accepts_html, route_family
 from backend.core.logging_config import configure_unified_logging, setup_early_logging
 from backend.core.metrics import initialize_backend_metrics
 from backend.core.security_config_validator import validate_security_config
@@ -66,29 +67,13 @@ _DEVELOPMENT_CSRF_SECRET = "development-only-csrf-secret-do-not-use-in-productio
 _SPA_FALLBACK_ROUTE_NAME = "spa_fallback"
 
 
-def _accepts_html(request: Request) -> bool:
-    """Return whether a request is a browser-style HTML navigation."""
-    accept_header = getattr(request, "headers", {}).get("accept", "")
-    accepted_types = [
-        part.split(";", maxsplit=1)[0].strip().lower() for part in accept_header.split(",")
-    ]
-    return "text/html" in accepted_types
-
-
-def _route_family(path: str) -> str | None:
-    """Return the root-mounted route family for a path."""
-    if not path or path == "/":
-        return None
-    return f"/{path.lstrip('/').split('/', maxsplit=1)[0]}"
-
-
 def _derive_reserved_route_families(app: FastAPI) -> frozenset[str]:
     """Derive non-SPA root families from routes already registered on the app."""
     families: set[str] = set()
     for route in getattr(app, "routes", ()):
         if getattr(route, "name", None) == _SPA_FALLBACK_ROUTE_NAME:
             continue
-        family = _route_family(getattr(route, "path", ""))
+        family = route_family(getattr(route, "path", ""))
         if family:
             families.add(family)
     return frozenset(families)
@@ -130,21 +115,20 @@ def configure_spa_fallback(app: FastAPI, settings: Settings | None = None) -> bo
 
     reserved_families = _derive_reserved_route_families(app)
     app.state.spa_static_dir = spa_dir
-    app.state.spa_index_path = index_path
     app.state.spa_reserved_route_families = reserved_families
 
     async def spa_fallback(request: Request, spa_path: str) -> FileResponse:
         request_path = f"/{spa_path}" if spa_path else "/"
-        route_family = _route_family(request_path)
+        route_family_value = route_family(request_path)
 
-        if route_family in reserved_families:
+        if route_family_value in reserved_families:
             raise HTTPException(status_code=404, detail="Not Found")
 
         asset_path = _safe_spa_file_path(spa_dir, request_path)
         if asset_path:
             return FileResponse(asset_path)
 
-        if _accepts_html(request):
+        if accepts_html(request):
             return FileResponse(index_path)
 
         raise HTTPException(status_code=404, detail="Not Found")
@@ -474,9 +458,11 @@ app = create_app()
 @app.get("/", response_model=None)
 async def root(request: Request) -> FileResponse | dict[str, str]:
     """Root endpoint for health checking."""
-    index_path = getattr(request.app.state, "spa_index_path", None)
-    if index_path and _accepts_html(request):
-        return FileResponse(index_path)
+    spa_static_dir = getattr(request.app.state, "spa_static_dir", None)
+    if spa_static_dir and accepts_html(request):
+        index_path = Path(spa_static_dir) / "index.html"
+        if index_path.is_file():
+            return FileResponse(index_path)
 
     return {"message": "CoachIQ Backend is running", "version": "2.0.0"}
 
