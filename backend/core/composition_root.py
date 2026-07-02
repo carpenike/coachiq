@@ -166,6 +166,7 @@ class CompositionServices:
     entity_initialization_service: Any = None
     entity_service: Any = None
     entity_domain_service: Any = None
+    router_sidecar_service: Any = None
 
 
 class CompositionRoot:
@@ -255,6 +256,7 @@ class CompositionRoot:
         "entity_service",
         "entity_domain_service",
     )
+    _ROUTER_SIDECAR_SERVICE_ORDER = ("router_sidecar_service",)
 
     def __init__(self, service_catalog: set[str] | None = None) -> None:
         self.guardrail_coordinator = GuardrailRuntimeCoordinator()
@@ -290,6 +292,7 @@ class CompositionRoot:
             *self._A2_SERVICE_ORDER,
             *self._A3_SERVICE_ORDER,
             *self._A4_SERVICE_ORDER,
+            *self._ROUTER_SIDECAR_SERVICE_ORDER,
         )
 
     async def startup(self) -> None:
@@ -302,6 +305,7 @@ class CompositionRoot:
             await self._construct_a2_services()
             await self._construct_a3_services()
             await self._construct_a4_services()
+            await self._construct_router_sidecar_services()
             self._startup_time = (time.perf_counter() - self._startup_started_at) * 1000
             self._started = True
         except Exception as exc:
@@ -1089,6 +1093,17 @@ class CompositionRoot:
             )
             await websocket_manager.start()
             self._set_root_constructed_service("websocket_manager", websocket_manager)
+
+    async def _construct_router_sidecar_services(self) -> None:
+        """Construct router-sidecar services after core app services are available."""
+        if self._should_construct("router_sidecar_service"):
+            from backend.integrations.router_sidecar import RouterSidecarService
+
+            router_sidecar_service = RouterSidecarService(
+                self.require_service("app_settings").router_sidecar
+            )
+            await router_sidecar_service.start()
+            self._set_root_constructed_service("router_sidecar_service", router_sidecar_service)
 
     def _set_root_constructed_service(self, service_name: str, service: Any) -> None:
         """Store a root-constructed service and mirror guardrail metadata."""

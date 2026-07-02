@@ -1776,6 +1776,51 @@ class McpSettings(BaseSettings):
         return value
 
 
+class RouterSidecarSettings(BaseSettings):
+    """RouterOS sidecar listener and poller configuration."""
+
+    model_config = SettingsConfigDict(env_prefix="COACHIQ_ROUTER_SIDECAR__", case_sensitive=False)
+
+    enabled: bool = Field(default=False, description="Enable the RouterOS sidecar API")
+    host: str = Field(default="0.0.0.0", description="Sidecar bind host")  # nosec B104
+    port: int = Field(default=8100, description="Sidecar bind port", ge=1, le=65535)
+    access_log: bool = Field(default=False, description="Enable sidecar access logs")
+
+    home_latitude: float | None = Field(default=None, description="Home geofence latitude")
+    home_longitude: float | None = Field(default=None, description="Home geofence longitude")
+    geofence_radius_m: float = Field(default=200.0, description="Home geofence radius", gt=0)
+    location_hysteresis_count: int = Field(
+        default=3, description="Consecutive location reads before state flips", ge=1
+    )
+
+    gpsd_host: str = Field(default="127.0.0.1", description="gpsd host")
+    gpsd_port: int = Field(default=2947, description="gpsd TCP port", ge=1, le=65535)
+    gps_fix_staleness_seconds: float = Field(
+        default=120.0, description="Seconds before a GPS fix is stale", gt=0
+    )
+    gps_poll_interval_seconds: float = Field(
+        default=2.0, description="Delay after gpsd reconnect attempts", gt=0
+    )
+
+    dish_host: str = Field(default="192.168.100.1", description="Starlink dish gRPC host")
+    dish_port: int = Field(default=9200, description="Starlink dish gRPC port", ge=1, le=65535)
+    starlink_poll_interval_seconds: float = Field(
+        default=5.0, description="Starlink status poll interval", gt=0
+    )
+    starlink_degraded_debounce_seconds: float = Field(
+        default=75.0, description="Sustained degradation interval before degraded", gt=0
+    )
+    starlink_obstruction_fraction_degraded: float = Field(
+        default=0.03, description="Obstruction fraction threshold for degraded", ge=0
+    )
+    starlink_pop_ping_drop_rate_degraded: float = Field(
+        default=0.05, description="PoP ping drop-rate threshold for degraded", ge=0
+    )
+    starlink_pop_ping_latency_ms_degraded: float = Field(
+        default=100.0, description="PoP ping latency threshold for degraded", gt=0
+    )
+
+
 class Settings(BaseSettings):
     """
     Main application settings.
@@ -1850,6 +1895,7 @@ class Settings(BaseSettings):
     notifications: NotificationSettings = Field(default_factory=NotificationSettings)
     auth: AuthenticationSettings = Field(default_factory=AuthenticationSettings)
     mcp: McpSettings = Field(default_factory=McpSettings)
+    router_sidecar: RouterSidecarSettings = Field(default_factory=RouterSidecarSettings)
     api_domains: APIDomainSettings = Field(default_factory=APIDomainSettings)
 
     def __init__(self, **data):

@@ -188,6 +188,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     logger.info("Starting coachiq backend application")
 
     composition_root = CompositionRoot()
+    router_sidecar_server = None
 
     # Initialize the module-level composition root for dependency injection.
     from backend.core.dependencies import initialize_composition_root
@@ -201,6 +202,17 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         # Execute orchestrated startup through the composition root.
         await composition_root.startup()
 
+        settings = composition_root.services.settings
+        router_sidecar_service = composition_root.services.router_sidecar_service
+        if settings.router_sidecar.enabled:
+            from backend.integrations.router_sidecar.server import RouterSidecarServer
+
+            router_sidecar_server = RouterSidecarServer(
+                settings.router_sidecar,
+                router_sidecar_service.app,
+            )
+            await router_sidecar_server.start()
+
         command_guardrail_service = composition_root.services.command_guardrail_service
         if not command_guardrail_service:
             logger.error(
@@ -208,7 +220,6 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
             )
 
         # Get services from registry
-        settings = composition_root.services.settings
         rvc_config_provider = composition_root.services.rvc_config
         security_event_manager = composition_root.services.security_event_manager
 
@@ -322,6 +333,8 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         # Shutdown Security WebSocket handler
         # Use composition root for orchestrated shutdown
         try:
+            if router_sidecar_server is not None:
+                await router_sidecar_server.stop()
             logger.info("Using CompositionRoot for orchestrated shutdown")
             await composition_root.shutdown()
         except Exception as e:
