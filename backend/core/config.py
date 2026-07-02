@@ -1819,6 +1819,12 @@ class RouterSidecarSettings(BaseSettings):
     starlink_pop_ping_latency_ms_degraded: float = Field(
         default=100.0, description="PoP ping latency threshold for degraded", gt=0
     )
+    starlink_recent_outage_count_degraded: int = Field(
+        default=3, description="Recent outage count threshold for degraded", ge=1
+    )
+    starlink_history_sample_window: int = Field(
+        default=60, description="History samples used for Starlink rolling averages", ge=1
+    )
 
 
 class Settings(BaseSettings):

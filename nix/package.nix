@@ -44,6 +44,10 @@
       pythonPackages.aiofiles
       pythonPackages.asyncpg
       pythonPackages.alembic
+      # Router sidecar Starlink gRPC client
+      pythonPackages.grpcio
+      pythonPackages."grpcio-reflection"
+      pythonPackages.protobuf
       # Notification system dependencies
       pythonPackages.apprise
       pythonPackages.jinja2

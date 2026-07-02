@@ -59,6 +59,9 @@ greenlet          = ">=3.2"
 aiosqlite         = ">=0.19.0"
 asyncpg           = ">=0.29.0"
 alembic           = ">=1.13.0"
+grpcio            = ">=1.64.0"
+grpcio-reflection = ">=1.64.0"
+protobuf          = ">=5.0.0"
 
 # ------------------------------------------------------------------
 # CLI entry-points (was in the deleted [project] section)

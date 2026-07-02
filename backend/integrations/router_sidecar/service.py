@@ -14,6 +14,12 @@ from backend.integrations.router_sidecar.location import (
     LocationEvaluator,
     LocationEvaluatorConfig,
 )
+from backend.integrations.router_sidecar.starlink import StarlinkGrpcClient, StarlinkSnapshot
+from backend.integrations.router_sidecar.verdict import (
+    StarlinkVerdictEvaluator,
+    StarlinkVerdictConfig,
+    format_starlink_raw,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -26,6 +32,8 @@ class RouterSidecarService:
         settings: RouterSidecarSettings,
         gpsd_client: GpsdClient | None = None,
         location_evaluator: LocationEvaluator | None = None,
+        starlink_client: StarlinkGrpcClient | None = None,
+        starlink_evaluator: StarlinkVerdictEvaluator | None = None,
     ) -> None:
         self.settings = settings
         self._location_state = "unknown"
@@ -35,6 +43,10 @@ class RouterSidecarService:
         self._running = False
         self._last_gps_fix: GpsdTpv | None = None
         self._gpsd_client = gpsd_client or GpsdClient(settings.gpsd_host, settings.gpsd_port)
+        self._starlink_client = starlink_client or StarlinkGrpcClient(
+            settings.dish_host,
+            settings.dish_port,
+        )
         self._location_evaluator = location_evaluator or LocationEvaluator(
             LocationEvaluatorConfig(
                 home_latitude=settings.home_latitude,
@@ -42,6 +54,16 @@ class RouterSidecarService:
                 geofence_radius_m=settings.geofence_radius_m,
                 hysteresis_count=settings.location_hysteresis_count,
                 fix_staleness_seconds=settings.gps_fix_staleness_seconds,
+            )
+        )
+        self._starlink_evaluator = starlink_evaluator or StarlinkVerdictEvaluator(
+            StarlinkVerdictConfig(
+                obstruction_fraction_degraded=settings.starlink_obstruction_fraction_degraded,
+                pop_ping_drop_rate_degraded=settings.starlink_pop_ping_drop_rate_degraded,
+                pop_ping_latency_ms_degraded=settings.starlink_pop_ping_latency_ms_degraded,
+                recent_outage_count_degraded=settings.starlink_recent_outage_count_degraded,
+                history_sample_window=settings.starlink_history_sample_window,
+                degraded_debounce_seconds=settings.starlink_degraded_debounce_seconds,
             )
         )
         self.app: FastAPI = create_router_sidecar_app(
@@ -58,6 +80,7 @@ class RouterSidecarService:
         if self.settings.enabled:
             self._create_task(self._gpsd_poll_loop(), "router-sidecar-gpsd")
             self._create_task(self._location_refresh_loop(), "router-sidecar-location")
+            self._create_task(self._starlink_poll_loop(), "router-sidecar-starlink")
         logger.info("Router sidecar service started")
 
     async def stop(self) -> None:
@@ -116,3 +139,24 @@ class RouterSidecarService:
             self._last_gps_fix,
             now=datetime.now(UTC),
         )
+
+    async def _starlink_poll_loop(self) -> None:
+        while self._running:
+            try:
+                snapshot = await asyncio.to_thread(self._starlink_client.fetch_snapshot_blocking)
+                self._refresh_starlink(snapshot)
+            except asyncio.CancelledError:
+                raise
+            except Exception as exc:
+                logger.warning("Starlink poll failed: %s", exc)
+                self._refresh_starlink(
+                    StarlinkSnapshot(reachable=False, error=f"{type(exc).__name__}: {exc}")
+                )
+            await asyncio.sleep(self.settings.starlink_poll_interval_seconds)
+
+    def _refresh_starlink(self, snapshot: StarlinkSnapshot) -> None:
+        self._starlink_verdict = self._starlink_evaluator.evaluate(
+            snapshot,
+            now=datetime.now(UTC),
+        )
+        self._starlink_raw = format_starlink_raw(snapshot)
