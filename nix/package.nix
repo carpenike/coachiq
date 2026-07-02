@@ -132,7 +132,7 @@
       pkgs.python3
       pkgs.pkg-config
     ] ++ pkgs.lib.optionals pkgs.stdenv.isDarwin [
-      pkgs.darwin.apple_sdk.frameworks.Security
+      pkgs.apple-sdk
     ] ++ pkgs.lib.optionals pkgs.stdenv.isLinux [
       pkgs.libsecret
     ];

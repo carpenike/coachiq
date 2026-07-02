@@ -9,6 +9,7 @@
 
 let
   cfg = config.services.coachiq;
+  frontendPackage = self.packages.${pkgs.system}.frontend;
   settingNames = lib.attrNames cfg.settings;
   secretSettingNames = [
     "COACHIQ_AUTH__SECRET_KEY"
@@ -34,7 +35,11 @@ let
     COACHIQ_SECURITY__TLS_TERMINATION_IS_EXTERNAL = toEnvValue cfg.tlsTerminationIsExternal;
   };
 
-  finalEnv = settingsEnv // firstClassEnv;
+  frontendEnv = lib.optionalAttrs (!(builtins.hasAttr "COACHIQ_STATIC_DIR" cfg.settings)) {
+    COACHIQ_STATIC_DIR = "${frontendPackage}";
+  };
+
+  finalEnv = settingsEnv // frontendEnv // firstClassEnv;
 in
 {
   options.services.coachiq = {

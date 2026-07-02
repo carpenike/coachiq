@@ -5,6 +5,7 @@
   system ? builtins.currentSystem,
   module ? null,
   package ? null,
+  frontend ? null,
 }:
 
 let
@@ -30,12 +31,22 @@ let
         touch $out/share/coachiq/nix/health-check.sh
       '';
 
+  testFrontendPackage =
+    if frontend != null then
+      frontend
+    else
+      pkgs.runCommand "coachiq-test-frontend" { } ''
+        mkdir -p $out
+        touch $out/index.html
+      '';
+
   coachiqModule =
     if module != null then
       module
     else
       import ./module.nix {
         self.packages.${system}.coachiq = testPackage;
+        self.packages.${system}.frontend = testFrontendPackage;
       };
 
   envFile = "/run/secrets/coachiq.env";
@@ -114,6 +125,10 @@ let
     {
       name = "freeform float string reaches environment";
       ok = env.COACHIQ_MULTI_NETWORK__MESSAGE_ROUTING_TIMEOUT == "0.25";
+    }
+    {
+      name = "frontend package reaches static dir environment";
+      ok = env.COACHIQ_STATIC_DIR == "${testFrontendPackage}";
     }
   ];
 

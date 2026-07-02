@@ -17,17 +17,19 @@ from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 from datetime import UTC, datetime
 from pathlib import Path
+from typing import Any, cast
+from urllib.parse import unquote
 
 import uvicorn
-from fastapi import FastAPI, Request
-from fastapi.responses import JSONResponse, Response
+from fastapi import FastAPI, HTTPException, Request
+from fastapi.responses import FileResponse, JSONResponse, Response
 from prometheus_client import CONTENT_TYPE_LATEST, generate_latest
 from slowapi.errors import RateLimitExceeded
 from slowapi.middleware import SlowAPIMiddleware
 
 from backend.api.router_config import configure_routers
 from backend.core.composition_root import CompositionRoot
-from backend.core.config import Settings, get_settings, is_real_secret
+from backend.core.config import Settings, get_settings, is_real_secret, resolve_project_path
 from backend.core.logging_config import configure_unified_logging, setup_early_logging
 from backend.core.metrics import initialize_backend_metrics
 from backend.core.security_config_validator import validate_security_config
@@ -61,6 +63,103 @@ logger = logging.getLogger(__name__)
 SERVER_START_TIME = time.time()
 
 _DEVELOPMENT_CSRF_SECRET = "development-only-csrf-secret-do-not-use-in-production"  # noqa: S105
+_SPA_FALLBACK_ROUTE_NAME = "spa_fallback"
+
+
+def _accepts_html(request: Request) -> bool:
+    """Return whether a request is a browser-style HTML navigation."""
+    accept_header = getattr(request, "headers", {}).get("accept", "")
+    accepted_types = [
+        part.split(";", maxsplit=1)[0].strip().lower() for part in accept_header.split(",")
+    ]
+    return "text/html" in accepted_types
+
+
+def _route_family(path: str) -> str | None:
+    """Return the root-mounted route family for a path."""
+    if not path or path == "/":
+        return None
+    return f"/{path.lstrip('/').split('/', maxsplit=1)[0]}"
+
+
+def _derive_reserved_route_families(app: FastAPI) -> frozenset[str]:
+    """Derive non-SPA root families from routes already registered on the app."""
+    families: set[str] = set()
+    for route in getattr(app, "routes", ()):
+        if getattr(route, "name", None) == _SPA_FALLBACK_ROUTE_NAME:
+            continue
+        family = _route_family(getattr(route, "path", ""))
+        if family:
+            families.add(family)
+    return frozenset(families)
+
+
+def _safe_spa_file_path(spa_dir: Path, request_path: str) -> Path | None:
+    """Resolve a requested SPA asset path without allowing directory escape."""
+    relative_path = unquote(request_path).lstrip("/")
+    if not relative_path:
+        return None
+
+    candidate = (spa_dir / relative_path).resolve()
+    try:
+        candidate.relative_to(spa_dir)
+    except ValueError:
+        return None
+
+    if candidate.is_file():
+        return candidate
+    return None
+
+
+def configure_spa_fallback(app: FastAPI, settings: Settings | None = None) -> bool:
+    """Register the built React SPA fallback as the final app route when available."""
+    active_settings = settings or get_settings()
+    spa_dir = resolve_project_path(active_settings.static_dir)
+    index_path = spa_dir / "index.html"
+
+    if not index_path.is_file():
+        logger.info("SPA fallback not mounted; index.html not found at %s", index_path)
+        return False
+
+    if any(
+        getattr(route, "name", None) == _SPA_FALLBACK_ROUTE_NAME
+        for route in getattr(app, "routes", ())
+    ):
+        logger.info("SPA fallback already mounted from %s", spa_dir)
+        return True
+
+    reserved_families = _derive_reserved_route_families(app)
+    app.state.spa_static_dir = spa_dir
+    app.state.spa_index_path = index_path
+    app.state.spa_reserved_route_families = reserved_families
+
+    async def spa_fallback(request: Request, spa_path: str) -> FileResponse:
+        request_path = f"/{spa_path}" if spa_path else "/"
+        route_family = _route_family(request_path)
+
+        if route_family in reserved_families:
+            raise HTTPException(status_code=404, detail="Not Found")
+
+        asset_path = _safe_spa_file_path(spa_dir, request_path)
+        if asset_path:
+            return FileResponse(asset_path)
+
+        if _accepts_html(request):
+            return FileResponse(index_path)
+
+        raise HTTPException(status_code=404, detail="Not Found")
+
+    add_api_route = cast("Any", app).add_api_route
+    add_api_route(
+        "/{spa_path:path}",
+        spa_fallback,
+        methods=["GET", "HEAD"],
+        include_in_schema=False,
+        name=_SPA_FALLBACK_ROUTE_NAME,
+    )
+
+    logger.info("SPA fallback mounted from %s", spa_dir)
+    return True
 
 
 def _resolve_csrf_secret(settings: Settings) -> str:
@@ -372,9 +471,13 @@ def create_app() -> FastAPI:
 app = create_app()
 
 
-@app.get("/")
-async def root():
+@app.get("/", response_model=None)
+async def root(request: Request) -> FileResponse | dict[str, str]:
     """Root endpoint for health checking."""
+    index_path = getattr(request.app.state, "spa_index_path", None)
+    if index_path and _accepts_html(request):
+        return FileResponse(index_path)
+
     return {"message": "CoachIQ Backend is running", "version": "2.0.0"}
 
 
@@ -998,6 +1101,9 @@ async def health_monitoring(request: Request) -> JSONResponse:
                 "timestamp": datetime.now(UTC).isoformat(),
             },
         )
+
+
+configure_spa_fallback(app)
 
 
 def main():

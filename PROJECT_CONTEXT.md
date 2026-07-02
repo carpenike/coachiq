@@ -43,8 +43,10 @@ chooses whether to act on them. Consequences for how you write code and specs:
   propose mutation testing, 100% MC/DC coverage, or formal methods.
 
 **Deployment shape:** Python 3.12 backend run under Poetry; React SPA built
-with Vite and served by **Caddy**, which also terminates TLS and does
-IP-based rate-limiting and proxies `/api` + `/ws` to FastAPI. Reproducible
+with Vite and served by the **FastAPI backend** from `COACHIQ_STATIC_DIR` when
+the built `index.html` is present. **Caddy** terminates TLS and acts as a
+single pass-through reverse proxy to FastAPI for the SPA, REST API,
+WebSockets, OAuth discovery, docs, health probes, and metrics. Reproducible
 builds and an optional NixOS module are provided via the Nix flake.
 
 ---
@@ -217,6 +219,7 @@ proposing anything that touches the area.
 | ADR-0012 | Knowledge & Maintenance boundary      | Offline-first coach knowledge/maintenance context; sqlite-vec vector substrate             |
 | ADR-0013 | PocketID OIDC + MCP OAuth AS          | Additive OIDC login; group-gated roles; conformant MCP OAuth AS for `/api/mcp`             |
 | ADR-0014 | Composition root constructor injection | Replace ServiceRegistry DI with a typed composition root; preserve safety coordinator      |
+| ADR-0015 | Backend serves built SPA               | FastAPI serves production SPA/static fallback from `COACHIQ_STATIC_DIR`; Caddy proxies all |
 
 ---
 

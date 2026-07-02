@@ -523,6 +523,7 @@ EOF
             inherit nixpkgs system;
             module = self.nixosModules.default;
             package = self.packages.${system}.coachiq;
+            frontend = self.packages.${system}.frontend;
           };
         };
       in {
