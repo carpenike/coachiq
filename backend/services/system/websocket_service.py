@@ -17,9 +17,15 @@ from typing import Any
 from fastapi import WebSocket, WebSocketDisconnect
 
 from backend.repositories import CANTrackingRepository, SystemStateRepository
-from backend.websocket.auth_handler import get_websocket_auth_handler
 
 logger = logging.getLogger(__name__)
+
+
+def _get_websocket_auth_handler():
+    """Import the WebSocket auth handler lazily to avoid DI alias import cycles."""
+    from backend.websocket.auth_handler import get_websocket_auth_handler
+
+    return get_websocket_auth_handler()
 
 
 class WebSocketService:
@@ -276,7 +282,7 @@ class WebSocketService:
 
     async def _check_token_expiry_task(self) -> None:
         """Periodically check for expired tokens and close connections."""
-        auth_handler = get_websocket_auth_handler()
+        auth_handler = _get_websocket_auth_handler()
         while self._running:
             try:
                 await asyncio.sleep(60)  # Check every minute
@@ -315,7 +321,7 @@ class WebSocketService:
             websocket: The WebSocket connection
         """
         # Authenticate the connection
-        auth_handler = get_websocket_auth_handler()
+        auth_handler = _get_websocket_auth_handler()
         user_info = await auth_handler.authenticate_connection(websocket, require_auth=True)
 
         if not user_info:
@@ -485,7 +491,7 @@ class WebSocketService:
         - Log messages are streamed as JSON text
         """
         # Authenticate the connection
-        auth_handler = get_websocket_auth_handler()
+        auth_handler = _get_websocket_auth_handler()
         user_info = await auth_handler.authenticate_connection(websocket, require_auth=True)
 
         if not user_info:
@@ -564,7 +570,7 @@ class WebSocketService:
             websocket: The WebSocket connection
         """
         # Authenticate the connection
-        auth_handler = get_websocket_auth_handler()
+        auth_handler = _get_websocket_auth_handler()
         user_info = await auth_handler.authenticate_connection(websocket, require_auth=True)
 
         if not user_info:
@@ -684,7 +690,7 @@ class WebSocketService:
             websocket: The WebSocket connection
         """
         # Authenticate the connection
-        auth_handler = get_websocket_auth_handler()
+        auth_handler = _get_websocket_auth_handler()
         user_info = await auth_handler.authenticate_connection(websocket, require_auth=True)
 
         if not user_info:
@@ -738,7 +744,7 @@ class WebSocketService:
             websocket: The WebSocket connection
         """
         # Authenticate the connection
-        auth_handler = get_websocket_auth_handler()
+        auth_handler = _get_websocket_auth_handler()
         user_info = await auth_handler.authenticate_connection(websocket, require_auth=True)
 
         if not user_info:
@@ -792,7 +798,7 @@ class WebSocketService:
             websocket: The WebSocket connection
         """
         # Authenticate the connection
-        auth_handler = get_websocket_auth_handler()
+        auth_handler = _get_websocket_auth_handler()
         user_info = await auth_handler.authenticate_connection(websocket, require_auth=True)
 
         if not user_info:

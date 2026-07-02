@@ -143,6 +143,9 @@ lifecycle and resolves a topological startup order across startup stages
 `Annotated[Type, Depends(get_x)]` pattern. The old `AppState` /
 `backend/core/state.py` global is **removed** — do not reach for `app.state`,
 `get_app_state`, `get_entity_manager`, or module-level service singletons.
+DI alias hygiene matters: the declared alias type must match the class actually
+constructed by `CompositionRoot`. Use `Any` only for a documented import-cycle
+break, and leave a comment naming that cycle.
 
 **The CAN facade (ADR-0002).** All CAN operations go through a single
 `CANFacade` (`backend/services/can_facade.py`), which coordinates the

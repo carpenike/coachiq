@@ -6,15 +6,16 @@ Allows runtime protocol management without requiring application restarts.
 """
 
 import logging
-from typing import ClassVar
+from typing import Any, ClassVar
 
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 from starlette import status
 
 from backend.core.dependencies import CompositionRoot, ProtocolManager
-from backend.middleware.auth import require_admin_role
+from backend.middleware.auth import get_admin_user
 from backend.models.protocol_config import ProtocolRuntimeStatus
+from backend.services.protocols.protocol_manager import ProtocolStatus
 
 logger = logging.getLogger(__name__)
 
@@ -34,7 +35,7 @@ class ProtocolUpdateRequest(BaseModel):
     """Request to update protocol configuration."""
 
     enabled: bool | None = Field(None, description="Enable/disable protocol")
-    config: dict | None = Field(None, description="Protocol-specific configuration")
+    config: dict[str, Any] | None = Field(None, description="Protocol-specific configuration")
 
     class Config:
         json_schema_extra: ClassVar = {
@@ -65,6 +66,35 @@ router = APIRouter(
 )
 
 
+def _protocol_runtime_status(
+    protocol_manager: ProtocolManager,
+    composition_root: CompositionRoot,
+    protocol_name: str,
+) -> ProtocolRuntimeStatus:
+    """Build API runtime status from the currently wired ProtocolManager."""
+    info = protocol_manager.get_protocol_info(protocol_name)
+    if info is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Protocol '{protocol_name}' not found",
+        )
+
+    runtime_status = protocol_manager.get_protocol_status(protocol_name, composition_root)
+    service_registered = composition_root.has_service(info.service_name)
+    service_healthy = runtime_status == ProtocolStatus.ENABLED
+
+    return ProtocolRuntimeStatus(
+        protocol_name=protocol_name,
+        enabled=info.enabled,
+        config_source="settings",
+        service_registered=service_registered,
+        service_healthy=service_healthy,
+        last_error=None
+        if runtime_status != ProtocolStatus.DEGRADED
+        else f"Service '{info.service_name}' is not healthy or not registered",
+    )
+
+
 @router.get(
     "/",
     response_model=ProtocolListResponse,
@@ -80,8 +110,8 @@ async def list_protocols(
 
     # Get status for each known protocol
     for protocol_name in ["rvc", "j1939", "firefly"]:
-        protocol_status = await protocol_manager.get_protocol_status(
-            protocol_name, composition_root
+        protocol_status = _protocol_runtime_status(
+            protocol_manager, composition_root, protocol_name
         )
         protocols.append(protocol_status)
 
@@ -112,7 +142,7 @@ async def get_protocol_status(
             detail=f"Protocol '{protocol_name}' not found",
         )
 
-    return await protocol_manager.get_protocol_status(protocol_name, composition_root)
+    return _protocol_runtime_status(protocol_manager, composition_root, protocol_name)
 
 
 @router.put(
@@ -120,25 +150,19 @@ async def get_protocol_status(
     response_model=ProtocolUpdateResponse,
     summary="Update protocol configuration",
     description="Update protocol enablement and configuration (requires admin)",
-    dependencies=[Depends(require_admin_role)],
+    dependencies=[Depends(get_admin_user)],
 )
 async def update_protocol(
     protocol_name: str,
     update: ProtocolUpdateRequest,
-    request: Request,
     protocol_manager: ProtocolManager,
-    composition_root: CompositionRoot,
 ) -> ProtocolUpdateResponse:
     """Update protocol configuration."""
-    if protocol_name not in ["rvc", "j1939", "firefly"]:
+    if protocol_manager.get_protocol_info(protocol_name) is None:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"Protocol '{protocol_name}' not found",
         )
-
-    # Get user info for audit
-    user = getattr(request.state, "user", {})  # type: ignore[attr-defined]
-    modified_by = user.get("username", "unknown")
 
     # Special handling for RVC
     if protocol_name == "rvc" and update.enabled is False:
@@ -149,45 +173,12 @@ async def update_protocol(
             protocol=None,
         )
 
-    # Update configuration
-    success = await protocol_manager.update_protocol_config(
-        protocol=protocol_name,
-        enabled=update.enabled,
-        config=update.config,
-        modified_by=modified_by,
-    )
-
-    if not success:
-        return ProtocolUpdateResponse(
-            success=False,
-            requires_restart=False,
-            message="Failed to update protocol configuration",
-            protocol=None,
-        )
-
-    # Get updated status
-    updated_status = await protocol_manager.get_protocol_status(protocol_name, composition_root)
-
-    # Check if restart required
-    requires_restart = protocol_manager.requires_restart(protocol_name)
-
-    message = f"Protocol {protocol_name} configuration updated"
-    if requires_restart:
-        message += " - restart required for changes to take effect"
-
-    logger.info(
-        "Protocol %s updated by %s: enabled=%s, restart_required=%s",
-        protocol_name,
-        modified_by,
-        update.enabled,
-        requires_restart,
-    )
-
-    return ProtocolUpdateResponse(
-        success=True,
-        requires_restart=requires_restart,
-        message=message,
-        protocol=updated_status,
+    raise HTTPException(
+        status_code=status.HTTP_501_NOT_IMPLEMENTED,
+        detail=(
+            "Runtime protocol configuration updates are not supported by the "
+            "currently wired ProtocolManager"
+        ),
     )
 
 
@@ -196,39 +187,23 @@ async def update_protocol(
     response_model=ProtocolUpdateResponse,
     summary="Reload protocol configuration",
     description="Reload protocol configuration from database (requires admin)",
-    dependencies=[Depends(require_admin_role)],
+    dependencies=[Depends(get_admin_user)],
 )
 async def reload_protocol(
     protocol_name: str,
     protocol_manager: ProtocolManager,
-    composition_root: CompositionRoot,
 ) -> ProtocolUpdateResponse:
     """Reload protocol configuration from database."""
-    if protocol_name not in ["rvc", "j1939", "firefly"]:
+    if protocol_manager.get_protocol_info(protocol_name) is None:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"Protocol '{protocol_name}' not found",
         )
 
-    try:
-        # Force reload from database
-        await protocol_manager._load_configuration()  # noqa: SLF001
-
-        # Get updated status
-        updated_status = await protocol_manager.get_protocol_status(protocol_name, composition_root)
-
-        return ProtocolUpdateResponse(
-            success=True,
-            requires_restart=False,
-            message=f"Protocol {protocol_name} configuration reloaded",
-            protocol=updated_status,
-        )
-
-    except Exception as e:
-        logger.error("Failed to reload protocol configuration: %s", e)
-        return ProtocolUpdateResponse(
-            success=False,
-            requires_restart=False,
-            message=f"Failed to reload configuration: {e}",
-            protocol=None,
-        )
+    raise HTTPException(
+        status_code=status.HTTP_501_NOT_IMPLEMENTED,
+        detail=(
+            "Runtime protocol configuration reload is not supported by the "
+            "currently wired ProtocolManager"
+        ),
+    )

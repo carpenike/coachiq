@@ -95,6 +95,7 @@ from backend.services.notifications.notification_manager import (
 from backend.services.notifications.notification_reporting_service import (
     NotificationReportingService as _NotificationReportingService,
 )
+from backend.services.protocols.protocol_manager import ProtocolManager as _ProtocolManager
 from backend.services.rvc.rvc_config_facade import RVCConfigFacade as _RVCConfigFacade
 from backend.services.rvc.rvc_service import RVCService as _RVCService
 from backend.services.security.security_audit_service import (
@@ -106,6 +107,7 @@ from backend.services.security.security_config_service import (
 from backend.services.security.security_event_manager import (
     SecurityEventManager as _SecurityEventManager,
 )
+from backend.services.system.websocket_service import WebSocketService as _WebSocketService
 from backend.services.updates.edge_proxy_monitor_service import (
     EdgeProxyMonitorService as _EdgeProxyMonitorService,
 )
@@ -196,7 +198,7 @@ def create_optional_service_dependency(service_name: str):
 # ==================================================================================
 
 
-def get_websocket_manager() -> Any:
+def get_websocket_manager() -> _WebSocketService:
     """
     Get the WebSocket manager from composition root.
 
@@ -358,7 +360,7 @@ def get_rvc_service() -> _RVCService:
     return root_service_dependency("rvc_service")()
 
 
-def get_protocol_manager() -> Any:
+def get_protocol_manager() -> _ProtocolManager:
     """Get the protocol manager from the composition root."""
     return root_service_dependency("protocol_manager")()
 
@@ -485,7 +487,9 @@ def get_predictive_maintenance_service() -> _PredictiveMaintenanceService:
 # ==================================================================================
 
 # Modern typed dependencies using Annotated
-WebSocketManager = Annotated[Any, Depends(get_websocket_manager)]
+# Compatibility naming: the public WebSocketManager alias name is historical;
+# the composition root wires the modern WebSocketService implementation.
+WebSocketManager = Annotated[_WebSocketService, Depends(get_websocket_manager)]
 EntityService = Annotated[Any, Depends(get_entity_service)]
 RVCConfigFacade = Annotated[_RVCConfigFacade, Depends(get_rvc_config_facade)]
 
@@ -494,7 +498,9 @@ CANMessageFilter = Annotated[_MessageFilter, Depends(get_can_message_filter)]
 CANBusRecorder = Annotated[_CANBusRecorder, Depends(get_can_bus_recorder)]
 CANProtocolAnalyzer = Annotated[_ProtocolAnalyzer, Depends(get_can_protocol_analyzer)]
 RVCService = Annotated[_RVCService, Depends(get_rvc_service)]
-ProtocolManager = Annotated[Any, Depends(get_protocol_manager)]
+# Compatibility naming: public ProtocolManager matches the runtime class while
+# preserving the existing DI alias name imported by routers.
+ProtocolManager = Annotated[_ProtocolManager, Depends(get_protocol_manager)]
 CommandGuardrailService = Annotated[
     _CommandGuardrailService, Depends(get_command_guardrail_service)
 ]
