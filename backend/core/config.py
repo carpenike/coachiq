@@ -784,7 +784,7 @@ class NotificationSettings(BaseSettings):
         default="backend/templates/email",
         description=(
             "Directory containing email notification templates. Earlier "
-            "revisions defaulted to ``templates/notifications/`` but the "
+            "revisions used a root-level notification template directory, but the "
             "shipped templates actually live at ``backend/templates/email`` "
             "and ``EmailTemplateManager`` ignored this field anyway. "
             "Default updated to match what's actually on disk and the "
@@ -1748,6 +1748,7 @@ class APIDomainSettings(BaseSettings):
             msg = f"Invalid validation mode: {v}. Must be one of {valid_modes}"
             raise ValueError(msg)
         return v.lower() if isinstance(v, str) else v
+
 
 class McpSettings(BaseSettings):
     """MCP OAuth Authorization Server configuration."""
