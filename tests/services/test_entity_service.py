@@ -1,34 +1,115 @@
-"""
-Tests for EntityService.
+"""Tests for EntityService against the wired async entity repository interface."""
 
-This module is intentionally a skip stub.
-
-The previous test body asserted against an obsolete EntityService
-constructor signature ``EntityService(websocket_manager, entity_manager)``
-and exercised methods like ``filter_entities`` on the EntityManager mock.
-The current constructor is::
-
-    EntityService(
-        websocket_manager,
-        entity_state_repository,
-        rvc_config_repository,
-        diagnostics_repository,
-    )
-
-and the mutating methods (``control_entity``, ``control_light``,
-``create_entity_mapping``) now require an authenticated ``user_context``
-dict per the defense-in-depth pattern landed in PR #111.
-
-Issue #105 (test-restoration sweep #2) tracks the rewrite of this module
-against the current constructor and auth signature.
-"""
+from typing import cast
 
 import pytest
 
-pytest.skip(
-    "EntityService constructor + auth signature changed; tests need rewriting "
-    "against (websocket_manager, entity_state_repository, rvc_config_repository, "
-    "diagnostics_repository) and `user_context` kwarg on mutating methods — "
-    "see issue #105.",
-    allow_module_level=True,
-)
+from backend.repositories.entity_repository import EntityStateRepository
+from backend.services.entities.entity_service import EntityService
+
+pytestmark = pytest.mark.unit
+
+
+class _EntityStateRepositoryFake:
+    """Typed fake matching the async repository interface wired by CompositionRoot."""
+
+    def __init__(self, states: dict[str, dict]) -> None:
+        self._states = states
+
+    async def get_all_states(self) -> dict[str, dict]:
+        """Return all seeded entity states."""
+        return dict(self._states)
+
+    async def get_entity_state(self, entity_id: str) -> dict | None:
+        """Return one seeded entity state."""
+        return self._states.get(entity_id)
+
+
+class _DiagnosticsRepositoryFake:
+    """Diagnostics fake for EntityService constructor completeness."""
+
+    def get_unmapped_entries(self) -> dict:
+        """Return no unmapped entries."""
+        return {}
+
+    def get_unknown_pgns(self) -> dict:
+        """Return no unknown PGNs."""
+        return {}
+
+
+def _service(states: dict[str, dict]) -> EntityService:
+    """Create EntityService with a typed async entity repository fake."""
+    return EntityService(
+        websocket_manager=cast("object", None),
+        entity_state_repository=cast("EntityStateRepository", _EntityStateRepositoryFake(states)),
+        rvc_config_repository=cast("object", None),
+        diagnostics_repository=cast("object", _DiagnosticsRepositoryFake()),
+    )
+
+
+def _seeded_states() -> dict[str, dict]:
+    """Return representative dict-shaped entity states."""
+    return {
+        "light_1": {
+            "friendly_name": "Kitchen Light",
+            "device_type": "light",
+            "protocol": "rvc",
+            "state": "on",
+            "suggested_area": "Kitchen",
+            "capabilities": ["brightness"],
+            "groups": ["main"],
+            "timestamp": 1_000.0,
+            "available": True,
+        },
+        "tank_1": {
+            "friendly_name": "Fresh Tank",
+            "device_type": "tank",
+            "protocol": "rvc",
+            "state": "50",
+            "suggested_area": "Utility",
+            "capabilities": ["level"],
+            "groups": [],
+            "timestamp": 900.0,
+            "available": True,
+        },
+    }
+
+
+async def test_list_entities_uses_async_get_all_states() -> None:
+    """Entity listing reads the async state repository and applies filters."""
+    service = _service(_seeded_states())
+
+    all_entities = await service.list_entities()
+    light_entities = await service.list_entities(device_type="light")
+
+    assert set(all_entities) == {"light_1", "tank_1"}
+    assert list(light_entities) == ["light_1"]
+    assert light_entities["light_1"]["friendly_name"] == "Kitchen Light"
+
+
+async def test_metadata_uses_dict_shaped_states() -> None:
+    """Metadata aggregation works with dict-shaped async repository states."""
+    service = _service(_seeded_states())
+
+    metadata = await service.get_metadata()
+
+    assert metadata["device_types"] == ["light", "tank"]
+    assert metadata["capabilities"] == ["brightness", "level"]
+    assert metadata["suggested_areas"] == ["Kitchen", "Utility"]
+    assert metadata["groups"] == ["main"]
+    assert metadata["total_entities"] == 2
+
+
+async def test_protocol_summary_uses_dict_shaped_states() -> None:
+    """Protocol summary counts dict-shaped async repository states."""
+    service = _service(_seeded_states())
+
+    summary = await service.get_protocol_summary()
+
+    assert summary == {
+        "rvc": {
+            "count": 2,
+            "device_types": ["light", "tank"],
+            "entities": ["light_1", "tank_1"],
+        }
+    }

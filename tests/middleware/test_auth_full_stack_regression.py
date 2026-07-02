@@ -1,19 +1,28 @@
 """Full-stack regressions for auth middleware deployment failures."""
 
+import time
+from typing import Any, cast
+
 import pytest
 from fastapi import FastAPI
 from fastapi.responses import HTMLResponse
 from fastapi.testclient import TestClient
 
 import backend.api.routers.mcp_oauth as mcp_oauth_router
+from backend.api.domains import entities as entities_mod
+from backend.api.routers import dashboard as dashboard_mod
 from backend.api.routers.mcp_oauth import get_mcp_oauth_repository
 from backend.api.routers.mcp_oauth import router as mcp_oauth_router_obj
 from backend.core.config import McpSettings, ServerSettings, Settings
 from backend.core.exception_handlers import register_exception_handlers
+from backend.core.performance import PerformanceMonitor
 from backend.middleware.auth import AuthenticationMiddleware
 from backend.middleware.csrf_protection import CSRFProtectionMiddleware
+from backend.repositories.entity_repository import EntityStateRepository
 from backend.services.auth.manager import AuthMode, InvalidTokenError
 from backend.services.auth.mcp_oauth_guard import mcp_www_authenticate_header
+from backend.services.entities.entity_service import EntityService
+from backend.services.system.dashboard_service import DashboardService
 
 pytestmark = pytest.mark.auth
 
@@ -46,6 +55,33 @@ class _SpaAuthManager:
         if credential == "good":
             return {"sub": "user", "username": "user", "role": "admin"}
         raise InvalidTokenError("invalid token")
+
+
+class _EntityStateRepositoryFake:
+    """Seeded async entity repository fake matching the wired repository interface."""
+
+    def __init__(self, states: dict[str, dict[str, Any]]) -> None:
+        self._states = states
+
+    async def get_all_states(self) -> dict[str, dict[str, Any]]:
+        """Return all seeded states."""
+        return dict(self._states)
+
+    async def get_entity_state(self, entity_id: str) -> dict[str, Any] | None:
+        """Return one seeded state."""
+        return self._states.get(entity_id)
+
+
+class _DiagnosticsRepositoryFake:
+    """Diagnostics fake for EntityService construction."""
+
+    def get_unmapped_entries(self) -> dict[str, Any]:
+        """Return no unmapped entries."""
+        return {}
+
+    def get_unknown_pgns(self) -> dict[str, Any]:
+        """Return no unknown PGNs."""
+        return {}
 
 
 def _settings() -> Settings:
@@ -114,6 +150,77 @@ def _spa_client(*, mounted: bool = True) -> TestClient:
         )
 
     return TestClient(app)
+
+
+def _seeded_entity_states() -> dict[str, dict[str, Any]]:
+    """Return known entity states for authenticated data endpoint regressions."""
+    now = time.time()
+    return {
+        "light_1": {
+            "entity_id": "light_1",
+            "friendly_name": "Kitchen Light",
+            "name": "Kitchen Light",
+            "device_type": "light",
+            "protocol": "rvc",
+            "state": "on",
+            "raw": {"operating_status": 200},
+            "suggested_area": "Kitchen",
+            "capabilities": ["brightness"],
+            "groups": ["main"],
+            "timestamp": now,
+            "last_updated": "2026-07-02T14:00:00Z",
+            "available": True,
+        },
+        "tank_1": {
+            "entity_id": "tank_1",
+            "friendly_name": "Fresh Tank",
+            "name": "Fresh Tank",
+            "device_type": "tank",
+            "protocol": "rvc",
+            "state": "unknown",
+            "raw": {"level": 50},
+            "suggested_area": "Bay",
+            "capabilities": ["level"],
+            "groups": [],
+            "timestamp": now,
+            "last_updated": "2026-07-02T14:00:00Z",
+            "available": True,
+        },
+    }
+
+
+def _authenticated_data_client() -> TestClient:
+    """Build an enabled-auth app using real routers and seeded services."""
+    app = FastAPI()
+    register_exception_handlers(app)
+    app.add_middleware(AuthenticationMiddleware, auth_manager=_SpaAuthManager())
+
+    entity_repository = cast(
+        "EntityStateRepository",
+        _EntityStateRepositoryFake(_seeded_entity_states()),
+    )
+    entity_service = EntityService(
+        websocket_manager=cast("Any", None),
+        entity_state_repository=entity_repository,
+        rvc_config_repository=cast("Any", None),
+        diagnostics_repository=cast("Any", _DiagnosticsRepositoryFake()),
+    )
+    dashboard_service = DashboardService(
+        dashboard_repository=cast("Any", None),
+        entity_repository=entity_repository,
+        performance_monitor=PerformanceMonitor(),
+    )
+
+    app.include_router(entities_mod.create_entities_router(), prefix="/api/v1/entities")
+    app.include_router(dashboard_mod.router)
+    app.dependency_overrides[entities_mod.get_entity_service] = lambda: entity_service
+    app.dependency_overrides[dashboard_mod.get_dashboard_service] = lambda: dashboard_service
+    return TestClient(app)
+
+
+def _auth_headers() -> dict[str, str]:
+    """Return a valid bearer header for enabled-auth data endpoint tests."""
+    return {"Accept": "application/json", "Authorization": "Bearer good"}
 
 
 def test_unauthenticated_protected_route_returns_401_not_500() -> None:
@@ -195,3 +302,48 @@ def test_unmounted_spa_keeps_current_auth_gating() -> None:
     assert response.status_code == 401
     assert response.headers["www-authenticate"] == "Bearer"
     assert response.json()["error"]["message"] == "Authentication required"
+
+
+def test_authenticated_entities_endpoint_returns_seeded_values() -> None:
+    """Authenticated /api/v1/entities returns seeded entities instead of 500."""
+    response = _authenticated_data_client().get("/api/v1/entities", headers=_auth_headers())
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["total_count"] == 2
+    assert payload["page"] == 1
+    assert [entity["entity_id"] for entity in payload["entities"]] == ["light_1", "tank_1"]
+    assert payload["entities"][0]["name"] == "Kitchen Light"
+    assert payload["entities"][0]["device_type"] == "light"
+    assert payload["entities"][0]["area"] == "Kitchen"
+
+
+def test_authenticated_dashboard_summary_returns_seeded_counts() -> None:
+    """Authenticated dashboard summary aggregates seeded entity states correctly."""
+    response = _authenticated_data_client().get(
+        "/api/dashboard/summary",
+        headers=_auth_headers(),
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["entities"]["total_entities"] == 2
+    assert payload["entities"]["online_entities"] == 2
+    assert payload["entities"]["active_entities"] == 1
+    assert payload["entities"]["device_type_counts"] == {"light": 1, "tank": 1}
+    assert payload["entities"]["area_counts"] == {"Kitchen": 1, "Bay": 1}
+    assert payload["quick_stats"]["entities_online_ratio"] == 1.0
+
+
+def test_authenticated_dashboard_analytics_returns_seeded_health() -> None:
+    """Authenticated dashboard analytics uses seeded entity health, not a 500."""
+    response = _authenticated_data_client().get(
+        "/api/dashboard/analytics",
+        headers=_auth_headers(),
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["alerts"] == []
+    assert payload["health_checks"]["entity_manager"] is True
+    assert payload["recommendations"] == []

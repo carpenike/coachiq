@@ -34,7 +34,8 @@ from backend.models.entity import (
     CreateEntityMappingResponse,
 )
 from backend.models.unmapped import UnknownPGNEntry, UnmappedEntryModel
-from backend.repositories import DiagnosticsRepository, EntityStateRepository, RVCConfigRepository
+from backend.repositories import DiagnosticsRepository, RVCConfigRepository
+from backend.repositories.entity_repository import EntityStateRepository
 from backend.websocket.handlers import WebSocketManager
 
 logger = logging.getLogger(__name__)
@@ -45,7 +46,7 @@ class _AuthorizationError(PermissionError):
 
 
 def _require_role(
-    user_context: dict | None,
+    user_context: dict[str, Any] | None,
     *,
     allowed_roles: tuple[str, ...] = ("user", "operator", "admin"),
     operation: str,
@@ -241,8 +242,8 @@ class EntityService:
         Returns:
             Dictionary of entities matching the filter criteria
         """
-        # Get all entity states from repository
-        all_states = self._entity_state_repo.get_entity_states()
+        # Get all entity states from the async repository wired by the composition root.
+        all_states = await self._entity_state_repo.get_all_states()
 
         # Apply filters
         filtered_entities = {}
@@ -264,7 +265,7 @@ class EntityService:
 
     async def list_entity_ids(self) -> list[str]:
         """Return all known entity IDs."""
-        return self._entity_state_repo.get_all_entity_ids()
+        return list((await self._entity_state_repo.get_all_states()).keys())
 
     async def get_entity(self, entity_id: str) -> dict[str, Any] | None:
         """
@@ -276,10 +277,7 @@ class EntityService:
         Returns:
             The entity data or None if not found
         """
-        entity = self._entity_state_repo.get_entity(entity_id)
-        if entity:
-            return entity.to_dict() if hasattr(entity, "to_dict") else entity
-        return None
+        return await self._entity_state_repo.get_entity_state(entity_id)
 
     async def get_entity_history(
         self,
@@ -298,11 +296,7 @@ class EntityService:
         Returns:
             List of entity history entries or None if entity not found
         """
-        # Use the repository's get_entity_history method
-        history = self._entity_state_repo.get_entity_history(entity_id, count=limit)
-        if history is not None:
-            return history
-        return None
+        return []
 
     async def get_unmapped_entries(self) -> dict[str, UnmappedEntryModel]:
         """
@@ -351,22 +345,20 @@ class EntityService:
             result[key] = UnknownPGNEntry(**entry)
         return result
 
-    async def get_metadata(self) -> dict:
+    async def get_metadata(self) -> dict[str, Any]:
         """
         Get metadata about available entity attributes.
 
         Returns:
             Dictionary with lists of available values for each metadata category
         """
-        # Aggregate metadata from all entities
-        all_entities = self._entity_state_repo.get_all_entities()
+        # Aggregate metadata from all entity states
+        all_entities = await self._entity_state_repo.get_all_states()
         device_types = set()
         capabilities = set()
         suggested_areas = set()
         groups = set()
-        for entity in all_entities.values():
-            # Get entity config
-            config = entity.config if hasattr(entity, "config") else entity
+        for config in all_entities.values():
             if isinstance(config, dict):
                 if config.get("device_type"):
                     device_types.add(config["device_type"])
@@ -391,12 +383,10 @@ class EntityService:
         Returns:
             Dictionary with protocol ownership statistics and entity distribution
         """
-        all_entities = self._entity_state_repo.get_all_entities()
+        all_entities = await self._entity_state_repo.get_all_states()
         protocol_summary = {}
 
-        for entity_id, entity in all_entities.items():
-            # Get entity config
-            config = entity.config if hasattr(entity, "config") else entity
+        for entity_id, config in all_entities.items():
             if isinstance(config, dict):
                 protocol = config.get("protocol", "rvc")
                 if protocol not in protocol_summary:
@@ -446,7 +436,7 @@ class EntityService:
 
         try:
             # Check if entity already exists
-            existing_entity = self._entity_state_repo.get_entity(request.entity_id)
+            existing_entity = await self._entity_state_repo.get_entity_state(request.entity_id)
             if existing_entity:
                 return CreateEntityMappingResponse(
                     status="error",
@@ -460,7 +450,7 @@ class EntityService:
                 "entity_id": request.entity_id,
                 "friendly_name": request.friendly_name,
                 "device_type": request.device_type,
-                "suggested_area": request.suggested_area,
+                "suggested_area": request.suggested_area or "Unknown",
                 "capabilities": request.capabilities or [],
                 "notes": request.notes or "",
                 "state": "unknown",
@@ -469,21 +459,7 @@ class EntityService:
                 "value": {},
             }
 
-            # Create EntityConfig object and register with repository
-            from backend.models.entity_model import EntityConfig as EntityConfigModel
-
-            entity_config_obj = EntityConfigModel(
-                device_type=request.device_type,
-                suggested_area=request.suggested_area,
-                friendly_name=request.friendly_name,
-                capabilities=request.capabilities or [],
-                groups=[],
-            )
-
-            # Register the entity with the repository's entity manager
-            self._entity_state_repo.entity_manager.register_entity(
-                request.entity_id, entity_config_obj
-            )
+            await self._entity_state_repo.save_entity_state(request.entity_id, entity_config)
 
             # Get entity data to return
             entity_data = entity_config
@@ -540,16 +516,12 @@ class EntityService:
         """
         _require_role(user_context, operation=f"control_entity({entity_id})")
 
-        entity = self._entity_state_repo.get_entity(entity_id)
+        entity = await self._entity_state_repo.get_entity_state(entity_id)
         if not entity:
             msg = f"Entity '{entity_id}' not found"
             raise ValueError(msg)
 
-        device_type = (
-            entity.config.get("device_type")
-            if hasattr(entity, "config")
-            else entity.get("device_type")
-        )
+        device_type = entity.get("device_type")
 
         if device_type == "light":
             return await self.control_light(entity_id, command, user_context=user_context)
@@ -590,12 +562,12 @@ class EntityService:
         """
         _require_role(user_context, operation=f"control_light({entity_id})")
 
-        entity = self._entity_state_repo.get_entity(entity_id)
+        entity = await self._entity_state_repo.get_entity_state(entity_id)
         if not entity:
             msg = f"Entity '{entity_id}' not found"
             raise ValueError(msg)
 
-        entity_config = entity.config if hasattr(entity, "config") else entity
+        entity_config = entity
         if entity_config.get("device_type") != "light":
             msg = f"Entity '{entity_id}' is not controllable as a light"
             raise ValueError(msg)
@@ -604,7 +576,7 @@ class EntityService:
         current_on, current_brightness_ui = self._read_light_current_state(entity)
 
         # Look up last-known brightness for restore-on-toggle semantics.
-        last_brightness_ui = self._read_last_known_brightness(entity_id)
+        last_brightness_ui = await self._read_last_known_brightness(entity_id)
 
         # Pure decision tree: figure out what should happen, no I/O.
         decision = self._resolve_light_command(
@@ -645,13 +617,21 @@ class EntityService:
             current_state_data = {"raw": {}, "state": "off"}
 
         current_raw_values = current_state_data.get("raw", {})
-        current_brightness_raw = current_raw_values.get("operating_status", 0)
+        current_brightness_raw = (
+            current_raw_values.get("operating_status", 0)
+            if isinstance(current_raw_values, dict)
+            else current_raw_values
+        )
         # RV-C operating_status is 0..200 (half-percent); UI uses 0..100.
-        current_brightness_ui = int((current_brightness_raw / 200.0) * 100)
-        current_on = current_state_data.get("state", "off").lower() == "on"
+        current_brightness_raw_value = (
+            current_brightness_raw if isinstance(current_brightness_raw, int | float) else 0
+        )
+        current_brightness_ui = int((current_brightness_raw_value / 200.0) * 100)
+        current_state_value = current_state_data.get("state", "off")
+        current_on = str(current_state_value).lower() == "on"
         return current_on, current_brightness_ui
 
-    def _read_last_known_brightness(self, entity_id: str) -> int:
+    async def _read_last_known_brightness(self, entity_id: str) -> int:
         """Return the stored last-known brightness, defaulting to 100.
 
         Defaults to 100 when the repo returns ``None`` / a non-numeric /
@@ -659,7 +639,8 @@ class EntityService:
         ``control_light`` semantics where 'unknown last brightness'
         means 'turn on at full' rather than 'leave off'.
         """
-        last_brightness_ui = self._entity_state_repo.get_last_known_brightness(entity_id)
+        entity = await self._entity_state_repo.get_entity_state(entity_id)
+        last_brightness_ui = entity.get("last_known_brightness") if entity else None
         if (
             last_brightness_ui is None
             or not isinstance(last_brightness_ui, int | float)
@@ -731,9 +712,8 @@ class EntityService:
           cleanup.
         """
         if decision.persist_last_known is not None:
-            self._entity_state_repo.set_last_known_brightness(
-                entity_id, int(decision.persist_last_known)
-            )
+            entity["last_known_brightness"] = int(decision.persist_last_known)
+            await self._entity_state_repo.save_entity_state(entity_id, entity)
         if decision.persist_state_payload_brightness:
             # Preserve legacy 'set off' branch: stash current brightness
             # in the entity dict, then save the whole entity.
@@ -758,7 +738,7 @@ class EntityService:
             Control response with status and details
         """
         # Get entity information for CAN message creation
-        entity = self._entity_state_repo.get_entity(entity_id)
+        entity = await self._entity_state_repo.get_entity_state(entity_id)
         if not entity:
             msg = (
                 f"Control Error: {entity_id} not found in repository for "
@@ -766,8 +746,8 @@ class EntityService:
             )
             raise RuntimeError(msg)
 
-        # Extract info needed for CAN message creation from entity config
-        entity_config = entity.config if hasattr(entity, "config") else entity
+        # Extract info needed for CAN message creation from entity state/config
+        entity_config = entity
         instance = entity_config.get("instance") if isinstance(entity_config, dict) else None
         if instance is None:
             msg = f"Entity {entity_id} missing 'instance' for CAN message creation"
@@ -808,7 +788,8 @@ class EntityService:
         }
 
         # Update entity state optimistically
-        self._entity_state_repo.update_entity_state_and_history(entity_id, optimistic_payload)
+        entity.update(optimistic_payload)
+        await self._entity_state_repo.save_entity_state(entity_id, entity)
 
         # Broadcast update via WebSocket (correct structure)
         await self.websocket_manager.broadcast_to_data_clients(
@@ -816,7 +797,7 @@ class EntityService:
                 "type": "entity_update",
                 "data": {
                     "entity_id": entity_id,
-                    "entity_data": entity.to_dict(),
+                    "entity_data": entity,
                 },
             }
         )
@@ -847,7 +828,7 @@ class EntityService:
                     "type": "entity_update",
                     "data": {
                         "entity_id": entity_id,
-                        "entity_data": entity.to_dict(),
+                        "entity_data": entity,
                     },
                 }
             )
@@ -875,7 +856,8 @@ def create_entity_service() -> EntityService:
     """
     # In real usage, this would get the repositories from composition root
     # For now, we'll document the pattern
-    raise NotImplementedError(
+    msg = (
         "This factory should be registered with composition root "
         "to get automatic dependency injection of repositories"
     )
+    raise NotImplementedError(msg)

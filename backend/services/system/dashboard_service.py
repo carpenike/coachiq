@@ -30,7 +30,7 @@ from backend.models.dashboard import (
     SystemMetrics,
 )
 from backend.repositories.dashboard_config_repository import DashboardConfigRepository
-from backend.repositories.entity_state_repository import EntityStateRepository
+from backend.repositories.entity_repository import EntityStateRepository
 
 logger = logging.getLogger(__name__)
 
@@ -229,8 +229,8 @@ class DashboardService:
         if cached:
             return cached
 
-        # Get all entities from repository
-        entities = self._entity_repo.get_all_entities()
+        # Get all entity states from the async repository wired by the composition root.
+        entities = await self._entity_repo.get_all_states()
 
         total_entities = len(entities)
         online_entities = 0
@@ -240,24 +240,22 @@ class DashboardService:
 
         current_time = time.time()
 
-        for entity in entities.values():
+        for entity_state in entities.values():
             # Count by device type
-            device_type = entity.config.get("device_type", "unknown")
+            device_type = entity_state.get("device_type", "unknown")
             device_type_counts[device_type] += 1
 
             # Count by area
-            area = entity.config.get("suggested_area", "unassigned")
+            area = entity_state.get("suggested_area") or entity_state.get("area", "unassigned")
             area_counts[area] += 1
 
             # Check if online (seen in last 5 minutes)
-            if (
-                entity.current_state.timestamp
-                and (current_time - entity.current_state.timestamp) < 300
-            ):
+            timestamp = entity_state.get("timestamp")
+            if isinstance(timestamp, int | float) and (current_time - timestamp) < 300:
                 online_entities += 1
 
             # Check if active (entity is considered active if it has a state other than 'unknown')
-            if entity.current_state.state != "unknown":
+            if entity_state.get("state", "unknown") != "unknown":
                 active_entities += 1
 
         # Calculate health score
@@ -551,12 +549,13 @@ class DashboardService:
             )
 
             if should_trigger and not existing_alert:
+                threshold = alert_def.threshold if alert_def.threshold is not None else 0.0
                 # Trigger new alert
                 new_alert = ActiveAlert(
                     alert_id=alert_def.id,
                     triggered_at=current_time,
                     current_value=current_value,
-                    threshold=alert_def.threshold,
+                    threshold=threshold,
                     message=f"{alert_def.name}: {alert_def.description}",
                     severity=alert_def.severity,
                 )
@@ -576,14 +575,14 @@ class DashboardService:
                     },
                 )
 
-    async def get_dashboard_config(self, user_id: str) -> dict:
+    async def get_dashboard_config(self, user_id: str) -> dict[str, Any]:
         """Get dashboard configuration for user."""
         config = await self._dashboard_repo.get_by_user_id(user_id)
         if not config:
             config = await self._dashboard_repo.create_default(user_id)
         return config.to_dict()
 
-    async def update_widget_layout(self, user_id: str, layout: dict) -> dict:
+    async def update_widget_layout(self, user_id: str, layout: dict[str, Any]) -> dict[str, Any]:
         """Update dashboard widget layout."""
         config = await self._dashboard_repo.update_layout(user_id, layout)
         return config.to_dict()
