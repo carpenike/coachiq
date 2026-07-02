@@ -1596,3 +1596,27 @@ class DeviceDiscoveryService:
         except Exception as e:
             logger.error(f"Health check failed: {e}")
             return {"status": "unhealthy", "error": str(e), "timestamp": time.time()}
+
+    async def get_supported_protocols(self) -> dict[str, Any]:
+        """Return configured and detected protocols for discovery API consumers."""
+        health = await self.health_check()
+        protocol_details = health.get("protocol_details", {})
+        supported_protocols = [
+            {
+                "name": protocol,
+                "enabled": protocol in self.enabled_protocols,
+                **protocol_details.get(protocol, {}),
+            }
+            for protocol in self.enabled_protocols
+        ]
+
+        return {
+            "supported_protocols": supported_protocols,
+            "enabled_protocols": self.enabled_protocols,
+            "detected_protocols": {
+                interface: sorted(protocols)
+                for interface, protocols in self.detected_protocols.items()
+            },
+            "can_interface_available": health.get("can_interface_available", False),
+            "timestamp": time.time(),
+        }

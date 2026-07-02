@@ -12,14 +12,14 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import Response
 from pydantic import BaseModel
 
-from backend.core.dependencies import root_service_dependency
+from backend.core.dependencies import create_optional_service_dependency
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/pattern-analysis", tags=["pattern-analysis"])
 
 # Create service dependency
-get_pattern_analysis_service = root_service_dependency("pattern_analysis_service")
+get_pattern_analysis_service = create_optional_service_dependency("pattern_analysis_service")
 
 
 class PatternAnalysisResponse(BaseModel):

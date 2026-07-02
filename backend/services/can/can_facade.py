@@ -257,18 +257,26 @@ class CANFacade(GuardrailParticipant):
             "performance": {},
         }
 
-        # Collect health from all services
-        service_health_tasks = {
-            "bus_service": self._bus_service.get_health_status(),
-            "filter": self._filter.get_health_status(),
-            "recorder": self._recorder.get_health_status(),
-            "analyzer": self._analyzer.get_health_status(),
-            "interface_service": self._interface_service.get_health_status(),
+        services = {
+            "bus_service": self._bus_service,
+            "filter": self._filter,
+            "recorder": self._recorder,
+            "analyzer": self._analyzer,
+            "interface_service": self._interface_service,
         }
 
-        # Gather all health data
-        for name, task in service_health_tasks.items():
+        for name, service in services.items():
             try:
+                get_health_status = getattr(service, "get_health_status", None)
+                if not callable(get_health_status):
+                    health_data["services"][name] = {
+                        "healthy": True,
+                        "status": "available",
+                        "detail": "Service does not expose detailed health status",
+                    }
+                    continue
+
+                task = get_health_status()
                 # Handle both sync and async health status methods
                 if asyncio.iscoroutine(task):
                     health_data["services"][name] = await task

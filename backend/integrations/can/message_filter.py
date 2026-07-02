@@ -343,6 +343,17 @@ class MessageFilter(GuardrailParticipant):
         logger.info("Stopping CAN message filter")
         self._is_running = False
 
+    def get_health_status(self) -> dict[str, Any]:
+        """Return health information for CAN facade aggregation."""
+        return {
+            "status": "healthy" if self._is_running else "stopped",
+            "running": self._is_running,
+            "rules": len(self.rules),
+            "enabled_rules": sum(1 for rule in self.rules.values() if rule.enabled),
+            "capture_buffer_size": len(self.capture_buffer),
+            "statistics": dict(self.stats),
+        }
+
     async def halt_command_emission(self, reason: str) -> None:
         """
         Emergency stop all message filtering operations.

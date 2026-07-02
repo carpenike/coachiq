@@ -19,7 +19,7 @@ RESET="\033[0m"
 # gate's job is to stop the count from going UP (a ratchet); fixing actual
 # pyright errors lower the count and the script will print a green message
 # nudging you to update the baseline downward.
-EXPECTED_PYRIGHT_ERRORS=1286  # Ratcheted 2026-07-02 after HOF-067 entity repository convergence (1289 -> 1286).
+EXPECTED_PYRIGHT_ERRORS=1244  # Ratcheted 2026-07-02 after HOF-070 authenticated route smoke fixes (1286 -> 1244).
 EXPECTED_FRONTEND_TS_ERRORS=0  # Ratcheted 2026-05-12 to 0 by PR #110 (DatabaseManagementTab + can-sniffer + useCANScanWebSocket generic). Any new TS error is a hard fail.
 EXPECTED_FRONTEND_ESLINT_ERRORS=553  # Ratcheted 2026-07-02 after HOF-056 quality gate run (554 -> 553).
 

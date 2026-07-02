@@ -22,15 +22,25 @@ from typing import Annotated, Any
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from pydantic import BaseModel, Field
 
-from backend.core.dependencies import (
-    get_predictive_maintenance_service,
-)
+from backend.core.dependencies import create_optional_service_dependency
 from backend.models.predictive_maintenance import MaintenanceHistoryModel
 
 logger = logging.getLogger(__name__)
 
 # Create the router
 router = APIRouter(prefix="/api/predictive-maintenance", tags=["predictive-maintenance"])
+
+_get_optional_predictive_maintenance_service = create_optional_service_dependency(
+    "predictive_maintenance_service"
+)
+
+
+def get_predictive_maintenance_service() -> Any:
+    """Return predictive maintenance service or an explicit unavailable response."""
+    service = _get_optional_predictive_maintenance_service()
+    if service is None:
+        raise HTTPException(status_code=503, detail="Predictive maintenance service not available")
+    return service
 
 
 @router.get(

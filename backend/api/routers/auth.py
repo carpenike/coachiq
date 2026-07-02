@@ -18,10 +18,10 @@ from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 from pydantic import BaseModel, EmailStr
 from starlette import status
 
-from backend.core.dependencies import get_auth_manager, root_service_dependency
+from backend.core.dependencies import create_optional_service_dependency, get_auth_manager
 
 # Create notification manager dependency
-get_notification_manager = root_service_dependency("notification_manager")
+get_notification_manager = create_optional_service_dependency("notification_manager")
 from backend.middleware.rate_limiting import (
     admin_api_rate_limit,
     check_auth_rate_limit,
@@ -192,7 +192,7 @@ class MFASecretResponse(BaseModel):
 # Dependency functions
 async def get_user_invitation_service(
     auth_manager: Annotated[AuthManager, Depends(get_auth_manager)],
-    notification_manager: Annotated[Any, Depends(get_notification_manager)],
+    notification_manager: Annotated[Any | None, Depends(get_notification_manager)],
 ) -> UserInvitationService:
     """
     Get user invitation service instance.

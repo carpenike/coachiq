@@ -5,7 +5,8 @@ from contextlib import asynccontextmanager
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
-from sqlalchemy import delete, select
+from sqlalchemy import delete, select, text
+from sqlalchemy.exc import SQLAlchemyError
 
 from backend.models.database_update import DatabaseBackup, MigrationHistory
 
@@ -218,9 +219,14 @@ class DatabaseMigrationRepository:
         """Get current database schema version from Alembic."""
         async with self.get_session() as session:
             # Query alembic_version table
-            result = await session.execute("SELECT version_num FROM alembic_version")
-            row = result.first()
-            return row[0] if row else "base"
+            try:
+                result = await session.execute(text("SELECT version_num FROM alembic_version"))
+                row = result.first()
+                return row[0] if row else "base"
+            except SQLAlchemyError as exc:
+                if "alembic_version" in str(exc).lower():
+                    return "base"
+                raise
 
     async def get_target_version(self) -> str:
         """Get target/latest schema version from migration scripts."""

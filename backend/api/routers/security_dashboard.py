@@ -20,6 +20,17 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/security/dashboard", tags=["security-dashboard"])
 
 
+def _as_dict(value: Any) -> dict[str, Any]:
+    """Convert Pydantic models and dict-like values to plain dictionaries."""
+    if isinstance(value, dict):
+        return value
+    if hasattr(value, "model_dump"):
+        return value.model_dump()
+    if hasattr(value, "dict"):
+        return value.dict()
+    return {}
+
+
 class SecurityDashboardData(BaseModel):
     """Complete security dashboard data."""
 
@@ -50,8 +61,8 @@ async def get_dashboard_data(
     """
     try:
         # Use injected SecurityEventManager
-        manager_stats = await event_manager.get_statistics()
-        event_stats = await event_manager.get_event_stats()
+        manager_stats = _as_dict(await event_manager.get_statistics())
+        event_stats = _as_dict(await event_manager.get_event_stats())
         recent_events = await event_manager.get_recent_events(limit=limit)
 
         # Get persistence service stats
@@ -72,7 +83,7 @@ async def get_dashboard_data(
         dashboard_data = SecurityDashboardData(
             stats={
                 "event_manager": manager_stats,
-                "event_stats": event_stats.dict() if hasattr(event_stats, "dict") else event_stats,
+                "event_stats": event_stats,
                 "persistence": persistence_stats,
             },
             recent_events=[
@@ -106,12 +117,12 @@ async def get_security_stats(
         Security statistics and metrics
     """
     try:
-        manager_stats = await event_manager.get_statistics()
-        event_stats = await event_manager.get_event_stats()
+        manager_stats = _as_dict(await event_manager.get_statistics())
+        event_stats = _as_dict(await event_manager.get_event_stats())
 
         return {
             "manager": manager_stats,
-            "events": event_stats.dict() if hasattr(event_stats, "dict") else event_stats,
+            "events": event_stats,
             "summary": {
                 "total_events": manager_stats.get("events_published", 0),
                 "events_per_second": manager_stats.get("performance", {}).get(

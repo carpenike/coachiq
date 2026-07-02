@@ -6,16 +6,13 @@ and reporting functionality.
 """
 
 from datetime import UTC, datetime, timedelta
-from typing import Annotated, Any
+from typing import Annotated, Any, cast
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
 
-from backend.core.dependencies import (
-    get_analytics_service,
-    get_reporting_service,
-)
+from backend.core.dependencies import create_optional_service_dependency
 from backend.middleware.auth import AuthenticatedUser
 from backend.models.notification import NotificationChannel, NotificationType
 from backend.models.notification_analytics import (
@@ -110,6 +107,27 @@ router = APIRouter(
     prefix="/api/notification-analytics",
     tags=["notification-analytics"],
 )
+
+_get_optional_analytics_service = create_optional_service_dependency("analytics_service")
+_get_optional_reporting_service = create_optional_service_dependency(
+    "notification_reporting_service"
+)
+
+
+def get_analytics_service() -> NotificationAnalyticsService:
+    """Return notification analytics service or an explicit unavailable response."""
+    service = _get_optional_analytics_service()
+    if service is None:
+        raise HTTPException(status_code=503, detail="Notification analytics service not available")
+    return cast("NotificationAnalyticsService", service)
+
+
+def get_reporting_service() -> NotificationReportingService:
+    """Return notification reporting service or an explicit unavailable response."""
+    service = _get_optional_reporting_service()
+    if service is None:
+        raise HTTPException(status_code=503, detail="Notification reporting service not available")
+    return cast("NotificationReportingService", service)
 
 
 @router.get("/metrics", response_model=list[NotificationMetric])

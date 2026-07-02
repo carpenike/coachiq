@@ -97,16 +97,19 @@ async def get_security_config(
 
         # Log access to security configuration
         if security_audit:
-            await security_audit.log_security_event(
-                event_type="configuration_accessed",
-                severity="medium",
-                user_id=admin_user["user_id"],
-                endpoint="/api/security/config",
-                details={
-                    "config_version": config.config_version,
-                    "security_mode": config.security_mode,
-                },
-            )
+            try:
+                await security_audit.log_security_event(
+                    event_type="configuration_accessed",
+                    severity="medium",
+                    user_id=admin_user["user_id"],
+                    endpoint="/api/security/config",
+                    details={
+                        "config_version": config.config_version,
+                        "security_mode": config.security_mode,
+                    },
+                )
+            except Exception as audit_error:
+                logger.warning("Security config access audit failed: %s", audit_error)
 
         logger.info(f"Security configuration accessed by admin {admin_user['user_id']}")
 

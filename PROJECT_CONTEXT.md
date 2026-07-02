@@ -271,6 +271,16 @@ provenance only; CI uses the committed fixture so builds are reproducible.
 Per-signal `unavailable_raw_values` metadata is the only mechanism for masking
 not-available values; do not add blanket max-value masking.
 
+**Authenticated route-table smoke (HOF-070).**
+`tests/middleware/test_auth_full_stack_regression.py` boots `backend.main.app`
+through the real composition root with auth enabled, generates a real bearer,
+enumerates parameterless GET routes from `app.routes`, and asserts no route
+returns HTTP 500. The smoke intentionally excludes path-parameter routes,
+required-query routes, request-body routes, and non-GET methods; those are the
+follow-on coverage tiers. Expected unavailable statuses such as 401, 404, 422,
+501, or 503 are acceptable here. This guard catches authenticated wiring and
+schema drift; endpoint payload correctness belongs in focused endpoint tests.
+
 Treat the RV-C layers as distinct: the spec PDF is the standard, `rvc.json` is
 the curated decode subset, the live bus is what is present on this coach, and the
 coach mapping YAML is the partial set surfaced as entities so far. The harness

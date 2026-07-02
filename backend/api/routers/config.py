@@ -26,6 +26,7 @@ from fastapi.responses import PlainTextResponse
 
 from backend.core.config import get_settings
 from backend.core.dependencies import (
+    create_optional_service_dependency,
     root_service_dependency,
     EntityRuntimeStateRepository,
     get_rvc_config_facade,
@@ -37,7 +38,7 @@ from backend.services.rvc.rvc_config_facade import RVCConfigFacade
 
 # Create missing dependencies
 get_can_interface_service = root_service_dependency("can_interface_service")
-get_github_update_checker = root_service_dependency("github_update_checker")
+get_github_update_checker = create_optional_service_dependency("github_update_checker")
 get_can_tracking_repository = root_service_dependency("can_tracking_repository")
 
 logger = logging.getLogger(__name__)
@@ -310,71 +311,65 @@ async def get_settings_overview():
                 "root_path": settings.server.root_path,
             },
             "security": {
-                "allowed_hosts": settings.security.allowed_hosts,
-                "enable_csrf": settings.security.enable_csrf,
-                "enable_xss_protection": settings.security.enable_xss_protection,
-                "enable_content_security_policy": settings.security.enable_content_security_policy,
-                "max_upload_size": settings.security.max_upload_size,
+                "allowed_ips": settings.security.allowed_ips,
                 "rate_limit_enabled": settings.security.rate_limit_enabled,
                 "rate_limit_requests": settings.security.rate_limit_requests,
-                "rate_limit_window": settings.security.rate_limit_window,
+                "tls_termination_is_external": settings.security.tls_termination_is_external,
             },
             "logging": {
                 "level": settings.logging.level,
                 "format": settings.logging.format,
-                "file_enabled": settings.logging.file_enabled,
-                "file_path": str(settings.logging.file_path)
-                if settings.logging.file_path
-                else None,
-                "max_file_size": settings.logging.max_file_size,
+                "log_to_file": settings.logging.log_to_file,
+                "file": str(settings.logging.file) if settings.logging.file else None,
+                "log_file": str(settings.logging.log_file) if settings.logging.log_file else None,
+                "max_bytes": settings.logging.max_bytes,
                 "backup_count": settings.logging.backup_count,
-                "console_enabled": settings.logging.console_enabled,
+                "colorize": settings.logging.colorize,
             },
             "can": {
+                "interface": settings.can.interface,
                 "interfaces": settings.can.interfaces,
+                "all_interfaces": settings.can.all_interfaces,
+                "bustype": settings.can.bustype,
                 "bitrate": settings.can.bitrate,
                 "timeout": settings.can.timeout,
                 "buffer_size": settings.can.buffer_size,
-                "enable_statistics": settings.can.enable_statistics,
-                "enable_error_frames": settings.can.enable_error_frames,
-                "enable_fd": settings.can.enable_fd,
-                "fd_bitrate": settings.can.fd_bitrate,
+                "auto_reconnect": settings.can.auto_reconnect,
+                "filters": settings.can.filters,
+                "interface_mappings": settings.can.interface_mappings,
             },
             "rvc": {
-                "enable_encoder": settings.rvc.enable_encoder,
-                "enable_decoder": settings.rvc.enable_decoder,
-                "spec_file": settings.rvc.spec_file,
-                "message_timeout": settings.rvc.message_timeout,
-                "enable_caching": settings.rvc.enable_caching,
-                "cache_ttl": settings.rvc.cache_ttl,
-                "enable_validation": settings.rvc.enable_validation,
-                "strict_validation": settings.rvc.strict_validation,
+                "config_dir": str(settings.rvc.config_dir) if settings.rvc.config_dir else None,
+                "spec_path": str(settings.rvc.get_spec_path()),
+                "coach_mapping_path": str(settings.rvc.get_coach_mapping_path()),
+                "coach_model": settings.rvc.coach_model,
             },
             "persistence": {
-                "enabled": settings.persistence.enabled,
-                "backend_type": settings.persistence.backend_type.value,
                 "data_dir": str(settings.persistence.data_dir),
-                "persistent_data_dir": str(settings.persistence.persistent_data_dir),
-                "enable_compression": settings.persistence.enable_compression,
-                "sync_interval": settings.persistence.sync_interval,
-                "max_file_size": settings.persistence.max_file_size,
-                "retention_days": settings.persistence.retention_days,
+                "create_dirs": settings.persistence.create_dirs,
+                "backup_enabled": settings.persistence.backup_enabled,
+                "backup_retention_days": settings.persistence.backup_retention_days,
+                "max_backup_size_mb": settings.persistence.max_backup_size_mb,
             },
             "notifications": {
                 "enabled": settings.notifications.enabled,
-                "max_history": settings.notifications.max_history,
-                "default_severity": settings.notifications.default_severity,
-                "batch_interval": settings.notifications.batch_interval,
+                "default_title": settings.notifications.default_title,
+                "app_name": settings.notifications.app_name,
+                "template_path": settings.notifications.template_path,
+                "log_notifications": settings.notifications.log_notifications,
                 "rate_limit_per_minute": settings.notifications.rate_limit_per_minute,
             },
             "auth": {
                 "enabled": settings.auth.enabled,
-                "provider": settings.auth.provider,
-                "session_timeout": settings.auth.session_timeout,
-                "refresh_enabled": settings.auth.refresh_enabled,
-                "refresh_timeout": settings.auth.refresh_timeout,
-                "max_sessions": settings.auth.max_sessions,
-                "require_email_verification": settings.auth.require_email_verification,
+                "jwt_algorithm": settings.auth.jwt_algorithm,
+                "jwt_expire_minutes": settings.auth.jwt_expire_minutes,
+                "enable_refresh_tokens": settings.auth.enable_refresh_tokens,
+                "refresh_token_expire_days": settings.auth.refresh_token_expire_days,
+                "admin_username_configured": bool(settings.auth.admin_username),
+                "admin_email_configured": bool(settings.auth.admin_email),
+                "enable_magic_links": settings.auth.enable_magic_links,
+                "oidc_enabled": settings.auth.oidc_enabled,
+                "enable_mfa": settings.auth.enable_mfa,
             },
         },
         "metadata": {

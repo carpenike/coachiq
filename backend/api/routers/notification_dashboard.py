@@ -25,7 +25,7 @@ from typing import Annotated, Any
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
 
-from backend.core.dependencies import get_notification_manager
+from backend.core.dependencies import create_optional_service_dependency
 from backend.models.notification import NotificationType
 from backend.services.notifications.safe_notification_manager import SafeNotificationManager
 
@@ -185,6 +185,16 @@ class AlertConfiguration(BaseModel):
 # Create router
 router = APIRouter(prefix="/api/notifications/dashboard", tags=["notification-dashboard"])
 logger = logging.getLogger(__name__)
+
+_get_optional_notification_manager = create_optional_service_dependency("notification_manager")
+
+
+def get_notification_manager() -> SafeNotificationManager:
+    """Return the safe notification dashboard backend or an explicit 503."""
+    manager = _get_optional_notification_manager()
+    if not isinstance(manager, SafeNotificationManager):
+        raise HTTPException(status_code=503, detail="Notification dashboard service not available")
+    return manager
 
 
 @router.get("/health", response_model=DashboardHealth)

@@ -16,12 +16,12 @@ from typing import Annotated, Any
 from fastapi import APIRouter, Depends, HTTPException, Query
 
 from backend.core.dependencies import (
-    root_service_dependency,
+    create_optional_service_dependency,
 )
 
 # Create service dependencies
-get_docs_service = root_service_dependency("docs_service")
-get_vector_service = root_service_dependency("vector_service")
+get_docs_service = create_optional_service_dependency("docs_service")
+get_vector_service = create_optional_service_dependency("vector_service")
 
 logger = logging.getLogger(__name__)
 
@@ -36,10 +36,13 @@ router = APIRouter(prefix="/api/docs", tags=["documentation"])
     description="Returns the status of the vector search service and its configuration.",
 )
 async def get_search_status(
-    vector_service: Annotated[Any, Depends(get_vector_service)],
+    vector_service: Annotated[Any | None, Depends(get_vector_service)],
 ) -> dict[str, Any]:
     """Get the status of the vector search service."""
     logger.debug("GET /docs/status - Retrieving documentation search status")
+
+    if vector_service is None:
+        raise HTTPException(status_code=503, detail="Vector search service not available")
 
     try:
         status = vector_service.get_status()
@@ -72,7 +75,7 @@ async def get_search_status(
     description="Search the RV-C documentation using vector-based semantic search.",
 )
 async def search_documentation(
-    vector_service: Annotated[Any, Depends(get_vector_service)],
+    vector_service: Annotated[Any | None, Depends(get_vector_service)],
     query: str = Query(..., description="Search query string"),
     k: int = Query(3, description="Number of results to return", ge=1, le=10),
 ) -> list[dict[str, Any]]:
@@ -90,6 +93,9 @@ async def search_documentation(
         HTTPException: If search fails or service is unavailable
     """
     logger.info(f"GET /docs/search - Searching documentation with query: '{query}' (k={k})")
+
+    if vector_service is None:
+        raise HTTPException(status_code=503, detail="Vector search service not available")
 
     try:
         if not vector_service.is_available():
@@ -133,10 +139,13 @@ async def search_documentation(
     description="Returns the complete OpenAPI schema for the API.",
 )
 async def get_openapi_schema(
-    docs_service: Annotated[Any, Depends(get_docs_service)],
+    docs_service: Annotated[Any | None, Depends(get_docs_service)],
 ) -> dict[str, Any]:
     """Get the complete OpenAPI schema for the API."""
     logger.debug("GET /docs/openapi - Retrieving OpenAPI schema")
+
+    if docs_service is None:
+        raise HTTPException(status_code=503, detail="Documentation service not available")
 
     try:
         schema = await docs_service.get_openapi_schema()

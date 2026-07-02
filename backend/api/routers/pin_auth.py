@@ -380,28 +380,34 @@ async def get_pin_status(
     try:
         user_id = user["user_id"]
 
-        status = await pin_manager.get_user_status(user_id)
+        pin_status = await pin_manager.get_user_status(user_id)
+        if "error" in pin_status:
+            raise HTTPException(status_code=503, detail=pin_status["error"])
 
         # Create friendly message
-        if status["is_locked_out"]:
-            lockout_minutes = int((status["lockout_until"] - time.time()) / 60)
+        if pin_status["is_locked_out"]:
+            lockout_times = pin_status.get("lockout_times", {})
+            next_unlock = min(lockout_times.values()) if lockout_times else time.time()
+            lockout_minutes = int((next_unlock - time.time()) / 60)
             message = (
                 f"Account locked for {lockout_minutes} more minutes due to failed PIN attempts"
             )
-        elif status["active_sessions"]:
-            message = f"You have {len(status['active_sessions'])} active PIN sessions"
+        elif pin_status["active_sessions"]:
+            message = f"You have {pin_status['active_sessions']} active PIN sessions"
         else:
             message = "PIN authentication available"
 
         return PINStatusResponse(
             user_id=user_id,
-            is_locked_out=status["is_locked_out"],
-            lockout_until=status.get("lockout_until"),
-            active_sessions=len(status["active_sessions"]),
-            can_use_pins=status["can_use_pins"],
+            is_locked_out=pin_status["is_locked_out"],
+            lockout_until=None,
+            active_sessions=pin_status["active_sessions"],
+            can_use_pins=pin_status["can_use_pins"],
             message=message,
         )
 
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"PIN status error: {e}")
         raise HTTPException(
@@ -424,10 +430,20 @@ async def get_system_status(
     Provides system-wide statistics and health information.
     """
     try:
-        status = await pin_manager.get_system_status()
+        pin_status = await pin_manager.get_system_status()
+        if "error" in pin_status:
+            raise HTTPException(status_code=503, detail=pin_status["error"])
 
-        return SystemStatusResponse(**status)
+        return SystemStatusResponse(
+            pin_types_configured=list(pin_status.get("config", {}).get("pin_types", [])),
+            active_sessions=pin_status.get("active_sessions", 0),
+            locked_users=pin_status.get("locked_users", 0),
+            total_attempts_today=pin_status.get("attempts_today", 0),
+            healthy=pin_status.get("healthy", False),
+        )
 
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"PIN system status error: {e}")
         raise HTTPException(

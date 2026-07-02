@@ -11,12 +11,12 @@ from typing import Annotated, Any, List, Optional
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
 
-from backend.core.dependencies import root_service_dependency
+from backend.core.dependencies import create_optional_service_dependency
 
 logger = logging.getLogger(__name__)
 
 # Create service dependency for security monitoring
-get_security_monitoring_service = root_service_dependency("security_monitoring_service")
+get_security_monitoring_service = create_optional_service_dependency("security_monitoring_service")
 
 router = APIRouter(prefix="/api/security", tags=["security"])
 
