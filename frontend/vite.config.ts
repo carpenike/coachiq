@@ -12,12 +12,16 @@ export default defineConfig({
     reactPlugin({ fastRefresh: false }),
     tailwindcss(),
     // Bundle analyzer for performance optimization
-    visualizer({
-      filename: 'dist/stats.html',
-      open: true,
-      gzipSize: true,
-      brotliSize: true
-    }),
+    ...(process.env.ANALYZE === "true"
+      ? [
+          visualizer({
+            filename: "dist/stats.html",
+            open: false,
+            gzipSize: true,
+            brotliSize: true
+          })
+        ]
+      : [])
   ],
   resolve: {
     alias: {
