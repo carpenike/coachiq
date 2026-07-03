@@ -1782,7 +1782,7 @@ class RouterSidecarSettings(BaseSettings):
     model_config = SettingsConfigDict(env_prefix="COACHIQ_ROUTER_SIDECAR__", case_sensitive=False)
 
     enabled: bool = Field(default=False, description="Enable the RouterOS sidecar API")
-    host: str = Field(default="0.0.0.0", description="Sidecar bind host")  # nosec B104
+    host: str = Field(default="0.0.0.0", description="Sidecar bind host")  # noqa: S104  # nosec B104
     port: int = Field(default=8100, description="Sidecar bind port", ge=1, le=65535)
     access_log: bool = Field(default=False, description="Enable sidecar access logs")
 

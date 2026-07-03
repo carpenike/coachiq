@@ -10,6 +10,7 @@ from backend.integrations.router_sidecar.gpsd import GpsdTpv
 LocationState = Literal["home", "away", "unknown"]
 
 _EARTH_RADIUS_M = 6_371_000.0
+_MIN_USABLE_FIX_MODE = 2
 
 
 @dataclass(frozen=True, slots=True)
@@ -62,7 +63,7 @@ class LocationEvaluator:
     def _instant_state(self, fix: GpsdTpv | None, now: datetime) -> LocationState:
         if (
             fix is None
-            or fix.mode < 2
+            or fix.mode < _MIN_USABLE_FIX_MODE
             or fix.lat is None
             or fix.lon is None
             or fix.timestamp is None

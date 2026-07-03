@@ -50,56 +50,48 @@ class StarlinkVerdictEvaluator:
         current_time = now or datetime.now(UTC)
         if not snapshot.reachable:
             self._degraded_since = None
-            return "unknown"
-
-        if snapshot.status.get("outage"):
+            verdict: StarlinkVerdict = "unknown"
+        elif snapshot.status.get("outage"):
             self._degraded_since = None
-            return "down"
-
-        if self._is_degraded(snapshot):
+            verdict = "down"
+        elif self._is_degraded(snapshot):
             if self._degraded_since is None:
                 self._degraded_since = current_time
-                return "healthy"
-            elapsed = (current_time - self._degraded_since).total_seconds()
-            return "degraded" if elapsed >= self._config.degraded_debounce_seconds else "healthy"
-
-        self._degraded_since = None
-        return "healthy"
+                verdict = "healthy"
+            else:
+                elapsed = (current_time - self._degraded_since).total_seconds()
+                verdict = (
+                    "degraded" if elapsed >= self._config.degraded_debounce_seconds else "healthy"
+                )
+        else:
+            self._degraded_since = None
+            verdict = "healthy"
+        return verdict
 
     def _is_degraded(self, snapshot: StarlinkSnapshot) -> bool:
         status = snapshot.status
         obstruction = status.get("obstructionStats") or {}
         fraction_obstructed = _float_or_zero(obstruction.get("fractionObstructed"))
-        if fraction_obstructed > self._config.obstruction_fraction_degraded:
-            return True
-        if obstruction.get("currentlyObstructed") is True:
-            return True
-
-        if _float_or_zero(status.get("popPingDropRate")) > self._config.pop_ping_drop_rate_degraded:
-            return True
-        if (
-            _float_or_zero(status.get("popPingLatencyMs"))
-            > self._config.pop_ping_latency_ms_degraded
-        ):
-            return True
-
         alerts = status.get("alerts") or {}
-        if any(alerts.get(alert_name) is True for alert_name in _DEGRADING_ALERTS):
-            return True
-
         history = snapshot.history
-        if (
-            _recent_average(history.get("popPingDropRate"), self._config.history_sample_window)
-            > self._config.pop_ping_drop_rate_degraded
-        ):
-            return True
-        if (
-            _recent_average(history.get("popPingLatencyMs"), self._config.history_sample_window)
-            > self._config.pop_ping_latency_ms_degraded
-        ):
-            return True
         outages = history.get("outages") or []
-        return len(outages) >= self._config.recent_outage_count_degraded
+
+        return any(
+            (
+                fraction_obstructed > self._config.obstruction_fraction_degraded,
+                obstruction.get("currentlyObstructed") is True,
+                _float_or_zero(status.get("popPingDropRate"))
+                > self._config.pop_ping_drop_rate_degraded,
+                _float_or_zero(status.get("popPingLatencyMs"))
+                > self._config.pop_ping_latency_ms_degraded,
+                any(alerts.get(alert_name) is True for alert_name in _DEGRADING_ALERTS),
+                _recent_average(history.get("popPingDropRate"), self._config.history_sample_window)
+                > self._config.pop_ping_drop_rate_degraded,
+                _recent_average(history.get("popPingLatencyMs"), self._config.history_sample_window)
+                > self._config.pop_ping_latency_ms_degraded,
+                len(outages) >= self._config.recent_outage_count_degraded,
+            )
+        )
 
 
 def format_starlink_raw(snapshot: StarlinkSnapshot) -> str:

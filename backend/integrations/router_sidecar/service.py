@@ -1,13 +1,13 @@
 """RouterOS sidecar cache service and poller scaffold."""
 
+from __future__ import annotations
+
 import asyncio
 import contextlib
 import logging
 from datetime import UTC, datetime
+from typing import TYPE_CHECKING
 
-from fastapi import FastAPI
-
-from backend.core.config import RouterSidecarSettings
 from backend.integrations.router_sidecar.app import create_router_sidecar_app
 from backend.integrations.router_sidecar.gpsd import GpsdClient, GpsdTpv
 from backend.integrations.router_sidecar.location import (
@@ -16,10 +16,15 @@ from backend.integrations.router_sidecar.location import (
 )
 from backend.integrations.router_sidecar.starlink import StarlinkGrpcClient, StarlinkSnapshot
 from backend.integrations.router_sidecar.verdict import (
-    StarlinkVerdictEvaluator,
     StarlinkVerdictConfig,
+    StarlinkVerdictEvaluator,
     format_starlink_raw,
 )
+
+if TYPE_CHECKING:
+    from fastapi import FastAPI
+
+    from backend.core.config import RouterSidecarSettings
 
 logger = logging.getLogger(__name__)
 
