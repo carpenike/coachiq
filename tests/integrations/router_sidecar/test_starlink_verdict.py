@@ -1,6 +1,7 @@
 """Tests for RouterOS sidecar Starlink client and verdict evaluation."""
 
 from datetime import UTC, datetime, timedelta
+from google.protobuf import descriptor_pb2, descriptor_pool, json_format, message_factory
 import time
 
 import pytest
@@ -82,6 +83,46 @@ def test_cady_false_does_not_mark_working_dish_down() -> None:
     evaluator = StarlinkVerdictEvaluator(_config())
 
     assert evaluator.evaluate(_healthy_snapshot()) == "healthy"
+
+
+def test_false_non_cady_ready_state_contributes_to_degraded_gate() -> None:
+    """Emitted false non-cady ready states are not missed by verdict logic."""
+    evaluator = StarlinkVerdictEvaluator(_config())
+    start = datetime(2026, 7, 2, 12, 0, tzinfo=UTC)
+    not_ready = _healthy_snapshot(
+        ready_states={
+            "cady": False,
+            "scp": False,
+            "l1l2": True,
+            "xphy": True,
+            "aap": True,
+            "rf": True,
+        }
+    )
+
+    assert evaluator.evaluate(not_ready, now=start) == "healthy"
+    assert evaluator.evaluate(not_ready, now=start + timedelta(seconds=61)) == "degraded"
+
+
+def test_message_to_dict_emits_false_default_values() -> None:
+    """Protobuf JSON serialization includes false/zero fields for stable sensors."""
+    message_class = _default_value_test_message_class()
+    message = message_class()
+    message.alerts.SetInParent()
+    message.obstruction_stats.SetInParent()
+    message.ready_states.SetInParent()
+    payload = json_format.MessageToDict(
+        message,
+        always_print_fields_with_no_presence=True,
+        preserving_proto_field_name=True,
+        use_integers_for_enums=False,
+    )
+
+    assert payload == {
+        "alerts": {"mast_not_near_vertical": False, "motors_stuck": False},
+        "obstruction_stats": {"currently_obstructed": False},
+        "ready_states": {"cady": False, "scp": False},
+    }
 
 
 def test_degraded_requires_sustained_poor_signal() -> None:
@@ -170,6 +211,55 @@ def test_nan_invalid_obstruction_stats_are_no_signal() -> None:
 
     assert evaluator.evaluate(invalid, now=start) == "healthy"
     assert evaluator.evaluate(invalid, now=start + timedelta(seconds=120)) == "healthy"
+
+
+def _default_value_test_message_class():
+    file_descriptor = descriptor_pb2.FileDescriptorProto()
+    file_descriptor.name = "router_sidecar_default_value_test.proto"
+    file_descriptor.package = "coachiq.test"
+    file_descriptor.syntax = "proto3"
+
+    alerts = file_descriptor.message_type.add()
+    alerts.name = "Alerts"
+    _add_bool_field(alerts, "mast_not_near_vertical", 1)
+    _add_bool_field(alerts, "motors_stuck", 2)
+
+    obstruction = file_descriptor.message_type.add()
+    obstruction.name = "ObstructionStats"
+    _add_bool_field(obstruction, "currently_obstructed", 1)
+
+    ready = file_descriptor.message_type.add()
+    ready.name = "ReadyStates"
+    _add_bool_field(ready, "cady", 1)
+    _add_bool_field(ready, "scp", 2)
+
+    status = file_descriptor.message_type.add()
+    status.name = "DishStatus"
+    _add_message_field(status, "alerts", 1, ".coachiq.test.Alerts")
+    _add_message_field(status, "obstruction_stats", 2, ".coachiq.test.ObstructionStats")
+    _add_message_field(status, "ready_states", 3, ".coachiq.test.ReadyStates")
+
+    pool = descriptor_pool.DescriptorPool()
+    pool.Add(file_descriptor)
+    descriptor = pool.FindMessageTypeByName("coachiq.test.DishStatus")
+    return message_factory.GetMessageClass(descriptor)
+
+
+def _add_bool_field(message, name: str, number: int) -> None:
+    field = message.field.add()
+    field.name = name
+    field.number = number
+    field.label = descriptor_pb2.FieldDescriptorProto.LABEL_OPTIONAL
+    field.type = descriptor_pb2.FieldDescriptorProto.TYPE_BOOL
+
+
+def _add_message_field(message, name: str, number: int, type_name: str) -> None:
+    field = message.field.add()
+    field.name = name
+    field.number = number
+    field.label = descriptor_pb2.FieldDescriptorProto.LABEL_OPTIONAL
+    field.type = descriptor_pb2.FieldDescriptorProto.TYPE_MESSAGE
+    field.type_name = type_name
 
 
 @pytest.mark.asyncio

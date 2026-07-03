@@ -56,7 +56,10 @@ Each response is wrapped as `{ fetched_at, age_s, stale, error, data }`. A never
 polled source returns `stale: true` and `data: null`; a poll failure keeps the
 last-good `data` but marks it stale. The Starlink client serializes protobufs
 with `preserving_proto_field_name=True`, so the JSON payload uses proto-native
-snake_case keys.
+snake_case keys. It also emits proto3 default values, so false and zero fields
+are present for stable local sensors such as Home Assistant. Some Starlink
+numeric fields can still serialize as the string `"NaN"`; consumers must treat
+that as invalid/no-signal rather than a numeric threshold value.
 
 ## Starlink Verdict State Machine
 

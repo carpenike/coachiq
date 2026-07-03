@@ -93,6 +93,7 @@ class StarlinkGrpcClient:
         response = handle(request, timeout=self._timeout_seconds)
         return json_format.MessageToDict(
             response,
+            always_print_fields_with_no_presence=True,
             preserving_proto_field_name=True,
             use_integers_for_enums=False,
         )
