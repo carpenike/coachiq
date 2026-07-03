@@ -45,8 +45,12 @@ let
       module
     else
       import ./module.nix {
-        self.packages.${system}.coachiq = testPackage;
-        self.packages.${system}.frontend = testFrontendPackage;
+        self = {
+          packages.${system} = {
+            coachiq = testPackage;
+            frontend = testFrontendPackage;
+          };
+        };
       };
 
   envFile = "/run/secrets/coachiq.env";
@@ -64,6 +68,13 @@ let
           environmentFile = envFile;
           logLevel = "WARNING";
           tlsTerminationIsExternal = true;
+          routerSidecar = {
+            enable = true;
+            host = "0.0.0.0";
+            port = 8100;
+            openFirewall = true;
+            lanInterfaces = [ "br-lan" ];
+          };
           settings = {
             COACHIQ_CAN__INTERFACE_MAPPINGS = builtins.toJSON {
               house = "can0";
@@ -129,6 +140,22 @@ let
     {
       name = "frontend package reaches static dir environment";
       ok = env.COACHIQ_STATIC_DIR == "${testFrontendPackage}";
+    }
+    {
+      name = "router sidecar enable reaches environment";
+      ok = env.COACHIQ_ROUTER_SIDECAR__ENABLED == "true";
+    }
+    {
+      name = "router sidecar host reaches environment";
+      ok = env.COACHIQ_ROUTER_SIDECAR__HOST == "0.0.0.0";
+    }
+    {
+      name = "router sidecar port reaches environment";
+      ok = env.COACHIQ_ROUTER_SIDECAR__PORT == "8100";
+    }
+    {
+      name = "router sidecar firewall is limited to LAN interface";
+      ok = evaluatedConfig.config.networking.firewall.interfaces.br-lan.allowedTCPPorts == [ 8100 ];
     }
   ];
 

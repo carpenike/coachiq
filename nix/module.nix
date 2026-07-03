@@ -33,6 +33,9 @@ let
     COACHIQ_PERSISTENCE__DATA_DIR = cfg.dataDir;
     COACHIQ_LOGGING__LEVEL = cfg.logLevel;
     COACHIQ_SECURITY__TLS_TERMINATION_IS_EXTERNAL = toEnvValue cfg.tlsTerminationIsExternal;
+    COACHIQ_ROUTER_SIDECAR__ENABLED = toEnvValue cfg.routerSidecar.enable;
+    COACHIQ_ROUTER_SIDECAR__HOST = cfg.routerSidecar.host;
+    COACHIQ_ROUTER_SIDECAR__PORT = toString cfg.routerSidecar.port;
   };
 
   frontendEnv = lib.optionalAttrs (!(builtins.hasAttr "COACHIQ_STATIC_DIR" cfg.settings)) {
@@ -112,6 +115,47 @@ in
       '';
     };
 
+    routerSidecar = {
+      enable = lib.mkOption {
+        type = lib.types.bool;
+        default = false;
+        description = ''
+          Enable the plain-HTTP RouterOS sidecar listener. This listener is
+          intended only for the RV LAN and is not mounted under the main
+          authenticated CoachIQ API.
+        '';
+      };
+
+      host = lib.mkOption {
+        type = lib.types.str;
+        default = "0.0.0.0";
+        description = "RouterOS sidecar bind host. Use only on controlled LANs.";
+      };
+
+      port = lib.mkOption {
+        type = lib.types.port;
+        default = 8100;
+        description = "RouterOS sidecar TCP port.";
+      };
+
+      openFirewall = lib.mkOption {
+        type = lib.types.bool;
+        default = false;
+        description = ''
+          Open the RouterOS sidecar port on the configured LAN interfaces.
+          `lanInterfaces` must be set so this does not become a WAN/tunnel
+          exposure by accident.
+        '';
+      };
+
+      lanInterfaces = lib.mkOption {
+        type = with lib.types; listOf str;
+        default = [ ];
+        example = [ "br-lan" "wlan0" ];
+        description = "Firewall interfaces on which to open the sidecar port.";
+      };
+    };
+
     settings = lib.mkOption {
       type = with lib.types; attrsOf (oneOf [ str int bool ]);
       default = { };
@@ -152,6 +196,10 @@ in
       {
         assertion = lib.all (name: !(builtins.elem name secretSettingNames)) settingNames;
         message = "CoachIQ secret settings must be supplied through services.coachiq.environmentFile, not services.coachiq.settings.";
+      }
+      {
+        assertion = !cfg.routerSidecar.openFirewall || cfg.routerSidecar.lanInterfaces != [ ];
+        message = "services.coachiq.routerSidecar.openFirewall requires routerSidecar.lanInterfaces to keep port 8100 LAN-only.";
       }
     ];
 
@@ -217,5 +265,10 @@ in
     };
 
     networking.firewall.allowedTCPPorts = lib.mkIf cfg.openFirewall [ cfg.port ];
+    networking.firewall.interfaces = lib.mkIf cfg.routerSidecar.openFirewall (
+      lib.genAttrs cfg.routerSidecar.lanInterfaces (_interface: {
+        allowedTCPPorts = [ cfg.routerSidecar.port ];
+      })
+    );
   };
 }

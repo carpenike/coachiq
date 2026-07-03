@@ -99,6 +99,9 @@
           ps.aiosqlite
           ps.asyncpg
           ps.alembic
+          ps.grpcio
+          ps."grpcio-reflection"
+          ps.protobuf
           ps.jinja2
           ps.pyjwt
           ps.passlib
@@ -165,6 +168,9 @@
             pythonPackages.aiosqlite
             pythonPackages.asyncpg
             pythonPackages.alembic
+            pythonPackages.grpcio
+            pythonPackages."grpcio-reflection"
+            pythonPackages.protobuf
             pythonPackages.pytest
             pythonPackages.mypy
             pythonPackages.ruff
