@@ -1813,11 +1813,20 @@ class RouterSidecarSettings(BaseSettings):
     starlink_obstruction_fraction_degraded: float = Field(
         default=0.03, description="Obstruction fraction threshold for degraded", ge=0
     )
+    starlink_obstruction_fraction_recovery: float = Field(
+        default=0.02, description="Obstruction fraction threshold for recovery", ge=0
+    )
     starlink_pop_ping_drop_rate_degraded: float = Field(
         default=0.05, description="PoP ping drop-rate threshold for degraded", ge=0
     )
+    starlink_pop_ping_drop_rate_recovery: float = Field(
+        default=0.02, description="PoP ping drop-rate threshold for recovery", ge=0
+    )
     starlink_pop_ping_latency_ms_degraded: float = Field(
         default=100.0, description="PoP ping latency threshold for degraded", gt=0
+    )
+    starlink_pop_ping_latency_ms_recovery: float = Field(
+        default=60.0, description="PoP ping latency threshold for recovery", gt=0
     )
     starlink_recent_outage_count_degraded: int = Field(
         default=3, description="Recent outage count threshold for degraded", ge=1
@@ -1827,6 +1836,9 @@ class RouterSidecarSettings(BaseSettings):
     )
     starlink_telemetry_staleness_seconds: float = Field(
         default=15.0, description="Seconds before Starlink telemetry is stale", gt=0
+    )
+    starlink_down_recovery_dwell_seconds: float = Field(
+        default=75.0, description="Sustained recovery interval before leaving down", gt=0
     )
 
 

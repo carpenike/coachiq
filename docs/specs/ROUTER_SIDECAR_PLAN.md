@@ -58,6 +58,26 @@ last-good `data` but marks it stale. The Starlink client serializes protobufs
 with `preserving_proto_field_name=True`, so the JSON payload uses proto-native
 snake_case keys.
 
+## Starlink Verdict State Machine
+
+`/starlink/verdict` is still a single plain-text token, but it is backed by a
+state machine so transient dish telemetry does not flap RouterOS failover:
+
+- Immediate `down` is limited to a current Starlink `outage` or
+  `disablement_code != OKAY`.
+- `ready_states.cady` is excluded everywhere because it is false on the healthy
+  live dish.
+- Continuous signals use hysteresis: enter degraded at the configured high
+  threshold and recover only below the configured lower threshold. This applies
+  to obstruction fraction and windowed PoP ping drop/latency averages.
+- Boolean signals use time dwell, not thresholds. This includes
+  `currently_obstructed`, direct `alerts{}` booleans, non-cady ready states,
+  and SNR booleans.
+- Recovery from `down` and transitions between `healthy` and `degraded` must
+  persist for the configured dwell interval before the published token changes.
+- Obstruction values with companion `*valid` flags are ignored when invalid;
+  string `"NaN"` is treated as no signal for verdict math.
+
 ## Grounded Hardware Facts
 
 The implementation was grounded against the RV LAN before coding:

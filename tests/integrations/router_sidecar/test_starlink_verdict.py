@@ -21,11 +21,15 @@ pytestmark = [pytest.mark.integration, pytest.mark.smoke]
 def _config() -> StarlinkVerdictConfig:
     return StarlinkVerdictConfig(
         obstruction_fraction_degraded=0.03,
+        obstruction_fraction_recovery=0.02,
         pop_ping_drop_rate_degraded=0.05,
+        pop_ping_drop_rate_recovery=0.02,
         pop_ping_latency_ms_degraded=100.0,
+        pop_ping_latency_ms_recovery=60.0,
         recent_outage_count_degraded=3,
         history_sample_window=5,
         degraded_debounce_seconds=60.0,
+        down_recovery_dwell_seconds=60.0,
     )
 
 
@@ -91,7 +95,81 @@ def test_degraded_requires_sustained_poor_signal() -> None:
     assert evaluator.evaluate(poor, now=start) == "healthy"
     assert evaluator.evaluate(poor, now=start + timedelta(seconds=30)) == "healthy"
     assert evaluator.evaluate(poor, now=start + timedelta(seconds=61)) == "degraded"
+    assert evaluator.evaluate(_healthy_snapshot(), now=start + timedelta(seconds=62)) == "degraded"
+
+
+def test_low_fraction_obstruction_does_not_flap() -> None:
+    """Normal 0.5-1% obstruction stays below the 3% enter threshold."""
+    evaluator = StarlinkVerdictEvaluator(_config())
+    start = datetime(2026, 7, 2, 12, 0, tzinfo=UTC)
+    normal_obstruction = _healthy_snapshot(
+        obstruction_stats={"fraction_obstructed": 0.0077, "currently_obstructed": False}
+    )
+
+    for offset in range(0, 180, 15):
+        assert (
+            evaluator.evaluate(normal_obstruction, now=start + timedelta(seconds=offset))
+            == "healthy"
+        )
+
+
+def test_currently_obstructed_boolean_must_dwell() -> None:
+    """Toggling currently_obstructed does not publish degraded until sustained."""
+    evaluator = StarlinkVerdictEvaluator(_config())
+    start = datetime(2026, 7, 2, 12, 0, tzinfo=UTC)
+    toggled = _healthy_snapshot(
+        obstruction_stats={"fraction_obstructed": 0.0077, "currently_obstructed": True}
+    )
+
+    assert evaluator.evaluate(toggled, now=start) == "healthy"
+    assert evaluator.evaluate(_healthy_snapshot(), now=start + timedelta(seconds=15)) == "healthy"
+    assert evaluator.evaluate(toggled, now=start + timedelta(seconds=30)) == "healthy"
+    assert evaluator.evaluate(toggled, now=start + timedelta(seconds=91)) == "degraded"
+
+
+def test_degraded_holds_until_sustained_recovery() -> None:
+    """A single good sample does not immediately clear degraded."""
+    evaluator = StarlinkVerdictEvaluator(_config())
+    start = datetime(2026, 7, 2, 12, 0, tzinfo=UTC)
+    poor = _healthy_snapshot(
+        obstruction_stats={"fraction_obstructed": 0.2, "currently_obstructed": False}
+    )
+
+    assert evaluator.evaluate(poor, now=start) == "healthy"
+    assert evaluator.evaluate(poor, now=start + timedelta(seconds=61)) == "degraded"
+    assert evaluator.evaluate(_healthy_snapshot(), now=start + timedelta(seconds=62)) == "degraded"
+    assert evaluator.evaluate(_healthy_snapshot(), now=start + timedelta(seconds=123)) == "healthy"
+
+
+def test_outage_and_disablement_are_immediate_down_with_dwelled_recovery() -> None:
+    """Current outage or non-OK disablement publishes down immediately."""
+    evaluator = StarlinkVerdictEvaluator(_config())
+    start = datetime(2026, 7, 2, 12, 0, tzinfo=UTC)
+
+    assert evaluator.evaluate(_healthy_snapshot(outage={"cause": "NO_PINGS"}), now=start) == "down"
+    assert evaluator.evaluate(_healthy_snapshot(), now=start + timedelta(seconds=1)) == "down"
     assert evaluator.evaluate(_healthy_snapshot(), now=start + timedelta(seconds=62)) == "healthy"
+
+    evaluator = StarlinkVerdictEvaluator(_config())
+    disabled = _healthy_snapshot(disablement_code="ACCOUNT_DISABLED")
+    assert evaluator.evaluate(disabled, now=start) == "down"
+
+
+def test_nan_invalid_obstruction_stats_are_no_signal() -> None:
+    """Invalid NaN obstruction stats do not contribute to degraded."""
+    evaluator = StarlinkVerdictEvaluator(_config())
+    start = datetime(2026, 7, 2, 12, 0, tzinfo=UTC)
+    invalid = _healthy_snapshot(
+        obstruction_stats={
+            "fraction_obstructed": "NaN",
+            "currently_obstructed": False,
+            "avg_prolonged_obstruction_valid": False,
+            "avg_prolonged_obstruction_interval_s": "NaN",
+        }
+    )
+
+    assert evaluator.evaluate(invalid, now=start) == "healthy"
+    assert evaluator.evaluate(invalid, now=start + timedelta(seconds=120)) == "healthy"
 
 
 @pytest.mark.asyncio

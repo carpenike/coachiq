@@ -1,6 +1,7 @@
 """Standalone plain-text ASGI app for the RouterOS sidecar."""
 
 from collections.abc import Callable
+from typing import Annotated
 from typing import Any
 
 from fastapi import FastAPI, Query
@@ -47,7 +48,7 @@ def create_router_sidecar_app(
 
     @app.get("/starlink/history", response_class=JSONResponse)
     async def get_starlink_history(
-        window: int | None = Query(default=None, ge=1, le=900),
+        window: Annotated[int | None, Query(ge=1, le=900)] = None,
     ) -> JSONResponse:
         return JSONResponse(starlink_history(window))
 

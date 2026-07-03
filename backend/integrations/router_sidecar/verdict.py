@@ -2,6 +2,7 @@
 
 from dataclasses import dataclass
 from datetime import UTC, datetime
+import math
 from typing import Any, Literal
 
 from backend.integrations.router_sidecar.starlink import StarlinkSnapshot
@@ -21,17 +22,24 @@ _DEGRADING_ALERTS = {
     "no_ethernet_link",
 }
 
+_READY_STATE_SIGNALS = {"scp", "l1l2", "xphy", "aap", "rf"}
+_OK_DISABLEMENT_CODES = {None, "OKAY", "DISABLEMENT_CODE_OKAY"}
+
 
 @dataclass(frozen=True, slots=True)
 class StarlinkVerdictConfig:
     """Thresholds for Starlink verdict evaluation."""
 
     obstruction_fraction_degraded: float
+    obstruction_fraction_recovery: float
     pop_ping_drop_rate_degraded: float
+    pop_ping_drop_rate_recovery: float
     pop_ping_latency_ms_degraded: float
+    pop_ping_latency_ms_recovery: float
     recent_outage_count_degraded: int
     history_sample_window: int
     degraded_debounce_seconds: float
+    down_recovery_dwell_seconds: float
 
 
 class StarlinkVerdictEvaluator:
@@ -39,7 +47,9 @@ class StarlinkVerdictEvaluator:
 
     def __init__(self, config: StarlinkVerdictConfig) -> None:
         self._config = config
-        self._degraded_since: datetime | None = None
+        self._committed_verdict: StarlinkVerdict = "unknown"
+        self._candidate_verdict: StarlinkVerdict | None = None
+        self._candidate_since: datetime | None = None
 
     def evaluate(
         self,
@@ -48,51 +58,106 @@ class StarlinkVerdictEvaluator:
     ) -> StarlinkVerdict:
         """Return a debounced Starlink verdict."""
         current_time = now or datetime.now(UTC)
+        target = self._target_verdict(snapshot)
+
+        if target in {"down", "unknown"}:
+            self._commit(target)
+            return self._committed_verdict
+
+        if self._committed_verdict == "unknown" and target == "healthy":
+            self._commit(target)
+            return self._committed_verdict
+
+        if self._committed_verdict == "unknown":
+            self._committed_verdict = "healthy"
+
+        if target == self._committed_verdict:
+            self._clear_candidate()
+            return self._committed_verdict
+
+        dwell_seconds = (
+            self._config.down_recovery_dwell_seconds
+            if self._committed_verdict == "down"
+            else self._config.degraded_debounce_seconds
+        )
+        if self._candidate_verdict != target:
+            self._candidate_verdict = target
+            self._candidate_since = current_time
+            return self._committed_verdict
+
+        candidate_since = self._candidate_since or current_time
+        if (current_time - candidate_since).total_seconds() >= dwell_seconds:
+            self._commit(target)
+
+        return self._committed_verdict
+
+    def _target_verdict(self, snapshot: StarlinkSnapshot) -> StarlinkVerdict:
         if not snapshot.reachable:
-            self._degraded_since = None
-            verdict: StarlinkVerdict = "unknown"
-        elif snapshot.status.get("outage"):
-            self._degraded_since = None
-            verdict = "down"
-        elif self._is_degraded(snapshot):
-            if self._degraded_since is None:
-                self._degraded_since = current_time
-                verdict = "healthy"
-            else:
-                elapsed = (current_time - self._degraded_since).total_seconds()
-                verdict = (
-                    "degraded" if elapsed >= self._config.degraded_debounce_seconds else "healthy"
-                )
-        else:
-            self._degraded_since = None
-            verdict = "healthy"
-        return verdict
+            return "unknown"
+        if self._is_immediate_down(snapshot.status):
+            return "down"
+        return "degraded" if self._is_degraded(snapshot) else "healthy"
+
+    def _commit(self, verdict: StarlinkVerdict) -> None:
+        self._committed_verdict = verdict
+        self._clear_candidate()
+
+    def _clear_candidate(self) -> None:
+        self._candidate_verdict = None
+        self._candidate_since = None
+
+    def _is_immediate_down(self, status: dict[str, Any]) -> bool:
+        return (
+            bool(status.get("outage"))
+            or status.get("disablement_code") not in _OK_DISABLEMENT_CODES
+        )
 
     def _is_degraded(self, snapshot: StarlinkSnapshot) -> bool:
         status = snapshot.status
         obstruction = status.get("obstruction_stats") or {}
-        fraction_obstructed = _float_or_zero(obstruction.get("fraction_obstructed"))
+        in_degraded_context = (
+            self._committed_verdict == "degraded" or self._candidate_verdict == "degraded"
+        )
+        fraction_threshold = (
+            self._config.obstruction_fraction_recovery
+            if in_degraded_context
+            else self._config.obstruction_fraction_degraded
+        )
+        drop_threshold = (
+            self._config.pop_ping_drop_rate_recovery
+            if in_degraded_context
+            else self._config.pop_ping_drop_rate_degraded
+        )
+        latency_threshold = (
+            self._config.pop_ping_latency_ms_recovery
+            if in_degraded_context
+            else self._config.pop_ping_latency_ms_degraded
+        )
+        fraction_obstructed = _valid_float(obstruction.get("fraction_obstructed"))
         alerts = status.get("alerts") or {}
         history = snapshot.history
         outages = history.get("outages") or []
 
         return any(
             (
-                fraction_obstructed > self._config.obstruction_fraction_degraded,
+                fraction_obstructed is not None and fraction_obstructed > fraction_threshold,
                 obstruction.get("currently_obstructed") is True,
-                _float_or_zero(status.get("pop_ping_drop_rate"))
-                > self._config.pop_ping_drop_rate_degraded,
-                _float_or_zero(status.get("pop_ping_latency_ms"))
-                > self._config.pop_ping_latency_ms_degraded,
+                _float_or_zero(status.get("pop_ping_drop_rate")) > drop_threshold,
+                _float_or_zero(status.get("pop_ping_latency_ms")) > latency_threshold,
                 any(alerts.get(alert_name) is True for alert_name in _DEGRADING_ALERTS),
+                any(
+                    status.get("ready_states", {}).get(name) is False
+                    for name in _READY_STATE_SIGNALS
+                ),
+                status.get("is_snr_above_noise_floor") is False,
                 _recent_average(
                     history.get("pop_ping_drop_rate"), self._config.history_sample_window
                 )
-                > self._config.pop_ping_drop_rate_degraded,
+                > drop_threshold,
                 _recent_average(
                     history.get("pop_ping_latency_ms"), self._config.history_sample_window
                 )
-                > self._config.pop_ping_latency_ms_degraded,
+                > latency_threshold,
                 len(outages) >= self._config.recent_outage_count_degraded,
             )
         )
@@ -142,10 +207,16 @@ def format_starlink_raw(snapshot: StarlinkSnapshot) -> str:
 
 
 def _float_or_zero(value: Any) -> float:
+    result = _valid_float(value)
+    return result if result is not None else 0.0
+
+
+def _valid_float(value: Any, default: float | None = None) -> float | None:
     try:
-        return float(value)
+        result = float(value)
     except (TypeError, ValueError):
-        return 0.0
+        return default
+    return default if math.isnan(result) or math.isinf(result) else result
 
 
 def _recent_average(values: Any, sample_window: int) -> float:

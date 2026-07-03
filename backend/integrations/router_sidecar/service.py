@@ -69,11 +69,15 @@ class RouterSidecarService:
         self._starlink_evaluator = starlink_evaluator or StarlinkVerdictEvaluator(
             StarlinkVerdictConfig(
                 obstruction_fraction_degraded=settings.starlink_obstruction_fraction_degraded,
+                obstruction_fraction_recovery=settings.starlink_obstruction_fraction_recovery,
                 pop_ping_drop_rate_degraded=settings.starlink_pop_ping_drop_rate_degraded,
+                pop_ping_drop_rate_recovery=settings.starlink_pop_ping_drop_rate_recovery,
                 pop_ping_latency_ms_degraded=settings.starlink_pop_ping_latency_ms_degraded,
+                pop_ping_latency_ms_recovery=settings.starlink_pop_ping_latency_ms_recovery,
                 recent_outage_count_degraded=settings.starlink_recent_outage_count_degraded,
                 history_sample_window=settings.starlink_history_sample_window,
                 degraded_debounce_seconds=settings.starlink_degraded_debounce_seconds,
+                down_recovery_dwell_seconds=settings.starlink_down_recovery_dwell_seconds,
             )
         )
         self.app: FastAPI = create_router_sidecar_app(
