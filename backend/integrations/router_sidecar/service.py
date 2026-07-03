@@ -4,9 +4,12 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import copy
 import logging
+import time
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING
+from typing import Any
 
 from backend.integrations.router_sidecar.app import create_router_sidecar_app
 from backend.integrations.router_sidecar.gpsd import GpsdClient, GpsdTpv
@@ -44,6 +47,8 @@ class RouterSidecarService:
         self._location_state = "unknown"
         self._starlink_verdict = "unknown"
         self._starlink_raw = "unknown=1"
+        self._starlink_snapshot: StarlinkSnapshot | None = None
+        self._starlink_last_error: str | None = None
         self._tasks: set[asyncio.Task[None]] = set()
         self._running = False
         self._last_gps_fix: GpsdTpv | None = None
@@ -75,6 +80,10 @@ class RouterSidecarService:
             location_state=self.get_location_state,
             starlink_verdict=self.get_starlink_verdict,
             starlink_raw=self.get_starlink_raw,
+            starlink_status=self.get_starlink_status_payload,
+            starlink_history=self.get_starlink_history_payload,
+            starlink_diagnostics=self.get_starlink_diagnostics_payload,
+            starlink_device_info=self.get_starlink_device_info_payload,
         )
 
     async def start(self) -> None:
@@ -113,6 +122,28 @@ class RouterSidecarService:
     def get_starlink_raw(self) -> str:
         """Return the cached Starlink raw key-value line."""
         return self._starlink_raw
+
+    def get_starlink_status_payload(self) -> dict[str, Any]:
+        """Return cached Starlink status with staleness metadata."""
+        data = self._starlink_snapshot.status if self._starlink_snapshot else None
+        return self._wrap_starlink_payload(data)
+
+    def get_starlink_history_payload(self, window: int | None = None) -> dict[str, Any]:
+        """Return cached Starlink history with optional array trimming."""
+        data = self._starlink_snapshot.history if self._starlink_snapshot else None
+        if data is not None and window is not None:
+            data = _trim_history(data, window)
+        return self._wrap_starlink_payload(data)
+
+    def get_starlink_diagnostics_payload(self) -> dict[str, Any]:
+        """Return cached Starlink diagnostics with staleness metadata."""
+        data = self._starlink_snapshot.diagnostics if self._starlink_snapshot else None
+        return self._wrap_starlink_payload(data)
+
+    def get_starlink_device_info_payload(self) -> dict[str, Any]:
+        """Return cached Starlink device info with staleness metadata."""
+        data = self._starlink_snapshot.device_info if self._starlink_snapshot else None
+        return self._wrap_starlink_payload(data)
 
     def _create_task(self, coroutine, name: str) -> None:
         task = asyncio.create_task(coroutine, name=name)
@@ -161,8 +192,48 @@ class RouterSidecarService:
             await asyncio.sleep(self.settings.starlink_poll_interval_seconds)
 
     def _refresh_starlink(self, snapshot: StarlinkSnapshot) -> None:
-        self._starlink_verdict = self._starlink_evaluator.evaluate(
-            snapshot,
-            now=datetime.now(UTC),
+        if snapshot.reachable:
+            self._starlink_snapshot = snapshot
+            self._starlink_last_error = None
+            active_snapshot = snapshot
+            self._starlink_verdict = self._starlink_evaluator.evaluate(
+                active_snapshot,
+                now=datetime.now(UTC),
+            )
+            self._starlink_raw = format_starlink_raw(active_snapshot)
+        else:
+            self._starlink_last_error = snapshot.error or "unreachable"
+            self._starlink_verdict = "unknown"
+            self._starlink_raw = format_starlink_raw(snapshot)
+
+    def _wrap_starlink_payload(self, data: dict[str, Any] | None) -> dict[str, Any]:
+        snapshot = self._starlink_snapshot
+        if snapshot is None or snapshot.fetched_at is None:
+            return {
+                "fetched_at": None,
+                "age_s": None,
+                "stale": True,
+                "error": self._starlink_last_error,
+                "data": None,
+            }
+
+        age_s = max(0.0, time.time() - snapshot.fetched_at)
+        stale = (
+            self._starlink_last_error is not None
+            or age_s > self.settings.starlink_telemetry_staleness_seconds
         )
-        self._starlink_raw = format_starlink_raw(snapshot)
+        return {
+            "fetched_at": snapshot.fetched_at,
+            "age_s": age_s,
+            "stale": stale,
+            "error": self._starlink_last_error,
+            "data": data,
+        }
+
+
+def _trim_history(history: dict[str, Any], window: int) -> dict[str, Any]:
+    trimmed = copy.deepcopy(history)
+    for key, value in list(trimmed.items()):
+        if isinstance(value, list):
+            trimmed[key] = value[-window:]
+    return trimmed

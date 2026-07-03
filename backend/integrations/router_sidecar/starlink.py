@@ -1,7 +1,8 @@
 """Starlink gRPC reflection client for RouterOS sidecar verdicts."""
 
-from collections.abc import Callable
 from dataclasses import dataclass, field
+from collections.abc import Callable
+import time
 from typing import Any
 
 
@@ -12,7 +13,12 @@ class StarlinkSnapshot:
     reachable: bool
     status: dict[str, Any] = field(default_factory=dict)
     history: dict[str, Any] = field(default_factory=dict)
+    diagnostics: dict[str, Any] = field(default_factory=dict)
+    device_info: dict[str, Any] = field(default_factory=dict)
+    fetched_at: float | None = None
     error: str | None = None
+    location: dict[str, Any] | None = None
+    location_error: str | None = None
 
 
 class StarlinkGrpcClient:
@@ -34,13 +40,28 @@ class StarlinkGrpcClient:
         try:
             status_response = self._call_handle("get_status")
             history_response = self._call_handle("get_history")
+            diagnostics_response = self._call_handle("get_diagnostics")
+            device_info_response = self._call_handle("get_device_info")
+            location, location_error = self._fetch_location_optional()
             return StarlinkSnapshot(
                 reachable=True,
-                status=status_response.get("dishGetStatus", {}),
-                history=history_response.get("dishGetHistory", {}),
+                status=status_response.get("dish_get_status", {}),
+                history=history_response.get("dish_get_history", {}),
+                diagnostics=diagnostics_response.get("dish_get_diagnostics", {}),
+                device_info=device_info_response.get("get_device_info", {}),
+                fetched_at=time.time(),
+                location=location,
+                location_error=location_error,
             )
         except Exception as exc:  # pragma: no cover - exercised through fake error paths
             return StarlinkSnapshot(reachable=False, error=f"{type(exc).__name__}: {exc}")
+
+    def _fetch_location_optional(self) -> tuple[dict[str, Any] | None, str | None]:
+        try:
+            response = self._call_handle("get_location")
+        except Exception as exc:  # pragma: no cover - depends on dish policy
+            return None, f"{type(exc).__name__}: {exc}"
+        return response.get("dish_get_location"), None
 
     def _call_handle(self, request_field: str) -> dict[str, Any]:
         if self._handle_call is not None:
@@ -70,4 +91,8 @@ class StarlinkGrpcClient:
             response_deserializer=response_class.FromString,
         )
         response = handle(request, timeout=self._timeout_seconds)
-        return json_format.MessageToDict(response)
+        return json_format.MessageToDict(
+            response,
+            preserving_proto_field_name=True,
+            use_integers_for_enums=False,
+        )

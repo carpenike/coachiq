@@ -27,7 +27,7 @@ the composition root is torn down.
 The sidecar app must never be included on the main app with `include_router`.
 Keeping the listener distinct is the deliberate ADR-0003/auth-model exception.
 
-## Endpoints
+## Token Endpoints
 
 All endpoints return HTTP 200 `text/plain` with a single lowercase token and a
 trailing newline. Requests never perform live gpsd or Starlink reads; they only
@@ -41,6 +41,23 @@ return cached values from background pollers.
 `unknown` is the safe sentinel. Stale or absent GPS must never report `home`.
 Unreachable Starlink must never guess a failover state.
 
+## Starlink Telemetry JSON
+
+The sidecar also exposes cached whole-message Starlink telemetry as JSON for
+debugging and local automation. These endpoints are still LAN-only and unauth'd,
+but they are not RouterOS token endpoints:
+
+- `GET /starlink/status`
+- `GET /starlink/history?window=N`
+- `GET /starlink/diagnostics`
+- `GET /starlink/device-info`
+
+Each response is wrapped as `{ fetched_at, age_s, stale, error, data }`. A never
+polled source returns `stale: true` and `data: null`; a poll failure keeps the
+last-good `data` but marks it stale. The Starlink client serializes protobufs
+with `preserving_proto_field_name=True`, so the JSON payload uses proto-native
+snake_case keys.
+
 ## Grounded Hardware Facts
 
 The implementation was grounded against the RV LAN before coding:
@@ -51,9 +68,9 @@ The implementation was grounded against the RV LAN before coding:
 - The Starlink dish at `192.168.100.1:9200` supports gRPC reflection for
   `SpaceX.API.Device.Device/Handle`.
 - Dish status/history fields are verified from reflection and live calls. The
-  protobuf names are snake_case and grpcurl JSON names are lowerCamel, e.g.
-  `obstruction_stats` / `obstructionStats`, `pop_ping_latency_ms` /
-  `popPingLatencyMs`.
+  protobuf names are snake_case; the sidecar telemetry JSON preserves those
+  names. grpcurl's default JSON uses lowerCamel, but CoachIQ intentionally uses
+  proto-native casing for this surface.
 - `readyStates.cady` is false on the working dish, so it is not a `down` signal.
   The `down` rule is active outage or unreachable only.
 

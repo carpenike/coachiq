@@ -1825,6 +1825,9 @@ class RouterSidecarSettings(BaseSettings):
     starlink_history_sample_window: int = Field(
         default=60, description="History samples used for Starlink rolling averages", ge=1
     )
+    starlink_telemetry_staleness_seconds: float = Field(
+        default=15.0, description="Seconds before Starlink telemetry is stale", gt=0
+    )
 
 
 class Settings(BaseSettings):
