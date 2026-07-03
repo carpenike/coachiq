@@ -87,9 +87,10 @@ class RouterSidecarService:
         """Stop background pollers."""
         if not self._running:
             return
-        for task in self._tasks:
+        tasks = tuple(self._tasks)
+        for task in tasks:
             task.cancel()
-        for task in self._tasks:
+        for task in tasks:
             with contextlib.suppress(asyncio.CancelledError):
                 await task
         self._tasks.clear()
