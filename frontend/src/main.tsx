@@ -17,7 +17,6 @@ import { appRoutes } from "@/lib/routes";
 import LoginPage from "@/pages/login";
 import NotFoundPage from "@/pages/not-found";
 import OidcCallbackPage from "@/pages/oidc-callback";
-import ProfilePage from "@/pages/profile";
 
 import "./global.css";
 
@@ -28,7 +27,9 @@ const legacyRedirects: Record<string, string> = {
   "/system-status": "/system",
   "/logs": "/system",
   "/admin-settings": "/admin",
-  "/config": "/settings",
+  "/config": "/account",
+  "/settings": "/account",
+  "/profile": "/account",
   "/can-sniffer": "/advanced/can-sniffer",
   "/can-tools": "/advanced/can-tools",
   "/network-map": "/advanced/network-map",
@@ -76,7 +77,6 @@ createRoot(document.getElementById("root")!).render(
                           {appRoutes.map((route) => (
                             <Route key={route.path} path={route.path} element={route.element} />
                           ))}
-                          <Route path="/profile" element={<ProfilePage />} />
 
                           {/* Legacy URL redirects */}
                           {Object.entries(legacyRedirects).map(([from, to]) => (

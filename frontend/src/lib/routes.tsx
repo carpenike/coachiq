@@ -39,7 +39,7 @@ import DiagnosticsPage from "@/pages/diagnostics"
 import Lights from "@/pages/lights"
 import NetworkMap from "@/pages/network-map"
 import RVCSpec from "@/pages/rvc-spec"
-import SettingsPage from "@/pages/settings"
+import AccountPage from "@/pages/account"
 import SystemPage from "@/pages/system"
 import UnknownPGNs from "@/pages/unknown-pgns"
 import UnmappedEntries from "@/pages/unmapped-entries"
@@ -76,7 +76,7 @@ export const appRoutes: AppRoute[] = [
   { path: "/advanced/rvc-spec", title: "RV-C Spec", icon: IconFileWord, section: "advanced", element: <RVCSpec /> },
 
   // ===== Account section =====
-  { path: "/settings", title: "Settings", icon: IconSettings, section: "account", element: <SettingsPage /> },
+  { path: "/account", title: "Account", icon: IconSettings, section: "account", element: <AccountPage /> },
   { path: "/admin", title: "Admin", icon: IconShield, section: "account", element: <AdminPage />, adminOnly: true },
 ]
 
@@ -101,6 +101,6 @@ export function findRouteByPath(pathname: string): AppRoute | undefined {
 
 /** Header/page title for a pathname; undefined when the path is not registered. */
 export function titleForPath(pathname: string): string | undefined {
-  if (pathname === "/profile") return "Profile"
+  
   return findRouteByPath(pathname)?.title
 }
