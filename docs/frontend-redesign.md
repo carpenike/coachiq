@@ -125,9 +125,13 @@ reporting on the panel either). TANK_STATUS mapping → Home tank-level card.
 
 **Slides/awnings screen** — EXT/RET momentary pairs per slide (Vanity/Super/Bed/
 Kitchen) and awning, alongside a floorplan diagram with each slide color-highlighted.
-Slide control stays OUT of CoachIQ scope (ADR-0004: Firefly owns the safety case;
-same posture as lock/unlock RECON-002). The floorplan-with-highlighted-zones visual
-is worth stealing eventually for Home (SVG 44R floorplan, zones light up by state).
+Scope decision (Ryan, 2026-07-03): **awning EXT/RET is IN scope** (door, front,
+rear awnings — G6 channels 19-24 and 49-50 are plain momentary DC outputs, so they
+likely ride the same command DGN as lights; confirm instances from live bus traffic
+and implement with momentary/pulse semantics plus an always-visible STOP).
+**Slide control stays OUT** (ADR-0004: Firefly owns the safety case; same posture
+as lock/unlock RECON-002). The floorplan-with-highlighted-zones visual is worth
+stealing eventually for Home (SVG 44R floorplan, zones light up by state).
 
 **Misc** — panel runs GUI/Logic 11.6; its Settings screen reports Floorplan "33R"
 (coach is a 44R — possibly a panel misconfiguration, worth checking with Entegra).
