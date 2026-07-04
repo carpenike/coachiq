@@ -156,6 +156,16 @@ class EntityInitializationService:
                 if raw_instance is not None:
                     with contextlib.suppress(TypeError, ValueError):
                         entity_config["instance"] = int(raw_instance)
+                # Multi-channel lights fan a command out to several instances;
+                # the list is carried on the inst_map entry from the coach mapping.
+                raw_cmd_instances = inst_info.get("command_instances") if inst_info else None
+                if isinstance(raw_cmd_instances, list | tuple):
+                    fan: list[int] = []
+                    for value in raw_cmd_instances:
+                        with contextlib.suppress(TypeError, ValueError):
+                            fan.append(int(value))
+                    if fan:
+                        entity_config["command_instances"] = fan
                 entity_config_objs[entity_id] = entity_config
 
             # Register with local entity manager for preseeding and then persist
