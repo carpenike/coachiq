@@ -387,7 +387,7 @@ def create_entities_router() -> APIRouter:
 
     # SPECIFIC ROUTES - MUST COME BEFORE /{entity_id} ROUTE
     @router.get("/config/coach")
-    async def get_coach_config(request: Request) -> dict:
+    async def get_coach_config() -> dict:
         """Get coach mapping metadata: areas hierarchy, lighting scenes, and groups.
 
         These sections are declared api-exposed in the coach mapping YAML but are
@@ -408,7 +408,7 @@ def create_entities_router() -> APIRouter:
                 "lighting_groups": mapping.get("lighting_groups") or {},
             }
         except Exception as e:
-            logger.error(f"Failed to load coach config sections: {e}")
+            logger.error("Failed to load coach config sections: %s", e)
             raise HTTPException(
                 status_code=500, detail=f"Failed to load coach config: {e!s}"
             ) from e

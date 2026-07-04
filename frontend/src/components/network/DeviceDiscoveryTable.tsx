@@ -70,6 +70,27 @@ function formatRelativeTime(epochMs: number | null): string {
   return `${days}d ago`
 }
 
+/**
+ * Accessors for each sortable column, keyed by field name. Avoids dynamic
+ * `entry[sortField]` indexing (flagged as an object-injection sink) while
+ * still sorting on the numeric timestamp for "lastSeen" rather than its label.
+ */
+const SORT_ACCESSORS = new Map<keyof DeviceTableEntry, (entry: DeviceTableEntry) => string | number | undefined>([
+  ["address", (entry) => entry.address],
+  ["protocol", (entry) => entry.protocol],
+  ["deviceType", (entry) => entry.deviceType],
+  ["status", (entry) => entry.status],
+  ["lastSeen", (entry) => entry.lastSeenMs],
+  ["lastSeenMs", (entry) => entry.lastSeenMs],
+  ["responseTime", (entry) => entry.responseTime],
+])
+
+/** Sort-comparable value for a table entry's column, without dynamic property indexing. */
+// eslint-disable-next-line sonarjs/function-return-type -- legitimately returns string or number depending on the sorted column
+function sortValueFor(entry: DeviceTableEntry, field: keyof DeviceTableEntry) {
+  return SORT_ACCESSORS.get(field)?.(entry)
+}
+
 interface DeviceDiscoveryTableProps {
   topology?: NetworkTopology
   availability?: DeviceAvailability
@@ -178,8 +199,8 @@ export function DeviceDiscoveryTable({
 
     // Apply sorting (last-seen sorts on the numeric timestamp, not the label)
     filtered.sort((a, b) => {
-      const aValue = sortField === "lastSeen" ? a.lastSeenMs : a[sortField]
-      const bValue = sortField === "lastSeen" ? b.lastSeenMs : b[sortField]
+      const aValue = sortValueFor(a, sortField)
+      const bValue = sortValueFor(b, sortField)
 
       if (aValue !== undefined && bValue !== undefined) {
         if (aValue < bValue) return sortDirection === "asc" ? -1 : 1

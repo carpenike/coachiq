@@ -25,7 +25,8 @@ def mapping() -> dict:
 def test_areas_hierarchy_present(mapping: dict) -> None:
     areas = mapping.get("areas")
     assert areas, "coach mapping must define areas"
-    assert "interior" in areas and "exterior" in areas
+    assert "interior" in areas
+    assert "exterior" in areas
     for section in areas.values():
         assert section.get("zones"), "each area section needs zones"
         for zone in section["zones"].values():
@@ -40,6 +41,27 @@ def test_lighting_scenes_present(mapping: dict) -> None:
         assert scene.get("entities"), "each scene needs an entities list"
 
 
+def _walk_entities_for_area_check(
+    node: object,
+    defined_zones: set[str],
+    missing: list[str],
+    unknown_zone: list[str],
+) -> None:
+    """Recursively walk a mapping node, recording entity_ids with missing/unknown areas."""
+    if isinstance(node, dict):
+        if "entity_id" in node:
+            area = node.get("area")
+            if not area:
+                missing.append(str(node["entity_id"]))
+            elif area not in defined_zones:
+                unknown_zone.append(f"{node['entity_id']} -> {area}")
+        for value in node.values():
+            _walk_entities_for_area_check(value, defined_zones, missing, unknown_zone)
+    elif isinstance(node, list):
+        for item in node:
+            _walk_entities_for_area_check(item, defined_zones, missing, unknown_zone)
+
+
 def test_every_light_entity_has_an_area(mapping: dict) -> None:
     """Every entity definition carrying an entity_id should map to a real zone."""
     defined_zones = {
@@ -51,24 +73,10 @@ def test_every_light_entity_has_an_area(mapping: dict) -> None:
     missing: list[str] = []
     unknown_zone: list[str] = []
 
-    def walk(node: object) -> None:
-        if isinstance(node, dict):
-            if "entity_id" in node:
-                area = node.get("area")
-                if not area:
-                    missing.append(str(node["entity_id"]))
-                elif area not in defined_zones:
-                    unknown_zone.append(f"{node['entity_id']} -> {area}")
-            for value in node.values():
-                walk(value)
-        elif isinstance(node, list):
-            for item in node:
-                walk(item)
-
     for key, value in mapping.items():
         if key in {"areas", "lighting_scenes", "lighting_groups", "coach_info"}:
             continue
-        walk(value)
+        _walk_entities_for_area_check(value, defined_zones, missing, unknown_zone)
 
     # The mapping currently has exactly one legacy entry without an area
     # (surfaced as "Unassigned" in the UI); do not let the list grow.

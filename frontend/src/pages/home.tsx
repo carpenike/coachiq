@@ -33,14 +33,14 @@ import { Skeleton } from "@/components/ui/skeleton"
 import { Slider } from "@/components/ui/slider"
 import { Switch } from "@/components/ui/switch"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
-import { useCoachConnection } from "@/contexts/coach-connection"
+import { useCoachConnection } from "@/contexts/coach-connection-context"
 import { toast } from "@/hooks/use-toast"
 import {
   groupEntitiesByZone,
   resolveSceneCommands,
   useCoachConfig,
-  type LightingScene,
-  type ZoneGroup,
+  type ILightingScene,
+  type IZoneGroup,
 } from "@/hooks/useCoachConfig"
 import { useBulkControlEntities, useControlEntity, useEntities } from "@/hooks/useEntities"
 import { cn } from "@/lib/utils"
@@ -211,7 +211,7 @@ function ScenesRow({ entities }: Readonly<{ entities: EntitySchema[] }>) {
 
   const disabled = coach !== "LIVE"
 
-  const runScene = async (sceneKey: string, scene: LightingScene) => {
+  const runScene = async (sceneKey: string, scene: ILightingScene) => {
     const commands = resolveSceneCommands(scene, entities)
     if (commands.length === 0) {
       toast({
@@ -412,7 +412,7 @@ function DeviceRow({ entity, controlsDisabled, disabledReason, showTimestamps }:
 }
 
 interface ZoneCardProps {
-  zone: ZoneGroup
+  zone: IZoneGroup
   controlsDisabled: boolean
   disabledReason: string
   showTimestamps: boolean
@@ -500,7 +500,7 @@ function ZoneCard({ zone, controlsDisabled, disabledReason, showTimestamps }: Re
 }
 
 function ZoneGrid({ zones, controlsDisabled, disabledReason, showTimestamps }: Readonly<{
-  zones: ZoneGroup[]
+  zones: IZoneGroup[]
   controlsDisabled: boolean
   disabledReason: string
   showTimestamps: boolean
@@ -509,7 +509,7 @@ function ZoneGrid({ zones, controlsDisabled, disabledReason, showTimestamps }: R
   const exterior = zones.filter((zone) => zone.section === "exterior")
   const other = zones.filter((zone) => zone.section === "other")
 
-  const renderSection = (title: string | null, sectionZones: ZoneGroup[]) => {
+  const renderSection = (title: string | null, sectionZones: IZoneGroup[]) => {
     if (sectionZones.length === 0) return null
     return (
       <div className="space-y-3">

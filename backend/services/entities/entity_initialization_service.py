@@ -6,6 +6,7 @@ This service replaces the entity initialization functionality that was previousl
 in AppState.
 """
 
+import contextlib
 import logging
 from typing import Any
 
@@ -153,10 +154,8 @@ class EntityInitializationService:
                 # inst_map values may be non-numeric (e.g. "default" instances),
                 # which the CAN command path cannot address anyway.
                 if raw_instance is not None:
-                    try:
+                    with contextlib.suppress(TypeError, ValueError):
                         entity_config["instance"] = int(raw_instance)
-                    except (TypeError, ValueError):
-                        pass
                 entity_config_objs[entity_id] = entity_config
 
             # Register with local entity manager for preseeding and then persist

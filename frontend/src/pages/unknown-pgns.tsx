@@ -13,7 +13,7 @@ import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Skeleton } from "@/components/ui/skeleton"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
-import { useCoachConnection } from "@/contexts/coach-connection"
+import { useCoachConnection } from "@/contexts/coach-connection-context"
 import { useUnknownPGNs } from "@/hooks/useSystem"
 import {
     IconAlertTriangle,

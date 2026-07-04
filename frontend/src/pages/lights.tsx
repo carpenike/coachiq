@@ -19,12 +19,12 @@ import { Skeleton } from "@/components/ui/skeleton"
 import { Slider } from "@/components/ui/slider"
 import { Switch } from "@/components/ui/switch"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
-import { useCoachConnection } from "@/contexts/coach-connection"
+import { useCoachConnection } from "@/contexts/coach-connection-context"
 import { toast } from "@/hooks/use-toast"
 import {
   groupEntitiesByZone,
   useCoachConfig,
-  type ZoneGroup,
+  type IZoneGroup,
 } from "@/hooks/useCoachConfig"
 import { useBulkControlEntities, useControlEntity, useEntities } from "@/hooks/useEntities"
 import { cn } from "@/lib/utils"
@@ -186,7 +186,7 @@ function LightRow({ entity, controlsDisabled, disabledReason }: Readonly<LightRo
 //
 
 interface ZoneLightsCardProps {
-  zone: ZoneGroup
+  zone: IZoneGroup
   controlsDisabled: boolean
   disabledReason: string
 }
@@ -416,7 +416,7 @@ export default function LightsPage() {
       ? "Can't reach the coach — controls disabled"
       : `Coach data is not live — ${reason}`
 
-  const renderSection = (title: string, sectionZones: ZoneGroup[]) => {
+  const renderSection = (title: string, sectionZones: IZoneGroup[]) => {
     if (sectionZones.length === 0) return null
     return (
       <div className="space-y-3">

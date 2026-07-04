@@ -45,27 +45,27 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip"
 import { useAuth } from "@/contexts"
-import { useCoachConnection, type CoachState } from "@/contexts/coach-connection"
-import { findRouteByPath, routesForSection, titleForPath, type AppRoute } from "@/lib/routes"
+import { useCoachConnection, type CoachState } from "@/contexts/coach-connection-context"
+import { findRouteByPath, routesForSection, titleForPath, type IAppRoute } from "@/lib/routes"
 import { cn } from "@/lib/utils"
 
 //
 // ===== Connection pill =====
 //
 
-type PillStyle = {
+interface IPillStyle {
   dot: string
   text: string
   label: string
 }
 
-const OFFLINE_PILL: PillStyle = {
+const OFFLINE_PILL: IPillStyle = {
   dot: "bg-red-500",
   text: "text-red-700 dark:text-red-400 border-red-300 dark:border-red-800",
   label: "Offline",
 }
 
-const PILL_STYLES = new Map<CoachState, PillStyle>([
+const PILL_STYLES = new Map<CoachState, IPillStyle>([
   [
     "LIVE",
     {
@@ -118,7 +118,7 @@ export function CoachConnectionPill() {
 // ===== Sidebar =====
 //
 
-function NavRouteItem({ route, currentPath }: Readonly<{ route: AppRoute; currentPath: string }>) {
+function NavRouteItem({ route, currentPath }: Readonly<{ route: IAppRoute; currentPath: string }>) {
   const isActive =
     route.path === "/" ? currentPath === "/" : currentPath.startsWith(route.path)
   return (

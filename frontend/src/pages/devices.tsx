@@ -48,13 +48,13 @@ import {
   TableRow,
 } from "@/components/ui/table"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
-import { useCoachConnection, type CoachState } from "@/contexts/coach-connection"
+import { useCoachConnection, type CoachState } from "@/contexts/coach-connection-context"
 import { toast } from "@/hooks/use-toast"
 import {
   useCoachConfig,
   zoneDisplayName,
   zoneIdForEntity,
-  type CoachConfig,
+  type ICoachConfig,
 } from "@/hooks/useCoachConfig"
 import { useControlEntity, useEntities } from "@/hooks/useEntities"
 
@@ -180,7 +180,7 @@ function AvailableCell(context: EntityCellContext) {
 }
 
 /** Zone label for a table row: config display name, or "Unassigned" when derived. */
-function zoneLabelForEntity(entity: EntitySchema, config?: CoachConfig): string {
+function zoneLabelForEntity(entity: EntitySchema, config?: ICoachConfig): string {
   const zoneId = zoneIdForEntity(entity)
   return zoneId === "other" ? "Unassigned" : zoneDisplayName(zoneId, config)
 }
@@ -191,7 +191,7 @@ function zoneLabelForEntity(entity: EntitySchema, config?: CoachConfig): string 
  * coach config — cell renderers themselves stay static, module-level
  * components so TanStack never sees a new component type per render.
  */
-function buildDeviceColumns(config: CoachConfig | undefined): ColumnDef<EntitySchema>[] {
+function buildDeviceColumns(config: ICoachConfig | undefined): ColumnDef<EntitySchema>[] {
   return [
     {
       accessorKey: "name",
@@ -276,7 +276,7 @@ function reportCommandError(error: Error, entityName: string) {
 
 interface DeviceDetailSheetProps {
   readonly entity: EntitySchema | null
-  readonly config?: CoachConfig
+  readonly config?: ICoachConfig
   readonly onClose: () => void
 }
 

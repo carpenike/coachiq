@@ -70,8 +70,8 @@ function AccountInfoCard() {
       <CardContent className="space-y-3">
         {user ? (
           <>
-            <InfoRow label="Username" value={user.username || "—"} />
-            <InfoRow label="Email" value={user.email || "—"} />
+            <InfoRow label="Username" value={user.username?.trim() ? user.username : "—"} />
+            <InfoRow label="Email" value={user.email?.trim() ? user.email : "—"} />
             <InfoRow
               label="Role"
               value={

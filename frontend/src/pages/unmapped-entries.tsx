@@ -15,7 +15,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Skeleton } from "@/components/ui/skeleton"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { MappingDialog } from "@/components/unmapped-entries/mapping-dialog"
-import { useCoachConnection } from "@/contexts/coach-connection"
+import { useCoachConnection } from "@/contexts/coach-connection-context"
 import { useUnmappedEntries } from "@/hooks/useSystem"
 import {
     IconAlertTriangle,

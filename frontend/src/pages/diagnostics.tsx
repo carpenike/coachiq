@@ -43,7 +43,7 @@ import {
 } from "@/components/ui/table"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
 import { useAuth } from "@/contexts"
-import { useCoachConnection } from "@/contexts/coach-connection"
+import { useCoachConnection } from "@/contexts/coach-connection-context"
 import { toast } from "@/hooks/use-toast"
 import { cn } from "@/lib/utils"
 

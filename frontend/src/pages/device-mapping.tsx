@@ -13,7 +13,7 @@ import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Skeleton } from "@/components/ui/skeleton"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
-import { useCoachConfig, zoneDisplayName, type CoachConfig } from "@/hooks/useCoachConfig"
+import { useCoachConfig, zoneDisplayName, type ICoachConfig } from "@/hooks/useCoachConfig"
 import { useEntities } from "@/hooks/useEntities"
 import { collectionToDisplayEntities } from "@/utils/entity-display"
 import {
@@ -130,7 +130,7 @@ function DeviceMappingTable({
   coachConfig,
 }: {
   entities: EntityData[]
-  coachConfig?: CoachConfig | undefined
+  coachConfig?: ICoachConfig | undefined
 }) {
   const getDeviceTypeIcon = (deviceType: string) => {
     switch (deviceType.toLowerCase()) {
@@ -244,7 +244,7 @@ function DeviceTypeBreakdown({
   coachConfig,
 }: {
   entities: EntityData[]
-  coachConfig?: CoachConfig | undefined
+  coachConfig?: ICoachConfig | undefined
 }) {
   const deviceTypeGroups = useMemo(() => {
     const groups = entities.reduce((acc, entity) => {

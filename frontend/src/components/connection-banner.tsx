@@ -9,7 +9,7 @@
 import { IconAlertTriangle, IconPlugConnectedX, IconRefresh } from "@tabler/icons-react"
 
 import { Button } from "@/components/ui/button"
-import { useCoachConnection } from "@/contexts/coach-connection"
+import { useCoachConnection } from "@/contexts/coach-connection-context"
 import { cn } from "@/lib/utils"
 
 function formatLastData(date: Date | null): string {

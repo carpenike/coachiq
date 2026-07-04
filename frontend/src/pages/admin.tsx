@@ -27,7 +27,7 @@ import { Skeleton } from "@/components/ui/skeleton"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { useAuth } from "@/contexts"
 
-interface AdminStats {
+interface IAdminStats {
   authentication: {
     auth_mode: string
     jwt_available: boolean
@@ -69,7 +69,7 @@ function authModeLabel(mode: string | undefined): string {
 }
 
 function authModeDescription(mode: string | undefined): string {
-  return (mode && AUTH_MODE_DESCRIPTION.get(mode)) || "The backend did not report an auth mode."
+  return (mode && AUTH_MODE_DESCRIPTION.get(mode)) ?? "The backend did not report an auth mode."
 }
 
 
@@ -171,7 +171,7 @@ function AdminAccountCard() {
 function AuthStatsCard() {
   const { data, isLoading, error } = useQuery({
     queryKey: ["admin", "auth-stats"],
-    queryFn: () => apiRequest<AdminStats>("/api/auth/admin/stats"),
+    queryFn: () => apiRequest<IAdminStats>("/api/auth/admin/stats"),
     staleTime: 30_000,
   })
 
@@ -188,7 +188,7 @@ function AuthStatsCard() {
         {isLoading && <Skeleton className="h-24" />}
         {error && (
           <p className="text-sm text-destructive">
-            Couldn't load authentication statistics: {error.message}
+            Couldn&apos;t load authentication statistics: {error.message}
           </p>
         )}
         {data && (

@@ -46,7 +46,7 @@ import UnmappedEntries from "@/pages/unmapped-entries"
 
 export type RouteSection = "owner" | "advanced" | "account"
 
-export interface AppRoute {
+export interface IAppRoute {
   /** Route path (also used as sidebar link target) */
   path: string
   /** Nav label == header title == page h1 */
@@ -58,7 +58,7 @@ export interface AppRoute {
   adminOnly?: boolean
 }
 
-export const appRoutes: AppRoute[] = [
+export const appRoutes: IAppRoute[] = [
   // ===== Owner section =====
   { path: "/", title: "Home", icon: IconHome, section: "owner", element: <HomePage /> },
   { path: "/lights", title: "Lights", icon: IconBulb, section: "owner", element: <Lights /> },
@@ -81,7 +81,7 @@ export const appRoutes: AppRoute[] = [
 ]
 
 /** Routes for a given sidebar section, in registry order. */
-export function routesForSection(section: RouteSection): AppRoute[] {
+export function routesForSection(section: RouteSection): IAppRoute[] {
   return appRoutes.filter((route) => route.section === section)
 }
 
@@ -90,7 +90,7 @@ export function routesForSection(section: RouteSection): AppRoute[] {
  * Exact match wins; falls back to the longest non-root prefix match
  * (so nested paths still highlight/title their parent).
  */
-export function findRouteByPath(pathname: string): AppRoute | undefined {
+export function findRouteByPath(pathname: string): IAppRoute | undefined {
   const exact = appRoutes.find((route) => route.path === pathname)
   if (exact) return exact
 

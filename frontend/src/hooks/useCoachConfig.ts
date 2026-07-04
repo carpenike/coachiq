@@ -20,37 +20,37 @@ import type { EntitySchema } from '@/api/types/domains';
 // ===== TYPES (shape of /api/v1/entities/config/coach) =====
 //
 
-export type CoachZoneConfig = {
+export interface ICoachZoneConfig {
   display_name: string;
   description?: string;
 }
 
-export type CoachAreaConfig = {
+export interface ICoachAreaConfig {
   display_name: string;
-  zones: Record<string, CoachZoneConfig>;
+  zones: Record<string, ICoachZoneConfig>;
 }
 
-export type SceneEntityRef = {
+export interface ISceneEntityRef {
   entity_id: string;
   brightness?: number;
   action?: 'on' | 'off';
 }
 
-export type LightingScene = {
+export interface ILightingScene {
   name: string;
   description?: string;
   /** Entries are exact ids, glob patterns ("*_light"), or per-entity objects */
-  entities: (string | SceneEntityRef)[];
+  entities: (string | ISceneEntityRef)[];
   /** Default action applied to string entries when the entry has no override */
   action?: 'on' | 'off';
 }
 
-export type LightingGroup = {
+export interface ILightingGroup {
   name: string;
   entities: string[];
 }
 
-export type CoachInfo = {
+export interface ICoachInfo {
   year?: string;
   make?: string;
   model?: string;
@@ -58,11 +58,11 @@ export type CoachInfo = {
   [key: string]: unknown;
 }
 
-export type CoachConfig = {
-  coach_info: CoachInfo;
-  areas: Record<string, CoachAreaConfig>;
-  lighting_scenes: Record<string, LightingScene>;
-  lighting_groups: Record<string, LightingGroup>;
+export interface ICoachConfig {
+  coach_info: ICoachInfo;
+  areas: Record<string, ICoachAreaConfig>;
+  lighting_scenes: Record<string, ILightingScene>;
+  lighting_groups: Record<string, ILightingGroup>;
 }
 
 //
@@ -75,10 +75,10 @@ export const coachConfigQueryKey = ['coach-config'] as const;
  * Fetch the coach configuration. The config only changes on redeploy,
  * so it is cached for the lifetime of the session.
  */
-export function useCoachConfig(): UseQueryResult<CoachConfig, Error> {
+export function useCoachConfig(): UseQueryResult<ICoachConfig, Error> {
   return useQuery({
     queryKey: coachConfigQueryKey,
-    queryFn: () => apiGet<CoachConfig>('/api/v1/entities/config/coach'),
+    queryFn: () => apiGet<ICoachConfig>('/api/v1/entities/config/coach'),
     staleTime: Infinity,
     refetchOnWindowFocus: false,
   });
@@ -102,7 +102,7 @@ function titleCaseZoneSegment(zoneId: string): string {
  * Display name for a zone id like "interior.bedroom" → "Master Bedroom".
  * Falls back to a title-cased last segment when the config has no entry.
  */
-export function zoneDisplayName(zoneId: string, config?: CoachConfig): string {
+export function zoneDisplayName(zoneId: string, config?: ICoachConfig): string {
   const [section, ...rest] = zoneId.split('.');
   const zoneKey = rest.join('.');
   if (config && section && zoneKey) {
@@ -142,7 +142,7 @@ export function deriveZoneFromEntityId(entityId: string): string | null {
 
 export type ZoneSection = 'interior' | 'exterior' | 'other';
 
-export type ZoneGroup = {
+export interface IZoneGroup {
   zoneId: string;
   displayName: string;
   section: ZoneSection;
@@ -185,7 +185,7 @@ function bucketEntitiesByZone(entities: EntitySchema[]): Map<string, EntitySchem
  * zones (config order), then any zones observed on entities but absent
  * from config (insertion order), then "Unassigned".
  */
-function orderedZoneIds(observedZoneIds: Iterable<string>, config?: CoachConfig): string[] {
+function orderedZoneIds(observedZoneIds: Iterable<string>, config?: ICoachConfig): string[] {
   const ids: string[] = [];
   for (const section of ['interior', 'exterior']) {
     const area = Object.entries(config?.areas ?? {}).find(([key]) => key === section)?.[1];
@@ -210,11 +210,11 @@ function orderedZoneIds(observedZoneIds: Iterable<string>, config?: CoachConfig)
  */
 export function groupEntitiesByZone(
   entities: EntitySchema[],
-  config?: CoachConfig
-): ZoneGroup[] {
+  config?: ICoachConfig
+): IZoneGroup[] {
   const byZone = bucketEntitiesByZone(entities);
 
-  const groups: ZoneGroup[] = [];
+  const groups: IZoneGroup[] = [];
   for (const zoneId of orderedZoneIds(byZone.keys(), config)) {
     const zoneEntities = byZone.get(zoneId);
     if (!zoneEntities || zoneEntities.length === 0) continue;
@@ -264,7 +264,7 @@ function matchesGlob(glob: string, value: string): boolean {
   return cursor <= searchEnd;
 }
 
-export type ResolvedSceneCommand = {
+export interface IResolvedSceneCommand {
   entityId: string;
   action: 'on' | 'off';
   brightness?: number;
@@ -274,8 +274,8 @@ function makeCommand(
   entityId: string,
   action: 'on' | 'off',
   brightness?: number
-): ResolvedSceneCommand {
-  const command: ResolvedSceneCommand = { entityId, action };
+): IResolvedSceneCommand {
+  const command: IResolvedSceneCommand = { entityId, action };
   if (brightness !== undefined) command.brightness = brightness;
   return command;
 }
@@ -285,7 +285,7 @@ function resolveStringEntry(
   entry: string,
   entities: EntitySchema[],
   defaultAction: 'on' | 'off'
-): ResolvedSceneCommand[] {
+): IResolvedSceneCommand[] {
   if (!entry.includes('*')) {
     return [makeCommand(entry, defaultAction)];
   }
@@ -296,9 +296,9 @@ function resolveStringEntry(
 
 /** Resolve an object scene entry, which may override action/brightness per entity. */
 function resolveRefEntry(
-  entry: SceneEntityRef,
+  entry: ISceneEntityRef,
   defaultAction: 'on' | 'off'
-): ResolvedSceneCommand {
+): IResolvedSceneCommand {
   // Brightness implies "on" unless explicitly overridden.
   const action = entry.action ?? (entry.brightness !== undefined ? 'on' : defaultAction);
   return makeCommand(entry.entity_id, action, entry.brightness);
@@ -311,11 +311,11 @@ function resolveRefEntry(
  * exist are silently skipped (never send commands to phantom devices).
  */
 export function resolveSceneCommands(
-  scene: LightingScene,
+  scene: ILightingScene,
   entities: EntitySchema[]
-): ResolvedSceneCommand[] {
+): IResolvedSceneCommand[] {
   const knownIds = new Set(entities.map((entity) => entity.entity_id));
-  const commands = new Map<string, ResolvedSceneCommand>();
+  const commands = new Map<string, IResolvedSceneCommand>();
   const defaultAction: 'on' | 'off' = scene.action ?? 'on';
 
   for (const entry of scene.entities) {

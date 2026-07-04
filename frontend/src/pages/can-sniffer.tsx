@@ -16,7 +16,7 @@ import { Skeleton } from "@/components/ui/skeleton"
 // Table components replaced by VirtualizedTable
 import { fetchEnhancedCANStatistics } from "@/api/endpoints"
 import { VirtualizedTable, type VirtualizedTableColumn } from "@/components/virtualized-table"
-import { useCoachConnection } from "@/contexts/coach-connection"
+import { useCoachConnection, type WebSocketHealth } from "@/contexts/coach-connection-context"
 import { useCANMetrics, useCANStatistics } from "@/hooks/useSystem"
 import { useVirtualizedTable } from "@/hooks/useVirtualizedTable"
 import { useCANScanWebSocket } from "@/hooks/useWebSocket"
@@ -217,48 +217,33 @@ function SourceBadge({ source }: { source: number }) {
   );
 }
 
-/**
- * Enhanced CAN message table with virtualization
- */
-function CANMessageTable({
-  messages,
-  isPaused,
-  emptyMessage,
-}: {
-  messages: CANMessage[]
-  isPaused: boolean
-  emptyMessage?: string
-}) {
-  const { visibleData, totalItems = 0 } = useVirtualizedTable({
-    data: messages,
-    maxItems: 5000,
-    autoScroll: !isPaused
+/** Format a message timestamp as "HH:MM:SS.mmm" (24-hour, zero-padded). */
+function formatCANTimestamp(timestamp: string): string {
+  const date = new Date(timestamp)
+  const timeStr = date.toLocaleTimeString([], {
+    hour12: false,
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit'
   })
+  const ms = date.getMilliseconds().toString().padStart(3, '0')
+  return `${timeStr}.${ms}`
+}
 
-  const formatTimestamp = (timestamp: string) => {
-    const date = new Date(timestamp)
-    const timeStr = date.toLocaleTimeString([], {
-      hour12: false,
-      hour: '2-digit',
-      minute: '2-digit',
-      second: '2-digit'
-    })
-    const ms = date.getMilliseconds().toString().padStart(3, '0')
-    return `${timeStr}.${ms}`
-  }
+/** Format a CAN data payload as space-separated uppercase hex bytes. */
+function formatCANData(data: number[]): string {
+  return data.map(byte => byte.toString(16).padStart(2, '0').toUpperCase()).join(' ')
+}
 
-  const formatData = (data: number[]) => {
-    return data.map(byte => byte.toString(16).padStart(2, '0').toUpperCase()).join(' ')
-  }
-
-  // Define columns for virtualized table
-  const columns: VirtualizedTableColumn<CANMessage>[] = [
+/** Column definitions for the live CAN message table (module scope: no recreation per render). */
+function buildCANMessageColumns(): VirtualizedTableColumn<CANMessage>[] {
+  return [
     {
       id: 'timestamp',
       header: 'Time',
       width: 100,
       className: 'font-mono text-xs',
-      accessor: (message) => formatTimestamp(message.timestamp)
+      accessor: (message) => formatCANTimestamp(message.timestamp)
     },
     {
       id: 'interface',
@@ -298,7 +283,7 @@ function CANMessageTable({
       header: 'Data',
       width: 200,
       className: 'font-mono text-xs',
-      accessor: (message) => formatData(message.data)
+      accessor: (message) => formatCANData(message.data)
     },
     {
       id: 'length',
@@ -308,6 +293,27 @@ function CANMessageTable({
       accessor: (message) => message.data.length
     }
   ]
+}
+
+/**
+ * Enhanced CAN message table with virtualization
+ */
+function CANMessageTable({
+  messages,
+  isPaused,
+  emptyMessage,
+}: Readonly<{
+  messages: CANMessage[]
+  isPaused: boolean
+  emptyMessage?: string
+}>) {
+  const { visibleData, totalItems = 0 } = useVirtualizedTable({
+    data: messages,
+    maxItems: 5000,
+    autoScroll: !isPaused
+  })
+
+  const columns = buildCANMessageColumns()
 
   return (
     <Card>
@@ -420,6 +426,13 @@ function CANBusHealth() {
   )
 }
 
+/** Human-readable label for the websocket lifecycle state shown in the disconnected-state card. */
+function websocketStatusLabel(websocket: WebSocketHealth): string {
+  if (websocket === "connecting") return "still connecting"
+  if (websocket === "down") return "down"
+  return "not connected"
+}
+
 /**
  * Main CAN Sniffer page component
  */
@@ -526,8 +539,7 @@ export default function CANSniffer() {
   // WebSocket is not connected (and the grace window elapsed): show an
   // explicit disconnected state instead of skeletons or an empty table.
   if (!isConnected && !isPaused && !error) {
-    const websocketLabel =
-      websocket === "connecting" ? "still connecting" : websocket === "down" ? "down" : "not connected"
+    const websocketLabel = websocketStatusLabel(websocket)
     return (
       <AppLayout>
         <div className="flex-1 space-y-6 p-4 pt-6">
@@ -543,7 +555,7 @@ export default function CANSniffer() {
               <Button
                 onClick={() => {
                   retry()
-                  void connect()
+                  connect()
                 }}
                 variant="outline"
                 className="gap-2"

@@ -9,49 +9,30 @@
  *   coach:     LIVE | STALE | OFFLINE
  *
  * No page may render a "healthy/all good" verdict from any other source.
+ *
+ * The context object, `ICoachConnectionState` type, and `useCoachConnection`
+ * hook live in ./coach-connection-context — this file exports only the
+ * provider component.
  */
 
+import type { QueryClient, UseQueryResult } from '@tanstack/react-query';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import type { ReactNode } from 'react';
-import {
-  createContext,
-  useCallback,
-  useContext,
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
-} from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import { apiGet } from '@/api/client';
 import type { EntityCollectionSchema, NetworkSummarySchema } from '@/api/types/domains';
+import {
+  CoachConnectionContext,
+  networksStatusQueryKey,
+  type CanbusHealth,
+  type CoachState,
+  type ICoachConnectionState,
+  type WebSocketHealth,
+} from '@/contexts/coach-connection-context';
 import { useWebSocketContext } from '@/contexts/use-websocket-context';
 import { entitiesQueryKeys } from '@/hooks/useEntities';
 import { tokenStorage } from '@/lib/token-storage';
-
-//
-// ===== TYPES =====
-//
-
-export type WebSocketHealth = 'connected' | 'connecting' | 'down';
-export type CanbusHealth = 'active' | 'silent';
-export type CoachState = 'LIVE' | 'STALE' | 'OFFLINE';
-
-export type CoachConnectionState = {
-  websocket: WebSocketHealth;
-  canbus: CanbusHealth;
-  coach: CoachState;
-  /** Freshest entity last_updated across the cache, if any entities loaded */
-  entitiesFreshestAt: Date | null;
-  /** Best available "last real data" timestamp (entities or CAN activity) */
-  lastDataAt: Date | null;
-  /** Human-readable explanation of the current (non-LIVE) state */
-  reason: string;
-  /** Invalidate CAN telemetry + reconnect the WebSocket */
-  retry: () => void;
-}
-
-const CoachConnectionContext = createContext<CoachConnectionState | null>(null);
 
 //
 // ===== CONSTANTS =====
@@ -62,9 +43,7 @@ const CAN_ACTIVITY_WINDOW_MS = 120_000;
 /** How often to poll /api/v1/networks/status */
 const NETWORKS_POLL_INTERVAL_MS = 15_000;
 
-export const networksStatusQueryKey = ['networks', 'status'] as const;
-
-type WsCloseEventDetail = {
+interface IWsCloseEventDetail {
   endpoint: string;
   code: number;
   reason: string;
@@ -86,7 +65,7 @@ function deriveWebsocketHealth(
   return 'connecting';
 }
 
-type CanbusActivity = {
+interface ICanbusActivity {
   canbus: CanbusHealth;
   canLastActivity: Date | null;
 }
@@ -107,7 +86,7 @@ function isInterfaceActive(iface: NetworkInterface, activityAt: Date | null, now
 }
 
 /** Derive CAN bus activity state from the latest networks/status snapshot. */
-function computeCanbusActivity(interfaces: NetworkInterface[], now: number): CanbusActivity {
+function computeCanbusActivity(interfaces: NetworkInterface[], now: number): ICanbusActivity {
   let latest: Date | null = null;
   let active = false;
 
@@ -133,7 +112,7 @@ function degradedRealtimeReason(authFailed: boolean, websocket: WebSocketHealth)
   return 'Realtime connection down — updates may lag';
 }
 
-type CoachVerdict = {
+interface ICoachVerdict {
   coach: CoachState;
   reason: string;
 }
@@ -144,7 +123,7 @@ function deriveCoachVerdict(
   canbus: CanbusHealth,
   apiReachable: boolean,
   authFailed: boolean
-): CoachVerdict {
+): ICoachVerdict {
   if (websocket === 'connected' && canbus === 'active') {
     return { coach: 'LIVE', reason: 'Realtime connection up, CAN bus active' };
   }
@@ -166,6 +145,80 @@ function pickLastDataAt(entitiesFreshestAt: Date | null, canLastActivity: Date |
   return entitiesFreshestAt ?? canLastActivity;
 }
 
+/** Freshest entity timestamp across all cached entity collections. */
+function computeEntitiesFreshestAt(queryClient: QueryClient): Date | null {
+  let freshest: Date | null = null;
+  const collections = queryClient.getQueriesData<EntityCollectionSchema>({
+    queryKey: entitiesQueryKeys.collections(),
+  });
+  for (const [, collection] of collections) {
+    for (const entity of collection?.entities ?? []) {
+      const updatedAt = new Date(entity.last_updated);
+      if (!Number.isNaN(updatedAt.getTime()) && (!freshest || updatedAt > freshest)) {
+        freshest = updatedAt;
+      }
+    }
+  }
+  return freshest;
+}
+
+//
+// ===== EFFECT HELPERS (extracted to keep the provider body small) =====
+//
+
+/** Periodically bump a tick counter so time-window checks re-run between polls. */
+function useActivityTick(intervalMs: number): void {
+  const [, setTick] = useState(0);
+  useEffect(() => {
+    const interval = setInterval(() => setTick((t) => t + 1), intervalMs);
+    return () => clearInterval(interval);
+  }, [intervalMs]);
+}
+
+/**
+ * Listen for the app-wide `coachiq:ws-close` event and attempt a token
+ * refresh when the close code indicates an auth failure (4401), guarding
+ * against overlapping refresh attempts.
+ */
+function useAuthCloseListener(
+  onRefreshed: () => void,
+  onRefreshFailed: () => void
+): void {
+  const refreshInFlightRef = useRef(false);
+
+  useEffect(() => {
+    const handleWsClose = (event: Event) => {
+      const detail = (event as CustomEvent<IWsCloseEventDetail | undefined>).detail;
+      if (!detail || detail.code !== 4401) return;
+      if (refreshInFlightRef.current) return;
+
+      refreshInFlightRef.current = true;
+      tokenStorage
+        .attemptTokenRefresh()
+        .then((success) => (success ? onRefreshed() : onRefreshFailed()))
+        .catch(() => onRefreshFailed())
+        .finally(() => {
+          refreshInFlightRef.current = false;
+        });
+    };
+
+    window.addEventListener('coachiq:ws-close', handleWsClose);
+    return () => window.removeEventListener('coachiq:ws-close', handleWsClose);
+  }, [onRefreshed, onRefreshFailed]);
+}
+
+/** Poll /api/v1/networks/status on the shared interval. */
+function useNetworksStatusQuery(): UseQueryResult<NetworkSummarySchema, Error> {
+  return useQuery({
+    queryKey: networksStatusQueryKey,
+    queryFn: () => apiGet<NetworkSummarySchema>('/api/v1/networks/status'),
+    refetchInterval: NETWORKS_POLL_INTERVAL_MS,
+    refetchIntervalInBackground: true,
+    staleTime: 5_000,
+    retry: 1,
+  });
+}
+
 //
 // ===== PROVIDER =====
 //
@@ -175,22 +228,9 @@ export function CoachConnectionProvider({ children }: { readonly children: React
   const wsContext = useWebSocketContext();
   const [authFailed, setAuthFailed] = useState(false);
   // Re-evaluate time-window checks (activity recency) periodically.
-  const [, setTick] = useState(0);
-  const refreshInFlightRef = useRef(false);
+  useActivityTick(NETWORKS_POLL_INTERVAL_MS);
 
-  const networksQuery = useQuery({
-    queryKey: networksStatusQueryKey,
-    queryFn: () => apiGet<NetworkSummarySchema>('/api/v1/networks/status'),
-    refetchInterval: NETWORKS_POLL_INTERVAL_MS,
-    refetchIntervalInBackground: true,
-    staleTime: 5_000,
-    retry: 1,
-  });
-
-  useEffect(() => {
-    const interval = setInterval(() => setTick((t) => t + 1), NETWORKS_POLL_INTERVAL_MS);
-    return () => clearInterval(interval);
-  }, []);
+  const networksQuery = useNetworksStatusQuery();
 
   // ===== Auth-close handling (WS close code 4401) =====
   const connectAll = wsContext.connectAll;
@@ -204,25 +244,7 @@ export function CoachConnectionProvider({ children }: { readonly children: React
     setAuthFailed(true);
   }, []);
 
-  useEffect(() => {
-    const handleWsClose = (event: Event) => {
-      const detail = (event as CustomEvent<WsCloseEventDetail>).detail;
-      if (!detail || detail.code !== 4401) return;
-      if (refreshInFlightRef.current) return;
-
-      refreshInFlightRef.current = true;
-      tokenStorage
-        .attemptTokenRefresh()
-        .then((success) => (success ? handleTokenRefreshed() : handleTokenRefreshFailed()))
-        .catch(() => handleTokenRefreshFailed())
-        .finally(() => {
-          refreshInFlightRef.current = false;
-        });
-    };
-
-    window.addEventListener('coachiq:ws-close', handleWsClose);
-    return () => window.removeEventListener('coachiq:ws-close', handleWsClose);
-  }, [handleTokenRefreshed, handleTokenRefreshFailed]);
+  useAuthCloseListener(handleTokenRefreshed, handleTokenRefreshFailed);
 
   // ===== Derived state =====
   const websocket: WebSocketHealth = deriveWebsocketHealth(
@@ -238,23 +260,11 @@ export function CoachConnectionProvider({ children }: { readonly children: React
     [networksQuery.data]
   );
 
-  // Freshest entity timestamp across all cached entity collections.
-  const entitiesFreshestAt = useMemo(() => {
-    let freshest: Date | null = null;
-    const collections = queryClient.getQueriesData<EntityCollectionSchema>({
-      queryKey: entitiesQueryKeys.collections(),
-    });
-    for (const [, collection] of collections) {
-      for (const entity of collection?.entities ?? []) {
-        const updatedAt = new Date(entity.last_updated);
-        if (!Number.isNaN(updatedAt.getTime()) && (!freshest || updatedAt > freshest)) {
-          freshest = updatedAt;
-        }
-      }
-    }
-    return freshest;
+  const entitiesFreshestAt = useMemo(
+    () => computeEntitiesFreshestAt(queryClient),
     // eslint-disable-next-line react-hooks/exhaustive-deps -- cache snapshot; refreshed by poll cycle + tick
-  }, [queryClient, networksQuery.dataUpdatedAt]);
+    [queryClient, networksQuery.dataUpdatedAt]
+  );
 
   const apiReachable = networksQuery.isSuccess || (networksQuery.isFetching && !networksQuery.isError);
 
@@ -272,7 +282,7 @@ export function CoachConnectionProvider({ children }: { readonly children: React
     connectAll();
   }, [queryClient, connectAll]);
 
-  const value = useMemo<CoachConnectionState>(
+  const value = useMemo<ICoachConnectionState>(
     () => ({
       websocket,
       canbus,
@@ -288,16 +298,4 @@ export function CoachConnectionProvider({ children }: { readonly children: React
   return (
     <CoachConnectionContext.Provider value={value}>{children}</CoachConnectionContext.Provider>
   );
-}
-
-//
-// ===== HOOK =====
-//
-
-export function useCoachConnection(): CoachConnectionState {
-  const context = useContext(CoachConnectionContext);
-  if (!context) {
-    throw new Error('useCoachConnection must be used within a CoachConnectionProvider');
-  }
-  return context;
 }

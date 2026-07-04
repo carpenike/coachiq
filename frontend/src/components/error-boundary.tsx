@@ -13,20 +13,20 @@ import { useLocation } from "react-router-dom"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 
-type ErrorBoundaryProps = {
+interface IErrorBoundaryProps {
   children: ReactNode
   /** Change this key (e.g. route path) to reset the boundary */
   resetKey?: string
 }
 
-type ErrorBoundaryState = {
+interface IErrorBoundaryState {
   error: Error | null
 }
 
-export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundaryState> {
-  override state: ErrorBoundaryState = { error: null }
+export class ErrorBoundary extends Component<IErrorBoundaryProps, IErrorBoundaryState> {
+  override state: IErrorBoundaryState = { error: null }
 
-  static getDerivedStateFromError(error: Error): ErrorBoundaryState {
+  static getDerivedStateFromError(error: Error): IErrorBoundaryState {
     return { error }
   }
 
@@ -34,7 +34,7 @@ export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundarySt
     console.error("Route error boundary caught:", error, errorInfo.componentStack)
   }
 
-  override componentDidUpdate(prevProps: ErrorBoundaryProps) {
+  override componentDidUpdate(prevProps: IErrorBoundaryProps) {
     if (this.state.error && prevProps.resetKey !== this.props.resetKey) {
       this.setState({ error: null })
     }

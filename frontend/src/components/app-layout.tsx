@@ -6,7 +6,7 @@
  * rewritten, delete this file.
  */
 
-import * as React from "react"
+import type * as React from "react"
 
 interface AppLayoutProps {
   children: React.ReactNode
@@ -16,6 +16,7 @@ interface AppLayoutProps {
   sidebarVariant?: "inset" | "sidebar" | "floating"
 }
 
-export function AppLayout({ children }: AppLayoutProps) {
-  return <>{children}</>
+// eslint-disable-next-line sonarjs/function-return-type -- legitimately returns children (ReactNode union) verbatim, mirrors error-boundary.tsx render()
+export function AppLayout({ children }: Readonly<AppLayoutProps>): React.ReactNode {
+  return children
 }
