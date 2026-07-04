@@ -15,7 +15,8 @@ from pathlib import Path
 
 MODULE_FLOORS = {
     "backend/services/can/can_facade.py": 65.0,
-    "backend/services/safety/safety_service.py": 42.0,
+    # safety_service.py was renamed in HOF-051; floor carried over.
+    "backend/services/guardrails/command_guardrail_service.py": 42.0,
     "backend/services/auth/service.py": 80.0,
     "backend/services/auth/manager.py": 32.0,
     "backend/middleware/secure_auth.py": 60.0,

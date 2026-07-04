@@ -372,7 +372,7 @@ class CANFacade(GuardrailParticipant):
         stats = {
             "interfaces": await self._interface_service.get_interface_stats(),
             "queue": await self.get_queue_status(),
-            "analyzer": await self._analyzer.get_statistics(),
+            "analyzer": self._analyzer.get_statistics(),
         }
 
         # Get performance baselines from monitor

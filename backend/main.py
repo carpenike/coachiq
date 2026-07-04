@@ -191,7 +191,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     router_sidecar_server = None
 
     # Initialize the module-level composition root for dependency injection.
-    from backend.core.dependencies import initialize_composition_root
+    from backend.core.dependencies import initialize_composition_root, reset_composition_root
 
     initialize_composition_root(composition_root)
 
@@ -344,6 +344,10 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
             # Feature manager removed - all services managed by composition root
 
             # CoreServices removed - individual services shutdown by composition root
+        finally:
+            # Allow this process to boot another app instance (TestClient
+            # enters/exits the lifespan once per test).
+            reset_composition_root(composition_root)
 
         logger.info("Backend services stopped")
 

@@ -114,25 +114,6 @@ CAPTURED_COMPONENT_IDS = [
 ]
 
 
-class FakeRegistry:
-    """Minimal ServiceRegistry test double for CANBusService runtime lookup."""
-
-    def __init__(self, discovery_service: DeviceDiscoveryService):
-        """Initialize with the device discovery service to return."""
-        self.discovery_service = discovery_service
-
-    def has_service(self, service_name: str) -> bool:
-        """Return whether the requested service is available."""
-        return service_name == "device_discovery_service"
-
-    def get_service(self, service_name: str) -> DeviceDiscoveryService:
-        """Return the requested service."""
-        if service_name != "device_discovery_service":
-            msg = f"unexpected service {service_name}"
-            raise RuntimeError(msg)
-        return self.discovery_service
-
-
 def make_bam_frames(payload: bytes, source_address: int = 0x9E) -> Iterable[tuple[int, bytes]]:
     """Build an addressed BAM Component-ID transfer."""
     packet_count = (len(payload) + 6) // 7
@@ -170,19 +151,15 @@ def test_decode_component_id_uses_captured_field_shape() -> None:
 
 
 @pytest.mark.asyncio
-async def test_can_bus_reassembles_component_id_and_dedupes_mirror(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
+async def test_can_bus_reassembles_component_id_and_dedupes_mirror() -> None:
     """Mirrored 0xFEEB BAM completions update one discovered device."""
     discovery_service = DeviceDiscoveryService(config=Mock())
-    service = CANBusService(can_tracking_repository=Mock(), system_state_repository=Mock())
-    service.bam_handler = BAMHandler()
-
-    from backend.core import dependencies
-
-    monkeypatch.setattr(
-        dependencies, "get_service_registry", lambda: FakeRegistry(discovery_service)
+    service = CANBusService(
+        can_tracking_repository=Mock(),
+        system_state_repository=Mock(),
+        device_discovery_service=discovery_service,
     )
+    service.bam_handler = BAMHandler()
 
     for interface in ("can0", "can1"):
         for arbitration_id, data in make_bam_frames(AQUA_HOT_PAYLOAD):

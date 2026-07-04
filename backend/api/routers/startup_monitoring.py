@@ -20,6 +20,9 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/startup", tags=["startup_monitoring"])
 
+# Services starting slower than this are reported as bottlenecks.
+SLOW_SERVICE_THRESHOLD_MS = 200
+
 
 # Response Models
 
@@ -224,7 +227,9 @@ async def get_startup_metrics(
             "performance_grade": _calculate_performance_grade(total_time),
             "efficiency_score": min(100, max(0, 100 - (total_time - 500) / 10)),
             "bottlenecks": [
-                service["name"] for service in slowest_services if service.startup_time_ms > 200
+                service.name
+                for service in slowest_services
+                if service.startup_time_ms > SLOW_SERVICE_THRESHOLD_MS
             ],
             "optimization_suggestions": [],
         }
@@ -235,7 +240,7 @@ async def get_startup_metrics(
                 "Consider optimizing service initialization order"
             )
 
-        if len([s for s in slowest_services if s.startup_time_ms > 200]) > 0:
+        if len([s for s in slowest_services if s.startup_time_ms > SLOW_SERVICE_THRESHOLD_MS]) > 0:
             performance_analysis["optimization_suggestions"].append(
                 "Review slow service initialization functions"
             )
