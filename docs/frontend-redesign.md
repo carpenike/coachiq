@@ -100,6 +100,38 @@ Binding rule: `/api/v1/*` + `/ws*` + auth endpoints only. No `/api/dashboard/*` 
 
 Known-fake endpoints that must NOT be bound: `/api/v1/system/events` (sample data), predictive-maintenance endpoints (sample repository data), `/ws/security` (closes 1011, unmigrated). Frontend-computed fakes to delete: lights "efficiency %", protocol-health percentages, device trend arrows.
 
+## Mira panel reference (photos, 2026-07-03)
+
+Observations from the physical Vegatouch Mira screens in the coach, as roadmap input:
+
+**Device inventory the coach actually has (G6 outputs screen)** — far beyond the 29
+currently-mapped entities. Channel names verbatim: satellite dome, entry door
+lock/unlock, generator start/stop, water pump, RR/FR awning ext/ret/stop, bed ceiling
+A/B, bed accent/vanity/ovhd, bath ceiling/lav/accent, stool ceiling/accent, entry
+ceiling, livrm edge/ceiling/accent A+B/misc A–D, courtesy, dinette, sink, midship,
+hutch accent, entry door awning ret/ext, awning D/S+P/S lights, cargo, under-slide,
+closet, security D/S+P/S+motion, porch. When the bus is live these will surface in
+Unmapped Entries; use these names when assigning them in the coach mapping.
+
+**Climate model (Climate Control screen)** — zones Front/Mid/Rear each with current
+temp, setpoint, and mode (Cool / Heat Pump / Aqua-Hot / Auto) + fan High/Low; plus
+Bay (Aqua-Hot) and Floor (floor heat) zones and global Aqua-Hot Burner / Electric
+toggles. This is the blueprint for a CoachIQ Climate page once thermostat/HVAC DGNs
+are mapped — zone cards with setpoint steppers and mode selection, same pattern as
+the lighting zone cards.
+
+**Tanks** — Mira's fault list shows fresh/grey/black tank sensors (currently not
+reporting on the panel either). TANK_STATUS mapping → Home tank-level card.
+
+**Slides/awnings screen** — EXT/RET momentary pairs per slide (Vanity/Super/Bed/
+Kitchen) and awning, alongside a floorplan diagram with each slide color-highlighted.
+Slide control stays OUT of CoachIQ scope (ADR-0004: Firefly owns the safety case;
+same posture as lock/unlock RECON-002). The floorplan-with-highlighted-zones visual
+is worth stealing eventually for Home (SVG 44R floorplan, zones light up by state).
+
+**Misc** — panel runs GUI/Logic 11.6; its Settings screen reports Floorplan "33R"
+(coach is a 44R — possibly a panel misconfiguration, worth checking with Entegra).
+
 ## Command feedback contract
 
 `useControlEntity` mutation wraps every control POST:
