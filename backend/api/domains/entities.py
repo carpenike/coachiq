@@ -409,7 +409,9 @@ def create_entities_router() -> APIRouter:
             }
         except Exception as e:
             logger.error(f"Failed to load coach config sections: {e}")
-            raise HTTPException(status_code=500, detail=f"Failed to load coach config: {e!s}") from e
+            raise HTTPException(
+                status_code=500, detail=f"Failed to load coach config: {e!s}"
+            ) from e
 
     @router.get("/metadata")
     async def get_entity_metadata(

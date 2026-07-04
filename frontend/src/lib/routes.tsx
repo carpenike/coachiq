@@ -101,6 +101,6 @@ export function findRouteByPath(pathname: string): AppRoute | undefined {
 
 /** Header/page title for a pathname; undefined when the path is not registered. */
 export function titleForPath(pathname: string): string | undefined {
-  
+
   return findRouteByPath(pathname)?.title
 }
