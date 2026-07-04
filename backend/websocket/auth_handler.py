@@ -109,7 +109,7 @@ class WebSocketAuthHandler:
             # browsers surface as an opaque 1006 and clients cannot tell
             # auth failure from an unreachable server.
             await websocket.accept()
-            await websocket.close(code=4401, reason="Authentication required")
+            await websocket.close(code=4401, reason="Authentication required")  # pyright: ignore[reportCallIssue]
             logger.warning(
                 "WebSocket connection rejected - missing token from %s", websocket.client
             )
@@ -148,7 +148,7 @@ class WebSocketAuthHandler:
 
         except Exception as e:
             await websocket.accept()
-            await websocket.close(code=4401, reason="Invalid or expired token")
+            await websocket.close(code=4401, reason="Invalid or expired token")  # pyright: ignore[reportCallIssue]
             logger.warning(
                 "WebSocket connection rejected - invalid token from %s: %s",
                 websocket.client,
