@@ -7,6 +7,7 @@ Uses repository injection pattern for all dependencies.
 
 import asyncio
 import contextlib
+import datetime
 import time
 from typing import Any, override
 
@@ -796,8 +797,43 @@ class CANBusService(GuardrailParticipant):
 
             self._can_tracking_repository.add_can_sniffer_entry(sniffer_entry)
 
+            # Broadcast the live frame to CAN sniffer WebSocket clients. Mirrors
+            # the entity RX broadcast: guarded so a broken client (or a missing
+            # websocket manager) never breaks the CAN RX path.
+            await self._broadcast_sniffer_entry(message, interface_name, direction)
+
         except Exception as e:
             logger.error("Error adding sniffer entry: %s", e)
+
+    async def _broadcast_sniffer_entry(
+        self, message: Any, interface_name: str, direction: str
+    ) -> None:
+        """Broadcast a live CAN frame to sniffer WebSocket clients (best effort).
+
+        The sniffer page (``useCANScanWebSocket``) consumes each frame as a bare
+        ``CANMessage``: ``pgn`` (hex string), ``source`` (int), ``data`` (byte
+        list), ``timestamp`` (ISO-8601), plus ``interface``/``error``. RV-C uses
+        29-bit extended IDs: Priority(3) + PGN(18) + Source(8).
+        """
+        websocket_manager = self._websocket_manager
+        if websocket_manager is None:
+            return
+        try:
+            arbitration_id = message.arbitration_id
+            pgn = (arbitration_id >> 8) & 0x3FFFF
+            source_address = arbitration_id & 0xFF
+            frame = {
+                "timestamp": datetime.datetime.now(datetime.UTC).isoformat(),
+                "pgn": f"{pgn:X}",
+                "source": source_address,
+                "data": list(message.data),
+                "interface": interface_name,
+                "error": bool(getattr(message, "is_error_frame", False)),
+                "direction": direction,
+            }
+            await websocket_manager.broadcast_can_sniffer_entry(frame)
+        except Exception as broadcast_error:
+            logger.debug("Unable to broadcast sniffer entry: %s", broadcast_error)
 
     async def _process_message(self, msg: dict[str, Any]) -> None:  # noqa: C901, PLR0912, PLR0915
         """

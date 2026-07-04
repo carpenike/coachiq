@@ -812,7 +812,11 @@ class CANBusRecorder(GuardrailParticipant):
         if self._websocket_manager:
             try:
                 status = self.get_status()
-                await self._websocket_manager.broadcast_can_recorder_update("status", status)
+                # The frontend hook (useCANRecorderWebSocket) switches on
+                # ``recorder_status`` and reads ``payload.status``.
+                await self._websocket_manager.broadcast_can_recorder_update(
+                    "recorder_status", {"status": status}
+                )
             except Exception as e:
                 logger.debug(f"Failed to broadcast recorder status: {e}")
 

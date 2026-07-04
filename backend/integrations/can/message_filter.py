@@ -283,8 +283,14 @@ class MessageFilter(GuardrailParticipant):
         # Service state
         self._is_running = False
 
-        # WebSocket manager for broadcasting updates (injected by main.py)
+        # WebSocket manager for broadcasting updates (injected by composition root)
         self._websocket_manager = None
+
+        # Throttle live WebSocket broadcasts so a busy bus does not flood clients.
+        self._last_status_broadcast = 0.0
+        self._status_broadcast_interval = 1.0  # seconds
+        self._last_captured_broadcast = 0.0
+        self._captured_broadcast_interval = 1.0  # seconds
 
         # Performance tracking
         self.stats = {
@@ -502,7 +508,11 @@ class MessageFilter(GuardrailParticipant):
         if self._websocket_manager:
             try:
                 status = self.get_status()
-                await self._websocket_manager.broadcast_can_filter_update("status", status)
+                # Frontend hook (useCANFilterWebSocket) switches on
+                # ``filter_status`` and reads ``payload.status``.
+                await self._websocket_manager.broadcast_can_filter_update(
+                    "filter_status", {"status": status}
+                )
             except Exception as e:
                 logger.debug(f"Failed to broadcast filter status: {e}")
 
@@ -510,10 +520,11 @@ class MessageFilter(GuardrailParticipant):
         """Broadcast captured messages via WebSocket if available."""
         if self._websocket_manager and self.capture_buffer:
             try:
-                # Send last 100 captured messages
+                # Send last 100 captured messages. Frontend hook switches on
+                # ``captured_messages`` and reads ``payload.messages``.
                 messages = self.capture_buffer[-100:]
                 await self._websocket_manager.broadcast_can_filter_update(
-                    "captured_messages", messages
+                    "captured_messages", {"messages": messages}
                 )
             except Exception as e:
                 logger.debug(f"Failed to broadcast captured messages: {e}")
@@ -605,6 +616,19 @@ class MessageFilter(GuardrailParticipant):
             self.stats["processing_time_ms"] = (
                 0.9 * self.stats["processing_time_ms"] + 0.1 * processing_time
             )
+
+            # Push live updates to WebSocket clients (throttled). Guarded inside
+            # the broadcast helpers so a broken client never breaks filtering.
+            if self._websocket_manager is not None:
+                now = time.time()
+                if should_capture and (
+                    now - self._last_captured_broadcast >= self._captured_broadcast_interval
+                ):
+                    await self._broadcast_captured_messages()
+                    self._last_captured_broadcast = now
+                if now - self._last_status_broadcast >= self._status_broadcast_interval:
+                    await self._broadcast_status()
+                    self._last_status_broadcast = now
 
             return should_pass
 
