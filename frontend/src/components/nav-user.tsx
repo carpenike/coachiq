@@ -61,11 +61,11 @@ export function NavUser() {
   }
 
   const handleProfileClick = () => {
-    navigate("/profile")
+    navigate("/account")
   }
 
   const handleAdminSettingsClick = () => {
-    navigate("/admin-settings")
+    navigate("/admin")
   }
 
   // Loading state
@@ -180,7 +180,7 @@ export function NavUser() {
             <DropdownMenuGroup>
               <DropdownMenuItem onClick={handleProfileClick}>
                 <IconUserCircle className="mr-2 h-4 w-4" />
-                Profile
+                Account
               </DropdownMenuItem>
               {user.role === 'admin' && (
                 <DropdownMenuItem onClick={handleAdminSettingsClick}>

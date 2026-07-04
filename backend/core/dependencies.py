@@ -67,9 +67,9 @@ from backend.services.analytics.analytics_dashboard_service import (
 # ``backend.core.dependencies.WebSocketManager``. Tracked separately;
 # fix likely requires making entity_service's websocket import lazy.
 from backend.services.auth.manager import AuthManager as _AuthManager
+from backend.services.auth.mcp_oauth_guard import reject_mcp_token_on_rest
 from backend.services.auth.pin_manager import PINManager as _PINManager
 from backend.services.auth.service import AuthService as _AuthService
-from backend.services.auth.mcp_oauth_guard import reject_mcp_token_on_rest
 from backend.services.can.can_facade import CANFacade as _CANFacade
 from backend.services.can.can_network_telemetry_service import (
     CANNetworkTelemetryService as _CANNetworkTelemetryService,
@@ -632,6 +632,20 @@ async def get_authenticated_user(
     Raises:
         HTTPException: 401 if authentication fails
     """
+    # Mirror the middleware / WebSocket auth handlers: explicit AuthMode.NONE
+    # deployments run without credentials and act as the admin user.
+    from backend.services.auth.manager import AuthMode
+
+    if auth_manager and auth_manager.auth_mode == AuthMode.NONE:
+        return {
+            "user_id": "admin",
+            "sub": "admin",
+            "username": "admin",
+            "email": "admin@localhost",
+            "role": "admin",
+            "authenticated": True,
+        }
+
     if not authorization:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,

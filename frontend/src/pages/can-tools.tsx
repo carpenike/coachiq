@@ -41,6 +41,7 @@ import {
   IconWifiOff,
 } from '@tabler/icons-react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { toast } from 'sonner';
 import { apiPost, apiGet, apiDelete, apiPut } from '@/api/client';
 import { cn } from '@/lib/utils';
 import * as canRecorder from '@/api/can-recorder';
@@ -234,8 +235,18 @@ export default function CANToolsPage() {
   const injectMutation = useMutation({
     mutationFn: (request: InjectionRequest) =>
       apiPost<InjectionResponse>('/api/can-tools/inject', request),
-    onSuccess: () => {
+    onSuccess: (data) => {
       queryClient.invalidateQueries({ queryKey: ['can-tools', 'status'] });
+      if (!data.success) {
+        toast.error('Injection failed', {
+          description: data.error ?? 'The injector rejected the message.',
+        });
+      }
+    },
+    onError: (err) => {
+      toast.error('Injection failed', {
+        description: err instanceof Error ? err.message : 'Request to the injector failed.',
+      });
     },
   });
 
@@ -250,8 +261,18 @@ export default function CANToolsPage() {
       interface: string;
       mode: InjectionRequest['mode'];
     }) => apiPost<InjectionResponse>('/api/can-tools/inject/j1939', request),
-    onSuccess: () => {
+    onSuccess: (data) => {
       queryClient.invalidateQueries({ queryKey: ['can-tools', 'status'] });
+      if (!data.success) {
+        toast.error('J1939 injection failed', {
+          description: data.error ?? 'The injector rejected the message.',
+        });
+      }
+    },
+    onError: (err) => {
+      toast.error('J1939 injection failed', {
+        description: err instanceof Error ? err.message : 'Request to the injector failed.',
+      });
     },
   });
 
@@ -266,6 +287,11 @@ export default function CANToolsPage() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['can-tools', 'status'] });
     },
+    onError: (err) => {
+      toast.error('Failed to stop injections', {
+        description: err instanceof Error ? err.message : 'Request to the injector failed.',
+      });
+    },
   });
 
   // Safety level mutation
@@ -274,6 +300,11 @@ export default function CANToolsPage() {
       apiPut<{ success: string; message: string }>('/api/can-tools/safety', { safety_level }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['can-tools', 'status'] });
+    },
+    onError: (err) => {
+      toast.error('Failed to change safety level', {
+        description: err instanceof Error ? err.message : 'Request to the injector failed.',
+      });
     },
   });
 
@@ -376,7 +407,9 @@ export default function CANToolsPage() {
 
       injectMutation.mutate(request);
     } catch (error) {
-      console.error('Injection error:', error);
+      toast.error('Invalid injection request', {
+        description: error instanceof Error ? error.message : 'Check the CAN ID and data fields.',
+      });
     }
   };
 
@@ -402,7 +435,9 @@ export default function CANToolsPage() {
         mode,
       });
     } catch (error) {
-      console.error('J1939 injection error:', error);
+      toast.error('Invalid J1939 request', {
+        description: error instanceof Error ? error.message : 'Check the PGN and data fields.',
+      });
     }
   };
 
@@ -413,12 +448,11 @@ export default function CANToolsPage() {
   };
 
   return (
-    <AppLayout pageTitle="CAN Tools">
+    <AppLayout>
       <div className="flex-1 space-y-4 p-4 md:p-8 pt-6">
-        {/* Header */}
+        {/* Header (title comes from the app shell) */}
         <div className="flex justify-between items-center">
           <div>
-            <h2 className="text-3xl font-bold tracking-tight">CAN Tools</h2>
             <p className="text-muted-foreground">
               Advanced CAN bus utilities for testing and diagnostics
             </p>
@@ -495,12 +529,12 @@ export default function CANToolsPage() {
               <div className="flex items-center justify-between">
                 <CardTitle className="text-base">Injector Status</CardTitle>
                 <div className="flex items-center gap-2">
-                  <Label>Safety Level:</Label>
+                  <Label className="whitespace-nowrap">Safety Level:</Label>
                   <Select
                     value={statusQuery.data.safety_level}
                     onValueChange={(value) => safetyMutation.mutate(value)}
                   >
-                    <SelectTrigger className="w-32">
+                    <SelectTrigger className="w-44">
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>

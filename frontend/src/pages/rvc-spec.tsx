@@ -10,6 +10,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
 import { BookOpen, Download, ExternalLink, FileText, Info, Search } from "lucide-react";
 import { useEffect, useState } from "react";
+import { toast } from "sonner";
 
 interface SpecSection {
   title: string;
@@ -44,6 +45,32 @@ export default function RVCSpec() {
       setSpecError(error instanceof Error ? error.message : "Failed to load specification");
     } finally {
       setSpecLoading(false);
+    }
+  };
+
+  // Download the specification — uses the loaded content when available,
+  // otherwise fetches it from the backend so the button always works.
+  const downloadSpec = async () => {
+    try {
+      let content = specContent;
+      if (!content) {
+        const response = await fetch("/api/config/spec");
+        if (!response.ok) {
+          throw new Error(`Failed to download specification: ${response.statusText}`);
+        }
+        content = await response.text();
+      }
+      const blob = new Blob([content], { type: "text/plain" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = "rvc-specification.txt";
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch (error) {
+      toast.error("Download failed", {
+        description: error instanceof Error ? error.message : "Could not fetch the specification.",
+      });
     }
   };
 
@@ -119,9 +146,8 @@ export default function RVCSpec() {
   return (
     <AppLayout>
       <div className="flex-1 space-y-6 p-4 pt-6">
-        {/* Header */}
+        {/* Header (title comes from the app shell) */}
         <div>
-          <h1 className="text-3xl font-bold">RV-C Specification</h1>
           <p className="text-muted-foreground">
             Access and search the comprehensive Recreational Vehicle Controller Area Network specification
           </p>
@@ -204,16 +230,7 @@ export default function RVCSpec() {
                     <Button
                       className="w-full justify-start"
                       variant="outline"
-                      onClick={() => {
-                        const blob = new Blob([specContent], { type: 'text/plain' });
-                        const url = URL.createObjectURL(blob);
-                        const a = document.createElement('a');
-                        a.href = url;
-                        a.download = 'rvc-specification.txt';
-                        a.click();
-                        URL.revokeObjectURL(url);
-                      }}
-                      disabled={!specContent}
+                      onClick={() => void downloadSpec()}
                     >
                       <Download className="mr-2 h-4 w-4" />
                       Download Specification
@@ -452,15 +469,7 @@ export default function RVCSpec() {
                     <Button
                       variant="outline"
                       size="sm"
-                      onClick={() => {
-                        const blob = new Blob([specContent], { type: 'text/plain' });
-                        const url = URL.createObjectURL(blob);
-                        const a = document.createElement('a');
-                        a.href = url;
-                        a.download = 'rvc-specification.txt';
-                        a.click();
-                        URL.revokeObjectURL(url);
-                      }}
+                      onClick={() => void downloadSpec()}
                     >
                       <Download className="mr-2 h-3 w-3" />
                       Download

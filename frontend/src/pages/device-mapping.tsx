@@ -13,6 +13,7 @@ import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Skeleton } from "@/components/ui/skeleton"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
+import { useCoachConfig, zoneDisplayName, type ICoachConfig } from "@/hooks/useCoachConfig"
 import { useEntities } from "@/hooks/useEntities"
 import { collectionToDisplayEntities } from "@/utils/entity-display"
 import {
@@ -27,9 +28,19 @@ import {
 import { useMemo } from "react"
 
 /**
+ * An entity counts as mapped only when the backend supplied a real area
+ * (entity-display copies entity.area into suggested_area). "Unknown" or
+ * empty means the device still needs configuration.
+ */
+function hasRealArea(entity: EntityData): boolean {
+  const area = entity.suggested_area.trim()
+  return Boolean(area) && area !== "Unknown"
+}
+
+/**
  * Device mapping statistics component
  */
-function DeviceMappingStats({ entities }: { entities: EntityData[] }) {
+function DeviceMappingStats({ entities }: Readonly<{ entities: EntityData[] }>) {
   const stats = useMemo(() => {
     const byDeviceType = entities.reduce((acc, entity) => {
       acc[entity.device_type] = (acc[entity.device_type] || 0) + 1
@@ -42,14 +53,14 @@ function DeviceMappingStats({ entities }: { entities: EntityData[] }) {
       return acc
     }, {} as Record<string, number>)
 
-    const withSuggestedArea = entities.filter(e => e.suggested_area && e.suggested_area.trim() !== "").length
-    const unmapped = entities.filter(e => !e.suggested_area || e.suggested_area.trim() === "").length
+    const withRealArea = entities.filter(hasRealArea).length
+    const unmapped = entities.length - withRealArea
 
     return {
       total: entities.length,
       byDeviceType,
       bySourceType,
-      withSuggestedArea,
+      withRealArea,
       unmapped,
     }
   }, [entities])
@@ -75,9 +86,9 @@ function DeviceMappingStats({ entities }: { entities: EntityData[] }) {
           <IconMapPin className="h-4 w-4 text-muted-foreground" />
         </CardHeader>
         <CardContent>
-          <div className="text-2xl font-bold">{stats.withSuggestedArea}</div>
+          <div className="text-2xl font-bold">{stats.withRealArea}</div>
           <p className="text-xs text-muted-foreground">
-            {Math.round((stats.withSuggestedArea / stats.total) * 100)}% mapped
+            {stats.total > 0 ? `${Math.round((stats.withRealArea / stats.total) * 100)}% mapped` : "No devices"}
           </p>
         </CardContent>
       </Card>
@@ -111,45 +122,67 @@ function DeviceMappingStats({ entities }: { entities: EntityData[] }) {
   )
 }
 
+/** Emoji icon for a device type, shown next to the device name in the mapping table. */
+function getDeviceTypeIcon(deviceType: string): string {
+  switch (deviceType.toLowerCase()) {
+    case 'light':
+      return '💡'
+    case 'lock':
+      return '🔒'
+    case 'temperature':
+      return '🌡️'
+    case 'tank':
+      return '⛽'
+    default:
+      return '⚙️'
+  }
+}
+
+/** Badge variant for an entity's current state value. */
+function getStateVariant(state: unknown): "default" | "secondary" | "outline" {
+  if (state === true || state === "on" || state === "unlocked") {
+    return "default"
+  }
+  if (state === false || state === "off" || state === "locked") {
+    return "secondary"
+  }
+  return "outline"
+}
+
+/** Human-readable label for an entity's current state value. */
+function formatState(state: unknown): string {
+  if (typeof state === 'boolean') {
+    return state ? 'On' : 'Off'
+  }
+  if (typeof state === 'string') {
+    return state.charAt(0).toUpperCase() + state.slice(1)
+  }
+  return String(state)
+}
+
+/** Display timestamp for the "Last Updated" column, preferring last_updated over timestamp. */
+function formatLastUpdated(entity: EntityData): string {
+  if (entity.last_updated) {
+    return new Date(entity.last_updated).toLocaleString()
+  }
+  if (entity.timestamp) {
+    return new Date(entity.timestamp).toLocaleString()
+  }
+  return '—'
+}
+
+interface IDeviceMappingTableProps {
+  entities: EntityData[]
+  coachConfig?: ICoachConfig | undefined
+}
+
 /**
  * Device mapping table component
  */
-function DeviceMappingTable({ entities }: { entities: EntityData[] }) {
-  const getDeviceTypeIcon = (deviceType: string) => {
-    switch (deviceType.toLowerCase()) {
-      case 'light':
-        return '💡'
-      case 'lock':
-        return '🔒'
-      case 'temperature':
-        return '🌡️'
-      case 'tank':
-        return '⛽'
-      default:
-        return '⚙️'
-    }
-  }
-
-  const getStateVariant = (state: unknown) => {
-    if (state === true || state === "on" || state === "unlocked") {
-      return "default"
-    }
-    if (state === false || state === "off" || state === "locked") {
-      return "secondary"
-    }
-    return "outline"
-  }
-
-  const formatState = (state: unknown) => {
-    if (typeof state === 'boolean') {
-      return state ? 'On' : 'Off'
-    }
-    if (typeof state === 'string') {
-      return state.charAt(0).toUpperCase() + state.slice(1)
-    }
-    return String(state)
-  }
-
+function DeviceMappingTable({
+  entities,
+  coachConfig,
+}: Readonly<IDeviceMappingTableProps>) {
   return (
     <Card>
       <CardHeader>
@@ -171,7 +204,6 @@ function DeviceMappingTable({ entities }: { entities: EntityData[] }) {
               <TableHead>Source</TableHead>
               <TableHead>State</TableHead>
               <TableHead>Last Updated</TableHead>
-              <TableHead>Actions</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -190,10 +222,12 @@ function DeviceMappingTable({ entities }: { entities: EntityData[] }) {
                   <Badge variant="outline">{entity.device_type}</Badge>
                 </TableCell>
                 <TableCell>
-                  {entity.suggested_area ? (
-                    <Badge variant="secondary">{entity.suggested_area}</Badge>
+                  {hasRealArea(entity) ? (
+                    <Badge variant="secondary">
+                      {zoneDisplayName(entity.suggested_area, coachConfig)}
+                    </Badge>
                   ) : (
-                    <Badge variant="destructive">Unmapped</Badge>
+                    <Badge variant="destructive">Needs configuration</Badge>
                   )}
                 </TableCell>
                 <TableCell>
@@ -205,14 +239,7 @@ function DeviceMappingTable({ entities }: { entities: EntityData[] }) {
                   </Badge>
                 </TableCell>
                 <TableCell className="text-sm text-muted-foreground">
-                  {entity.last_updated ? new Date(entity.last_updated).toLocaleString() :
-                   entity.timestamp ? new Date(entity.timestamp * 1000).toLocaleString() :
-                   'N/A'}
-                </TableCell>
-                <TableCell>
-                  <Button variant="outline" size="sm">
-                    <IconSettings className="h-4 w-4" />
-                  </Button>
+                  {formatLastUpdated(entity)}
                 </TableCell>
               </TableRow>
             ))}
@@ -226,7 +253,15 @@ function DeviceMappingTable({ entities }: { entities: EntityData[] }) {
 /**
  * Device type breakdown component
  */
-function DeviceTypeBreakdown({ entities }: { entities: EntityData[] }) {
+interface IDeviceTypeBreakdownProps {
+  entities: EntityData[]
+  coachConfig?: ICoachConfig | undefined
+}
+
+function DeviceTypeBreakdown({
+  entities,
+  coachConfig,
+}: Readonly<IDeviceTypeBreakdownProps>) {
   const deviceTypeGroups = useMemo(() => {
     const groups = entities.reduce((acc, entity) => {
       const deviceType = entity.device_type || 'unknown';
@@ -264,8 +299,14 @@ function DeviceTypeBreakdown({ entities }: { entities: EntityData[] }) {
               </div>
               <div className="flex gap-1">
                 {devices.slice(0, 3).map((device) => (
-                  <Badge key={device.id || device.entity_id} variant="secondary" className="text-xs">
-                    {device.suggested_area || 'Unmapped'}
+                  <Badge
+                    key={device.id ?? device.entity_id}
+                    variant={hasRealArea(device) ? "secondary" : "outline"}
+                    className="text-xs"
+                  >
+                    {hasRealArea(device)
+                      ? zoneDisplayName(device.suggested_area, coachConfig)
+                      : "Needs configuration"}
                   </Badge>
                 ))}
                 {devices.length > 3 && (
@@ -287,6 +328,7 @@ function DeviceTypeBreakdown({ entities }: { entities: EntityData[] }) {
  */
 export default function DeviceMapping() {
   const { data: entities, isLoading, error, refetch } = useEntities()
+  const { data: coachConfig } = useCoachConfig()
 
   const entitiesArray = collectionToDisplayEntities(entities)
 
@@ -353,10 +395,9 @@ export default function DeviceMapping() {
   return (
     <AppLayout>
       <div className="flex-1 space-y-6 p-4 pt-6">
-        {/* Header */}
+        {/* Header (title comes from the app shell) */}
         <div className="flex justify-between items-center">
           <div>
-            <h1 className="text-3xl font-bold tracking-tight">Device Mapping</h1>
             <p className="text-muted-foreground">
               Manage device instances and their area assignments
             </p>
@@ -387,12 +428,12 @@ export default function DeviceMapping() {
         <div className="grid gap-8 lg:grid-cols-3">
           {/* Device Mapping Table - Takes 2/3 width */}
           <div className="lg:col-span-2">
-            <DeviceMappingTable entities={entitiesArray} />
+            <DeviceMappingTable entities={entitiesArray} coachConfig={coachConfig} />
           </div>
 
           {/* Device Type Breakdown - Takes 1/3 width */}
           <div>
-            <DeviceTypeBreakdown entities={entitiesArray} />
+            <DeviceTypeBreakdown entities={entitiesArray} coachConfig={coachConfig} />
           </div>
         </div>
       </div>

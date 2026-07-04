@@ -68,27 +68,3 @@ export {
   useBulkOperationProgress,
   useQuickActions
 } from './useBulkOperations';
-
-// Predictive maintenance hooks
-export {
-  usePredictiveMaintenance,
-  usePredictiveMaintenanceStats,
-  useHealthOverview,
-  useComponentHealth,
-  useComponentHealthDetail,
-  useMaintenanceRecommendations,
-  useAcknowledgeRecommendation,
-  useComponentTrends,
-  useMaintenanceHistory
-} from './usePredictiveMaintenance';
-
-// Health monitoring hooks
-export {
-  useSystemHealthStatus,
-  useHealthMonitoring,
-  useReadinessCheck,
-  useLivenessCheck,
-  useStartupCheck,
-  useHumanHealth,
-  useAggregatedHealth
-} from './useHealthStatus';

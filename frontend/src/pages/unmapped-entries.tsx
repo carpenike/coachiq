@@ -15,6 +15,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Skeleton } from "@/components/ui/skeleton"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { MappingDialog } from "@/components/unmapped-entries/mapping-dialog"
+import { useCoachConnection } from "@/contexts/coach-connection-context"
 import { useUnmappedEntries } from "@/hooks/useSystem"
 import {
     IconAlertTriangle,
@@ -122,9 +123,11 @@ function UnmappedEntriesStats({ unmappedEntries }: { unmappedEntries: UnmappedEn
  */
 function UnmappedEntriesTable({
   unmappedEntries,
+  busSilent,
   onMapEntry
 }: {
   unmappedEntries: UnmappedEntry[]
+  busSilent: boolean
   onMapEntry: (entry: UnmappedEntry) => void
 }) {
   const sortedEntries = useMemo(() => {
@@ -228,10 +231,21 @@ function UnmappedEntriesTable({
                   <TableCell colSpan={7} className="text-center py-8">
                     <div className="flex flex-col items-center gap-2">
                       <IconInfoCircle className="h-8 w-8 text-muted-foreground" />
-                      <p className="text-muted-foreground">No unmapped entries found</p>
-                      <p className="text-xs text-muted-foreground">
-                        All observed DGN/instance pairs are mapped to entities
-                      </p>
+                      {busSilent ? (
+                        <>
+                          <p className="text-muted-foreground">No CAN traffic observed — nothing to analyze yet</p>
+                          <p className="text-xs text-muted-foreground">
+                            Unmapped-entry detection needs live bus traffic to inspect
+                          </p>
+                        </>
+                      ) : (
+                        <>
+                          <p className="text-muted-foreground">No unmapped entries found</p>
+                          <p className="text-xs text-muted-foreground">
+                            All observed DGN/instance pairs are mapped to entities
+                          </p>
+                        </>
+                      )}
                     </div>
                   </TableCell>
                 </TableRow>
@@ -247,15 +261,7 @@ function UnmappedEntriesTable({
 /**
  * Mapping tools sidebar component
  */
-function MappingToolsSidebar({
-  unmappedEntries,
-  onMapAllSuggested,
-  onAutoMapSimilar
-}: {
-  unmappedEntries: UnmappedEntry[]
-  onMapAllSuggested: () => void
-  onAutoMapSimilar: () => void
-}) {
+function MappingToolsSidebar({ unmappedEntries }: Readonly<{ unmappedEntries: UnmappedEntry[] }>) {
   const analysis = useMemo(() => {
     // Analyze common device types and suggestions
     const dgnTypes = unmappedEntries.reduce((acc, entry) => {
@@ -328,35 +334,6 @@ function MappingToolsSidebar({
 
       <Card>
         <CardHeader>
-          <CardTitle className="text-sm">Bulk Actions</CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-3">
-          <Button
-            variant="outline"
-            className="w-full gap-2"
-            size="sm"
-            onClick={onMapAllSuggested}
-          >
-            <IconPlus className="h-4 w-4" />
-            Map All Suggested
-          </Button>
-          <Button
-            variant="outline"
-            className="w-full gap-2"
-            size="sm"
-            onClick={onAutoMapSimilar}
-          >
-            <IconSettings className="h-4 w-4" />
-            Auto-Map Similar
-          </Button>
-          <p className="text-xs text-muted-foreground">
-            Apply automatic mapping rules to similar entries
-          </p>
-        </CardContent>
-      </Card>
-
-      <Card>
-        <CardHeader>
           <CardTitle className="text-sm">Mapping Stats</CardTitle>
         </CardHeader>
         <CardContent className="space-y-2">
@@ -379,6 +356,7 @@ function MappingToolsSidebar({
  */
 export default function UnmappedEntries() {
   const { data: response, isLoading, error, refetch } = useUnmappedEntries()
+  const { canbus } = useCoachConnection()
 
   // State for mapping dialog
   const [selectedEntry, setSelectedEntry] = useState<UnmappedEntry | null>(null)
@@ -390,31 +368,6 @@ export default function UnmappedEntries() {
   const handleMapEntry = (entry: UnmappedEntry) => {
     setSelectedEntry(entry)
     setIsMappingDialogOpen(true)
-  }
-
-  const handleMapAllSuggested = () => {
-    const entriesWithSuggestions = unmappedEntriesArray.filter(
-      entry => entry.suggestions && entry.suggestions.length > 0
-    )
-
-    if (entriesWithSuggestions.length === 0) {
-      toast("No suggested mappings", {
-        description: "There are no unmapped entries with suggestions to map.",
-      })
-      return
-    }
-
-    // TODO: Implement bulk mapping for suggested entries
-    toast("Feature coming soon", {
-      description: `Would map ${entriesWithSuggestions.length} entries with suggestions.`,
-    })
-  }
-
-  const handleAutoMapSimilar = () => {
-    // TODO: Implement auto-mapping for similar entries
-    toast("Feature coming soon", {
-      description: "Auto-mapping similar entries will be implemented soon.",
-    })
   }
 
   const handleMappingSubmit = async (mappingData: {
@@ -529,10 +482,9 @@ export default function UnmappedEntries() {
   return (
     <AppLayout>
       <div className="flex-1 space-y-6 p-4 pt-6">
-        {/* Header */}
+        {/* Header (title comes from the app shell) */}
         <div className="flex justify-between items-center">
           <div>
-            <h1 className="text-3xl font-bold tracking-tight">Unmapped Entries</h1>
             <p className="text-muted-foreground">
               DGN/instance pairs observed but not mapped to entities
             </p>
@@ -565,17 +517,14 @@ export default function UnmappedEntries() {
           <div className="lg:col-span-3">
             <UnmappedEntriesTable
               unmappedEntries={unmappedEntriesArray}
+              busSilent={canbus === "silent"}
               onMapEntry={handleMapEntry}
             />
           </div>
 
           {/* Mapping Tools Sidebar - Takes 1/4 width */}
           <div>
-            <MappingToolsSidebar
-              unmappedEntries={unmappedEntriesArray}
-              onMapAllSuggested={handleMapAllSuggested}
-              onAutoMapSimilar={handleAutoMapSimilar}
-            />
+            <MappingToolsSidebar unmappedEntries={unmappedEntriesArray} />
           </div>
         </div>
       </div>

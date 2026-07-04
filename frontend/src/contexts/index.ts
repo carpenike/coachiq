@@ -19,6 +19,3 @@ export { QueryProvider } from './query-provider';
 
 // Authentication Context
 export { AuthProvider, useAuth, useHasRole, useAuthMode } from './auth-context';
-
-// Health Context
-export { HealthProvider, useHealth } from './health-context';

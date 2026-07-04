@@ -34,9 +34,61 @@ interface DeviceTableEntry {
   deviceType: string
   status: "online" | "offline" | "warning" | "error"
   lastSeen: string
+  /** Epoch ms of last activity (0 = never), used for sorting */
+  lastSeenMs: number
   responseTime: string
   pgns?: number[]
   capabilities?: string[]
+}
+
+/**
+ * Normalize a backend timestamp to epoch milliseconds.
+ * The backend sends epoch seconds (Python time.time()) or an ISO string;
+ * values already in milliseconds pass through unchanged.
+ */
+function toEpochMs(value: number | string | null | undefined): number | null {
+  if (value == null) return null
+  if (typeof value === "string") {
+    const parsed = Date.parse(value)
+    return Number.isNaN(parsed) ? null : parsed
+  }
+  if (!Number.isFinite(value) || value <= 0) return null
+  // Epoch seconds stay below 1e12 until the year 33658; ms values exceed it.
+  return value < 1e12 ? value * 1000 : value
+}
+
+/** Render a relative time like "3m ago" with a sane fallback. */
+function formatRelativeTime(epochMs: number | null): string {
+  if (!epochMs) return "never"
+  const deltaSeconds = Math.max(0, Math.floor((Date.now() - epochMs) / 1000))
+  if (deltaSeconds < 60) return `${deltaSeconds}s ago`
+  const minutes = Math.floor(deltaSeconds / 60)
+  if (minutes < 60) return `${minutes}m ago`
+  const hours = Math.floor(minutes / 60)
+  if (hours < 24) return `${hours}h ago`
+  const days = Math.floor(hours / 24)
+  return `${days}d ago`
+}
+
+/**
+ * Accessors for each sortable column, keyed by field name. Avoids dynamic
+ * `entry[sortField]` indexing (flagged as an object-injection sink) while
+ * still sorting on the numeric timestamp for "lastSeen" rather than its label.
+ */
+const SORT_ACCESSORS = new Map<keyof DeviceTableEntry, (entry: DeviceTableEntry) => string | number | undefined>([
+  ["address", (entry) => entry.address],
+  ["protocol", (entry) => entry.protocol],
+  ["deviceType", (entry) => entry.deviceType],
+  ["status", (entry) => entry.status],
+  ["lastSeen", (entry) => entry.lastSeenMs],
+  ["lastSeenMs", (entry) => entry.lastSeenMs],
+  ["responseTime", (entry) => entry.responseTime],
+])
+
+/** Sort-comparable value for a table entry's column, without dynamic property indexing. */
+// eslint-disable-next-line sonarjs/function-return-type -- legitimately returns string or number depending on the sorted column
+function sortValueFor(entry: DeviceTableEntry, field: keyof DeviceTableEntry) {
+  return SORT_ACCESSORS.get(field)?.(entry)
 }
 
 interface DeviceDiscoveryTableProps {
@@ -87,33 +139,28 @@ export function DeviceDiscoveryTable({
       deviceArray.forEach((device) => {
         const hexAddress = `0x${device.source_address.toString(16).toUpperCase().padStart(2, '0')}`
 
-        // Determine status based on last seen time and availability data
+        // Determine status based on last seen time (normalized to epoch ms)
+        const lastSeenMs = toEpochMs(device.last_seen)
         let status: DeviceTableEntry["status"] = "offline"
-        const lastSeenMs = device.last_seen || 0
-        const timeSinceLastSeen = Date.now() - lastSeenMs
-
-        if (timeSinceLastSeen < 30000) { // Less than 30 seconds
-          status = "online"
-        } else if (timeSinceLastSeen < 300000) { // Less than 5 minutes
-          status = "warning"
-        } else {
-          status = "offline"
+        if (lastSeenMs) {
+          const timeSinceLastSeen = Date.now() - lastSeenMs
+          if (timeSinceLastSeen < 30000) { // Less than 30 seconds
+            status = "online"
+          } else if (timeSinceLastSeen < 300000) { // Less than 5 minutes
+            status = "warning"
+          }
         }
 
         // Format response time (DeviceInfo doesn't have avg_response_time)
         const responseTime = "N/A"
-
-        // Format last seen time
-        const lastSeen = lastSeenMs > 0
-          ? `${Math.round((Date.now() - lastSeenMs) / 1000)}s ago`
-          : "Never"
 
         entries.push({
           address: hexAddress,
           protocol: device.protocol || protocol,
           deviceType: device.device_type || "Unknown",
           status,
-          lastSeen,
+          lastSeen: formatRelativeTime(lastSeenMs),
+          lastSeenMs: lastSeenMs ?? 0,
           responseTime,
           pgns: [], // DeviceInfo doesn't have supported_pgns
           capabilities: device.capabilities || []
@@ -150,10 +197,10 @@ export function DeviceDiscoveryTable({
       filtered = filtered.filter(entry => entry.status === statusFilter)
     }
 
-    // Apply sorting
+    // Apply sorting (last-seen sorts on the numeric timestamp, not the label)
     filtered.sort((a, b) => {
-      const aValue = a[sortField]
-      const bValue = b[sortField]
+      const aValue = sortValueFor(a, sortField)
+      const bValue = sortValueFor(b, sortField)
 
       if (aValue !== undefined && bValue !== undefined) {
         if (aValue < bValue) return sortDirection === "asc" ? -1 : 1

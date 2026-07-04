@@ -1,612 +1,506 @@
 /**
- * Lights Management Page
+ * Lights — owner lighting control page.
  *
- * Provides entity-based light control using /api/entities endpoint.
- * Features group-based organization, individual controls, and real-time updates.
+ * Zone-grouped light controls: per-zone on-count summary and all-on/all-off,
+ * per-light switch + brightness (when dimmable), master all-on/all-off.
+ * All counts are computed from real entity state — no fabricated numbers.
+ * Toast feedback per the command feedback contract in docs/frontend-redesign.md.
  */
 
-import type { EntityData, LightEntity } from "@/api/types"
-import { AppLayout } from "@/components/app-layout"
+import { IconBulb, IconBulbOff } from "@tabler/icons-react"
+import { formatDistanceToNow } from "date-fns"
+import { Link } from "react-router-dom"
+
+import type { EntitySchema, OperationResultSchema } from "@/api/types/domains"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
-import { Card, CardAction, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Skeleton } from "@/components/ui/skeleton"
 import { Slider } from "@/components/ui/slider"
-import { useEntities } from "@/hooks/useEntities"
-import { useOptimisticLightControl } from "@/hooks/useOptimisticMutations"
-import { cn } from "@/lib/utils"
-import { collectionToDisplayEntities } from "@/utils/entity-display"
+import { Switch } from "@/components/ui/switch"
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
+import { useCoachConnection } from "@/contexts/coach-connection-context"
+import { toast } from "@/hooks/use-toast"
 import {
-  IconBulb,
-  IconBulbOff,
-  IconBolt,
-  IconMinus,
-  IconPlus,
-  IconPower,
-  IconSun,
-  IconMoon,
-  IconTrendingUp
-} from "@tabler/icons-react"
-import { useMemo } from "react"
+  groupEntitiesByZone,
+  useCoachConfig,
+  type IZoneGroup,
+} from "@/hooks/useCoachConfig"
+import { useBulkControlEntities, useControlEntity, useEntities } from "@/hooks/useEntities"
+import { cn } from "@/lib/utils"
+
+/** Stable keys for the zone-grid loading-skeleton placeholders (no zone data exists yet to key on). */
+const ZONE_LOADING_SKELETON_IDS = [
+  "zone-skeleton-1",
+  "zone-skeleton-2",
+  "zone-skeleton-3",
+  "zone-skeleton-4",
+  "zone-skeleton-5",
+  "zone-skeleton-6",
+]
+
+//
+// ===== Entity state helpers (RV-C operating_status is raw 0..200) =====
+//
+
+function lightIsOn(entity: EntitySchema): boolean {
+  const state = entity.state ?? {}
+  if (typeof state.state === "string") {
+    return ["on", "true", "active"].includes(state.state.toLowerCase())
+  }
+  if (typeof state.operating_status === "number") {
+    return state.operating_status > 0
+  }
+  return false
+}
+
+function lightBrightnessPct(entity: EntitySchema): number {
+  const state = entity.state ?? {}
+  if (typeof state.brightness === "number") {
+    return Math.max(0, Math.min(100, Math.round(state.brightness)))
+  }
+  if (typeof state.operating_status === "number") {
+    return Math.max(0, Math.min(100, Math.round((state.operating_status / 200) * 100)))
+  }
+  return 0
+}
 
 /**
- * Lighting statistics overview component
+ * Whether the light supports dimming. The v1 entity schema exposes no
+ * capabilities list (contract gap) — a light whose state reports a level
+ * (operating_status / brightness) is treated as dimmable.
  */
-function LightingStatistics({ lights }: { lights: EntityData[] }) {
-  const stats = useMemo(() => {
-    const total = lights.length
-    const active = lights.filter(light => light.state === "on" || light.state === "true").length
-    const averageBrightness = lights
-      .filter(light => light.state === "on" || light.state === "true")
-      .reduce((sum, light) => sum + ((light as LightEntity).brightness || 0), 0) / Math.max(active, 1)
+function lightIsDimmable(entity: EntitySchema): boolean {
+  if (entity.device_type !== "light") return false
+  const state = entity.state ?? {}
+  return typeof state.operating_status === "number" || typeof state.brightness === "number"
+}
 
-    const energyEfficiency = active > 0 ? Math.round((averageBrightness / 100) * 85) : 0 // Mock calculation
+function relativeTime(value: string): string {
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return "unknown"
+  return formatDistanceToNow(date, { addSuffix: true })
+}
 
-    return { total, active, averageBrightness: Math.round(averageBrightness), energyEfficiency }
-  }, [lights])
+//
+// ===== Toast feedback (command feedback contract) =====
+//
+
+function reportCommandResult(result: OperationResultSchema, entityName: string) {
+  if (result.status !== "success") {
+    toast({
+      variant: "destructive",
+      title: `Command not completed: ${entityName}`,
+      description: result.error_message ?? `Backend reported status "${result.status}".`,
+    })
+  }
+}
+
+function reportCommandError(error: Error, entityName: string) {
+  toast({
+    variant: "destructive",
+    title: `Command failed: ${entityName}`,
+    description: error.message,
+  })
+}
+
+//
+// ===== Single light row =====
+//
+
+interface ILightRowProps {
+  entity: EntitySchema
+  controlsDisabled: boolean
+  disabledReason: string
+}
+
+function LightRow({ entity, controlsDisabled, disabledReason }: Readonly<ILightRowProps>) {
+  const control = useControlEntity()
+  const isOn = lightIsOn(entity)
+  const isAvailable = entity.available !== false
+  const dimmable = lightIsDimmable(entity)
+  const brightness = lightBrightnessPct(entity)
+  const rowDisabled = controlsDisabled || !isAvailable
+  const rowReason = !isAvailable
+    ? "Light is not responding on the CAN bus"
+    : disabledReason
+
+  const sendCommand = (command: Parameters<typeof control.mutate>[0]["command"]) => {
+    control.mutate(
+      { entityId: entity.entity_id, command },
+      {
+        onSuccess: (result) => reportCommandResult(result, entity.name),
+        onError: (error) => reportCommandError(error, entity.name),
+      }
+    )
+  }
+
+  const controls = (
+    <div className="flex items-center gap-3">
+      {!isAvailable && (
+        <Badge variant="outline" className="gap-1 text-xs text-muted-foreground">
+          <span className="size-1.5 rounded-full bg-red-500" aria-hidden />
+          offline
+        </Badge>
+      )}
+      <Switch
+        checked={isOn}
+        disabled={rowDisabled || control.isPending}
+        onCheckedChange={() => sendCommand({ command: "toggle" })}
+        aria-label={`Toggle ${entity.name}`}
+      />
+    </div>
+  )
 
   return (
-    <div className="*:data-[slot=card]:from-primary/5 *:data-[slot=card]:to-card dark:*:data-[slot=card]:bg-card grid grid-cols-2 md:grid-cols-4 gap-4 *:data-[slot=card]:bg-gradient-to-t *:data-[slot=card]:shadow-xs">
-      <Card className="@container/card">
-        <CardContent className="p-4 text-center">
-          <div className="text-2xl font-semibold tabular-nums @[150px]/card:text-3xl">{stats.total}</div>
-          <div className="text-xs text-muted-foreground">Total Lights</div>
-        </CardContent>
-      </Card>
-      <Card className="@container/card">
-        <CardContent className="p-4 text-center">
-          <div className="text-2xl font-semibold tabular-nums @[150px]/card:text-3xl text-yellow-600">{stats.active}</div>
-          <div className="text-xs text-muted-foreground flex items-center justify-center gap-1">
-            <IconBolt className="h-3 w-3" />
-            Currently On
-          </div>
-        </CardContent>
-      </Card>
-      <Card className="@container/card">
-        <CardContent className="p-4 text-center">
-          <div className="text-2xl font-semibold tabular-nums @[150px]/card:text-3xl">{stats.averageBrightness}%</div>
-          <div className="text-xs text-muted-foreground">Avg Brightness</div>
-        </CardContent>
-      </Card>
-      <Card className="@container/card">
-        <CardContent className="p-4 text-center">
-          <div className="text-2xl font-semibold tabular-nums @[150px]/card:text-3xl text-green-600">{stats.energyEfficiency}%</div>
-          <div className="text-xs text-muted-foreground flex items-center justify-center gap-1">
-            <IconTrendingUp className="h-3 w-3" />
-            Efficiency
-          </div>
-        </CardContent>
-      </Card>
+    <div className={cn("space-y-1.5 py-2.5", !isAvailable && "opacity-50")}>
+      <div className="flex items-center justify-between gap-2">
+        <div className="min-w-0">
+          <p className="truncate text-sm font-medium">{entity.name}</p>
+          <p className="text-xs text-muted-foreground">
+            Updated {relativeTime(entity.last_updated)}
+          </p>
+        </div>
+        {rowDisabled ? (
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <span>{controls}</span>
+            </TooltipTrigger>
+            <TooltipContent>{rowReason}</TooltipContent>
+          </Tooltip>
+        ) : (
+          controls
+        )}
+      </div>
+      {dimmable && isOn && (
+        <Slider
+          value={[brightness]}
+          max={100}
+          step={5}
+          disabled={rowDisabled || control.isPending}
+          onValueCommit={(value) => {
+            const level = value[0]
+            if (level !== undefined) {
+              sendCommand({ command: "set", state: level > 0, brightness: level })
+            }
+          }}
+          aria-label={`${entity.name} brightness`}
+        />
+      )}
     </div>
   )
 }
 
-/**
- * Quick presets component
- */
-function LightingPresets({ lights }: { lights: EntityData[] }) {
-  const { toggle, setBrightness } = useOptimisticLightControl()
+//
+// ===== Zone card =====
+//
 
-  const handleAllOff = () => {
-    lights.forEach(light => {
-      if (light.state === "on" || light.state === "true") {
-        toggle.mutate({ entityId: light.entity_id })
+interface IZoneLightsCardProps {
+  zone: IZoneGroup
+  controlsDisabled: boolean
+  disabledReason: string
+}
+
+function ZoneLightsCard({ zone, controlsDisabled, disabledReason }: Readonly<IZoneLightsCardProps>) {
+  const bulkControl = useBulkControlEntities()
+  const onCount = zone.entities.filter(lightIsOn).length
+  const switchableIds = zone.entities
+    .filter((entity) => entity.available !== false)
+    .map((entity) => entity.entity_id)
+
+  const setZone = (on: boolean) => {
+    bulkControl.mutate(
+      {
+        entity_ids: switchableIds,
+        command: { command: "set", state: on },
+        ignore_errors: true,
+      },
+      {
+        onSuccess: (result) => {
+          if (result.failed_count > 0) {
+            toast({
+              variant: "destructive",
+              title: `${zone.displayName}: ${result.failed_count} of ${result.total_count} lights failed`,
+              description: `Some lights did not turn ${on ? "on" : "off"}.`,
+            })
+          }
+        },
+        onError: (error) => reportCommandError(error, zone.displayName),
       }
-    })
+    )
   }
 
-  const handleAllOn = () => {
-    lights.forEach(light => {
-      if (light.state === "off" || light.state === "false") {
-        toggle.mutate({ entityId: light.entity_id })
-      }
-    })
-  }
+  const zoneButtonsDisabled =
+    controlsDisabled || switchableIds.length === 0 || bulkControl.isPending
+  const zoneButtonsReason = controlsDisabled
+    ? disabledReason
+    : "No lights in this zone are responding"
 
-  const handleDimMode = () => {
-    lights.forEach(light => {
-      if (light.capabilities?.includes("brightness")) {
-        setBrightness.mutate({ entityId: light.entity_id, brightness: 25 })
-      }
-    })
-  }
-
-  const handleBrightMode = () => {
-    lights.forEach(light => {
-      if (light.capabilities?.includes("brightness")) {
-        setBrightness.mutate({ entityId: light.entity_id, brightness: 100 })
-      }
-    })
-  }
-
-  return (
-    <Card className="@container/card from-primary/5 to-card bg-gradient-to-t shadow-xs">
-      <CardHeader>
-        <CardTitle className="@[250px]/card:text-lg flex items-center gap-2">
-          <IconBolt className="size-5" />
-          Quick Controls
-        </CardTitle>
-        <CardDescription>Control all lights at once</CardDescription>
-      </CardHeader>
-      <CardContent>
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-          <Button
-            variant="outline"
-            onClick={handleAllOn}
-            className="flex flex-col h-auto p-4 gap-2"
-            disabled={toggle.isPending || setBrightness.isPending}
-          >
-            <IconSun className="h-5 w-5" />
-            <span className="text-xs">All On</span>
-          </Button>
-          <Button
-            variant="outline"
-            onClick={handleAllOff}
-            className="flex flex-col h-auto p-4 gap-2"
-            disabled={toggle.isPending || setBrightness.isPending}
-          >
-            <IconMoon className="h-5 w-5" />
-            <span className="text-xs">All Off</span>
-          </Button>
-          <Button
-            variant="outline"
-            onClick={handleDimMode}
-            className="flex flex-col h-auto p-4 gap-2"
-            disabled={toggle.isPending || setBrightness.isPending}
-          >
-            <IconBulb className="h-5 w-5 opacity-50" />
-            <span className="text-xs">Dim Mode</span>
-          </Button>
-          <Button
-            variant="outline"
-            onClick={handleBrightMode}
-            className="flex flex-col h-auto p-4 gap-2"
-            disabled={toggle.isPending || setBrightness.isPending}
-          >
-            <IconBolt className="h-5 w-5" />
-            <span className="text-xs">Bright Mode</span>
-          </Button>
-        </div>
-      </CardContent>
-    </Card>
+  const zoneButtons = (
+    <div className="flex items-center gap-1">
+      <Button
+        variant="ghost"
+        size="icon"
+        disabled={zoneButtonsDisabled}
+        onClick={() => setZone(true)}
+        className="size-7 text-muted-foreground"
+        aria-label={`Turn all lights on in ${zone.displayName}`}
+      >
+        <IconBulb className="size-4" />
+      </Button>
+      <Button
+        variant="ghost"
+        size="icon"
+        disabled={zoneButtonsDisabled}
+        onClick={() => setZone(false)}
+        className="size-7 text-muted-foreground"
+        aria-label={`Turn all lights off in ${zone.displayName}`}
+      >
+        <IconBulbOff className="size-4" />
+      </Button>
+    </div>
   )
-}
 
-/**
- * Individual light control component
- */
-interface LightControlProps {
-  light: EntityData
-}
-
-function LightControl({ light }: LightControlProps) {
-  const { toggle, setBrightness, brightnessUp, brightnessDown } = useOptimisticLightControl()
-
-  const isOn = light.state === "on" || light.state === "true"
-  const lightEntity = light as LightEntity
-  const brightness = lightEntity.brightness || 0
-  const hasBrightnessControl = light.capabilities?.includes("brightness")
-  const isOnline = light.timestamp && (Date.now() - light.timestamp) < 300000
-
-  const handleSliderChange = (value: number[]) => {
-    const newBrightness = value[0];
-    if (newBrightness !== undefined) {
-      setBrightness.mutate({ entityId: light.entity_id, brightness: newBrightness });
-    }
-  }
-
-  const handlePresetBrightness = (level: number) => {
-    setBrightness.mutate({ entityId: light.entity_id, brightness: level })
-  }
-
-  return (
-    <Card className={cn(
-      "@container/card from-primary/5 to-card bg-gradient-to-t shadow-xs transition-all duration-200 hover:shadow-md",
-      isOn && "ring-2 ring-yellow-500/20 bg-yellow-50/10 dark:bg-yellow-950/10"
-    )}>
-      <CardHeader className="pb-3">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <div className={cn(
-              "p-1.5 rounded-lg transition-colors",
-              isOn ? "bg-yellow-100 dark:bg-yellow-900/50" : "bg-muted"
-            )}>
-              {isOn ? (
-                <IconBulb className="size-4 text-yellow-600 dark:text-yellow-400" />
-              ) : (
-                <IconBulbOff className="size-4 text-muted-foreground" />
-              )}
-            </div>
-            <CardTitle className="@[200px]/card:text-base text-sm">
-              {light.friendly_name}
-            </CardTitle>
-          </div>
-          <CardAction>
-            <Badge variant={isOn ? "default" : "secondary"} className={cn(
-              "text-xs",
-              isOn && "bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-200"
-            )}>
-              {isOn ? "ON" : "OFF"}
-            </Badge>
-          </CardAction>
-        </div>
-        {!isOnline && (
-          <CardDescription>
-            <Badge variant="destructive" className="text-xs">
-              Offline
-            </Badge>
-          </CardDescription>
-        )}
-      </CardHeader>
-      <CardContent className="space-y-4">
-        {/* Main Controls */}
-        <div className="flex gap-2">
-          <Button
-            onClick={() => void toggle.mutate({ entityId: light.entity_id })}
-            disabled={toggle.isPending || setBrightness.isPending}
-            className="flex-1"
-            variant={isOn ? "default" : "outline"}
-          >
-            <IconPower className="mr-2 h-4 w-4" />
-            {isOn ? "Turn Off" : "Turn On"}
-          </Button>
-        </div>
-
-        {/* Enhanced Brightness Control */}
-        {hasBrightnessControl && (
-          <div className="space-y-3">
-            <div className="flex items-center justify-between">
-              <span className="text-sm font-medium">Brightness</span>
-              <Badge variant="outline" className="text-xs">
-                {brightness}%
-              </Badge>
-            </div>
-
-            {/* Slider Control with +/- buttons */}
-            <div className="flex items-center gap-2">
-              <Button
-                size="sm"
-                variant="outline"
-                onClick={() => void brightnessDown.mutate({ entityId: light.entity_id })}
-                disabled={toggle.isPending || setBrightness.isPending || brightnessUp.isPending || brightnessDown.isPending || brightness <= 0}
-                className="shrink-0"
-              >
-                <IconMinus className="h-3 w-3" />
-              </Button>
-              <div className="flex-1 px-1">
-                <Slider
-                  value={[brightness]}
-                  onValueChange={handleSliderChange}
-                  max={100}
-                  step={1}
-                  className="w-full"
-                  disabled={toggle.isPending || setBrightness.isPending || brightnessUp.isPending || brightnessDown.isPending}
-                />
-              </div>
-              <Button
-                size="sm"
-                variant="outline"
-                onClick={() => void brightnessUp.mutate({ entityId: light.entity_id })}
-                disabled={toggle.isPending || setBrightness.isPending || brightnessUp.isPending || brightnessDown.isPending || brightness >= 100}
-                className="shrink-0"
-              >
-                <IconPlus className="h-3 w-3" />
-              </Button>
-            </div>
-
-            {/* Quick Preset Buttons */}
-            <div className="flex gap-1">
-              <Button
-                size="sm"
-                variant="outline"
-                onClick={() => handlePresetBrightness(25)}
-                disabled={toggle.isPending || setBrightness.isPending || brightnessUp.isPending || brightnessDown.isPending}
-                className="flex-1 text-xs"
-              >
-                25%
-              </Button>
-              <Button
-                size="sm"
-                variant="outline"
-                onClick={() => handlePresetBrightness(50)}
-                disabled={toggle.isPending || setBrightness.isPending || brightnessUp.isPending || brightnessDown.isPending}
-                className="flex-1 text-xs"
-              >
-                50%
-              </Button>
-              <Button
-                size="sm"
-                variant="outline"
-                onClick={() => handlePresetBrightness(75)}
-                disabled={toggle.isPending || setBrightness.isPending || brightnessUp.isPending || brightnessDown.isPending}
-                className="flex-1 text-xs"
-              >
-                75%
-              </Button>
-              <Button
-                size="sm"
-                variant="outline"
-                onClick={() => handlePresetBrightness(100)}
-                disabled={toggle.isPending || setBrightness.isPending || brightnessUp.isPending || brightnessDown.isPending}
-                className="flex-1 text-xs"
-              >
-                100%
-              </Button>
-            </div>
-          </div>
-        )}
-
-        {/* Status Footer */}
-        <div className="flex items-center justify-between text-xs text-muted-foreground">
-          <div className="flex items-center gap-1">
-            <div className={cn(
-              "w-2 h-2 rounded-full",
-              isOnline ? "bg-green-500" : "bg-red-500"
-            )} />
-            {isOnline ? "Online" : "Offline"}
-          </div>
-          {light.timestamp && (
-            <span>
-              {new Date(light.timestamp).toLocaleTimeString()}
-            </span>
-          )}
-        </div>
-      </CardContent>
-    </Card>
-  )
-}
-
-/**
- * Loading skeleton for light controls
- */
-function LightControlSkeleton() {
   return (
     <Card>
-      <CardHeader className="pb-3">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <Skeleton className="size-5" />
-            <Skeleton className="h-5 w-24" />
-          </div>
-          <Skeleton className="h-5 w-12" />
+      <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+        <div className="min-w-0">
+          <CardTitle className="text-base">{zone.displayName}</CardTitle>
+          <p className="text-xs text-muted-foreground">
+            {onCount} of {zone.entities.length} on
+          </p>
         </div>
-        <Skeleton className="h-4 w-16" />
+        {zoneButtonsDisabled ? (
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <span>{zoneButtons}</span>
+            </TooltipTrigger>
+            <TooltipContent>{zoneButtonsReason}</TooltipContent>
+          </Tooltip>
+        ) : (
+          zoneButtons
+        )}
       </CardHeader>
-      <CardContent className="space-y-3">
-        <Skeleton className="h-10 w-full" />
-        <div className="space-y-2">
-          <div className="flex items-center justify-between">
-            <Skeleton className="h-4 w-16" />
-            <Skeleton className="h-4 w-8" />
-          </div>
-          <div className="flex items-center gap-2">
-            <Skeleton className="h-8 w-8" />
-            <Skeleton className="h-2 flex-1" />
-            <Skeleton className="h-8 w-8" />
-          </div>
-        </div>
+      <CardContent className="divide-y">
+        {zone.entities.map((entity) => (
+          <LightRow
+            key={entity.entity_id}
+            entity={entity}
+            controlsDisabled={controlsDisabled}
+            disabledReason={disabledReason}
+          />
+        ))}
       </CardContent>
     </Card>
   )
 }
 
-/**
- * Enhanced group-based light organization
- */
-interface LightGroupProps {
-  title: string
-  lights: EntityData[]
+//
+// ===== Master summary + all on / all off =====
+//
+
+interface IMasterBarProps {
+  lights: EntitySchema[]
+  controlsDisabled: boolean
+  disabledReason: string
 }
 
-function LightGroup({ title, lights }: LightGroupProps) {
-  const { toggle, setBrightness } = useOptimisticLightControl()
+function MasterBar({ lights, controlsDisabled, disabledReason }: Readonly<IMasterBarProps>) {
+  const bulkControl = useBulkControlEntities()
+  const available = lights.filter((entity) => entity.available !== false)
+  const offlineCount = lights.length - available.length
+  const onCount = available.filter(lightIsOn).length
+  const offCount = available.length - onCount
 
-  if (lights.length === 0) return null
-
-  const onLights = lights.filter(light => light.state === "on" || light.state === "true")
-  const groupEfficiency = lights.length > 0 ? Math.round((onLights.length / lights.length) * 100) : 0
-
-  const handleGroupToggle = () => {
-    if (onLights.length > lights.length / 2) {
-      // Most lights are on, turn all off
-      lights.forEach(light => {
-        if (light.state === "on" || light.state === "true") {
-          toggle.mutate({ entityId: light.entity_id })
-        }
-      })
-    } else {
-      // Most lights are off, turn all on
-      lights.forEach(light => {
-        if (light.state === "off" || light.state === "false") {
-          toggle.mutate({ entityId: light.entity_id })
-        }
-      })
-    }
+  const setAll = (on: boolean) => {
+    bulkControl.mutate(
+      {
+        entity_ids: available.map((entity) => entity.entity_id),
+        command: { command: "set", state: on },
+        ignore_errors: true,
+      },
+      {
+        onSuccess: (result) => {
+          if (result.failed_count > 0) {
+            toast({
+              variant: "destructive",
+              title: `${result.failed_count} of ${result.total_count} lights failed`,
+              description: `Some lights did not turn ${on ? "on" : "off"}.`,
+            })
+          } else {
+            toast({
+              title: on ? "All lights on" : "All lights off",
+              description: `Applied to ${result.total_count} ${
+                result.total_count === 1 ? "light" : "lights"
+              }.`,
+            })
+          }
+        },
+        onError: (error) => reportCommandError(error, "All lights"),
+      }
+    )
   }
 
+  const masterDisabled = controlsDisabled || available.length === 0 || bulkControl.isPending
+  const masterReason = controlsDisabled ? disabledReason : "No lights are responding"
+
+  const buttons = (
+    <div className="flex items-center gap-2">
+      <Button
+        variant="outline"
+        size="sm"
+        disabled={masterDisabled}
+        onClick={() => setAll(true)}
+        className="gap-1.5"
+      >
+        <IconBulb className="size-4" />
+        All On
+      </Button>
+      <Button
+        variant="outline"
+        size="sm"
+        disabled={masterDisabled}
+        onClick={() => setAll(false)}
+        className="gap-1.5"
+      >
+        <IconBulbOff className="size-4" />
+        All Off
+      </Button>
+    </div>
+  )
+
   return (
-    <div className="space-y-4">
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-3">
-          <h3 className="text-lg font-semibold">{title}</h3>
-          <Badge variant="outline" className="text-xs">
-            {lights.length} lights
+    <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+      <div className="flex flex-wrap items-center gap-2">
+        <Badge
+          variant="secondary"
+          className="bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-200"
+        >
+          {onCount} on
+        </Badge>
+        <Badge variant="secondary">{offCount} off</Badge>
+        {offlineCount > 0 && (
+          <Badge variant="outline" className="gap-1 text-muted-foreground">
+            <span className="size-1.5 rounded-full bg-red-500" aria-hidden />
+            {offlineCount} offline
           </Badge>
-          {onLights.length > 0 && (
-            <Badge variant="default" className="text-xs">
-              <IconBolt className="mr-1 h-3 w-3" />
-              {onLights.length} active
-            </Badge>
-          )}
-        </div>
-        <div className="flex items-center gap-2">
-          <Badge
-            variant={groupEfficiency > 50 ? "default" : "secondary"}
-            className="text-xs"
-          >
-            {groupEfficiency}% on
-          </Badge>
-          <Button
-            size="sm"
-            variant="outline"
-            onClick={handleGroupToggle}
-            disabled={toggle.isPending || setBrightness.isPending}
-            className="text-xs"
-          >
-            <IconPower className="mr-1 h-3 w-3" />
-            {onLights.length > lights.length / 2 ? "All Off" : "All On"}
-          </Button>
-        </div>
+        )}
       </div>
-      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-        {lights.map((light) => (
-          <LightControl key={light.entity_id} light={light} />
-        ))}
-      </div>
+      {masterDisabled ? (
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <span className="self-start sm:self-auto">{buttons}</span>
+          </TooltipTrigger>
+          <TooltipContent>{masterReason}</TooltipContent>
+        </Tooltip>
+      ) : (
+        buttons
+      )}
     </div>
   )
 }
 
-/**
- * Lights Management Page Component
- */
-export default function Lights() {
-  const { data: lights, isLoading, error } = useEntities({ device_type: "light" })
+//
+// ===== Page =====
+//
 
-  if (isLoading) {
-    return (
-      <AppLayout pageTitle="Lights">
-        <div className="flex-1 space-y-6 p-4 pt-6">
-          <div className="flex items-center justify-between">
-            <div>
-              <h1 className="text-3xl font-bold tracking-tight">Lights</h1>
-              <p className="text-muted-foreground">
-                Control and monitor all lighting systems
-              </p>
-            </div>
-          </div>
-          <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-            {Array.from({ length: 6 }).map((_, index) => (
-              <LightControlSkeleton key={index} />
-            ))}
-          </div>
-        </div>
-      </AppLayout>
-    )
-  }
-
-  if (error) {
-    return (
-      <AppLayout pageTitle="Lights">
-        <div className="flex-1 space-y-6 p-4 pt-6">
-          <div className="flex items-center justify-between">
-            <div>
-              <h1 className="text-3xl font-bold tracking-tight">Lights</h1>
-              <p className="text-muted-foreground">
-                Control and monitor all lighting systems
-              </p>
-            </div>
-          </div>
-          <Card>
-            <CardHeader>
-              <CardTitle className="text-destructive">Error Loading Lights</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <p className="text-sm text-muted-foreground">
-                Unable to load light information. Please check your connection and try again.
-              </p>
-            </CardContent>
-          </Card>
-        </div>
-      </AppLayout>
-    )
-  }
-
-  const lightArray = collectionToDisplayEntities(lights)
-
-  if (lightArray.length === 0) {
-    return (
-      <AppLayout pageTitle="Lights">
-        <div className="flex-1 space-y-6 p-4 pt-6">
-          <div className="flex items-center justify-between">
-            <div>
-              <h1 className="text-3xl font-bold tracking-tight">Lights</h1>
-              <p className="text-muted-foreground">
-                Control and monitor all lighting systems
-              </p>
-            </div>
-          </div>
-          <Card>
-            <CardHeader>
-              <CardTitle>No Lights Found</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <p className="text-sm text-muted-foreground">
-                No light entities are currently detected. Check your RV-C network connection
-                and ensure light devices are properly configured.
-              </p>
-            </CardContent>
-          </Card>
-        </div>
-      </AppLayout>
-    )
-  }
-
-  // Group lights by area
-  const groupedLights = lightArray.reduce((groups, light) => {
-    const area = light.suggested_area || "Other"
-    if (!groups[area]) {
-      groups[area] = []
-    }
-    groups[area].push(light)
-    return groups
-  }, {} as Record<string, EntityData[]>)
-
-  const sortedGroups = Object.entries(groupedLights).sort(([a], [b]) => {
-    // Put "Other" group last
-    if (a === "Other") return 1
-    if (b === "Other") return -1
-    return a.localeCompare(b)
+export default function LightsPage() {
+  const { coach, reason } = useCoachConnection()
+  const { data: config } = useCoachConfig()
+  const { data: entityCollection, isLoading, error } = useEntities({
+    device_type: "light",
+    page_size: 100,
   })
 
-  return (
-    <AppLayout pageTitle="Lights">
-      <div className="flex-1 space-y-6 p-4 pt-6">
-        {/* Page Header */}
-        <div className="flex items-center justify-between">
-          <div>
-            <h1 className="text-3xl font-bold tracking-tight">Lights</h1>
-            <p className="text-muted-foreground">
-              Control and monitor all lighting systems
-            </p>
-          </div>
-          <div className="flex items-center gap-2">
-            <Badge variant="outline">
-              {lightArray.length} devices
-            </Badge>
-            <Badge variant="outline">
-              {lightArray.filter(light => light.state === "on" || light.state === "true").length} active
-            </Badge>
-          </div>
-        </div>
+  const lights = (entityCollection?.entities ?? []).filter(
+    (entity) => entity.device_type === "light"
+  )
+  const zones = groupEntitiesByZone(lights, config)
+  const interior = zones.filter((zone) => zone.section === "interior")
+  const exterior = zones.filter((zone) => zone.section === "exterior")
+  const other = zones.filter((zone) => zone.section === "other")
 
-        {/* Statistics Overview */}
-        <LightingStatistics lights={lightArray} />
+  const controlsDisabled = coach !== "LIVE"
+  const disabledReason =
+    coach === "OFFLINE"
+      ? "Can't reach the coach — controls disabled"
+      : `Coach data is not live — ${reason}`
 
-        {/* Quick Controls */}
-        <LightingPresets lights={lightArray} />
-
-        {/* Light Groups */}
-        <div className="space-y-8">
-          {sortedGroups.map(([groupName, groupLights]) => (
-            <LightGroup
-              key={groupName}
-              title={groupName}
-              lights={groupLights}
+  const renderSection = (title: string, sectionZones: IZoneGroup[]) => {
+    if (sectionZones.length === 0) return null
+    return (
+      <div className="space-y-3">
+        <h2 className="text-sm font-medium text-muted-foreground">{title}</h2>
+        <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
+          {sectionZones.map((zone) => (
+            <ZoneLightsCard
+              key={zone.zoneId}
+              zone={zone}
+              controlsDisabled={controlsDisabled}
+              disabledReason={disabledReason}
             />
           ))}
         </div>
       </div>
-    </AppLayout>
+    )
+  }
+
+  return (
+    <div className="flex-1 space-y-6 p-4 pt-6 lg:px-6">
+      {isLoading && (
+        <div className="space-y-6">
+          <Skeleton className="h-9 w-full max-w-md" />
+          <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
+            {ZONE_LOADING_SKELETON_IDS.map((skeletonId) => (
+              <Skeleton key={skeletonId} className="h-48" />
+            ))}
+          </div>
+        </div>
+      )}
+
+      {error && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-destructive">Couldn&apos;t load lights</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <p className="text-sm text-muted-foreground">{error.message}</p>
+          </CardContent>
+        </Card>
+      )}
+
+      {!isLoading && !error && lights.length === 0 && (
+        <Card>
+          <CardHeader>
+            <CardTitle>No light entities are mapped</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <p className="text-sm text-muted-foreground">
+              No lights are mapped for this coach yet. Map them in{" "}
+              <Link
+                to="/advanced/device-mapping"
+                className="underline underline-offset-2 hover:text-foreground"
+              >
+                Device Mapping
+              </Link>
+              .
+            </p>
+          </CardContent>
+        </Card>
+      )}
+
+      {!isLoading && !error && lights.length > 0 && (
+        <>
+          <MasterBar
+            lights={lights}
+            controlsDisabled={controlsDisabled}
+            disabledReason={disabledReason}
+          />
+          {renderSection("Interior", interior)}
+          {renderSection("Exterior", exterior)}
+          {renderSection("Unassigned", other)}
+        </>
+      )}
+    </div>
   )
 }

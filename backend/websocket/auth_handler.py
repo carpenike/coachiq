@@ -104,7 +104,12 @@ class WebSocketAuthHandler:
 
         # Validate token
         if not token:
-            await websocket.close(code=1008)  # Policy violation
+            # Accept before closing: closing a never-accepted socket makes
+            # Starlette reject the handshake with a bare HTTP 403, which
+            # browsers surface as an opaque 1006 and clients cannot tell
+            # auth failure from an unreachable server.
+            await websocket.accept()
+            await websocket.close(code=4401, reason="Authentication required")  # pyright: ignore[reportCallIssue]
             logger.warning(
                 "WebSocket connection rejected - missing token from %s", websocket.client
             )
@@ -142,7 +147,8 @@ class WebSocketAuthHandler:
             return user_info
 
         except Exception as e:
-            await websocket.close(code=1008)  # Policy violation
+            await websocket.accept()
+            await websocket.close(code=4401, reason="Invalid or expired token")  # pyright: ignore[reportCallIssue]
             logger.warning(
                 "WebSocket connection rejected - invalid token from %s: %s",
                 websocket.client,
