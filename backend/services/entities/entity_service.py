@@ -805,21 +805,27 @@ class EntityService:
             }
         )
 
-        # Create and send CAN message
+        # Create and send CAN message(s). A light may map to several dimmer
+        # instances that must all be commanded (e.g. the bedroom ceiling is
+        # instances 25 and 26, both driven by one physical button); fan the
+        # command out to each. DGN 0x1FEDB = DC_DIMMER_COMMAND_2 (verified).
         try:
-            can_message = create_light_can_message(
-                pgn=0x1F0D0,  # Standard PGN for DML_COMMAND_2 light commands
-                instance=instance,
-                brightness_can_level=optimistic_raw_val,
-            )
-
-            # Use the resolved physical interface for this entity
+            command_instances = entity_config.get("command_instances") or [instance]
             can_interface = physical_interface
             logger.debug(
-                f"Sending CAN message for {entity_id} on interface {can_interface} (logical: {logical_interface})"
+                "Sending CAN command for %s to instances %s on interface %s (logical: %s)",
+                entity_id,
+                command_instances,
+                can_interface,
+                logical_interface,
             )
-
-            await can_tx_queue.put((can_message, can_interface))
+            for cmd_instance in command_instances:
+                can_message = create_light_can_message(
+                    pgn=0x1FEDB,  # DC_DIMMER_COMMAND_2
+                    instance=int(cmd_instance),
+                    brightness_can_level=optimistic_raw_val,
+                )
+                await can_tx_queue.put((can_message, can_interface))
 
             # Note: We don't have access to can_tracking_repo here for sniffer entries
             # This could be added as another dependency if needed

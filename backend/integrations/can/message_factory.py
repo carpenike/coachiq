@@ -33,17 +33,22 @@ def create_light_can_message(pgn: int, instance: int, brightness_can_level: int)
         ps = pgn & 0xFF  # PDU Specific (contains group extension or specific address)
         arbitration_id = (prio << 26) | (dp << 24) | (pf << 16) | (ps << 8) | sa
 
-    # Construct payload
+    # Construct payload. Byte layout verified on the live coach bus against the
+    # Firefly dimmer modules (see docs/can-re-findings.md): sending
+    # 19FEDBF9#19FF6400FF00FFFF set instance 0x19 to op_status 0x64 and
+    # ...#19FF0000FF00FFFF turned it off, with DC_DIMMER_STATUS_3 echoing the
+    # commanded level exactly. Group must be 0xFF (none), duration 0xFF
+    # (instant), byte5 0x00 — the previous 0x7C/0x00/0xFF values were no-ops.
     payload_data = bytes(
         [
-            instance,  # Instance
-            0x7C,  # Group Mask (typically 0x7C for DML_COMMAND_2 based lights)
-            brightness_can_level,  # Level (0-200, 0xC8 for 100%)
-            0x00,  # Command: SetLevel
-            0x00,  # Duration: Instantaneous
-            0xFF,  # Reserved
-            0xFF,  # Reserved
-            0xFF,  # Reserved
+            instance,  # byte0: instance
+            0xFF,  # byte1: group = none
+            brightness_can_level,  # byte2: level (0-200, 0xC8 = 100%, 0x00 = off)
+            0x00,  # byte3: command = set level
+            0xFF,  # byte4: duration = instant
+            0x00,  # byte5
+            0xFF,  # byte6
+            0xFF,  # byte7
         ]
     )
 

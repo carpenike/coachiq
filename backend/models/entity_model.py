@@ -29,6 +29,9 @@ class EntityConfig(TypedDict, total=False):
     protocol_metadata: dict[str, Any]  # Protocol-specific configuration data
     # Additional configuration fields that may be present
     instance: int
+    # Extra dimmer instances a command must fan out to (multi-channel lights);
+    # empty/absent means command only the primary `instance`.
+    command_instances: list[int]
     command_dgn: str
     status_dgn: str
     status_source_addr: int
@@ -66,6 +69,10 @@ class EntityState(BaseModel):
     # Required by the control path to build CAN messages; sourced from the
     # coach mapping's DGN section (inst_map) at initialization.
     instance: int | None = Field(None, description="RV-C DGN instance for command emission")
+    command_instances: list[int] = Field(
+        default_factory=list,
+        description="Extra dimmer instances to fan a command out to (multi-channel lights)",
+    )
 
 
 class Entity:
@@ -113,6 +120,7 @@ class Entity:
             physical_id=config.get("physical_id"),
             protocol_metadata=config.get("protocol_metadata", {}),
             instance=config.get("instance"),
+            command_instances=list(config.get("command_instances", [])),
         )
 
         # Add initial state to history
