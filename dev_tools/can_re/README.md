@@ -10,6 +10,22 @@ running CoachIQ app and **no** auth, so you can run them from the coach while
 pressing physical Vegatouch Mira buttons. Capture files are JSONL in the same
 field shape as the app's in-recorder `RecordedMessage`, so they interoperate.
 
+## Two ways to run
+
+**On the coach (packaged):** the Nix package ships a `coachiq-can-re` command on
+the system `PATH`, wrapped with `can-utils` and pointed at the packaged RV-C
+spec. Prefer this on the Pi — it is version-matched to the running backend:
+
+```bash
+coachiq-can-re capture --iface can1 --seconds 10 --label idle --out idle.jsonl
+coachiq-can-re census idle.jsonl
+coachiq-can-re diff idle.jsonl action.jsonl --noise idle2.jsonl
+```
+
+**From a checkout (dev):** the equivalent `python -m dev_tools.can_re.<tool>`
+module CLIs behave identically. The examples below use the module form; swap in
+`coachiq-can-re <subcommand>` on the coach.
+
 ## The workflow that cracks a control frame
 
 The whole point: **diff what's on the bus when idle vs. while you press a

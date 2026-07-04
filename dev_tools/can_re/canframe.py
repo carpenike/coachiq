@@ -7,6 +7,7 @@ capture/census/diff CLIs build on it.
 from __future__ import annotations
 
 import json
+import os
 import re
 from dataclasses import dataclass
 from pathlib import Path
@@ -132,13 +133,30 @@ class RvcNames:
     def name(self, pgn: int) -> str | None:
         return self._by_pgn.get(pgn)
 
+    @staticmethod
+    def _locate_spec() -> Path | None:
+        """Find rvc.json across dev-checkout and Nix-packaged layouts.
+
+        Order: explicit ``COACHIQ_RVC_SPEC_PATH`` env var (the Nix wrapper sets
+        this to the packaged spec) -> repo-relative -> the ``config/`` dir the
+        package installs alongside site-packages.
+        """
+        candidates: list[Path] = []
+        env = os.environ.get("COACHIQ_RVC_SPEC_PATH")
+        if env:
+            candidates.append(Path(env))
+        here = Path(__file__).resolve()
+        candidates.append(here.parents[2] / "config" / "rvc.json")  # repo checkout
+        candidates.append(here.parents[1] / "config" / "rvc.json")  # site-packages/config
+        return next((c for c in candidates if c.is_file()), None)
+
     @classmethod
     def load(cls, path: str | Path | None = None) -> RvcNames:
-        if path is None:
-            # dev_tools/can_re/canframe.py -> repo root -> config/rvc.json
-            path = Path(__file__).resolve().parents[2] / "config" / "rvc.json"
+        resolved = Path(path) if path is not None else cls._locate_spec()
+        if resolved is None:
+            return cls({})
         try:
-            raw = json.loads(Path(path).read_text(encoding="utf-8"))
+            raw = json.loads(resolved.read_text(encoding="utf-8"))
         except (FileNotFoundError, ValueError):
             return cls({})
         pgns = raw.get("pgns", raw)

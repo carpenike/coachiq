@@ -12,6 +12,8 @@ from dev_tools.can_re.canframe import (
     parse_candump_line,
 )
 from dev_tools.can_re.census import census
+from dev_tools.can_re.cli import build_parser
+from dev_tools.can_re.cli import main as cli_main
 from dev_tools.can_re.diff import apply_noise_filter, diff
 
 pytestmark = [pytest.mark.unit]
@@ -146,3 +148,22 @@ def test_noise_filter_cancels_background_churn() -> None:
     assert (0x1FFFF, 0x9C) in raw_keys  # clock flagged in raw
     assert (0x1FFFF, 0x9C) not in filtered_keys  # ...but cancelled as noise
     assert (0x1FEDA, 0x8E) in filtered_keys  # real dimmer change survives
+
+
+# --- cli dispatch ------------------------------------------------------------
+def test_cli_parser_has_all_subcommands() -> None:
+    parser = build_parser()
+    args = parser.parse_args(["diff", "a.jsonl", "b.jsonl", "--noise", "c.jsonl"])
+    assert args.command == "diff"
+    assert args.func is not None
+
+
+def test_cli_census_runs_on_capture(tmp_path) -> None:
+    cap = tmp_path / "cap.jsonl"
+    cap.write_text(
+        '{"_meta": {"label": "t"}}\n'
+        '{"timestamp": 0.0, "can_id": 434069404, "data": "13ff00", "interface": "can1"}\n'
+        '{"timestamp": 0.5, "can_id": 434069404, "data": "16ff00", "interface": "can1"}\n',
+        encoding="utf-8",
+    )
+    assert cli_main(["census", str(cap), "--top", "5"]) == 0
