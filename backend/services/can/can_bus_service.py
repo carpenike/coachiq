@@ -108,6 +108,7 @@ class CANBusService(GuardrailParticipant):
         self._listeners: list[Any] = []  # Will store CAN listeners or notifiers
         self._task: asyncio.Task[None] | None = None
         self._simulation_task: asyncio.Task[None] | None = None
+        self._writer_task: asyncio.Task[None] | None = None
         self._deduplicator = None  # Will be initialized in startup
 
         # RVC decoder data - will be loaded on startup
@@ -216,6 +217,18 @@ class CANBusService(GuardrailParticipant):
                 # Start real CAN bus listeners
                 await self._start_can_listeners()
 
+            # Start the TX writer that drains can_tx_queue onto the bus. Without
+            # this, every entity control command builds a frame, enqueues it,
+            # and nothing ever transmits it (commands silently time out). The
+            # writer was orphaned when the service layer replaced the old
+            # feature system — this is where it gets launched.
+            from backend.integrations.can.manager import can_writer
+
+            self._writer_task = asyncio.create_task(
+                can_writer(self._can_tracking_repository, self._system_state_repository)
+            )
+            logger.info("CAN writer (TX queue drainer) started")
+
             logger.info("CAN bus service started successfully")
 
         except Exception as e:
@@ -236,6 +249,12 @@ class CANBusService(GuardrailParticipant):
             self._simulation_task.cancel()
             with contextlib.suppress(asyncio.CancelledError):
                 await self._simulation_task
+
+        # Cancel the TX writer task
+        if self._writer_task:
+            self._writer_task.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await self._writer_task
 
         # Stop pattern recognition engine
         if self.pattern_engine:
