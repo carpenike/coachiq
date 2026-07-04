@@ -20,14 +20,16 @@ class FakeWebSocket:
         self.client = SimpleNamespace(host="127.0.0.1", port=4321)
         self.accepted = False
         self.closed_code: int | None = None
+        self.closed_reason: str | None = None
 
     async def accept(self) -> None:
         """Record accepted connections."""
         self.accepted = True
 
-    async def close(self, code: int) -> None:
+    async def close(self, code: int, reason: str | None = None) -> None:
         """Record close codes."""
         self.closed_code = code
+        self.closed_reason = reason
 
 
 def make_handler(auth_manager: Mock | None) -> WebSocketAuthHandler:
@@ -76,7 +78,12 @@ async def test_optional_auth_without_token_accepts_anonymous_connection() -> Non
 
 
 async def test_missing_token_closes_connection() -> None:
-    """Required-auth connections without a token are closed with policy violation."""
+    """Required-auth connections without a token get an auth close code.
+
+    Accept-then-close is deliberate: rejecting the handshake pre-accept
+    surfaces as HTTP 403 / opaque 1006 in browsers, so clients could not
+    distinguish auth failure from an unreachable server.
+    """
     auth_manager = Mock(auth_mode=AuthMode.SINGLE_USER)
     websocket = FakeWebSocket()
     handler = make_handler(auth_manager)
@@ -84,7 +91,8 @@ async def test_missing_token_closes_connection() -> None:
     user = await handler.authenticate_connection(websocket)
 
     assert user is None
-    assert websocket.closed_code == 1008
+    assert websocket.accepted is True
+    assert websocket.closed_code == 4401
 
 
 async def test_query_token_authenticates_and_tracks_connection() -> None:
@@ -119,7 +127,8 @@ async def test_invalid_token_closes_connection() -> None:
     user = await handler.authenticate_connection(websocket)
 
     assert user is None
-    assert websocket.closed_code == 1008
+    assert websocket.accepted is True
+    assert websocket.closed_code == 4401
     assert handler.authenticated_connections == {}
 
 
