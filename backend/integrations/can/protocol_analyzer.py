@@ -638,7 +638,11 @@ class ProtocolAnalyzer(GuardrailParticipant):
         if self._websocket_manager:
             try:
                 stats = self.get_statistics()
-                await self._websocket_manager.broadcast_can_analyzer_update("statistics", stats)
+                # Frontend hook (useCANAnalyzerWebSocket) switches on
+                # ``analyzer_statistics`` and reads ``payload.statistics``.
+                await self._websocket_manager.broadcast_can_analyzer_update(
+                    "analyzer_statistics", {"statistics": stats}
+                )
             except Exception as e:
                 logger.debug(f"Failed to broadcast analyzer statistics: {e}")
 
@@ -674,7 +678,11 @@ class ProtocolAnalyzer(GuardrailParticipant):
                         }
                     )
 
-                await self._websocket_manager.broadcast_can_analyzer_update("messages", messages)
+                # Frontend hook switches on ``analyzed_messages`` and reads
+                # ``payload.messages``.
+                await self._websocket_manager.broadcast_can_analyzer_update(
+                    "analyzed_messages", {"messages": messages}
+                )
 
                 # Clear the buffer after broadcasting
                 self._message_broadcast_buffer.clear()

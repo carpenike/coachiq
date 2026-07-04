@@ -1064,6 +1064,23 @@ class CompositionRoot:
 
         await self._construct_websocket_manager()
 
+        # Back-inject the websocket manager into the per-frame CAN tools so their
+        # broadcast methods reach connected clients. These tools are constructed
+        # above (before the manager exists), so the injection has to happen here,
+        # after the manager is available. Without it, every tool's
+        # ``self._websocket_manager`` stays None and its broadcasts short-circuit,
+        # so the Recorder/Analyzer/Filter pages only ever see the initial snapshot.
+        websocket_manager = self.get_optional_service("websocket_manager")
+        if websocket_manager is not None:
+            for tool_name in (
+                "can_bus_recorder",
+                "can_protocol_analyzer",
+                "can_message_filter",
+            ):
+                tool = self.get_optional_service(tool_name)
+                if tool is not None:
+                    tool._websocket_manager = websocket_manager  # noqa: SLF001
+
         if self._should_construct("can_bus_service"):
             can_bus_service = CANBusService(
                 can_tracking_repository=self.require_service("can_tracking_repository"),

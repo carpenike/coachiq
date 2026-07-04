@@ -229,6 +229,20 @@ class WebSocketService:
         """
         await self.broadcast_json_to_clients(self.can_sniffer_clients, group)
 
+    async def broadcast_can_sniffer_entry(self, entry: dict[str, Any]) -> None:
+        """
+        Broadcast a single live CAN sniffer entry to all connected sniffer clients.
+
+        Mirrors ``broadcast_to_data_clients`` (dead-socket cleanup, exception
+        guards) so a broken client can never break the RX path. The entry is
+        sent as a bare frame; the sniffer page (useCANScanWebSocket) consumes
+        the raw JSON directly as a CANMessage.
+
+        Args:
+            entry: The CAN sniffer entry to broadcast
+        """
+        await self.broadcast_json_to_clients(self.can_sniffer_clients, entry)
+
     async def broadcast_network_map(self, network_map: dict[str, Any]) -> None:
         """
         Broadcast network map data to all connected network map clients.
@@ -709,12 +723,18 @@ class WebSocketService:
             user_info.get("username", "unknown"),
         )
         try:
-            # Send initial recorder status if available
+            # Send initial recorder status if available. Shape matches
+            # broadcast_can_recorder_update("recorder_status", ...) so the
+            # frontend hook handles the snapshot and live updates identically.
             if self._can_bus_recorder is not None:
                 initial_status = self._can_bus_recorder.get_status()
                 if initial_status:
                     await websocket.send_json(
-                        {"type": "status", "payload": initial_status, "timestamp": time.time()}
+                        {
+                            "type": "recorder_status",
+                            "payload": {"status": initial_status},
+                            "timestamp": time.time(),
+                        }
                     )
 
             while True:
@@ -763,12 +783,18 @@ class WebSocketService:
             user_info.get("username", "unknown"),
         )
         try:
-            # Send initial analyzer stats if available
+            # Send initial analyzer stats if available. Shape matches
+            # broadcast_can_analyzer_update("analyzer_statistics", ...) so the
+            # frontend hook handles snapshot and live updates identically.
             if self._can_protocol_analyzer is not None:
                 initial_stats = self._can_protocol_analyzer.get_statistics()
                 if initial_stats:
                     await websocket.send_json(
-                        {"type": "statistics", "payload": initial_stats, "timestamp": time.time()}
+                        {
+                            "type": "analyzer_statistics",
+                            "payload": {"statistics": initial_stats},
+                            "timestamp": time.time(),
+                        }
                     )
 
             while True:
@@ -817,12 +843,18 @@ class WebSocketService:
             user_info.get("username", "unknown"),
         )
         try:
-            # Send initial filter status if available
+            # Send initial filter status if available. Shape matches
+            # broadcast_can_filter_update("filter_status", ...) so the frontend
+            # hook handles snapshot and live updates identically.
             if self._can_message_filter is not None:
                 initial_status = self._can_message_filter.get_status()
                 if initial_status:
                     await websocket.send_json(
-                        {"type": "status", "payload": initial_status, "timestamp": time.time()}
+                        {
+                            "type": "filter_status",
+                            "payload": {"status": initial_status},
+                            "timestamp": time.time(),
+                        }
                     )
 
             while True:

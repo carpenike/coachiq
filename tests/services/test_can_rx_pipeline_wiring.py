@@ -10,12 +10,80 @@ Covers the root-cause fixes for live-data gaps in the RX pipeline:
   unmapped devices from the RX path (count increments, first-seen preserved).
 """
 
+from types import SimpleNamespace
+from unittest.mock import AsyncMock, MagicMock
+
 import pytest
 
 from backend.repositories.diagnostics_repository import DiagnosticsRepository
-from backend.services.can.can_bus_service import _device_lookup_key
+from backend.services.can.can_bus_service import CANBusService, _device_lookup_key
 
 pytestmark = [pytest.mark.unit]
+
+
+def _make_message(arbitration_id: int = 0x19FEDA80, data: bytes = b"\x01\x02\x03\x04") -> SimpleNamespace:
+    """Build a minimal python-can-like message stub for the sniffer path."""
+    return SimpleNamespace(
+        arbitration_id=arbitration_id,
+        data=data,
+        dlc=len(data),
+        is_extended_id=True,
+        is_error_frame=False,
+    )
+
+
+def _make_service(websocket_manager: object | None) -> CANBusService:
+    """Construct a CANBusService with only the sniffer-path deps wired."""
+    return CANBusService(
+        can_tracking_repository=MagicMock(),
+        system_state_repository=MagicMock(),
+        websocket_manager=websocket_manager,
+    )
+
+
+class TestSnifferBroadcastWiring:
+    @pytest.mark.asyncio
+    async def test_add_sniffer_entry_broadcasts_live_frame(self):
+        websocket_manager = MagicMock()
+        websocket_manager.broadcast_can_sniffer_entry = AsyncMock()
+        service = _make_service(websocket_manager)
+
+        await service._add_sniffer_entry(_make_message(), "can0", "rx")
+
+        # Recorded to the tracking repository AND broadcast to sniffer clients.
+        service._can_tracking_repository.add_can_sniffer_entry.assert_called_once()
+        websocket_manager.broadcast_can_sniffer_entry.assert_awaited_once()
+
+        frame = websocket_manager.broadcast_can_sniffer_entry.await_args.args[0]
+        # Shape matches the frontend CANMessage the sniffer page consumes.
+        assert frame["pgn"] == "1FEDA"  # (0x19FEDA80 >> 8) & 0x3FFFF
+        assert frame["source"] == 0x80  # 0x19FEDA80 & 0xFF
+        assert frame["data"] == [0x01, 0x02, 0x03, 0x04]
+        assert frame["interface"] == "can0"
+        assert frame["direction"] == "rx"
+        assert frame["error"] is False
+
+    @pytest.mark.asyncio
+    async def test_add_sniffer_entry_without_websocket_manager_is_noop(self):
+        service = _make_service(None)
+
+        # Must not raise when no websocket manager is injected.
+        await service._add_sniffer_entry(_make_message(), "can0", "rx")
+
+        service._can_tracking_repository.add_can_sniffer_entry.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_broadcast_failure_does_not_break_rx_path(self):
+        websocket_manager = MagicMock()
+        websocket_manager.broadcast_can_sniffer_entry = AsyncMock(
+            side_effect=RuntimeError("client exploded")
+        )
+        service = _make_service(websocket_manager)
+
+        # A broken broadcast must be swallowed, never propagated to the RX path.
+        await service._add_sniffer_entry(_make_message(), "can0", "rx")
+
+        service._can_tracking_repository.add_can_sniffer_entry.assert_called_once()
 
 
 class TestDeviceLookupKeyNormalization:
