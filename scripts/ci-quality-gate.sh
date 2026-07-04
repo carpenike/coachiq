@@ -21,7 +21,7 @@ RESET="\033[0m"
 # nudging you to update the baseline downward.
 EXPECTED_PYRIGHT_ERRORS=1243  # Ratcheted 2026-07-02 after HOF-069 DI alias typing fixes (1244 -> 1243).
 EXPECTED_FRONTEND_TS_ERRORS=0  # Ratcheted 2026-05-12 to 0 by PR #110 (DatabaseManagementTab + can-sniffer + useCANScanWebSocket generic). Any new TS error is a hard fail.
-EXPECTED_FRONTEND_ESLINT_ERRORS=553  # Ratcheted 2026-07-02 after HOF-056 quality gate run (554 -> 553).
+EXPECTED_FRONTEND_ESLINT_ERRORS=268  # Ratcheted 2026-07-03: frontend rebuild deleted the worst legacy pages (553 -> 268).
 
 # Determine target branch (for GitHub Actions or local testing)
 if [ -n "${GITHUB_BASE_REF:-}" ]; then
