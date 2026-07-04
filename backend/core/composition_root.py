@@ -1054,11 +1054,12 @@ class CompositionRoot:
             )
 
         if self._should_construct("can_network_telemetry_service"):
+            telemetry_service = CANNetworkTelemetryService(
+                can_interface_service=self.require_service("can_interface_service")
+            )
+            await telemetry_service.startup()
             self._set_root_constructed_service(
-                "can_network_telemetry_service",
-                CANNetworkTelemetryService(
-                    can_interface_service=self.require_service("can_interface_service")
-                ),
+                "can_network_telemetry_service", telemetry_service
             )
 
         await self._construct_websocket_manager()
@@ -1075,6 +1076,8 @@ class CompositionRoot:
                 device_discovery_service=self.get_optional_service("device_discovery_service"),
                 entity_manager_service=self.get_optional_service("entity_manager_service"),
                 websocket_manager=self.get_optional_service("websocket_manager"),
+                entity_state_repository=self.get_optional_service("entity_state_repository"),
+                diagnostics_repository=self.get_optional_service("diagnostics_repository"),
             )
             await can_bus_service.start()
             self._set_root_constructed_service("can_bus_service", can_bus_service)
