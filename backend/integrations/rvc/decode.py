@@ -269,10 +269,20 @@ def load_config_data(  # noqa: C901
                 if entity_id:
                     entity_ids.add(entity_id)
                     entity_map[(dgn_hex, str(instance_id))] = device
-                    inst_map[entity_id] = {
+                    inst_entry: dict[str, Any] = {
                         "dgn_hex": dgn_hex,
                         "instance": instance_id,
                     }
+                    # Some entities are driven by more than one dimmer output and
+                    # must be commanded on every instance (e.g. the bedroom
+                    # ceiling light is instances 25 and 26). The coach mapping
+                    # expresses this via an optional `command_instances` list on
+                    # the command-DGN device entry; carry it through so the
+                    # encoder can fan the command out.
+                    command_instances = device.get("command_instances")
+                    if isinstance(command_instances, list | tuple):
+                        inst_entry["command_instances"] = list(command_instances)
+                    inst_map[entity_id] = inst_entry
 
     return (
         dgn_dict,

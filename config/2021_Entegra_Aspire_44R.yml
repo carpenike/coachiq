@@ -539,6 +539,11 @@ areas:
     - <<: *bedroom_ceiling_status
       command_type: "dimmer_control"
       status_dgn: "1FEDA"
+      # The bedroom ceiling light is physically driven by two dimmer outputs,
+      # instances 25 (0x19) and 26 (0x1A). The Vegatouch Mira button commands
+      # both, so CoachIQ must fan the DC_DIMMER_COMMAND_2 out to each instance.
+      # Verified on the wire (see docs/can-re-findings.md).
+      command_instances: [25, 26]
 
   27:
     - <<: *bedroom_accent_status

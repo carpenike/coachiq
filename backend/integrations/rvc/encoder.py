@@ -110,6 +110,13 @@ class RVCEncoder:
         dgn_hex = entity_config["dgn_hex"]
         instance = entity_config["instance"]
 
+        # Some physical entities map to more than one dimmer output that must
+        # all be commanded together (e.g. the bedroom ceiling light is driven by
+        # instances 25 and 26 -- the physical Mira button commands both). The
+        # coach mapping may express this via an optional `command_instances`
+        # list; fall back to the single primary instance otherwise.
+        command_instances = self._resolve_command_instances(entity_config, instance)
+
         # Get the device configuration for this entity
         device_key = (dgn_hex, str(instance))
         if device_key not in self.entity_map:
@@ -140,32 +147,76 @@ class RVCEncoder:
             msg = f"No specification found for command DGN {command_dgn_hex}"
             raise EncodingError(msg)
 
-        # Encode the command based on device type and command
-        return self._encode_command_payload(command_spec, command, device_config, instance)
+        # Encode the command based on device type and command, fanning out over
+        # every command instance the entity maps to.
+        return self._encode_command_payload(
+            command_spec, command, device_config, command_instances
+        )
 
-    def _get_command_dgn(self, status_dgn_hex: str) -> str | None:
+    @staticmethod
+    def _resolve_command_instances(
+        entity_config: dict[str, Any], primary_instance: Any
+    ) -> list[int]:
+        """Resolve the list of dimmer instances a command should fan out to.
+
+        Reads an optional ``command_instances`` list from the entity's inst_map
+        entry (sourced from the coach mapping). Non-integer values are dropped.
+        Falls back to ``[primary_instance]`` when no list is present.
         """
-        Get the command DGN for a given status DGN using dgn_pairs mapping.
+        raw_instances = entity_config.get("command_instances")
+        resolved: list[int] = []
+        if isinstance(raw_instances, list | tuple):
+            for value in raw_instances:
+                try:
+                    resolved.append(int(value))
+                except (TypeError, ValueError):
+                    continue
+
+        if not resolved:
+            try:
+                resolved = [int(primary_instance)]
+            except (TypeError, ValueError):
+                resolved = []
+
+        # De-duplicate while preserving order.
+        seen: set[int] = set()
+        unique: list[int] = []
+        for inst in resolved:
+            if inst not in seen:
+                seen.add(inst)
+                unique.append(inst)
+        return unique
+
+    def _get_command_dgn(self, dgn_hex: str) -> str | None:
+        """
+        Resolve the command DGN for a given entity DGN using dgn_pairs mapping.
+
+        ``dgn_pairs`` is keyed command_dgn -> status_dgn (e.g. "1FEDB": "1FEDA").
+        An entity may be registered under either its status DGN or its command
+        DGN, so handle both directions.
 
         Args:
-            status_dgn_hex: Status DGN hex string
+            dgn_hex: The entity's DGN hex string (status or command)
 
         Returns:
             Command DGN hex string or None if not found
         """
-        # Check direct mapping first
-        if status_dgn_hex in self.dgn_pairs:
-            return self.dgn_pairs[status_dgn_hex]
+        # If the entity's DGN is already a command DGN (a key in dgn_pairs),
+        # then it *is* the command DGN -- return it unchanged. This is the case
+        # for lights, whose inst_map entry carries the command DGN 1FEDB.
+        if dgn_hex in self.dgn_pairs:
+            return dgn_hex
 
-        # Check reverse mapping (command -> status)
+        # Otherwise treat the input as a status DGN and find the command DGN
+        # whose paired status matches it.
         for cmd_dgn, stat_dgn in self.dgn_pairs.items():
-            if stat_dgn == status_dgn_hex:
+            if stat_dgn == dgn_hex:
                 return cmd_dgn
 
         # Fallback: try to infer based on common RV-C patterns
         # Many command DGNs are status DGN + 0x100
         try:
-            status_dgn_int = int(status_dgn_hex, 16)
+            status_dgn_int = int(dgn_hex, 16)
             command_dgn_int = status_dgn_int + 0x100
             return f"{command_dgn_int:X}"
         except ValueError:
@@ -178,7 +229,7 @@ class RVCEncoder:
         command_spec: dict[str, Any],
         command: ControlCommand,
         device_config: dict[str, Any],
-        instance: str,
+        instances: int | str | list[int],
     ) -> list[CANMessage]:
         """
         Encode command payload based on specification and device type.
@@ -187,62 +238,90 @@ class RVCEncoder:
             command_spec: DGN specification from RVC spec
             command: Control command to encode
             device_config: Device configuration from mapping
-            instance: Device instance number
+            instances: One instance number, or a list of instances to fan out
+                over (one CANMessage is emitted per instance)
 
         Returns:
-            List of CANMessage objects
+            List of CANMessage objects (one per instance)
         """
         device_type = device_config.get("device_type", "unknown")
 
-        # Create base payload (8 bytes for standard CAN frame)
-        payload = bytearray(8)
-
-        # Set instance field (typically byte 0)
-        instance_num = int(instance)
-        payload[0] = instance_num & 0xFF
-
-        # Encode based on device type and command
-        if device_type in ("light", "dimmer"):
-            self._encode_light_command(payload, command, command_spec)
-        elif device_type == "switch":
-            self._encode_switch_command(payload, command, command_spec)
-        elif device_type == "fan":
-            self._encode_fan_command(payload, command, command_spec)
+        # Normalize to a list so single- and multi-instance callers share a path.
+        if isinstance(instances, list):
+            instance_list = [int(i) for i in instances]
         else:
-            # Generic encoding - try to map command fields to signals
-            self._encode_generic_command(payload, command, command_spec)
+            instance_list = [int(instances)]
 
-        # Create CAN message
-        can_id = self._build_can_id(command_spec, instance_num)
+        messages: list[CANMessage] = []
+        for instance_num in instance_list:
+            # Create base payload (8 bytes for standard CAN frame)
+            payload = bytearray(8)
 
-        return [CANMessage(can_id=can_id, data=bytes(payload), extended=True)]
+            # Set instance field (typically byte 0)
+            payload[0] = instance_num & 0xFF
+
+            # Encode based on device type and command
+            if device_type in ("light", "dimmer"):
+                self._encode_light_command(payload, command, command_spec)
+            elif device_type == "switch":
+                self._encode_switch_command(payload, command, command_spec)
+            elif device_type == "fan":
+                self._encode_fan_command(payload, command, command_spec)
+            else:
+                # Generic encoding - try to map command fields to signals
+                self._encode_generic_command(payload, command, command_spec)
+
+            # Create CAN message
+            can_id = self._build_can_id(command_spec, instance_num)
+            messages.append(CANMessage(can_id=can_id, data=bytes(payload), extended=True))
+
+        return messages
 
     def _encode_light_command(
         self, payload: bytearray, command: ControlCommand, spec: dict[str, Any]
     ) -> None:
-        """Encode light/dimmer control command."""
-        # Standard RV-C light command encoding
-        # Instance is already set in byte 0
+        """Encode a DC_DIMMER_COMMAND_2 (DGN 0x1FEDB) light control command.
 
+        Byte layout verified on the live coach bus (see docs/can-re-findings.md):
+            byte0 = instance      (set by caller, left untouched here)
+            byte1 = 0xFF          group = none
+            byte2 = level         0-200 scale (0xC8 = 100%, 0x00 = off)
+            byte3 = 0x00          command = set brightness/level
+            byte4 = 0xFF          duration = instant
+            byte5 = 0x00
+            byte6 = 0xFF
+            byte7 = 0xFF
+
+        Confirmed on the wire: 19FEDBF9#19FF6400FF00FFFF set instance 0x19 to
+        op_status 0x64, and 19FF0000FF00FFFF turned it off; DC_DIMMER_STATUS_3
+        (0x1FEDA) byte2 echoed the commanded level exactly.
+        """
+        # byte0 (instance) is already populated by the caller.
+        # Establish the fixed fields common to every set-level command.
+        payload[1] = 0xFF  # group = none
+        payload[3] = 0x00  # command = set brightness/level
+        payload[4] = 0xFF  # duration = instant
+        payload[5] = 0x00
+        payload[6] = 0xFF
+        payload[7] = 0xFF
+
+        # Compute the desired level (0-200 scale) into byte2.
         if command.command == "set":
-            if command.state == "on":
-                # Set light on with brightness
-                brightness = command.brightness or 100
-                # Convert 0-100% to 0-200 (RV-C standard for some lights)
-                rvc_brightness = min(200, int(brightness * 2))
-                payload[1] = rvc_brightness & 0xFF
-            elif command.state == "off":
-                # Set light off
-                payload[1] = 0
-        elif command.command == "toggle":
-            # Toggle command - some systems use specific values
-            payload[1] = 0xFE  # Common toggle value in RV-C
-        elif command.command == "brightness_up":
-            # Brightness up command
-            payload[1] = 0xFC  # Common brightness up value
-        elif command.command == "brightness_down":
-            # Brightness down command
-            payload[1] = 0xFD  # Common brightness down value
+            if command.state == "off":
+                level = 0x00
+            elif command.brightness is not None:
+                # 0-100% -> 0-200; clamp to the valid range.
+                level = max(0, min(200, round(command.brightness * 2)))
+            else:
+                # Default "on" with no explicit brightness => full.
+                level = 0xC8
+        else:
+            # toggle / brightness_up / brightness_down are not part of the
+            # verified dialect; default to full-on so callers still emit a
+            # well-formed frame rather than a malformed no-op.
+            level = 0xC8
+
+        payload[2] = level & 0xFF
 
     def _encode_switch_command(
         self, payload: bytearray, command: ControlCommand, spec: dict[str, Any]
