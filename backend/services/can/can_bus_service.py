@@ -174,6 +174,22 @@ class CANBusService(GuardrailParticipant):
                     logger.warning("Failed to start anomaly detector", error=str(e))
                     self.anomaly_detector = None
 
+            # Start the per-frame tool services. Every received frame is
+            # dispatched to these; leaving them stopped made each one log a
+            # "blocked: service not running" warning PER FRAME (~29k journal
+            # lines/min on the coach at real bus rates).
+            for tool_name, tool in (
+                ("protocol analyzer", self._can_protocol_analyzer),
+                ("message filter", self._can_message_filter),
+            ):
+                if tool is None:
+                    continue
+                try:
+                    await tool.start()
+                    logger.info("CAN %s started", tool_name)
+                except Exception as e:
+                    logger.warning("Failed to start CAN %s: %s", tool_name, e)
+
             # Load RVC decoder configuration
             await self._load_rvc_configuration()
 
@@ -614,10 +630,12 @@ class CANBusService(GuardrailParticipant):
             except Exception as e:
                 logger.debug("Failed to send to CAN recorder: %s", e)
 
-            # Send to protocol analyzer if available
+            # Send to protocol analyzer if available. Gate on the tool's own
+            # running flag: dispatching to a stopped tool logs a warning per
+            # frame, which floods the journal at bus rates.
             try:
                 analyzer = self._can_protocol_analyzer
-                if analyzer:
+                if analyzer and getattr(analyzer, "_is_running", True):
                     await analyzer.analyze_message(
                         can_id=message.arbitration_id,
                         data=message.data,
@@ -626,10 +644,11 @@ class CANBusService(GuardrailParticipant):
             except Exception as e:
                 logger.debug("Failed to send to protocol analyzer: %s", e)
 
-            # Send to message filter if available
+            # Send to message filter if available (same running-flag gate as
+            # the analyzer above).
             try:
                 message_filter = self._can_message_filter
-                if message_filter:
+                if message_filter and getattr(message_filter, "_is_running", True):
                     # Prepare message dict for filter
                     filter_msg = {
                         "can_id": message.arbitration_id,
