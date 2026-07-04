@@ -778,7 +778,10 @@ class EntityService:
             "entity_id": entity_id,
             "timestamp": ts,
             "state": optimistic_state_str,
-            "raw": optimistic_raw_val,
+            # Keep the seeded dict shape: the v2 API adapter and history
+            # consumers read raw/value as signal dicts, not scalars.
+            "raw": {"operating_status": optimistic_raw_val},
+            "value": {"operating_status": str(optimistic_raw_val)},
             "brightness_pct": target_brightness_ui,
             "suggested_area": entity_config.get("suggested_area", "unknown"),
             "device_type": entity_config.get("device_type", "unknown"),

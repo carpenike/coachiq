@@ -138,11 +138,25 @@ class EntityInitializationService:
             for entity_id, config in entity_configs.items():
                 entity_config = EntityConfig(
                     device_type=config.get("device_type", "unknown"),
-                    suggested_area=config.get("suggested_area", "Unknown"),
+                    # Coach mapping YAML uses `area` (e.g. "interior.bedroom");
+                    # older mappings used `suggested_area`.
+                    suggested_area=config.get("suggested_area") or config.get("area") or "Unknown",
                     friendly_name=config.get("friendly_name"),
                     capabilities=config.get("capabilities", []),
                     groups=config.get("groups", []),
                 )
+                # The DGN instance lives in inst_map (keyed by entity_id), not
+                # in the per-entity mapping dict; without it the control path
+                # cannot build CAN messages.
+                inst_info = inst_map.get(entity_id)
+                raw_instance = inst_info.get("instance") if inst_info else None
+                # inst_map values may be non-numeric (e.g. "default" instances),
+                # which the CAN command path cannot address anyway.
+                if raw_instance is not None:
+                    try:
+                        entity_config["instance"] = int(raw_instance)
+                    except (TypeError, ValueError):
+                        pass
                 entity_config_objs[entity_id] = entity_config
 
             # Register with local entity manager for preseeding and then persist

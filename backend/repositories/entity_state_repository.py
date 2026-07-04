@@ -66,6 +66,8 @@ class EntityAggregateRepository:
                 capabilities=payload.get("capabilities", []),
                 groups=payload.get("groups", []),
             )
+            if payload.get("instance") is not None:
+                config["instance"] = payload["instance"]
             entity = self.entity_manager.register_entity(entity_id, config)
             entity.update_state(payload)
 

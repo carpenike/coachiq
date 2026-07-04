@@ -63,6 +63,9 @@ class EntityState(BaseModel):
     protocol_metadata: dict[str, Any] = Field(
         default_factory=dict, description="Protocol-specific data"
     )
+    # Required by the control path to build CAN messages; sourced from the
+    # coach mapping's DGN section (inst_map) at initialization.
+    instance: int | None = Field(None, description="RV-C DGN instance for command emission")
 
 
 class Entity:
@@ -109,6 +112,7 @@ class Entity:
             secondary_protocols=config.get("secondary_protocols", []),
             physical_id=config.get("physical_id"),
             protocol_metadata=config.get("protocol_metadata", {}),
+            instance=config.get("instance"),
         )
 
         # Add initial state to history

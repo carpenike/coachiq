@@ -24,10 +24,10 @@ from pydantic import BaseModel, Field
 
 from backend.api.domains import register_domain_router
 from backend.core.dependencies import (
-    root_service_dependency,
     get_authenticated_admin,
     get_authenticated_user,
     get_entity_service,
+    root_service_dependency,
 )
 from backend.services.entities.entity_domain_service import (
     BulkSafetyOperationRequestV2,
@@ -386,6 +386,31 @@ def create_entities_router() -> APIRouter:
             raise HTTPException(status_code=500, detail=f"Get guardrail status failed: {e!s}")
 
     # SPECIFIC ROUTES - MUST COME BEFORE /{entity_id} ROUTE
+    @router.get("/config/coach")
+    async def get_coach_config(request: Request) -> dict:
+        """Get coach mapping metadata: areas hierarchy, lighting scenes, and groups.
+
+        These sections are declared api-exposed in the coach mapping YAML but are
+        skipped by the DGN decoder; this endpoint is their only API surface.
+        """
+        from backend.integrations.rvc.config_loader import (
+            get_default_paths,
+            load_device_mapping,
+        )
+
+        try:
+            _, mapping_path = get_default_paths()
+            mapping = load_device_mapping(mapping_path)
+            return {
+                "coach_info": mapping.get("coach_info") or {},
+                "areas": mapping.get("areas") or {},
+                "lighting_scenes": mapping.get("lighting_scenes") or {},
+                "lighting_groups": mapping.get("lighting_groups") or {},
+            }
+        except Exception as e:
+            logger.error(f"Failed to load coach config sections: {e}")
+            raise HTTPException(status_code=500, detail=f"Failed to load coach config: {e!s}") from e
+
     @router.get("/metadata")
     async def get_entity_metadata(
         request: Request, entity_service: Annotated[Any, Depends(get_entity_service)]

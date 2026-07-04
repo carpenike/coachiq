@@ -81,6 +81,13 @@ class CSRFProtectionMiddleware(BaseHTTPMiddleware):
         if request.method not in self.PROTECTED_METHODS:
             return await call_next(request)
 
+        # Bearer-authenticated requests are not forgeable cross-site: browsers
+        # never attach the Authorization header on cross-origin form/fetch
+        # requests, so double-submit validation adds nothing there. Cookie-only
+        # requests still require the token.
+        if request.headers.get("Authorization", "").startswith("Bearer "):
+            return await call_next(request)
+
         # Validate CSRF token for protected requests
         if not await self._validate_csrf_token(request):
             logger.warning(

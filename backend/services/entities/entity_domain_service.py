@@ -351,15 +351,19 @@ class EntityDomainService:
             # Step 2: Add to pending operations tracking
             self._pending_operations[operation_id] = operation
 
-            # Step 3: Convert to legacy command format for existing service
+            # Step 3: Convert to legacy command format for existing service.
+            # The legacy layer expects "on"/"off"; str(bool) produced "True"
+            # and made every v1 `set` command fail validation.
             legacy_command = ControlCommand(
                 command=command.command,
-                state=str(command.state) if command.state is not None else None,
+                state=("on" if command.state else "off") if command.state is not None else None,
                 brightness=command.brightness,
             )
 
             # Step 4: Execute command via existing entity service
-            result = await self.entities.control_entity(entity_id, legacy_command)
+            result = await self.entities.control_entity(
+                entity_id, legacy_command, user_context=user_context
+            )
 
             # Step 5: Wait for acknowledgment from physical system
             acknowledged, ack_time = await self._wait_for_acknowledgment(

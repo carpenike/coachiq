@@ -24,6 +24,10 @@ from pydantic import BaseModel, Field
 from backend.api.domains import register_domain_router
 from backend.schemas.domain_api import IETFHealthStatusResponse, SystemHealthResponse
 
+# Process start reference for uptime reporting; monotonic so wall-clock
+# adjustments (NTP sync on the Pi) cannot skew it.
+_PROCESS_START_MONOTONIC = time.monotonic()
+
 logger = logging.getLogger(__name__)
 
 
@@ -183,7 +187,7 @@ def create_system_router() -> APIRouter:
                 platform=platform.system(),
                 architecture=platform.machine(),
                 python_version=platform.python_version(),
-                uptime_seconds=time.time(),  # Simplified - would use actual uptime
+                uptime_seconds=time.monotonic() - _PROCESS_START_MONOTONIC,
                 timestamp=time.time(),
             )
 
