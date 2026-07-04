@@ -53,7 +53,7 @@ import { cn } from "@/lib/utils"
 // ===== Connection pill =====
 //
 
-interface PillStyle {
+type PillStyle = {
   dot: string
   text: string
   label: string

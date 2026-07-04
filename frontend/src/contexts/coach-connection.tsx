@@ -37,7 +37,7 @@ export type WebSocketHealth = 'connected' | 'connecting' | 'down';
 export type CanbusHealth = 'active' | 'silent';
 export type CoachState = 'LIVE' | 'STALE' | 'OFFLINE';
 
-export interface CoachConnectionState {
+export type CoachConnectionState = {
   websocket: WebSocketHealth;
   canbus: CanbusHealth;
   coach: CoachState;
@@ -64,7 +64,7 @@ const NETWORKS_POLL_INTERVAL_MS = 15_000;
 
 export const networksStatusQueryKey = ['networks', 'status'] as const;
 
-interface WsCloseEventDetail {
+type WsCloseEventDetail = {
   endpoint: string;
   code: number;
   reason: string;
@@ -86,7 +86,7 @@ function deriveWebsocketHealth(
   return 'connecting';
 }
 
-interface CanbusActivity {
+type CanbusActivity = {
   canbus: CanbusHealth;
   canLastActivity: Date | null;
 }
@@ -133,7 +133,7 @@ function degradedRealtimeReason(authFailed: boolean, websocket: WebSocketHealth)
   return 'Realtime connection down — updates may lag';
 }
 
-interface CoachVerdict {
+type CoachVerdict = {
   coach: CoachState;
   reason: string;
 }

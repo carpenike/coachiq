@@ -20,23 +20,23 @@ import type { EntitySchema } from '@/api/types/domains';
 // ===== TYPES (shape of /api/v1/entities/config/coach) =====
 //
 
-export interface CoachZoneConfig {
+export type CoachZoneConfig = {
   display_name: string;
   description?: string;
 }
 
-export interface CoachAreaConfig {
+export type CoachAreaConfig = {
   display_name: string;
   zones: Record<string, CoachZoneConfig>;
 }
 
-export interface SceneEntityRef {
+export type SceneEntityRef = {
   entity_id: string;
   brightness?: number;
   action?: 'on' | 'off';
 }
 
-export interface LightingScene {
+export type LightingScene = {
   name: string;
   description?: string;
   /** Entries are exact ids, glob patterns ("*_light"), or per-entity objects */
@@ -45,12 +45,12 @@ export interface LightingScene {
   action?: 'on' | 'off';
 }
 
-export interface LightingGroup {
+export type LightingGroup = {
   name: string;
   entities: string[];
 }
 
-export interface CoachInfo {
+export type CoachInfo = {
   year?: string;
   make?: string;
   model?: string;
@@ -58,7 +58,7 @@ export interface CoachInfo {
   [key: string]: unknown;
 }
 
-export interface CoachConfig {
+export type CoachConfig = {
   coach_info: CoachInfo;
   areas: Record<string, CoachAreaConfig>;
   lighting_scenes: Record<string, LightingScene>;
@@ -142,7 +142,7 @@ export function deriveZoneFromEntityId(entityId: string): string | null {
 
 export type ZoneSection = 'interior' | 'exterior' | 'other';
 
-export interface ZoneGroup {
+export type ZoneGroup = {
   zoneId: string;
   displayName: string;
   section: ZoneSection;
@@ -264,7 +264,7 @@ function matchesGlob(glob: string, value: string): boolean {
   return cursor <= searchEnd;
 }
 
-export interface ResolvedSceneCommand {
+export type ResolvedSceneCommand = {
   entityId: string;
   action: 'on' | 'off';
   brightness?: number;

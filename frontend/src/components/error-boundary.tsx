@@ -13,13 +13,13 @@ import { useLocation } from "react-router-dom"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 
-interface ErrorBoundaryProps {
+type ErrorBoundaryProps = {
   children: ReactNode
   /** Change this key (e.g. route path) to reset the boundary */
   resetKey?: string
 }
 
-interface ErrorBoundaryState {
+type ErrorBoundaryState = {
   error: Error | null
 }
 
