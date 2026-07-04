@@ -583,7 +583,7 @@ export default function NetworkMap() {
                   <span className="text-sm text-muted-foreground">
                     {networkTopology.total_devices} device{networkTopology.total_devices === 1 ? "" : "s"} discovered
                     {" · "}
-                    {deviceAvailability?.online_devices ?? networkTopology.online_devices ?? 0} online
+                    {deviceAvailability?.online_devices ?? networkTopology.online_devices} online
                   </span>
                 )}
               </div>

@@ -64,6 +64,18 @@ import { useControlEntity, useEntities } from "@/hooks/useEntities"
 
 const ALL = "__all__"
 
+/** Stable keys for the loading-skeleton placeholder rows (no entity data exists yet to key on). */
+const LOADING_SKELETON_ROW_IDS = [
+  "skeleton-row-1",
+  "skeleton-row-2",
+  "skeleton-row-3",
+  "skeleton-row-4",
+  "skeleton-row-5",
+  "skeleton-row-6",
+  "skeleton-row-7",
+  "skeleton-row-8",
+]
+
 function titleCase(value: string): string {
   return value
     .split(/[_\s]+/)
@@ -257,7 +269,7 @@ function reportCommandResult(result: OperationResultSchema, entityName: string) 
     toast({
       variant: "destructive",
       title: `Command not completed: ${entityName}`,
-      description: result.error_message || `Backend reported status "${result.status}".`,
+      description: result.error_message ?? `Backend reported status "${result.status}".`,
     })
   }
 }
@@ -274,13 +286,92 @@ function reportCommandError(error: Error, entityName: string) {
 // ===== Detail sheet =====
 //
 
-interface DeviceDetailSheetProps {
+interface IDeviceDetailSheetProps {
   readonly entity: EntitySchema | null
   readonly config?: ICoachConfig
   readonly onClose: () => void
 }
 
-function DeviceDetailSheet({ entity, config, onClose }: DeviceDetailSheetProps) {
+/** On/Off/Toggle button row for a controllable device. */
+function DeviceControlButtons({
+  disabled,
+  onSetOn,
+  onSetOff,
+  onToggle,
+}: Readonly<{
+  disabled: boolean
+  onSetOn: () => void
+  onSetOff: () => void
+  onToggle: () => void
+}>) {
+  return (
+    <div className="flex items-center gap-2">
+      <Button variant="outline" size="sm" disabled={disabled} onClick={onSetOn}>
+        Turn On
+      </Button>
+      <Button variant="outline" size="sm" disabled={disabled} onClick={onSetOff}>
+        Turn Off
+      </Button>
+      <Button variant="outline" size="sm" disabled={disabled} onClick={onToggle}>
+        Toggle
+      </Button>
+    </div>
+  )
+}
+
+/** Summary fact list (type, protocol, zone, availability, etc.) for the detail sheet. */
+function DeviceSummaryFacts({
+  entity,
+  config,
+  isAvailable,
+  capabilities,
+}: Readonly<{
+  entity: EntitySchema
+  config: ICoachConfig | undefined
+  isAvailable: boolean
+  capabilities: string[]
+}>) {
+  return (
+    <dl className="grid grid-cols-2 gap-x-4 gap-y-2 text-sm">
+      <dt className="text-muted-foreground">Type</dt>
+      <dd>{titleCase(entity.device_type)}</dd>
+      <dt className="text-muted-foreground">Protocol</dt>
+      <dd className="uppercase">{entity.protocol}</dd>
+      <dt className="text-muted-foreground">Zone</dt>
+      <dd>{zoneDisplayName(zoneIdForEntity(entity), config)}</dd>
+      <dt className="text-muted-foreground">Available</dt>
+      <dd>{isAvailable ? "Yes" : "No — not responding"}</dd>
+      <dt className="text-muted-foreground">Last updated</dt>
+      <dd>{relativeTime(entity.last_updated)}</dd>
+      <dt className="text-muted-foreground">Capabilities</dt>
+      <dd>{capabilities.length > 0 ? capabilities.join(", ") : "—"}</dd>
+    </dl>
+  )
+}
+
+/** Full state dict rendered as a key/value list, or an empty-state message. */
+function DeviceStateList({ stateEntries }: Readonly<{ stateEntries: [string, unknown][] }>) {
+  if (stateEntries.length === 0) {
+    return <p className="text-sm text-muted-foreground">No state reported.</p>
+  }
+  return (
+    <div className="rounded-md border">
+      {stateEntries.map(([key, value]) => (
+        <div
+          key={key}
+          className="flex items-start justify-between gap-4 border-b px-3 py-2 text-sm last:border-b-0"
+        >
+          <span className="font-mono text-xs text-muted-foreground">{key}</span>
+          <span className="break-all text-right font-mono text-xs">
+            {typeof value === "object" && value !== null ? JSON.stringify(value) : String(value)}
+          </span>
+        </div>
+      ))}
+    </div>
+  )
+}
+
+function DeviceDetailSheet({ entity, config, onClose }: IDeviceDetailSheetProps) {
   const { coach, reason } = useCoachConnection()
   const control = useControlEntity()
 
@@ -302,33 +393,14 @@ function DeviceDetailSheet({ entity, config, onClose }: DeviceDetailSheetProps) 
     )
   }
 
+  const controlsAreDisabled = controlsDisabled || control.isPending
   const controlButtons = (
-    <div className="flex items-center gap-2">
-      <Button
-        variant="outline"
-        size="sm"
-        disabled={controlsDisabled || control.isPending}
-        onClick={() => sendCommand({ command: "set", state: true })}
-      >
-        Turn On
-      </Button>
-      <Button
-        variant="outline"
-        size="sm"
-        disabled={controlsDisabled || control.isPending}
-        onClick={() => sendCommand({ command: "set", state: false })}
-      >
-        Turn Off
-      </Button>
-      <Button
-        variant="outline"
-        size="sm"
-        disabled={controlsDisabled || control.isPending}
-        onClick={() => sendCommand({ command: "toggle" })}
-      >
-        Toggle
-      </Button>
-    </div>
+    <DeviceControlButtons
+      disabled={controlsAreDisabled}
+      onSetOn={() => sendCommand({ command: "set", state: true })}
+      onSetOff={() => sendCommand({ command: "set", state: false })}
+      onToggle={() => sendCommand({ command: "toggle" })}
+    />
   )
 
   return (
@@ -341,20 +413,12 @@ function DeviceDetailSheet({ entity, config, onClose }: DeviceDetailSheetProps) 
 
         <div className="space-y-6 px-4 pb-6">
           {/* Summary facts */}
-          <dl className="grid grid-cols-2 gap-x-4 gap-y-2 text-sm">
-            <dt className="text-muted-foreground">Type</dt>
-            <dd>{titleCase(entity.device_type)}</dd>
-            <dt className="text-muted-foreground">Protocol</dt>
-            <dd className="uppercase">{entity.protocol}</dd>
-            <dt className="text-muted-foreground">Zone</dt>
-            <dd>{zoneDisplayName(zoneIdForEntity(entity), config)}</dd>
-            <dt className="text-muted-foreground">Available</dt>
-            <dd>{isAvailable ? "Yes" : "No — not responding"}</dd>
-            <dt className="text-muted-foreground">Last updated</dt>
-            <dd>{relativeTime(entity.last_updated)}</dd>
-            <dt className="text-muted-foreground">Capabilities</dt>
-            <dd>{capabilities.length > 0 ? capabilities.join(", ") : "—"}</dd>
-          </dl>
+          <DeviceSummaryFacts
+            entity={entity}
+            config={config}
+            isAvailable={isAvailable}
+            capabilities={capabilities}
+          />
 
           {/* Controls */}
           {isControllable(entity) && (
@@ -376,29 +440,324 @@ function DeviceDetailSheet({ entity, config, onClose }: DeviceDetailSheetProps) 
           {/* Full state dict */}
           <div className="space-y-2">
             <h3 className="text-sm font-medium">State</h3>
-            {stateEntries.length === 0 ? (
-              <p className="text-sm text-muted-foreground">No state reported.</p>
-            ) : (
-              <div className="rounded-md border">
-                {stateEntries.map(([key, value]) => (
-                  <div
-                    key={key}
-                    className="flex items-start justify-between gap-4 border-b px-3 py-2 text-sm last:border-b-0"
-                  >
-                    <span className="font-mono text-xs text-muted-foreground">{key}</span>
-                    <span className="break-all text-right font-mono text-xs">
-                      {typeof value === "object" && value !== null
-                        ? JSON.stringify(value)
-                        : String(value)}
-                    </span>
-                  </div>
-                ))}
-              </div>
-            )}
+            <DeviceStateList stateEntries={stateEntries} />
           </div>
         </div>
       </SheetContent>
     </Sheet>
+  )
+}
+
+//
+// ===== Filter bar =====
+//
+
+interface IDeviceFilterBarProps {
+  search: string
+  onSearchChange: (value: string) => void
+  typeFilter: string
+  onTypeFilterChange: (value: string) => void
+  typeOptions: string[]
+  zoneFilter: string
+  onZoneFilterChange: (value: string) => void
+  zoneOptions: { value: string; label: string }[]
+  protocolFilter: string
+  onProtocolFilterChange: (value: string) => void
+  protocolOptions: [string, number][]
+  hasActiveFilters: boolean
+  onClearFilters: () => void
+}
+
+/** Search input plus type/zone/protocol filter selects for the devices table. */
+function DeviceFilterBar({
+  search,
+  onSearchChange,
+  typeFilter,
+  onTypeFilterChange,
+  typeOptions,
+  zoneFilter,
+  onZoneFilterChange,
+  zoneOptions,
+  protocolFilter,
+  onProtocolFilterChange,
+  protocolOptions,
+  hasActiveFilters,
+  onClearFilters,
+}: Readonly<IDeviceFilterBarProps>) {
+  return (
+    <div className="flex flex-col gap-2 lg:flex-row lg:items-center">
+      <div className="relative flex-1 lg:max-w-xs">
+        <IconSearch className="absolute left-2.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+        <Input
+          value={search}
+          onChange={(event) => onSearchChange(event.target.value)}
+          placeholder="Search devices…"
+          className="pl-8"
+          aria-label="Search devices"
+        />
+      </div>
+      <div className="flex flex-wrap items-center gap-2">
+        <Select value={typeFilter} onValueChange={onTypeFilterChange}>
+          <SelectTrigger className="w-36" aria-label="Filter by type">
+            <SelectValue placeholder="Type" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value={ALL}>All types</SelectItem>
+            {typeOptions.map((deviceType) => (
+              <SelectItem key={deviceType} value={deviceType}>
+                {titleCase(deviceType)}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+        <Select value={zoneFilter} onValueChange={onZoneFilterChange}>
+          <SelectTrigger className="w-44" aria-label="Filter by zone">
+            <SelectValue placeholder="Zone" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value={ALL}>All zones</SelectItem>
+            {zoneOptions.map((zone) => (
+              <SelectItem key={zone.value} value={zone.value}>
+                {zone.label}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+        <Select value={protocolFilter} onValueChange={onProtocolFilterChange}>
+          <SelectTrigger className="w-40" aria-label="Filter by protocol">
+            <SelectValue placeholder="Protocol" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value={ALL}>All protocols</SelectItem>
+            {protocolOptions.map(([protocol, count]) => (
+              <SelectItem key={protocol} value={protocol}>
+                {protocol.toUpperCase()} ({count})
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+        {hasActiveFilters && (
+          <Button variant="ghost" size="sm" onClick={onClearFilters} className="gap-1">
+            <IconX className="size-4" />
+            Clear
+          </Button>
+        )}
+      </div>
+    </div>
+  )
+}
+
+//
+// ===== Table body =====
+//
+
+/** Table header row group, rendered from the TanStack table instance. */
+function DeviceTableHeader({
+  table,
+}: Readonly<{ table: ReturnType<typeof useReactTable<EntitySchema>> }>) {
+  return (
+    <TableHeader>
+      {table.getHeaderGroups().map((headerGroup) => (
+        <TableRow key={headerGroup.id}>
+          {headerGroup.headers.map((header) => (
+            <TableHead
+              key={header.id}
+              className={header.column.getCanSort() ? "cursor-pointer select-none" : undefined}
+              onClick={header.column.getToggleSortingHandler()}
+            >
+              {flexRender(header.column.columnDef.header, header.getContext())}
+              {{ asc: " ↑", desc: " ↓" }[header.column.getIsSorted() as string] ?? ""}
+            </TableHead>
+          ))}
+        </TableRow>
+      ))}
+    </TableHeader>
+  )
+}
+
+interface IDeviceTableBodyProps {
+  table: ReturnType<typeof useReactTable<EntitySchema>>
+  columnCount: number
+  hasAnyEntities: boolean
+  onSelectEntity: (entityId: string) => void
+}
+
+/** Table body: empty-state row, or one row per filtered device. */
+function DeviceTableBody({
+  table,
+  columnCount,
+  hasAnyEntities,
+  onSelectEntity,
+}: Readonly<IDeviceTableBodyProps>) {
+  const rows = table.getRowModel().rows
+  if (rows.length === 0) {
+    return (
+      <TableBody>
+        <TableRow>
+          <TableCell colSpan={columnCount} className="h-24 text-center">
+            <p className="text-sm text-muted-foreground">
+              {hasAnyEntities
+                ? "No devices match the current filters."
+                : "No entities are mapped for this coach."}
+            </p>
+          </TableCell>
+        </TableRow>
+      </TableBody>
+    )
+  }
+  return (
+    <TableBody>
+      {rows.map((row) => (
+        <TableRow
+          key={row.original.entity_id}
+          className="cursor-pointer"
+          onClick={() => onSelectEntity(row.original.entity_id)}
+        >
+          {row.getVisibleCells().map((cell) => (
+            <TableCell key={cell.id}>
+              {flexRender(cell.column.columnDef.cell, cell.getContext())}
+            </TableCell>
+          ))}
+        </TableRow>
+      ))}
+    </TableBody>
+  )
+}
+
+//
+// ===== Filter option derivation (module scope: pure functions, not recreated per render) =====
+//
+
+/** Distinct device types present in the entity list, alphabetically sorted. */
+function deriveTypeOptions(entities: EntitySchema[]): string[] {
+  return [...new Set(entities.map((entity) => entity.device_type))].sort((a, b) =>
+    a.localeCompare(b)
+  )
+}
+
+/** Distinct protocols present in the entity list, with counts, alphabetically sorted. */
+function deriveProtocolOptions(entities: EntitySchema[]): [string, number][] {
+  const counts = new Map<string, number>()
+  for (const entity of entities) {
+    counts.set(entity.protocol, (counts.get(entity.protocol) ?? 0) + 1)
+  }
+  return [...counts.entries()].sort(([a], [b]) => a.localeCompare(b))
+}
+
+/**
+ * Zone filter options: coach config areas first (config order), then any
+ * zone observed on entities that the config does not declare.
+ */
+function deriveZoneOptions(
+  entities: EntitySchema[],
+  config: ICoachConfig | undefined
+): { value: string; label: string }[] {
+  const zoneIds: string[] = []
+  for (const section of ["interior", "exterior"]) {
+    const area = Object.entries(config?.areas ?? {}).find(([key]) => key === section)?.[1]
+    if (!area) continue
+    for (const zoneKey of Object.keys(area.zones)) {
+      zoneIds.push(`${section}.${zoneKey}`)
+    }
+  }
+  for (const entity of entities) {
+    const zoneId = zoneIdForEntity(entity)
+    if (!zoneIds.includes(zoneId)) zoneIds.push(zoneId)
+  }
+  return zoneIds.map((zoneId) => ({
+    value: zoneId,
+    label: zoneId === "other" ? "Unassigned" : zoneDisplayName(zoneId, config),
+  }))
+}
+
+interface IDeviceFilters {
+  search: string
+  typeFilter: string
+  zoneFilter: string
+  protocolFilter: string
+}
+
+/** Applies the search text and type/zone/protocol filters to the entity list. */
+function filterEntities(entities: EntitySchema[], filters: IDeviceFilters): EntitySchema[] {
+  const query = filters.search.trim().toLowerCase()
+  return entities.filter((entity) => {
+    if (filters.typeFilter !== ALL && entity.device_type !== filters.typeFilter) return false
+    if (filters.protocolFilter !== ALL && entity.protocol !== filters.protocolFilter) return false
+    if (filters.zoneFilter !== ALL && zoneIdForEntity(entity) !== filters.zoneFilter) return false
+    return (
+      !query ||
+      entity.name.toLowerCase().includes(query) ||
+      entity.entity_id.toLowerCase().includes(query)
+    )
+  })
+}
+
+interface IDevicesResultsProps {
+  isLoading: boolean
+  error: Error | null
+  table: ReturnType<typeof useReactTable<EntitySchema>>
+  columnCount: number
+  entities: EntitySchema[]
+  filteredEntities: EntitySchema[]
+  hasNext: boolean
+  totalCount: number
+  onSelectEntity: (entityId: string) => void
+}
+
+/** Loading skeleton, error card, or the device table + count footer — whichever applies. */
+function DevicesResults({
+  isLoading,
+  error,
+  table,
+  columnCount,
+  entities,
+  filteredEntities,
+  hasNext,
+  totalCount,
+  onSelectEntity,
+}: Readonly<IDevicesResultsProps>) {
+  if (isLoading) {
+    return (
+      <div className="space-y-2">
+        {LOADING_SKELETON_ROW_IDS.map((rowId) => (
+          <Skeleton key={rowId} className="h-10 w-full" />
+        ))}
+      </div>
+    )
+  }
+
+  if (error) {
+    return (
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-destructive">Couldn&apos;t load devices</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <p className="text-sm text-muted-foreground">{error.message}</p>
+        </CardContent>
+      </Card>
+    )
+  }
+
+  return (
+    <>
+      <div className="overflow-x-auto rounded-md border">
+        <Table>
+          <DeviceTableHeader table={table} />
+          <DeviceTableBody
+            table={table}
+            columnCount={columnCount}
+            hasAnyEntities={entities.length > 0}
+            onSelectEntity={onSelectEntity}
+          />
+        </Table>
+      </div>
+
+      <p className="text-xs text-muted-foreground">
+        {deviceCountLabel(filteredEntities.length, entities.length)}
+        {hasNext && ` — showing the first ${entities.length} of ${totalCount}`}
+      </p>
+    </>
   )
 }
 
@@ -423,55 +782,14 @@ export default function DevicesPage() {
   )
 
   // Filter options derived from actual data (types, protocols with real counts).
-  const typeOptions = useMemo(
-    () =>
-      [...new Set(entities.map((entity) => entity.device_type))].sort((a, b) =>
-        a.localeCompare(b)
-      ),
-    [entities]
+  const typeOptions = useMemo(() => deriveTypeOptions(entities), [entities])
+  const protocolOptions = useMemo(() => deriveProtocolOptions(entities), [entities])
+  const zoneOptions = useMemo(() => deriveZoneOptions(entities, config), [config, entities])
+
+  const filteredEntities = useMemo(
+    () => filterEntities(entities, { search, typeFilter, zoneFilter, protocolFilter }),
+    [entities, search, typeFilter, zoneFilter, protocolFilter]
   )
-  const protocolOptions = useMemo(() => {
-    const counts = new Map<string, number>()
-    for (const entity of entities) {
-      counts.set(entity.protocol, (counts.get(entity.protocol) ?? 0) + 1)
-    }
-    return [...counts.entries()].sort(([a], [b]) => a.localeCompare(b))
-  }, [entities])
-
-  // Zone options: coach config areas first (config order), then any zone
-  // observed on entities that the config does not declare.
-  const zoneOptions = useMemo(() => {
-    const zoneIds: string[] = []
-    for (const section of ["interior", "exterior"]) {
-      const area = Object.entries(config?.areas ?? {}).find(([key]) => key === section)?.[1]
-      if (!area) continue
-      for (const zoneKey of Object.keys(area.zones)) {
-        zoneIds.push(`${section}.${zoneKey}`)
-      }
-    }
-    for (const entity of entities) {
-      const zoneId = zoneIdForEntity(entity)
-      if (!zoneIds.includes(zoneId)) zoneIds.push(zoneId)
-    }
-    return zoneIds.map((zoneId) => ({
-      value: zoneId,
-      label: zoneId === "other" ? "Unassigned" : zoneDisplayName(zoneId, config),
-    }))
-  }, [config, entities])
-
-  const filteredEntities = useMemo(() => {
-    const query = search.trim().toLowerCase()
-    return entities.filter((entity) => {
-      if (typeFilter !== ALL && entity.device_type !== typeFilter) return false
-      if (protocolFilter !== ALL && entity.protocol !== protocolFilter) return false
-      if (zoneFilter !== ALL && zoneIdForEntity(entity) !== zoneFilter) return false
-      return (
-        !query ||
-        entity.name.toLowerCase().includes(query) ||
-        entity.entity_id.toLowerCase().includes(query)
-      )
-    })
-  }, [entities, search, typeFilter, zoneFilter, protocolFilter])
 
   const hasActiveFilters =
     search.trim() !== "" || typeFilter !== ALL || zoneFilter !== ALL || protocolFilter !== ALL
@@ -500,147 +818,33 @@ export default function DevicesPage() {
   return (
     <div className="flex-1 space-y-4 p-4 pt-6 lg:px-6">
       {/* Filters */}
-      <div className="flex flex-col gap-2 lg:flex-row lg:items-center">
-        <div className="relative flex-1 lg:max-w-xs">
-          <IconSearch className="absolute left-2.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
-          <Input
-            value={search}
-            onChange={(event) => setSearch(event.target.value)}
-            placeholder="Search devices…"
-            className="pl-8"
-            aria-label="Search devices"
-          />
-        </div>
-        <div className="flex flex-wrap items-center gap-2">
-          <Select value={typeFilter} onValueChange={setTypeFilter}>
-            <SelectTrigger className="w-36" aria-label="Filter by type">
-              <SelectValue placeholder="Type" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value={ALL}>All types</SelectItem>
-              {typeOptions.map((deviceType) => (
-                <SelectItem key={deviceType} value={deviceType}>
-                  {titleCase(deviceType)}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-          <Select value={zoneFilter} onValueChange={setZoneFilter}>
-            <SelectTrigger className="w-44" aria-label="Filter by zone">
-              <SelectValue placeholder="Zone" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value={ALL}>All zones</SelectItem>
-              {zoneOptions.map((zone) => (
-                <SelectItem key={zone.value} value={zone.value}>
-                  {zone.label}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-          <Select value={protocolFilter} onValueChange={setProtocolFilter}>
-            <SelectTrigger className="w-40" aria-label="Filter by protocol">
-              <SelectValue placeholder="Protocol" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value={ALL}>All protocols</SelectItem>
-              {protocolOptions.map(([protocol, count]) => (
-                <SelectItem key={protocol} value={protocol}>
-                  {protocol.toUpperCase()} ({count})
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-          {hasActiveFilters && (
-            <Button variant="ghost" size="sm" onClick={clearFilters} className="gap-1">
-              <IconX className="size-4" />
-              Clear
-            </Button>
-          )}
-        </div>
-      </div>
+      <DeviceFilterBar
+        search={search}
+        onSearchChange={setSearch}
+        typeFilter={typeFilter}
+        onTypeFilterChange={setTypeFilter}
+        typeOptions={typeOptions}
+        zoneFilter={zoneFilter}
+        onZoneFilterChange={setZoneFilter}
+        zoneOptions={zoneOptions}
+        protocolFilter={protocolFilter}
+        onProtocolFilterChange={setProtocolFilter}
+        protocolOptions={protocolOptions}
+        hasActiveFilters={hasActiveFilters}
+        onClearFilters={clearFilters}
+      />
 
-      {/* Loading */}
-      {isLoading && (
-        <div className="space-y-2">
-          {Array.from({ length: 8 }).map((_, index) => (
-            <Skeleton key={index} className="h-10 w-full" />
-          ))}
-        </div>
-      )}
-
-      {/* Error */}
-      {error && (
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-destructive">Couldn't load devices</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <p className="text-sm text-muted-foreground">{error.message}</p>
-          </CardContent>
-        </Card>
-      )}
-
-      {/* Table */}
-      {!isLoading && !error && (
-        <>
-          <div className="overflow-x-auto rounded-md border">
-            <Table>
-              <TableHeader>
-                {table.getHeaderGroups().map((headerGroup) => (
-                  <TableRow key={headerGroup.id}>
-                    {headerGroup.headers.map((header) => (
-                      <TableHead
-                        key={header.id}
-                        className={
-                          header.column.getCanSort() ? "cursor-pointer select-none" : undefined
-                        }
-                        onClick={header.column.getToggleSortingHandler()}
-                      >
-                        {flexRender(header.column.columnDef.header, header.getContext())}
-                        {{ asc: " ↑", desc: " ↓" }[header.column.getIsSorted() as string] ?? ""}
-                      </TableHead>
-                    ))}
-                  </TableRow>
-                ))}
-              </TableHeader>
-              <TableBody>
-                {table.getRowModel().rows.length === 0 ? (
-                  <TableRow>
-                    <TableCell colSpan={columns.length} className="h-24 text-center">
-                      <p className="text-sm text-muted-foreground">
-                        {entities.length === 0
-                          ? "No entities are mapped for this coach."
-                          : "No devices match the current filters."}
-                      </p>
-                    </TableCell>
-                  </TableRow>
-                ) : (
-                  table.getRowModel().rows.map((row) => (
-                    <TableRow
-                      key={row.original.entity_id}
-                      className="cursor-pointer"
-                      onClick={() => setSelectedEntityId(row.original.entity_id)}
-                    >
-                      {row.getVisibleCells().map((cell) => (
-                        <TableCell key={cell.id}>
-                          {flexRender(cell.column.columnDef.cell, cell.getContext())}
-                        </TableCell>
-                      ))}
-                    </TableRow>
-                  ))
-                )}
-              </TableBody>
-            </Table>
-          </div>
-
-          <p className="text-xs text-muted-foreground">
-            {deviceCountLabel(filteredEntities.length, entities.length)}
-            {entityCollection?.has_next &&
-              ` — showing the first ${entities.length} of ${entityCollection.total_count}`}
-          </p>
-        </>
-      )}
+      <DevicesResults
+        isLoading={isLoading}
+        error={error}
+        table={table}
+        columnCount={columns.length}
+        entities={entities}
+        filteredEntities={filteredEntities}
+        hasNext={entityCollection?.has_next ?? false}
+        totalCount={entityCollection?.total_count ?? 0}
+        onSelectEntity={setSelectedEntityId}
+      />
 
       <DeviceDetailSheet
         entity={selectedEntity}

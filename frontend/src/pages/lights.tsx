@@ -29,6 +29,16 @@ import {
 import { useBulkControlEntities, useControlEntity, useEntities } from "@/hooks/useEntities"
 import { cn } from "@/lib/utils"
 
+/** Stable keys for the zone-grid loading-skeleton placeholders (no zone data exists yet to key on). */
+const ZONE_LOADING_SKELETON_IDS = [
+  "zone-skeleton-1",
+  "zone-skeleton-2",
+  "zone-skeleton-3",
+  "zone-skeleton-4",
+  "zone-skeleton-5",
+  "zone-skeleton-6",
+]
+
 //
 // ===== Entity state helpers (RV-C operating_status is raw 0..200) =====
 //
@@ -81,7 +91,7 @@ function reportCommandResult(result: OperationResultSchema, entityName: string) 
     toast({
       variant: "destructive",
       title: `Command not completed: ${entityName}`,
-      description: result.error_message || `Backend reported status "${result.status}".`,
+      description: result.error_message ?? `Backend reported status "${result.status}".`,
     })
   }
 }
@@ -98,13 +108,13 @@ function reportCommandError(error: Error, entityName: string) {
 // ===== Single light row =====
 //
 
-interface LightRowProps {
+interface ILightRowProps {
   entity: EntitySchema
   controlsDisabled: boolean
   disabledReason: string
 }
 
-function LightRow({ entity, controlsDisabled, disabledReason }: Readonly<LightRowProps>) {
+function LightRow({ entity, controlsDisabled, disabledReason }: Readonly<ILightRowProps>) {
   const control = useControlEntity()
   const isOn = lightIsOn(entity)
   const isAvailable = entity.available !== false
@@ -185,13 +195,13 @@ function LightRow({ entity, controlsDisabled, disabledReason }: Readonly<LightRo
 // ===== Zone card =====
 //
 
-interface ZoneLightsCardProps {
+interface IZoneLightsCardProps {
   zone: IZoneGroup
   controlsDisabled: boolean
   disabledReason: string
 }
 
-function ZoneLightsCard({ zone, controlsDisabled, disabledReason }: Readonly<ZoneLightsCardProps>) {
+function ZoneLightsCard({ zone, controlsDisabled, disabledReason }: Readonly<IZoneLightsCardProps>) {
   const bulkControl = useBulkControlEntities()
   const onCount = zone.entities.filter(lightIsOn).length
   const switchableIds = zone.entities
@@ -289,13 +299,13 @@ function ZoneLightsCard({ zone, controlsDisabled, disabledReason }: Readonly<Zon
 // ===== Master summary + all on / all off =====
 //
 
-interface MasterBarProps {
+interface IMasterBarProps {
   lights: EntitySchema[]
   controlsDisabled: boolean
   disabledReason: string
 }
 
-function MasterBar({ lights, controlsDisabled, disabledReason }: Readonly<MasterBarProps>) {
+function MasterBar({ lights, controlsDisabled, disabledReason }: Readonly<IMasterBarProps>) {
   const bulkControl = useBulkControlEntities()
   const available = lights.filter((entity) => entity.available !== false)
   const offlineCount = lights.length - available.length
@@ -441,8 +451,8 @@ export default function LightsPage() {
         <div className="space-y-6">
           <Skeleton className="h-9 w-full max-w-md" />
           <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
-            {Array.from({ length: 6 }).map((_, index) => (
-              <Skeleton key={index} className="h-48" />
+            {ZONE_LOADING_SKELETON_IDS.map((skeletonId) => (
+              <Skeleton key={skeletonId} className="h-48" />
             ))}
           </div>
         </div>
@@ -451,7 +461,7 @@ export default function LightsPage() {
       {error && (
         <Card>
           <CardHeader>
-            <CardTitle className="text-destructive">Couldn't load lights</CardTitle>
+            <CardTitle className="text-destructive">Couldn&apos;t load lights</CardTitle>
           </CardHeader>
           <CardContent>
             <p className="text-sm text-muted-foreground">{error.message}</p>

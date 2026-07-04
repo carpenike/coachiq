@@ -45,6 +45,16 @@ import {
 import { useBulkControlEntities, useControlEntity, useEntities } from "@/hooks/useEntities"
 import { cn } from "@/lib/utils"
 
+/** Stable keys for the zone-grid loading-skeleton placeholders (no zone data exists yet to key on). */
+const ZONE_LOADING_SKELETON_IDS = [
+  "zone-skeleton-1",
+  "zone-skeleton-2",
+  "zone-skeleton-3",
+  "zone-skeleton-4",
+  "zone-skeleton-5",
+  "zone-skeleton-6",
+]
+
 //
 // ===== Entity state helpers (RV-C operating_status is raw 0..200) =====
 //
@@ -94,7 +104,7 @@ function reportCommandResult(result: OperationResultSchema, entityName: string) 
     toast({
       variant: "destructive",
       title: `Command not completed: ${entityName}`,
-      description: result.error_message || `Backend reported status "${result.status}".`,
+      description: result.error_message ?? `Backend reported status "${result.status}".`,
     })
   }
 }
@@ -200,6 +210,105 @@ const SCENE_ICONS = new Map<string, typeof IconSparkles>([
   ["travel_prep", IconTruck],
 ])
 
+interface ISceneCommandGroup {
+  ids: string[]
+  action: "on" | "off"
+  brightness?: number
+}
+
+/** Groups resolved scene commands by identical action+brightness so each group is one bulk call. */
+function groupSceneCommands(
+  commands: ReturnType<typeof resolveSceneCommands>
+): ISceneCommandGroup[] {
+  const groups = new Map<string, ISceneCommandGroup>()
+  for (const command of commands) {
+    const key = `${command.action}:${command.brightness ?? ""}`
+    const group = groups.get(key)
+    if (group) {
+      group.ids.push(command.entityId)
+    } else {
+      const entry: ISceneCommandGroup = {
+        ids: [command.entityId],
+        action: command.action,
+      }
+      if (command.brightness !== undefined) entry.brightness = command.brightness
+      groups.set(key, entry)
+    }
+  }
+  return [...groups.values()]
+}
+
+/** Runs one bulk-control call per scene command group and reports the combined result via toast. */
+async function applySceneGroups(
+  scene: ILightingScene,
+  groups: ISceneCommandGroup[],
+  bulkControl: ReturnType<typeof useBulkControlEntities>
+): Promise<void> {
+  const results = await Promise.all(
+    groups.map((group) =>
+      bulkControl.mutateAsync({
+        entity_ids: group.ids,
+        command:
+          group.brightness !== undefined
+            ? { command: "set", state: group.action === "on", brightness: group.brightness }
+            : { command: "set", state: group.action === "on" },
+        ignore_errors: true,
+      })
+    )
+  )
+  const failed = results.reduce((sum, result) => sum + result.failed_count, 0)
+  const total = results.reduce((sum, result) => sum + result.total_count, 0)
+  if (failed > 0) {
+    toast({
+      variant: "destructive",
+      title: `${scene.name}: ${failed} of ${total} devices failed`,
+      description: "Some devices did not accept the command. Check Diagnostics.",
+    })
+  } else {
+    toast({
+      title: scene.name,
+      description: `Applied to ${total} ${total === 1 ? "device" : "devices"}.`,
+    })
+  }
+}
+
+/** A single scene button, wrapped in a tooltip when controls are disabled. */
+function SceneButton({
+  sceneKey,
+  scene,
+  disabled,
+  runningScene,
+  onRun,
+}: Readonly<{
+  sceneKey: string
+  scene: ILightingScene
+  disabled: boolean
+  runningScene: string | null
+  onRun: () => void
+}>) {
+  const SceneIcon = SCENE_ICONS.get(sceneKey) ?? IconSparkles
+  const button = (
+    <Button
+      variant="outline"
+      disabled={disabled || runningScene !== null}
+      onClick={onRun}
+      className="h-auto w-full flex-col gap-1.5 py-3"
+    >
+      <SceneIcon className={cn("size-5", runningScene === sceneKey && "animate-pulse")} />
+      <span className="text-xs">{scene.name}</span>
+    </Button>
+  )
+  if (!disabled) return button
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <span className="w-full">{button}</span>
+      </TooltipTrigger>
+      <TooltipContent>Controls disabled — coach connection is not live</TooltipContent>
+    </Tooltip>
+  )
+}
+
 function ScenesRow({ entities }: Readonly<{ entities: EntitySchema[] }>) {
   const { data: config } = useCoachConfig()
   const { coach } = useCoachConnection()
@@ -221,51 +330,9 @@ function ScenesRow({ entities }: Readonly<{ entities: EntitySchema[] }>) {
       return
     }
 
-    // Group by identical command so each group is one bulk call.
-    const groups = new Map<string, { ids: string[]; action: "on" | "off"; brightness?: number }>()
-    for (const command of commands) {
-      const key = `${command.action}:${command.brightness ?? ""}`
-      const group = groups.get(key)
-      if (group) {
-        group.ids.push(command.entityId)
-      } else {
-        const entry: { ids: string[]; action: "on" | "off"; brightness?: number } = {
-          ids: [command.entityId],
-          action: command.action,
-        }
-        if (command.brightness !== undefined) entry.brightness = command.brightness
-        groups.set(key, entry)
-      }
-    }
-
     setRunningScene(sceneKey)
     try {
-      const results = await Promise.all(
-        [...groups.values()].map((group) =>
-          bulkControl.mutateAsync({
-            entity_ids: group.ids,
-            command:
-              group.brightness !== undefined
-                ? { command: "set", state: group.action === "on", brightness: group.brightness }
-                : { command: "set", state: group.action === "on" },
-            ignore_errors: true,
-          })
-        )
-      )
-      const failed = results.reduce((sum, result) => sum + result.failed_count, 0)
-      const total = results.reduce((sum, result) => sum + result.total_count, 0)
-      if (failed > 0) {
-        toast({
-          variant: "destructive",
-          title: `${scene.name}: ${failed} of ${total} devices failed`,
-          description: "Some devices did not accept the command. Check Diagnostics.",
-        })
-      } else {
-        toast({
-          title: scene.name,
-          description: `Applied to ${total} ${total === 1 ? "device" : "devices"}.`,
-        })
-      }
+      await applySceneGroups(scene, groupSceneCommands(commands), bulkControl)
     } catch (error) {
       toast({
         variant: "destructive",
@@ -281,30 +348,16 @@ function ScenesRow({ entities }: Readonly<{ entities: EntitySchema[] }>) {
     <div className="space-y-2">
       <h2 className="text-sm font-medium text-muted-foreground">Scenes</h2>
       <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
-        {scenes.map(([sceneKey, scene]) => {
-          const SceneIcon = SCENE_ICONS.get(sceneKey) ?? IconSparkles
-          const button = (
-            <Button
-              key={sceneKey}
-              variant="outline"
-              disabled={disabled || runningScene !== null}
-              onClick={() => void runScene(sceneKey, scene)}
-              className="h-auto w-full flex-col gap-1.5 py-3"
-            >
-              <SceneIcon className={cn("size-5", runningScene === sceneKey && "animate-pulse")} />
-              <span className="text-xs">{scene.name}</span>
-            </Button>
-          )
-          if (!disabled) return button
-          return (
-            <Tooltip key={sceneKey}>
-              <TooltipTrigger asChild>
-                <span className="w-full">{button}</span>
-              </TooltipTrigger>
-              <TooltipContent>Controls disabled — coach connection is not live</TooltipContent>
-            </Tooltip>
-          )
-        })}
+        {scenes.map(([sceneKey, scene]) => (
+          <SceneButton
+            key={sceneKey}
+            sceneKey={sceneKey}
+            scene={scene}
+            disabled={disabled}
+            runningScene={runningScene}
+            onRun={() => void runScene(sceneKey, scene)}
+          />
+        ))}
       </div>
     </div>
   )
@@ -314,14 +367,14 @@ function ScenesRow({ entities }: Readonly<{ entities: EntitySchema[] }>) {
 // ===== Zone grid =====
 //
 
-interface DeviceRowProps {
+interface IDeviceRowProps {
   entity: EntitySchema
   controlsDisabled: boolean
   disabledReason: string
   showTimestamps: boolean
 }
 
-function DeviceRow({ entity, controlsDisabled, disabledReason, showTimestamps }: Readonly<DeviceRowProps>) {
+function DeviceRow({ entity, controlsDisabled, disabledReason, showTimestamps }: Readonly<IDeviceRowProps>) {
   const control = useControlEntity()
   const isOn = entityIsOn(entity)
   const isAvailable = entity.available !== false
@@ -411,14 +464,14 @@ function DeviceRow({ entity, controlsDisabled, disabledReason, showTimestamps }:
   )
 }
 
-interface ZoneCardProps {
+interface IZoneCardProps {
   zone: IZoneGroup
   controlsDisabled: boolean
   disabledReason: string
   showTimestamps: boolean
 }
 
-function ZoneCard({ zone, controlsDisabled, disabledReason, showTimestamps }: Readonly<ZoneCardProps>) {
+function ZoneCard({ zone, controlsDisabled, disabledReason, showTimestamps }: Readonly<IZoneCardProps>) {
   const bulkControl = useBulkControlEntities()
   const onCount = zone.entities.filter(entityIsOn).length
   const switchableIds = zone.entities
@@ -565,8 +618,8 @@ export default function HomePage() {
 
       {isLoading && (
         <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
-          {Array.from({ length: 6 }).map((_, index) => (
-            <Skeleton key={index} className="h-48" />
+          {ZONE_LOADING_SKELETON_IDS.map((skeletonId) => (
+            <Skeleton key={skeletonId} className="h-48" />
           ))}
         </div>
       )}
@@ -574,7 +627,7 @@ export default function HomePage() {
       {error && (
         <Card>
           <CardHeader>
-            <CardTitle className="text-destructive">Couldn't load devices</CardTitle>
+            <CardTitle className="text-destructive">Couldn&apos;t load devices</CardTitle>
           </CardHeader>
           <CardContent>
             <p className="text-sm text-muted-foreground">{error.message}</p>

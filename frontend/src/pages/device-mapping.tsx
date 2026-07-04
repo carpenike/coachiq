@@ -33,14 +33,14 @@ import { useMemo } from "react"
  * empty means the device still needs configuration.
  */
 function hasRealArea(entity: EntityData): boolean {
-  const area = entity.suggested_area?.trim()
+  const area = entity.suggested_area.trim()
   return Boolean(area) && area !== "Unknown"
 }
 
 /**
  * Device mapping statistics component
  */
-function DeviceMappingStats({ entities }: { entities: EntityData[] }) {
+function DeviceMappingStats({ entities }: Readonly<{ entities: EntityData[] }>) {
   const stats = useMemo(() => {
     const byDeviceType = entities.reduce((acc, entity) => {
       acc[entity.device_type] = (acc[entity.device_type] || 0) + 1
@@ -122,51 +122,67 @@ function DeviceMappingStats({ entities }: { entities: EntityData[] }) {
   )
 }
 
+/** Emoji icon for a device type, shown next to the device name in the mapping table. */
+function getDeviceTypeIcon(deviceType: string): string {
+  switch (deviceType.toLowerCase()) {
+    case 'light':
+      return '💡'
+    case 'lock':
+      return '🔒'
+    case 'temperature':
+      return '🌡️'
+    case 'tank':
+      return '⛽'
+    default:
+      return '⚙️'
+  }
+}
+
+/** Badge variant for an entity's current state value. */
+function getStateVariant(state: unknown): "default" | "secondary" | "outline" {
+  if (state === true || state === "on" || state === "unlocked") {
+    return "default"
+  }
+  if (state === false || state === "off" || state === "locked") {
+    return "secondary"
+  }
+  return "outline"
+}
+
+/** Human-readable label for an entity's current state value. */
+function formatState(state: unknown): string {
+  if (typeof state === 'boolean') {
+    return state ? 'On' : 'Off'
+  }
+  if (typeof state === 'string') {
+    return state.charAt(0).toUpperCase() + state.slice(1)
+  }
+  return String(state)
+}
+
+/** Display timestamp for the "Last Updated" column, preferring last_updated over timestamp. */
+function formatLastUpdated(entity: EntityData): string {
+  if (entity.last_updated) {
+    return new Date(entity.last_updated).toLocaleString()
+  }
+  if (entity.timestamp) {
+    return new Date(entity.timestamp).toLocaleString()
+  }
+  return '—'
+}
+
+interface IDeviceMappingTableProps {
+  entities: EntityData[]
+  coachConfig?: ICoachConfig | undefined
+}
+
 /**
  * Device mapping table component
  */
 function DeviceMappingTable({
   entities,
   coachConfig,
-}: {
-  entities: EntityData[]
-  coachConfig?: ICoachConfig | undefined
-}) {
-  const getDeviceTypeIcon = (deviceType: string) => {
-    switch (deviceType.toLowerCase()) {
-      case 'light':
-        return '💡'
-      case 'lock':
-        return '🔒'
-      case 'temperature':
-        return '🌡️'
-      case 'tank':
-        return '⛽'
-      default:
-        return '⚙️'
-    }
-  }
-
-  const getStateVariant = (state: unknown) => {
-    if (state === true || state === "on" || state === "unlocked") {
-      return "default"
-    }
-    if (state === false || state === "off" || state === "locked") {
-      return "secondary"
-    }
-    return "outline"
-  }
-
-  const formatState = (state: unknown) => {
-    if (typeof state === 'boolean') {
-      return state ? 'On' : 'Off'
-    }
-    if (typeof state === 'string') {
-      return state.charAt(0).toUpperCase() + state.slice(1)
-    }
-    return String(state)
-  }
-
+}: Readonly<IDeviceMappingTableProps>) {
   return (
     <Card>
       <CardHeader>
@@ -223,9 +239,7 @@ function DeviceMappingTable({
                   </Badge>
                 </TableCell>
                 <TableCell className="text-sm text-muted-foreground">
-                  {entity.last_updated ? new Date(entity.last_updated).toLocaleString() :
-                   entity.timestamp ? new Date(entity.timestamp).toLocaleString() :
-                   '—'}
+                  {formatLastUpdated(entity)}
                 </TableCell>
               </TableRow>
             ))}
@@ -239,13 +253,15 @@ function DeviceMappingTable({
 /**
  * Device type breakdown component
  */
+interface IDeviceTypeBreakdownProps {
+  entities: EntityData[]
+  coachConfig?: ICoachConfig | undefined
+}
+
 function DeviceTypeBreakdown({
   entities,
   coachConfig,
-}: {
-  entities: EntityData[]
-  coachConfig?: ICoachConfig | undefined
-}) {
+}: Readonly<IDeviceTypeBreakdownProps>) {
   const deviceTypeGroups = useMemo(() => {
     const groups = entities.reduce((acc, entity) => {
       const deviceType = entity.device_type || 'unknown';
@@ -284,7 +300,7 @@ function DeviceTypeBreakdown({
               <div className="flex gap-1">
                 {devices.slice(0, 3).map((device) => (
                   <Badge
-                    key={device.id || device.entity_id}
+                    key={device.id ?? device.entity_id}
                     variant={hasRealArea(device) ? "secondary" : "outline"}
                     className="text-xs"
                   >

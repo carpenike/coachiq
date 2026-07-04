@@ -51,7 +51,7 @@ import { cn } from "@/lib/utils"
 // ===== Wire types (match backend DiagnosticTroubleCode.to_dict()) =====
 //
 
-interface DtcRecord {
+interface IDtcRecord {
   code: number
   protocol: string
   system_type: string
@@ -69,15 +69,15 @@ interface DtcRecord {
   acknowledged: boolean
 }
 
-interface DtcCollection {
-  dtcs: DtcRecord[]
+interface IDtcCollection {
+  dtcs: IDtcRecord[]
   total_count: number
   active_count: number
   by_severity: Record<string, number>
   by_protocol: Record<string, number>
 }
 
-interface DiagnosticsSystemStatus {
+interface IDiagnosticsSystemStatus {
   overall_health: string
   health_score: number
   active_systems: string[]
@@ -85,7 +85,7 @@ interface DiagnosticsSystemStatus {
   last_assessment: number
 }
 
-interface DiagnosticsStatistics {
+interface IDiagnosticsStatistics {
   metrics: {
     total_dtcs: number
     active_dtcs: number
@@ -164,7 +164,7 @@ function HealthVerdictCard() {
   const { coach } = useCoachConnection()
   const { data, isLoading, error } = useQuery({
     queryKey: ["diagnostics", "system-status"],
-    queryFn: () => apiGet<DiagnosticsSystemStatus>("/api/v1/diagnostics/system-status"),
+    queryFn: () => apiGet<IDiagnosticsSystemStatus>("/api/v1/diagnostics/system-status"),
     refetchInterval: 45_000,
     staleTime: 30_000,
     retry: 1,
@@ -178,7 +178,7 @@ function HealthVerdictCard() {
         <CardHeader>
           <CardTitle className="text-base">Health verdict</CardTitle>
           <CardDescription>
-            Couldn't load the health assessment
+            Couldn&apos;t load the health assessment
             {error instanceof Error ? ` — ${error.message}` : ""}.
           </CardDescription>
         </CardHeader>
@@ -245,7 +245,7 @@ function HealthVerdictCard() {
 function StatisticsStrip() {
   const { data, isLoading, error } = useQuery({
     queryKey: ["diagnostics", "statistics"],
-    queryFn: () => apiGet<DiagnosticsStatistics>("/api/v1/diagnostics/statistics"),
+    queryFn: () => apiGet<IDiagnosticsStatistics>("/api/v1/diagnostics/statistics"),
     refetchInterval: 60_000,
     staleTime: 30_000,
     retry: 1,
@@ -259,7 +259,7 @@ function StatisticsStrip() {
         <CardHeader>
           <CardTitle className="text-base">Statistics</CardTitle>
           <CardDescription>
-            Couldn't load fault statistics
+            Couldn&apos;t load fault statistics
             {error instanceof Error ? ` — ${error.message}` : ""}.
           </CardDescription>
         </CardHeader>
@@ -299,7 +299,7 @@ function StatisticsStrip() {
 // ===== Resolve action =====
 //
 
-function ResolveButton({ dtc }: Readonly<{ dtc: DtcRecord }>) {
+function ResolveButton({ dtc }: Readonly<{ dtc: IDtcRecord }>) {
   const { user } = useAuth()
   const queryClient = useQueryClient()
   const isAdmin = user?.role === "admin"
@@ -361,7 +361,7 @@ function ResolveButton({ dtc }: Readonly<{ dtc: DtcRecord }>) {
 // ===== DTC table =====
 //
 
-function DtcTable({ dtcs }: Readonly<{ dtcs: DtcRecord[] }>) {
+function DtcTable({ dtcs }: Readonly<{ dtcs: IDtcRecord[] }>) {
   return (
     <div className="overflow-x-auto">
       <Table>
@@ -485,7 +485,7 @@ export default function DiagnosticsPage() {
       if (protocol !== "all") params.set("protocol", protocol)
       const query = params.toString()
       const suffix = query ? `?${query}` : ""
-      return apiGet<DtcCollection>(`/api/v1/diagnostics/dtcs${suffix}`)
+      return apiGet<IDtcCollection>(`/api/v1/diagnostics/dtcs${suffix}`)
     },
     refetchInterval: 30_000,
     staleTime: 15_000,
@@ -507,7 +507,7 @@ export default function DiagnosticsPage() {
             <div>
               <CardTitle className="text-base">Fault codes</CardTitle>
               <CardDescription>
-                Diagnostic trouble codes reported on the coach's CAN networks.
+                Diagnostic trouble codes reported on the coach&apos;s CAN networks.
               </CardDescription>
             </div>
             <div className="flex gap-2">
@@ -546,7 +546,7 @@ export default function DiagnosticsPage() {
           {dtcsQuery.error && (
             <div className="flex flex-col items-center gap-2 py-10 text-center">
               <IconAlertTriangle className="size-8 text-destructive" />
-              <p className="text-sm font-medium">Couldn't load fault codes</p>
+              <p className="text-sm font-medium">Couldn&apos;t load fault codes</p>
               <p className="text-sm text-muted-foreground">
                 {dtcsQuery.error instanceof Error ? dtcsQuery.error.message : "Unknown error"}
               </p>

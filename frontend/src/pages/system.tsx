@@ -47,14 +47,14 @@ import { cn } from "@/lib/utils"
 // ===== Wire types (match backend /api/v1/system responses) =====
 //
 
-interface ServiceInfo {
+interface IServiceInfo {
   name: string
   status: string
   enabled: boolean
   last_check: number
 }
 
-interface ComponentHealthInfo {
+interface IComponentHealthInfo {
   id: string
   name: string
   status: string
@@ -64,11 +64,11 @@ interface ComponentHealthInfo {
   guardrail_tier: string | null
 }
 
-interface ComponentsHealthResponse {
-  components: ComponentHealthInfo[]
+interface IComponentsHealthResponse {
+  components: IComponentHealthInfo[]
 }
 
-interface SystemInfo {
+interface ISystemInfo {
   hostname: string
   platform: string
   architecture: string
@@ -78,7 +78,7 @@ interface SystemInfo {
 }
 
 /** /api/v1/system/status — used only for the truthful version/environment block. */
-interface SystemStatusResponse {
+interface ISystemStatusResponse {
   service?: {
     name?: string
     version?: string
@@ -200,7 +200,7 @@ function formatBitrate(bitsPerSecond: number | null | undefined): string {
 function ServicesCard() {
   const { data, isLoading, error } = useQuery({
     queryKey: ["system", "services"],
-    queryFn: () => apiGet<ServiceInfo[]>("/api/v1/system/services"),
+    queryFn: () => apiGet<IServiceInfo[]>("/api/v1/system/services"),
     refetchInterval: 30_000,
     staleTime: 15_000,
     retry: 1,
@@ -225,7 +225,7 @@ function ServicesCard() {
         {isLoading && <Skeleton className="h-32" />}
         {error && (
           <p className="text-sm text-muted-foreground">
-            Couldn't load services{error instanceof Error ? ` — ${error.message}` : ""}.
+            Couldn&apos;t load services{error instanceof Error ? ` — ${error.message}` : ""}.
           </p>
         )}
         {!isLoading && !error && services.length === 0 && (
@@ -256,7 +256,7 @@ function ServicesCard() {
 function ComponentHealthCard() {
   const { data, isLoading, error } = useQuery({
     queryKey: ["system", "components-health"],
-    queryFn: () => apiGet<ComponentsHealthResponse>("/api/v1/system/components/health"),
+    queryFn: () => apiGet<IComponentsHealthResponse>("/api/v1/system/components/health"),
     refetchInterval: 30_000,
     staleTime: 15_000,
     retry: 1,
@@ -281,7 +281,7 @@ function ComponentHealthCard() {
         {isLoading && <Skeleton className="h-32" />}
         {error && (
           <p className="text-sm text-muted-foreground">
-            Couldn't load component health{error instanceof Error ? ` — ${error.message}` : ""}.
+            Couldn&apos;t load component health{error instanceof Error ? ` — ${error.message}` : ""}.
           </p>
         )}
         {!isLoading && !error && components.length === 0 && (
@@ -307,36 +307,73 @@ function ComponentHealthCard() {
   )
 }
 
+/** Platform label with architecture suffix, e.g. "Linux (x86_64)". */
+function formatPlatform(info: ISystemInfo | undefined): string {
+  if (!info) return "—"
+  const arch = info.architecture ? ` (${info.architecture})` : ""
+  return `${info.platform}${arch}`
+}
+
+/** Summary rows for the System Info card, derived from the info + status queries. */
+function buildSystemInfoRows(
+  info: ISystemInfo | undefined,
+  service: ISystemStatusResponse["service"]
+): { label: string; value: string }[] {
+  return [
+    { label: "Hostname", value: info?.hostname ?? "—" },
+    { label: "Platform", value: formatPlatform(info) },
+    { label: "Uptime", value: formatUptime(info?.uptime_seconds) },
+    { label: "App version", value: service?.version ?? "—" },
+    { label: "Environment", value: service?.environment ?? "—" },
+  ]
+}
+
+/** Loading skeleton, error message, or the info row list — whichever applies. */
+function SystemInfoCardContent({
+  isLoading,
+  error,
+  rows,
+}: Readonly<{
+  isLoading: boolean
+  error: unknown
+  rows: { label: string; value: string }[]
+}>) {
+  if (isLoading) return <Skeleton className="h-32" />
+  if (error) {
+    return (
+      <p className="text-sm text-muted-foreground">
+        Couldn&apos;t load system info
+        {error instanceof Error ? ` — ${error.message}` : ""}.
+      </p>
+    )
+  }
+  return (
+    <dl className="divide-y">
+      {rows.map((row) => (
+        <div key={row.label} className="flex items-center justify-between gap-2 py-2">
+          <dt className="text-sm text-muted-foreground">{row.label}</dt>
+          <dd className="text-sm font-medium">{row.value}</dd>
+        </div>
+      ))}
+    </dl>
+  )
+}
+
 function SystemInfoCard() {
   const infoQuery = useQuery({
     queryKey: ["system", "info"],
-    queryFn: () => apiGet<SystemInfo>("/api/v1/system/info"),
+    queryFn: () => apiGet<ISystemInfo>("/api/v1/system/info"),
     staleTime: 60_000,
     retry: 1,
   })
   const statusQuery = useQuery({
     queryKey: ["system", "status"],
-    queryFn: () => apiGet<SystemStatusResponse>("/api/v1/system/status"),
+    queryFn: () => apiGet<ISystemStatusResponse>("/api/v1/system/status"),
     staleTime: 60_000,
     retry: 1,
   })
 
-  const info = infoQuery.data
-  const service = statusQuery.data?.service
-
-  let platform = "—"
-  if (info) {
-    const arch = info.architecture ? ` (${info.architecture})` : ""
-    platform = `${info.platform}${arch}`
-  }
-
-  const rows: { label: string; value: string }[] = [
-    { label: "Hostname", value: info?.hostname ?? "—" },
-    { label: "Platform", value: platform },
-    { label: "Uptime", value: formatUptime(info?.uptime_seconds) },
-    { label: "App version", value: service?.version ?? "—" },
-    { label: "Environment", value: service?.environment ?? "—" },
-  ]
+  const rows = buildSystemInfoRows(infoQuery.data, statusQuery.data?.service)
 
   return (
     <Card>
@@ -344,23 +381,11 @@ function SystemInfoCard() {
         <CardTitle className="text-base">System info</CardTitle>
       </CardHeader>
       <CardContent>
-        {infoQuery.isLoading && <Skeleton className="h-32" />}
-        {infoQuery.error && (
-          <p className="text-sm text-muted-foreground">
-            Couldn't load system info
-            {infoQuery.error instanceof Error ? ` — ${infoQuery.error.message}` : ""}.
-          </p>
-        )}
-        {!infoQuery.isLoading && !infoQuery.error && (
-          <dl className="divide-y">
-            {rows.map((row) => (
-              <div key={row.label} className="flex items-center justify-between gap-2 py-2">
-                <dt className="text-sm text-muted-foreground">{row.label}</dt>
-                <dd className="text-sm font-medium">{row.value}</dd>
-              </div>
-            ))}
-          </dl>
-        )}
+        <SystemInfoCardContent
+          isLoading={infoQuery.isLoading}
+          error={infoQuery.error}
+          rows={rows}
+        />
       </CardContent>
     </Card>
   )
@@ -386,6 +411,138 @@ function canServiceStatus(healthy: boolean | undefined): string {
   return "unknown"
 }
 
+type CanInterface = NetworkSummarySchema["interfaces"][number]
+
+/** One row of the CAN interfaces table. */
+function CanInterfaceRow({ iface }: Readonly<{ iface: CanInterface }>) {
+  return (
+    <TableRow key={`${iface.logical_name}-${iface.physical_interface}`}>
+      <TableCell>
+        <span className="font-medium">{iface.logical_name}</span>{" "}
+        <span className="text-xs text-muted-foreground">({iface.physical_interface})</span>
+      </TableCell>
+      <TableCell>{iface.state ? statusBadge(iface.state) : <span>—</span>}</TableCell>
+      <TableCell>{formatBitrate(iface.bitrate)}</TableCell>
+      <TableCell className="text-right tabular-nums">
+        {iface.message_rate !== null && iface.message_rate !== undefined
+          ? `${iface.message_rate.toFixed(1)}/s`
+          : "—"}
+      </TableCell>
+      <TableCell className="text-right tabular-nums">
+        {iface.bus_load_percent !== null && iface.bus_load_percent !== undefined
+          ? `${iface.bus_load_percent.toFixed(1)}%`
+          : "—"}
+      </TableCell>
+      <TableCell className="text-right tabular-nums">
+        {formatNumber(iface.rx_packets)} / {formatNumber(iface.tx_packets)}
+      </TableCell>
+      <TableCell className="text-right tabular-nums">
+        {formatNumber(iface.rx_errors)} / {formatNumber(iface.tx_errors)} /{" "}
+        {formatNumber(iface.bus_errors)}
+      </TableCell>
+      <TableCell
+        className={cn("whitespace-nowrap text-sm", !iface.last_activity && "text-muted-foreground")}
+      >
+        {iface.last_activity ? (
+          formatRelative(iface.last_activity)
+        ) : (
+          <span className="flex items-center gap-1">
+            <IconAlertTriangle className="size-3.5 text-amber-600 dark:text-amber-400" />
+            no traffic observed
+          </span>
+        )}
+      </TableCell>
+    </TableRow>
+  )
+}
+
+/** Loading skeleton, error, empty state, or the interfaces table — whichever applies. */
+function CanInterfacesCardContent({
+  isLoading,
+  error,
+  interfaces,
+}: Readonly<{
+  isLoading: boolean
+  error: unknown
+  interfaces: CanInterface[]
+}>) {
+  if (isLoading) return <Skeleton className="h-40" />
+  if (error) {
+    return (
+      <p className="text-sm text-muted-foreground">
+        Couldn&apos;t load network status{error instanceof Error ? ` — ${error.message}` : ""}.
+      </p>
+    )
+  }
+  if (interfaces.length === 0) {
+    return <p className="text-sm text-muted-foreground">No CAN interfaces are configured.</p>
+  }
+  return (
+    <div className="overflow-x-auto">
+      <Table>
+        <TableHeader>
+          <TableRow>
+            <TableHead>Interface</TableHead>
+            <TableHead>State</TableHead>
+            <TableHead>Bitrate</TableHead>
+            <TableHead className="text-right">Msg rate</TableHead>
+            <TableHead className="text-right">Bus load</TableHead>
+            <TableHead className="text-right">RX / TX</TableHead>
+            <TableHead className="text-right">Errors (rx/tx/bus)</TableHead>
+            <TableHead>Last activity</TableHead>
+          </TableRow>
+        </TableHeader>
+        <TableBody>
+          {interfaces.map((iface) => (
+            <CanInterfaceRow key={`${iface.logical_name}-${iface.physical_interface}`} iface={iface} />
+          ))}
+        </TableBody>
+      </Table>
+    </div>
+  )
+}
+
+interface ICanServiceHealth {
+  healthy?: boolean
+  running?: boolean
+  mode?: string
+  decoders_loaded?: number
+  device_mappings?: number
+}
+
+/** CAN service health summary card — status, mode, decoders, device mappings. */
+function CanServiceCard({ serviceHealth }: Readonly<{ serviceHealth: ICanServiceHealth }>) {
+  return (
+    <Card>
+      <CardHeader className="pb-3">
+        <CardTitle className="text-base">CAN service</CardTitle>
+      </CardHeader>
+      <CardContent className="flex flex-wrap items-center gap-x-8 gap-y-3">
+        <div>
+          <p className="text-xs text-muted-foreground">Status</p>
+          <div className="pt-1">{statusBadge(canServiceStatus(serviceHealth.healthy))}</div>
+        </div>
+        <div>
+          <p className="text-xs text-muted-foreground">Mode</p>
+          <p className="text-sm font-medium">{serviceHealth.mode ?? "—"}</p>
+        </div>
+        <div>
+          <p className="text-xs text-muted-foreground">Decoders loaded</p>
+          <p className="text-sm font-medium tabular-nums">
+            {formatNumber(serviceHealth.decoders_loaded)}
+          </p>
+        </div>
+        <div>
+          <p className="text-xs text-muted-foreground">Device mappings</p>
+          <p className="text-sm font-medium tabular-nums">
+            {formatNumber(serviceHealth.device_mappings)}
+          </p>
+        </div>
+      </CardContent>
+    </Card>
+  )
+}
+
 function CanBusTab() {
   const { data, isLoading, error } = useQuery({
     queryKey: networksStatusQueryKey,
@@ -396,15 +553,7 @@ function CanBusTab() {
   })
 
   const interfaces = data?.interfaces ?? []
-  const serviceHealth = data?.can_service_health as
-    | {
-        healthy?: boolean
-        running?: boolean
-        mode?: string
-        decoders_loaded?: number
-        device_mappings?: number
-      }
-    | undefined
+  const serviceHealth = data?.can_service_health as ICanServiceHealth | undefined
 
   return (
     <div className="space-y-4">
@@ -412,118 +561,16 @@ function CanBusTab() {
         <CardHeader className="pb-3">
           <CardTitle className="text-base">CAN interfaces</CardTitle>
           <CardDescription>
-            Per-interface SocketCAN telemetry. "—" means the value is not reported on this
+            Per-interface SocketCAN telemetry. &quot;—&quot; means the value is not reported on this
             platform.
           </CardDescription>
         </CardHeader>
         <CardContent>
-          {isLoading && <Skeleton className="h-40" />}
-          {error && (
-            <p className="text-sm text-muted-foreground">
-              Couldn't load network status{error instanceof Error ? ` — ${error.message}` : ""}.
-            </p>
-          )}
-          {!isLoading && !error && interfaces.length === 0 && (
-            <p className="text-sm text-muted-foreground">No CAN interfaces are configured.</p>
-          )}
-          {!isLoading && !error && interfaces.length > 0 && (
-            <div className="overflow-x-auto">
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Interface</TableHead>
-                    <TableHead>State</TableHead>
-                    <TableHead>Bitrate</TableHead>
-                    <TableHead className="text-right">Msg rate</TableHead>
-                    <TableHead className="text-right">Bus load</TableHead>
-                    <TableHead className="text-right">RX / TX</TableHead>
-                    <TableHead className="text-right">Errors (rx/tx/bus)</TableHead>
-                    <TableHead>Last activity</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {interfaces.map((iface) => (
-                    <TableRow key={`${iface.logical_name}-${iface.physical_interface}`}>
-                      <TableCell>
-                        <span className="font-medium">{iface.logical_name}</span>{" "}
-                        <span className="text-xs text-muted-foreground">
-                          ({iface.physical_interface})
-                        </span>
-                      </TableCell>
-                      <TableCell>
-                        {iface.state ? statusBadge(iface.state) : <span>—</span>}
-                      </TableCell>
-                      <TableCell>{formatBitrate(iface.bitrate)}</TableCell>
-                      <TableCell className="text-right tabular-nums">
-                        {iface.message_rate !== null && iface.message_rate !== undefined
-                          ? `${iface.message_rate.toFixed(1)}/s`
-                          : "—"}
-                      </TableCell>
-                      <TableCell className="text-right tabular-nums">
-                        {iface.bus_load_percent !== null && iface.bus_load_percent !== undefined
-                          ? `${iface.bus_load_percent.toFixed(1)}%`
-                          : "—"}
-                      </TableCell>
-                      <TableCell className="text-right tabular-nums">
-                        {formatNumber(iface.rx_packets)} / {formatNumber(iface.tx_packets)}
-                      </TableCell>
-                      <TableCell className="text-right tabular-nums">
-                        {formatNumber(iface.rx_errors)} / {formatNumber(iface.tx_errors)} /{" "}
-                        {formatNumber(iface.bus_errors)}
-                      </TableCell>
-                      <TableCell
-                        className={cn(
-                          "whitespace-nowrap text-sm",
-                          !iface.last_activity && "text-muted-foreground"
-                        )}
-                      >
-                        {iface.last_activity ? (
-                          formatRelative(iface.last_activity)
-                        ) : (
-                          <span className="flex items-center gap-1">
-                            <IconAlertTriangle className="size-3.5 text-amber-600 dark:text-amber-400" />
-                            no traffic observed
-                          </span>
-                        )}
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            </div>
-          )}
+          <CanInterfacesCardContent isLoading={isLoading} error={error} interfaces={interfaces} />
         </CardContent>
       </Card>
 
-      {serviceHealth && (
-        <Card>
-          <CardHeader className="pb-3">
-            <CardTitle className="text-base">CAN service</CardTitle>
-          </CardHeader>
-          <CardContent className="flex flex-wrap items-center gap-x-8 gap-y-3">
-            <div>
-              <p className="text-xs text-muted-foreground">Status</p>
-              <div className="pt-1">{statusBadge(canServiceStatus(serviceHealth.healthy))}</div>
-            </div>
-            <div>
-              <p className="text-xs text-muted-foreground">Mode</p>
-              <p className="text-sm font-medium">{serviceHealth.mode ?? "—"}</p>
-            </div>
-            <div>
-              <p className="text-xs text-muted-foreground">Decoders loaded</p>
-              <p className="text-sm font-medium tabular-nums">
-                {formatNumber(serviceHealth.decoders_loaded)}
-              </p>
-            </div>
-            <div>
-              <p className="text-xs text-muted-foreground">Device mappings</p>
-              <p className="text-sm font-medium tabular-nums">
-                {formatNumber(serviceHealth.device_mappings)}
-              </p>
-            </div>
-          </CardContent>
-        </Card>
-      )}
+      {serviceHealth && <CanServiceCard serviceHealth={serviceHealth} />}
     </div>
   )
 }

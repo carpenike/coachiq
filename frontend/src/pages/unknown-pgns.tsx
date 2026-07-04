@@ -103,36 +103,83 @@ function UnknownPGNStats({ unknownPGNs }: { unknownPGNs: UnknownPGNEntry[] }) {
   )
 }
 
+function formatPGNTimestamp(timestamp: number): string {
+  return new Date(timestamp * 1000).toLocaleString()
+}
+
+function frequencyBadge(count: number) {
+  if (count > 1000) return <Badge variant="destructive">Very High</Badge>
+  if (count > 100) return <Badge variant="default">High</Badge>
+  if (count > 10) return <Badge variant="secondary">Medium</Badge>
+  return <Badge variant="outline">Low</Badge>
+}
+
+/** First 16 hex characters of the sample data, with ellipsis, or "No data". */
+function dataPreview(hex: string | undefined): string {
+  if (!hex) return 'No data'
+  return hex.length > 16 ? `${hex.substring(0, 16)}...` : hex
+}
+
+/** Empty-state message for the unknown-PGN table: bus silence vs. genuinely no unknowns. */
+function EmptyPGNMessage({ busSilent }: Readonly<{ busSilent: boolean }>) {
+  if (busSilent) {
+    return (
+      <>
+        <p className="text-muted-foreground">No CAN traffic observed — nothing to analyze yet</p>
+        <p className="text-xs text-muted-foreground">
+          Unknown PGN detection needs live bus traffic to inspect
+        </p>
+      </>
+    )
+  }
+  return (
+    <>
+      <p className="text-muted-foreground">No unknown PGNs detected</p>
+      <p className="text-xs text-muted-foreground">
+        All observed PGNs are recognized by the system
+      </p>
+    </>
+  )
+}
+
+/** One row of the unknown-PGN table. */
+function UnknownPGNRow({ entry }: Readonly<{ entry: UnknownPGNEntry }>) {
+  return (
+    <TableRow>
+      <TableCell className="font-mono">
+        <div className="flex flex-col">
+          <span className="font-semibold">{entry.arbitration_id_hex}</span>
+        </div>
+      </TableCell>
+      <TableCell>
+        <div className="font-medium">{entry.count.toLocaleString()}</div>
+      </TableCell>
+      <TableCell>{frequencyBadge(entry.count)}</TableCell>
+      <TableCell className="text-sm text-muted-foreground">
+        {formatPGNTimestamp(entry.first_seen_timestamp)}
+      </TableCell>
+      <TableCell className="text-sm text-muted-foreground">
+        {formatPGNTimestamp(entry.last_seen_timestamp)}
+      </TableCell>
+      <TableCell className="font-mono text-sm">
+        <span className="text-muted-foreground">{dataPreview(entry.last_data_hex)}</span>
+      </TableCell>
+    </TableRow>
+  )
+}
+
+interface IUnknownPGNTableProps {
+  unknownPGNs: UnknownPGNEntry[]
+  busSilent: boolean
+}
+
 /**
  * Unknown PGNs table component
  */
-function UnknownPGNTable({
-  unknownPGNs,
-  busSilent,
-}: {
-  unknownPGNs: UnknownPGNEntry[]
-  busSilent: boolean
-}) {
+function UnknownPGNTable({ unknownPGNs, busSilent }: Readonly<IUnknownPGNTableProps>) {
   const sortedEntries = useMemo(() => {
     return [...unknownPGNs].sort((a, b) => b.count - a.count)
   }, [unknownPGNs])
-
-  const formatTimestamp = (timestamp: number) => {
-    return new Date(timestamp * 1000).toLocaleString()
-  }
-
-  const getFrequencyBadge = (count: number) => {
-    if (count > 1000) return <Badge variant="destructive">Very High</Badge>
-    if (count > 100) return <Badge variant="default">High</Badge>
-    if (count > 10) return <Badge variant="secondary">Medium</Badge>
-    return <Badge variant="outline">Low</Badge>
-  }
-
-  const getDataPreview = (hex: string | undefined) => {
-    if (!hex) return 'No data'
-    // Show first 16 characters of hex data with ellipsis
-    return hex.length > 16 ? `${hex.substring(0, 16)}...` : hex
-  }
 
   return (
     <Card>
@@ -159,52 +206,15 @@ function UnknownPGNTable({
               </TableRow>
             </TableHeader>
             <TableBody>
-              {sortedEntries.map((entry, index) => (
-                <TableRow key={`${entry.arbitration_id_hex}-${index}`}>
-                  <TableCell className="font-mono">
-                    <div className="flex flex-col">
-                      <span className="font-semibold">{entry.arbitration_id_hex}</span>
-                    </div>
-                  </TableCell>
-                  <TableCell>
-                    <div className="font-medium">{entry.count.toLocaleString()}</div>
-                  </TableCell>
-                  <TableCell>
-                    {getFrequencyBadge(entry.count)}
-                  </TableCell>
-                  <TableCell className="text-sm text-muted-foreground">
-                    {formatTimestamp(entry.first_seen_timestamp)}
-                  </TableCell>
-                  <TableCell className="text-sm text-muted-foreground">
-                    {formatTimestamp(entry.last_seen_timestamp)}
-                  </TableCell>
-                  <TableCell className="font-mono text-sm">
-                    <span className="text-muted-foreground">
-                      {getDataPreview(entry.last_data_hex)}
-                    </span>
-                  </TableCell>
-                </TableRow>
+              {sortedEntries.map((entry) => (
+                <UnknownPGNRow key={entry.pgn_hex} entry={entry} />
               ))}
               {sortedEntries.length === 0 && (
                 <TableRow>
                   <TableCell colSpan={6} className="text-center py-8">
                     <div className="flex flex-col items-center gap-2">
                       <IconInfoCircle className="h-8 w-8 text-muted-foreground" />
-                      {busSilent ? (
-                        <>
-                          <p className="text-muted-foreground">No CAN traffic observed — nothing to analyze yet</p>
-                          <p className="text-xs text-muted-foreground">
-                            Unknown PGN detection needs live bus traffic to inspect
-                          </p>
-                        </>
-                      ) : (
-                        <>
-                          <p className="text-muted-foreground">No unknown PGNs detected</p>
-                          <p className="text-xs text-muted-foreground">
-                            All observed PGNs are recognized by the system
-                          </p>
-                        </>
-                      )}
+                      <EmptyPGNMessage busSilent={busSilent} />
                     </div>
                   </TableCell>
                 </TableRow>

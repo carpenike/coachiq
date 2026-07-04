@@ -261,7 +261,7 @@ function UnmappedEntriesTable({
 /**
  * Mapping tools sidebar component
  */
-function MappingToolsSidebar({ unmappedEntries }: { unmappedEntries: UnmappedEntry[] }) {
+function MappingToolsSidebar({ unmappedEntries }: Readonly<{ unmappedEntries: UnmappedEntry[] }>) {
   const analysis = useMemo(() => {
     // Analyze common device types and suggestions
     const dgnTypes = unmappedEntries.reduce((acc, entry) => {
