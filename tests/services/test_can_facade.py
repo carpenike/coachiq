@@ -97,8 +97,11 @@ class TestCANFacade:
         # Verify all safety-critical services received emergency stop call
         mock_dependencies["bus_service"].halt_command_emission.assert_awaited_once_with(reason)
         mock_dependencies["injector"].halt_command_emission.assert_awaited_once_with(reason)
-        mock_dependencies["message_filter"].halt_command_emission.assert_awaited_once_with(reason)
         mock_dependencies["recorder"].halt_command_emission.assert_awaited_once_with(reason)
+
+        # The message filter is monitoring-only for transmit flow and stays
+        # outside the command-halt cascade.
+        mock_dependencies["message_filter"].halt_command_emission.assert_not_awaited()
 
         # Verify operational services received stop call
         mock_dependencies["analyzer"].stop.assert_awaited_once()
@@ -125,10 +128,10 @@ class TestCANFacade:
         # Verify all services were attempted despite failure
         mock_dependencies["bus_service"].halt_command_emission.assert_awaited_once_with(reason)
         mock_dependencies["injector"].halt_command_emission.assert_awaited_once_with(reason)
-        mock_dependencies["message_filter"].halt_command_emission.assert_awaited_once_with(reason)
+        mock_dependencies["recorder"].halt_command_emission.assert_awaited_once_with(reason)
 
         # Verify failure was logged
-        assert "Emergency stop failed for service" in caplog.text
+        assert "Command halt failed for service" in caplog.text
         assert "Bus hardware fault" in caplog.text
 
         # Verify emergency stop state is still set despite failure
@@ -195,13 +198,16 @@ class TestCANFacade:
             }
         )
         mock_dependencies["recorder"].get_queue_status = AsyncMock(return_value={"size": 0})
-        mock_dependencies["analyzer"].get_statistics = AsyncMock(return_value={})
+        # Sync Mock on purpose: the real ProtocolAnalyzer.get_statistics is not
+        # a coroutine; an AsyncMock here masked a facade-level await bug.
+        mock_dependencies["analyzer"].get_statistics = Mock(return_value={"messages": 0})
         mock_dependencies["performance_monitor"].get_performance_baselines = AsyncMock(
             return_value={"uptime_seconds": 42.0}
         )
 
         stats = await can_facade.get_bus_statistics()
 
+        assert stats["analyzer"] == {"messages": 0}
         assert stats["summary"]["total_messages"] == 135
         assert stats["summary"]["total_errors"] == 7
         assert stats["summary"]["error_rate_percent"] == pytest.approx(7 / 135 * 100)

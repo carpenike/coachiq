@@ -833,6 +833,16 @@ class CANBusRecorder(GuardrailParticipant):
             },
         }
 
+    async def get_recent_messages(self, limit: int = 100) -> list[dict[str, Any]]:
+        """Get the most recent messages from the in-memory buffer.
+
+        Returns up to ``limit`` messages in chronological order (oldest first).
+        """
+        if limit <= 0:
+            return []
+        recent = list(self.message_buffer)[-limit:]
+        return [message.to_dict() for message in recent]
+
     async def list_recordings(self) -> list[dict[str, Any]]:
         """List all available recordings."""
         recordings = []

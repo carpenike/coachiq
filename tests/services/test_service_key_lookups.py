@@ -154,7 +154,7 @@ async def test_can_tool_websocket_handlers_use_canonical_service_keys(
     """CAN-tool websocket handlers resolve canonical root service keys."""
     monkeypatch.setattr(
         websocket_service_module,
-        "get_websocket_auth_handler",
+        "_get_websocket_auth_handler",
         lambda: _AllowingAuthHandler(),
     )
     websocket_service = WebSocketService(**{canonical_key: service})

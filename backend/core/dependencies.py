@@ -135,6 +135,21 @@ def initialize_composition_root(composition_root: _CompositionRootClass) -> None
     logger.info("Composition root initialized for dependency injection")
 
 
+def reset_composition_root(composition_root: _CompositionRootClass | None = None) -> None:
+    """Clear the module-level composition root.
+
+    Called from the application lifespan's shutdown path so that a process
+    can start a second app instance (each ``TestClient(app)`` enter/exit
+    cycle boots the lifespan again). When ``composition_root`` is given,
+    only clears the global if it still points at that root, so a stale
+    shutdown can't clobber a newer app's root.
+    """
+    global _composition_root  # noqa: PLW0603 - intentional module-level state
+    if composition_root is not None and _composition_root is not composition_root:
+        return
+    _composition_root = None
+
+
 def get_composition_root() -> _CompositionRootClass:
     """Get the composition root instance."""
     if _composition_root is None:

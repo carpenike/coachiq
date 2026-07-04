@@ -29,8 +29,8 @@ from httpx import AsyncClient
 
 from backend.core.dependencies import (
     get_can_facade,
-    get_rvc_config_facade,
     get_entity_service,
+    get_rvc_config_facade,
 )
 
 # Persistence is now default - using dependencies from core.dependencies
@@ -206,7 +206,7 @@ def client_with_persistence(
     # Override persistence dependencies with test instances
     app.dependency_overrides[get_persistence_feature] = lambda: test_persistence_feature  # type: ignore[attr-defined]
     app.dependency_overrides[get_database_manager] = (
-        lambda: test_persistence_feature._database_manager  # noqa: SLF001
+        lambda: test_persistence_feature._database_manager
     )  # type: ignore[attr-defined]
 
     with TestClient(app=app, base_url="http://test") as test_client:
@@ -249,7 +249,7 @@ async def async_client_with_persistence(
     # Override persistence dependencies with test instances
     app.dependency_overrides[get_persistence_feature] = lambda: test_persistence_feature  # type: ignore[attr-defined]
     app.dependency_overrides[get_database_manager] = (
-        lambda: test_persistence_feature._database_manager  # noqa: SLF001
+        lambda: test_persistence_feature._database_manager
     )  # type: ignore[attr-defined]
 
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
@@ -561,6 +561,22 @@ def reset_dependency_overrides() -> Generator[None, None, None]:
     """
     yield
     app.dependency_overrides.clear()  # type: ignore[attr-defined]
+
+
+@pytest.fixture(autouse=True)
+def reset_composition_root_global() -> Generator[None, None, None]:
+    """
+    Automatically clear the module-level composition root after each test.
+
+    The app lifespan resets it on clean shutdown, but a test that calls
+    initialize_composition_root() directly (or an aborted startup) would
+    otherwise poison every later test that boots the real app with
+    "Composition root already initialized".
+    """
+    yield
+    from backend.core.dependencies import reset_composition_root
+
+    reset_composition_root()
 
 
 # ================================
