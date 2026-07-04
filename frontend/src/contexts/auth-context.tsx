@@ -131,7 +131,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
   // Login mutation
   const loginMutation = useMutation({
     mutationFn: ({ username, password }: LoginCredentials) => apiLogin(username, password),
-    onSuccess: (data) => {
+    onSuccess: async (data) => {
       // Store tokens using secure token storage
       tokenStorage.storeTokens({
         access_token: data.access_token,
@@ -139,8 +139,14 @@ export function AuthProvider({ children }: AuthProviderProps) {
         expires_in: data.expires_in,
         refresh_expires_in: data.refresh_expires_in,
       });
-      // Invalidate auth queries to refetch user data
-      void queryClient.invalidateQueries({ queryKey: queryKeys.auth.all });
+      // Refetch auth queries with the freshly-stored token and AWAIT completion
+      // before the mutation resolves. Cancelling first drops any in-flight
+      // unauthenticated fetch so it can't overwrite the authenticated result.
+      // Awaiting here is what closes the login race: callers (e.g. the OIDC
+      // callback page) only navigate once `user` reflects the new session, so
+      // AuthGuard never sees a stale unauthenticated state and bounces to /login.
+      await queryClient.cancelQueries({ queryKey: queryKeys.auth.all });
+      await queryClient.invalidateQueries({ queryKey: queryKeys.auth.all });
     },
     onError: (error) => {
       console.error('Login failed:', error);
@@ -151,14 +157,19 @@ export function AuthProvider({ children }: AuthProviderProps) {
 
   const oidcLoginMutation = useMutation({
     mutationFn: (sessionCode: string) => apiCompleteOidcLogin(sessionCode),
-    onSuccess: (data) => {
+    onSuccess: async (data) => {
       tokenStorage.storeTokens({
         access_token: data.access_token,
         refresh_token: data.refresh_token,
         expires_in: data.expires_in,
         refresh_expires_in: data.refresh_expires_in,
       });
-      void queryClient.invalidateQueries({ queryKey: queryKeys.auth.all });
+      // See loginMutation above: await the authenticated refetch so the OIDC
+      // callback only redirects to the app after `user` is hydrated. Without
+      // this await the PocketID flow runs twice (AuthGuard bounces to /login
+      // before the token lands in the query cache).
+      await queryClient.cancelQueries({ queryKey: queryKeys.auth.all });
+      await queryClient.invalidateQueries({ queryKey: queryKeys.auth.all });
     },
     onError: (error) => {
       console.error('PocketID login failed:', error);

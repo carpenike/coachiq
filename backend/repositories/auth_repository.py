@@ -11,7 +11,7 @@ import logging
 import uuid
 from collections import defaultdict
 from datetime import UTC, datetime
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 from backend.repositories.base import MonitoredRepository
 
@@ -115,7 +115,19 @@ class CredentialRepository(MonitoredRepository):
 
 
 class SessionRepository(MonitoredRepository):
-    """Repository for session and refresh token management."""
+    """Repository for session and refresh token management.
+
+    Refresh tokens are opaque and stored server-side. Sessions are persisted in
+    the ``user_sessions`` table via :class:`AuthRepository` so they survive a
+    backend restart — without this, every ``coachiq.service`` restart wiped all
+    refresh sessions and bounced authenticated users back to /login.
+
+    An in-memory fallback is retained for two cases where the database cannot
+    hold the session: the ``null://memory`` persistence backend (dev/tests) and
+    sessions whose ``user_id`` has no row in ``users`` (e.g. the synthetic
+    single-user "admin"), which would violate the ``user_sessions`` FK. These
+    fall back to the previous in-memory behaviour instead of failing outright.
+    """
 
     def __init__(self, database_manager, performance_monitor):
         """Initialize the repository.
@@ -126,9 +138,31 @@ class SessionRepository(MonitoredRepository):
         """
         super().__init__(database_manager, performance_monitor)
 
-        # In-memory storage
-        self._sessions: dict[str, dict[str, Any]] = {}  # refresh_token -> session
+        # Persistent, restart-surviving session store.
+        from backend.services.auth.repository import AuthRepository
+
+        self._auth_repo = AuthRepository(database_manager)
+
+        # In-memory fallback for sessions that cannot be persisted (null backend
+        # or non-persistable user ids). Keyed by refresh_token.
+        self._sessions: dict[str, dict[str, Any]] = {}
         self._user_sessions: dict[str, list[str]] = defaultdict(list)  # user_id -> [refresh_tokens]
+
+    @staticmethod
+    def _session_to_dict(session: "Any") -> dict[str, Any]:
+        """Convert a persistent ``UserSession`` ORM row to the consumer dict shape."""
+        return {
+            "session_id": session.id,
+            "user_id": session.user_id,
+            "refresh_token": session.session_token,
+            "device_info": session.device_info,
+            "created_at": session.created_at.isoformat() if session.created_at else None,
+            "expires_at": session.expires_at.isoformat() if session.expires_at else None,
+            "last_used": (
+                session.last_accessed_at.isoformat() if session.last_accessed_at else None
+            ),
+            "is_active": session.is_active,
+        }
 
     @MonitoredRepository._monitored_operation("create_user_session")
     async def create_user_session(
@@ -145,9 +179,21 @@ class SessionRepository(MonitoredRepository):
         Returns:
             Session ID
         """
-        session_id = str(uuid.uuid4())
+        # Persist to the database so the session survives a backend restart.
+        persisted = await self._auth_repo.create_user_session(
+            user_id=user_id,
+            session_token=refresh_token,
+            expires_at=expires_at,
+            device_info=device_info,
+        )
+        if persisted is not None:
+            logger.debug(f"Persisted session for user {user_id}")
+            return persisted.id
 
-        session = {
+        # Fallback: null backend or a user_id with no ``users`` row (FK). Keep the
+        # previous in-memory behaviour rather than dropping the session entirely.
+        session_id = str(uuid.uuid4())
+        self._sessions[refresh_token] = {
             "session_id": session_id,
             "user_id": user_id,
             "refresh_token": refresh_token,
@@ -157,11 +203,8 @@ class SessionRepository(MonitoredRepository):
             "last_used": datetime.now(UTC).isoformat(),
             "is_active": True,
         }
-
-        self._sessions[refresh_token] = session
         self._user_sessions[user_id].append(refresh_token)
-
-        logger.debug(f"Created session for user {user_id}")
+        logger.debug(f"Stored in-memory fallback session for user {user_id}")
         return session_id
 
     @MonitoredRepository._monitored_operation("get_user_session")
@@ -174,23 +217,35 @@ class SessionRepository(MonitoredRepository):
         Returns:
             Session data or None
         """
-        session = self._sessions.get(refresh_token)
+        now = datetime.now(UTC)
 
+        # In-memory fallback sessions take precedence (they only exist when the
+        # DB could not hold them).
+        session = self._sessions.get(refresh_token)
         if session and session["is_active"]:
-            # Check expiration
             expires_at = datetime.fromisoformat(session["expires_at"].replace("Z", "+00:00"))
-            if expires_at > datetime.now(UTC):
-                # Update last used
-                session["last_used"] = datetime.now(UTC).isoformat()
+            if expires_at > now:
+                session["last_used"] = now.isoformat()
                 return session
-            # Expired - mark as inactive
             session["is_active"] = False
+            return None
+
+        # Persistent store. Normalize expiry to UTC-aware: SQLite may hand back a
+        # naive datetime, which would raise when compared against an aware ``now``.
+        persisted = await self._auth_repo.get_user_session(refresh_token)
+        if persisted and persisted.is_active:
+            expires_at = persisted.expires_at
+            if expires_at.tzinfo is None:
+                expires_at = expires_at.replace(tzinfo=UTC)
+            if expires_at > now:
+                await self._auth_repo.update_session_last_accessed(refresh_token)
+                return self._session_to_dict(persisted)
 
         return None
 
     @MonitoredRepository._monitored_operation("get_user_sessions")
     async def get_user_sessions(self, user_id: str) -> list[dict[str, Any]]:
-        """Get all sessions for a user.
+        """Get all active sessions for a user.
 
         Args:
             user_id: User identifier
@@ -198,12 +253,17 @@ class SessionRepository(MonitoredRepository):
         Returns:
             List of active sessions
         """
-        sessions = []
+        sessions: list[dict[str, Any]] = []
 
-        for token in self._user_sessions.get(user_id, []):
+        # In-memory fallback sessions.
+        for token in list(self._user_sessions.get(user_id, [])):
             session = await self.get_user_session(token)
             if session:
                 sessions.append(session)
+
+        # Persistent sessions.
+        for persisted in await self._auth_repo.get_active_user_sessions(user_id):
+            sessions.append(self._session_to_dict(persisted))
 
         return sessions
 
@@ -218,21 +278,18 @@ class SessionRepository(MonitoredRepository):
             True if revoked successfully
         """
         if refresh_token in self._sessions:
-            self._sessions[refresh_token]["is_active"] = False
-            self._sessions[refresh_token]["revoked_at"] = datetime.now(UTC).isoformat()
-
-            # Remove from user's active sessions
             session = self._sessions[refresh_token]
+            session["is_active"] = False
+            session["revoked_at"] = datetime.now(UTC).isoformat()
             user_id = session["user_id"]
             if user_id in self._user_sessions:
                 self._user_sessions[user_id] = [
                     t for t in self._user_sessions[user_id] if t != refresh_token
                 ]
-
-            logger.info(f"Revoked session for user {user_id}")
+            logger.info(f"Revoked in-memory session for user {user_id}")
             return True
 
-        return False
+        return await self._auth_repo.revoke_user_session(refresh_token)
 
     @MonitoredRepository._monitored_operation("revoke_all_user_sessions")
     async def revoke_all_user_sessions(self, user_id: str) -> int:
@@ -250,6 +307,8 @@ class SessionRepository(MonitoredRepository):
             if await self.revoke_user_session(token):
                 count += 1
 
+        count += await self._auth_repo.revoke_all_user_sessions(user_id)
+
         if count > 0:
             logger.info(f"Revoked {count} sessions for user {user_id}")
 
@@ -263,21 +322,24 @@ class SessionRepository(MonitoredRepository):
             Number of sessions cleaned up
         """
         now = datetime.now(UTC)
-        expired_tokens = []
 
-        for token, session in self._sessions.items():
-            expires_at = datetime.fromisoformat(session["expires_at"].replace("Z", "+00:00"))
-            if expires_at <= now:
-                expired_tokens.append(token)
-
-        # Clean up expired sessions
+        # In-memory fallback sessions.
+        expired_tokens = [
+            token
+            for token, session in self._sessions.items()
+            if datetime.fromisoformat(session["expires_at"].replace("Z", "+00:00")) <= now
+        ]
         for token in expired_tokens:
             await self.revoke_user_session(token)
 
-        if expired_tokens:
-            logger.info(f"Cleaned up {len(expired_tokens)} expired sessions")
+        # Persistent sessions.
+        db_cleaned = await self._auth_repo.cleanup_expired_sessions()
 
-        return len(expired_tokens)
+        total = len(expired_tokens) + db_cleaned
+        if total:
+            logger.info(f"Cleaned up {total} expired sessions")
+
+        return total
 
     @MonitoredRepository._monitored_operation("get_active_session_count")
     async def get_active_session_count(self, user_id: str) -> int:

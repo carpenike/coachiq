@@ -17,6 +17,11 @@ const REFRESH_TOKEN_EXPIRY_KEY = 'refresh_token_expiry'
 // Token refresh timing
 const REFRESH_BUFFER_MS = 60000 // Refresh 1 minute before expiry
 const REFRESH_RETRY_DELAY_MS = 5000 // Retry failed refresh after 5 seconds
+// Cap transient-failure retries so a permanently-broken refresh (e.g. the
+// backend was restarted and the server-side session is gone) lands the user on
+// /login instead of looping "Token refresh failed" every 5s until the refresh
+// token's multi-day expiry.
+const MAX_REFRESH_RETRIES = 3
 
 /**
  * Interface for token data
@@ -42,6 +47,7 @@ class TokenStorageManager {
   private refreshCallbacks: TokenRefreshCallbacks = {}
   private isRefreshing = false
   private authEnabled: boolean | null = null
+  private refreshRetryCount = 0
 
   /**
    * Store authentication tokens securely
@@ -197,6 +203,7 @@ class TokenStorageManager {
       // Store new tokens
       const newTokenData = this.storeTokens(response)
 
+      this.refreshRetryCount = 0
       this.refreshCallbacks.onRefreshSuccess?.(newTokenData)
       return true
     } catch (error) {
@@ -207,22 +214,51 @@ class TokenStorageManager {
         return false
       }
       console.error('Token refresh failed:', error)
-
-      // Schedule retry if refresh token is still valid
-      if (this.isRefreshTokenValid()) {
-        setTimeout(() => {
-          this.isRefreshing = false
-          void this.attemptTokenRefresh()
-        }, REFRESH_RETRY_DELAY_MS)
-      } else {
-        this.refreshCallbacks.onTokenExpired?.()
-      }
-
-      this.refreshCallbacks.onRefreshFailure?.(error as Error)
+      this.handleRefreshFailure(error as Error)
       return false
     } finally {
       this.isRefreshing = false
     }
+  }
+
+  /**
+   * Decide whether a failed refresh is worth retrying, or whether the session
+   * is dead and the user should be routed to /login.
+   *
+   * A 4xx means the server rejected the refresh token itself (invalid, revoked,
+   * or its server-side session no longer exists — e.g. after a backend
+   * restart). Retrying can never succeed, so give up immediately. Only
+   * genuinely transient failures (network drops, 5xx) get a bounded retry;
+   * without a cap a permanently-broken refresh loops every few seconds until
+   * the refresh token's multi-day expiry.
+   */
+  private handleRefreshFailure(error: Error): void {
+    const status = (error as { statusCode?: number; status?: number }).statusCode
+      ?? (error as { status?: number }).status
+    const isUnrecoverable = typeof status === 'number' && status >= 400 && status < 500
+    const canRetry =
+      !isUnrecoverable &&
+      this.isRefreshTokenValid() &&
+      this.refreshRetryCount < MAX_REFRESH_RETRIES
+
+    if (canRetry) {
+      this.refreshRetryCount += 1
+      setTimeout(() => {
+        this.isRefreshing = false
+        void this.attemptTokenRefresh()
+      }, REFRESH_RETRY_DELAY_MS)
+    } else {
+      // Unrecoverable or out of retries: clear the dead session and signal
+      // expiry so the auth layer routes the user to /login instead of looping.
+      this.refreshRetryCount = 0
+      if (this.refreshTimeout) {
+        clearTimeout(this.refreshTimeout)
+        this.refreshTimeout = null
+      }
+      this.refreshCallbacks.onTokenExpired?.()
+    }
+
+    this.refreshCallbacks.onRefreshFailure?.(error)
   }
 
   /**
