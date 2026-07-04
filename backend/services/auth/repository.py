@@ -23,9 +23,9 @@ from backend.models.auth import (
     MagicLinkToken,
     User,
     UserAuthProvider,
-    UserRole,
     UserMFA,
     UserMFABackupCode,
+    UserRole,
     UserSession,
 )
 from backend.services.database.database_manager import DatabaseManager
@@ -618,6 +618,23 @@ class AuthRepository:
             return result.scalar_one_or_none()
 
         return await self._execute_with_session(_get_session, session_token)
+
+    async def get_active_user_sessions(self, user_id: str) -> list[UserSession]:
+        """Get all active, unexpired sessions for a user."""
+
+        async def _get_sessions(session: AsyncSession, uid: str) -> list[UserSession]:
+            result = await session.execute(
+                select(UserSession).where(
+                    and_(
+                        UserSession.user_id == uid,
+                        UserSession.is_active == True,  # noqa: E712
+                        UserSession.expires_at > datetime.now(UTC),
+                    )
+                )
+            )
+            return list(result.scalars().all())
+
+        return await self._execute_list_operation(_get_sessions, user_id)
 
     async def update_session_last_accessed(self, session_token: str) -> bool:
         """Update the last accessed time for a session."""

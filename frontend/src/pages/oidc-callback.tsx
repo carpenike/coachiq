@@ -1,5 +1,5 @@
 import { IconLoader2, IconShieldCheck, IconShieldX } from "@tabler/icons-react";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 
 import { Alert, AlertDescription } from "@/components/ui/alert";
@@ -17,6 +17,10 @@ export default function OidcCallbackPage() {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const [error, setError] = useState<string | null>(null);
+  // The session code is single-use; guard against exchanging it twice (e.g.
+  // React StrictMode double-invoking the effect), which would fail the second
+  // exchange and clear the tokens the first exchange just stored.
+  const exchangedCodeRef = useRef<string | null>(null);
 
   useEffect(() => {
     const sessionCode = searchParams.get("code");
@@ -24,6 +28,11 @@ export default function OidcCallbackPage() {
       setError("PocketID sign-in did not return a session code.");
       return;
     }
+
+    if (exchangedCodeRef.current === sessionCode) {
+      return;
+    }
+    exchangedCodeRef.current = sessionCode;
 
     let isCancelled = false;
     void completeOidcLogin(sessionCode)
