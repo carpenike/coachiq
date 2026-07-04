@@ -171,83 +171,83 @@ class EntityDomainService:
         validation["passed"] = len(validation["issues"]) == 0
         return validation
 
-    async def _wait_for_acknowledgment(
-        self, operation_id: str, entity_id: str, timeout_seconds: float
-    ) -> tuple[bool, float | None]:
+    @staticmethod
+    def _expected_operating_status(command: "SafetyControlCommandV2") -> int | None:
+        """Target DC_DIMMER operating_status (0-200 scale) for a command.
+
+        Returns 0 for off, the commanded level for an explicit brightness, or
+        ``None`` meaning "on at any level" (toggle / on-without-brightness),
+        where the confirmed value depends on the light's restored level.
         """
-        Wait for command acknowledgment from the physical RV-C system.
+        if command.command != "set":
+            return None  # toggle / brightness_up / brightness_down: accept any on-state
+        if command.state is False:
+            return 0
+        if command.brightness is not None:
+            return max(0, min(200, round(command.brightness * 2)))
+        return None  # on, unspecified level
 
-        Simple Pi-optimized implementation that monitors local CAN interface
-        for state change confirmation from the target entity.
+    async def _read_operating_status(self, entity_id: str) -> int | None:
+        """Read the entity's current operating_status from live state."""
+        try:
+            entities = await self.entities.list_entities()
+            raw = (entities.get(entity_id) or {}).get("raw") or {}
+            value = raw.get("operating_status")
+            return int(value) if value is not None else None
+        except Exception as e:  # noqa: BLE001 - polling must not raise
+            logger.warning("Error reading operating_status for %s: %s", entity_id, e)
+            return None
 
-        Returns (acknowledged, acknowledgment_time_ms)
+    @staticmethod
+    def _status_acknowledged(current: int | None, expected: int | None) -> bool:
+        """Whether the live operating_status confirms the commanded target."""
+        _tolerance = 10  # ~5% of the 0-200 scale, for ramp/rounding slack
+        if expected == 0:
+            return current == 0
+        if expected is not None:  # explicit level > 0
+            return current is not None and abs(current - expected) <= _tolerance
+        return current is not None and current > 0  # "on at any level"
+
+    async def _wait_for_acknowledgment(
+        self,
+        operation_id: str,
+        entity_id: str,
+        timeout_seconds: float,
+        expected_status: int | None,
+    ) -> tuple[bool, float | None]:
+        """Wait until the entity's live state reflects the commanded target.
+
+        Polls the RX-updated entity state (the same store that receives the
+        light's DC_DIMMER_STATUS_3 echo) for the target operating_status. Note
+        this confirms the commanded state was applied — a light that is toggled
+        off stops broadcasting, so its "off" is confirmed via the applied state
+        rather than a positive echo.
+
+        Returns ``(acknowledged, acknowledgment_time_ms)``.
         """
         start_time = time.time()
-        poll_interval = 0.1  # 100ms polls for responsive Pi performance
-
-        # Get the expected state after command execution
-        expected_state = await self._get_expected_entity_state(entity_id)
-
-        # Monitor CAN bus for actual state change
+        poll_interval = 0.1
         while (time.time() - start_time) < timeout_seconds:
-            try:
-                # Check current entity state from CAN bus via entity manager
-                current_state = await self.entity_manager.get_entity_current_state(entity_id)
-
-                if self._state_matches_expected(current_state, expected_state):
-                    acknowledgment_time = (time.time() - start_time) * 1000
-                    logger.info(f"Entity {entity_id} acknowledged in {acknowledgment_time:.1f}ms")
-                    return True, acknowledgment_time
-
-            except Exception as e:
-                logger.warning(f"Error checking entity state during ack wait: {e}")
-                # Continue polling rather than fail immediately
-
+            current = await self._read_operating_status(entity_id)
+            if self._status_acknowledged(current, expected_status):
+                ack_ms = (time.time() - start_time) * 1000
+                logger.info(
+                    "Entity %s acknowledged (op_status=%s, target=%s) in %.1fms",
+                    entity_id,
+                    current,
+                    expected_status,
+                    ack_ms,
+                )
+                return True, ack_ms
             await asyncio.sleep(poll_interval)
 
-        # Timeout reached without acknowledgment
-        timeout_ms = timeout_seconds * 1000
-        logger.warning(f"Entity {entity_id} acknowledgment timeout after {timeout_ms:.1f}ms")
+        logger.warning(
+            "Entity %s acknowledgment timeout after %.0fms (target op_status=%s)",
+            entity_id,
+            timeout_seconds * 1000,
+            expected_status,
+        )
         return False, None
-
-    async def _get_expected_entity_state(self, entity_id: str) -> dict[str, Any]:
-        """Get the expected state for entity after command execution."""
-        # For Pi deployment, keep this simple - just return current state
-        # In more complex scenarios, this would predict the expected state
-        try:
-            current_entities = await self.entities.list_entities()
-            entity_data = current_entities.get(entity_id, {})
-            return entity_data.get("raw", {})
-        except Exception as e:
-            logger.error(f"Failed to get expected state for {entity_id}: {e}")
-            return {}
-
-    def _state_matches_expected(self, current_state: dict, expected_state: dict) -> bool:
-        """
-        Simple state comparison for Pi deployment.
-
-        Compares key state fields to determine if command was acknowledged.
-        For RV systems, typically checks 'state', 'brightness', etc.
-        """
-        if not current_state or not expected_state:
-            return False
-
-        # For Pi deployment, check key fields that matter for RV control
-        key_fields = ["state", "brightness", "level", "position"]
-
-        for field in key_fields:
-            if field in expected_state:
-                current_val = current_state.get(field)
-                expected_val = expected_state.get(field)
-
-                # Allow small tolerance for analog values
-                if isinstance(expected_val, (int, float)) and isinstance(current_val, (int, float)):
-                    if abs(current_val - expected_val) > 0.1:  # 0.1% tolerance
-                        return False
-                elif current_val != expected_val:
-                    return False
-
-        return True
 
     async def halt_command_emission(self) -> dict[str, Any]:
         """
@@ -366,8 +366,9 @@ class EntityDomainService:
             )
 
             # Step 5: Wait for acknowledgment from physical system
+            expected_status = self._expected_operating_status(command)
             acknowledged, ack_time = await self._wait_for_acknowledgment(
-                operation_id, entity_id, command.timeout_seconds
+                operation_id, entity_id, command.timeout_seconds, expected_status
             )
 
             # Step 6: Update operation result
