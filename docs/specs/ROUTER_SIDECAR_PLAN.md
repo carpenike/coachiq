@@ -30,16 +30,20 @@ Keeping the listener distinct is the deliberate ADR-0003/auth-model exception.
 ## Token Endpoints
 
 All endpoints return HTTP 200 `text/plain` with a single lowercase token and a
-trailing newline. Requests never perform live gpsd or Starlink reads; they only
-return cached values from background pollers.
+trailing newline. Requests never perform live gpsd, Starlink, or cellular reads;
+they only return cached values from background pollers.
 
 - `GET /healthz` -> `ok`
 - `GET /location-state` -> `home`, `away`, or `unknown`
 - `GET /starlink/verdict` -> `healthy`, `degraded`, `down`, or `unknown`
 - `GET /starlink/raw` -> compact `key=value` diagnostics
+- `GET /5g/verdict` -> `healthy`, `degraded`, `down`, or `unknown`
+- `GET /5g/raw` -> compact `key=value` diagnostics
 
 `unknown` is the safe sentinel. Stale or absent GPS must never report `home`.
 Unreachable Starlink must never guess a failover state.
+Unreachable cellular telemetry must keep JSON last-good data stale but publish
+`unknown` for the RouterOS token.
 
 ## Starlink Telemetry JSON
 
@@ -60,6 +64,32 @@ snake_case keys. It also emits proto3 default values, so false and zero fields
 are present for stable local sensors such as Home Assistant. Some Starlink
 numeric fields can still serialize as the string `"NaN"`; consumers must treat
 that as invalid/no-signal rather than a numeric threshold value.
+
+## Nighthawk 5G Telemetry JSON
+
+The sidecar exposes cached Nighthawk M6 Pro `model.json` telemetry for local
+automation and debugging:
+
+- `GET /5g/status`
+
+The response uses the same `{ fetched_at, age_s, stale, error, data }` envelope
+as Starlink telemetry. A never-polled modem returns `stale: true` and
+`data: null`; a poll failure keeps last-good `data`, marks it stale, and leaves
+the RouterOS verdict token at `unknown`.
+
+The scraper reads `http://192.168.12.1/api/model.json` by default, follows the
+Nighthawk session redirect, accepts the modem's `text/plain` response, and parses
+it as JSON. The sidecar does not write modem settings and must not log the full
+model payload because it can include session tokens and configuration fields.
+Debug logging is limited to a small signal subset.
+
+The 5G verdict uses `wwan.connection` for immediate connection state and the
+rolling average of populated `wwan.signalStrength.rsrp`, `rsrq`, `sinr`, and
+`wwanadv.radioQuality` for quality. `wwan.connection != "Connected"` publishes
+`down` immediately. Unreachable or missing telemetry publishes `unknown`. Signal
+degradation requires the configured dwell interval and recovers only after the
+rolling average clears recovery thresholds for the dwell interval. NSA sentinel
+values such as `-32768` are treated as absent/no-signal, not as bad signal.
 
 ## Starlink Verdict State Machine
 

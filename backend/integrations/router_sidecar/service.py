@@ -7,15 +7,26 @@ import contextlib
 import copy
 import logging
 import time
+from dataclasses import dataclass
 from datetime import UTC, datetime
-from typing import TYPE_CHECKING
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
-from backend.integrations.router_sidecar.app import create_router_sidecar_app
+from backend.integrations.router_sidecar.app import (
+    RouterSidecarCallbacks,
+    create_router_sidecar_app,
+)
 from backend.integrations.router_sidecar.gpsd import GpsdClient, GpsdTpv
 from backend.integrations.router_sidecar.location import (
     LocationEvaluator,
     LocationEvaluatorConfig,
+)
+from backend.integrations.router_sidecar.nighthawk import (
+    NighthawkClient,
+    NighthawkSnapshot,
+    NighthawkVerdictConfig,
+    NighthawkVerdictEvaluator,
+    format_nighthawk_raw,
+    sanitize_nighthawk_model,
 )
 from backend.integrations.router_sidecar.starlink import StarlinkGrpcClient, StarlinkSnapshot
 from backend.integrations.router_sidecar.verdict import (
@@ -25,11 +36,25 @@ from backend.integrations.router_sidecar.verdict import (
 )
 
 if TYPE_CHECKING:
+    from collections.abc import Coroutine
+
     from fastapi import FastAPI
 
     from backend.core.config import RouterSidecarSettings
 
 logger = logging.getLogger(__name__)
+
+
+@dataclass(frozen=True, slots=True)
+class RouterSidecarServiceClients:
+    """Optional test collaborators for RouterSidecarService."""
+
+    gpsd: GpsdClient | None = None
+    location_evaluator: LocationEvaluator | None = None
+    starlink: StarlinkGrpcClient | None = None
+    starlink_evaluator: StarlinkVerdictEvaluator | None = None
+    nighthawk: NighthawkClient | None = None
+    nighthawk_evaluator: NighthawkVerdictEvaluator | None = None
 
 
 class RouterSidecarService:
@@ -38,26 +63,32 @@ class RouterSidecarService:
     def __init__(
         self,
         settings: RouterSidecarSettings,
-        gpsd_client: GpsdClient | None = None,
-        location_evaluator: LocationEvaluator | None = None,
-        starlink_client: StarlinkGrpcClient | None = None,
-        starlink_evaluator: StarlinkVerdictEvaluator | None = None,
+        clients: RouterSidecarServiceClients | None = None,
     ) -> None:
+        clients = clients or RouterSidecarServiceClients()
         self.settings = settings
         self._location_state = "unknown"
         self._starlink_verdict = "unknown"
         self._starlink_raw = "unknown=1"
         self._starlink_snapshot: StarlinkSnapshot | None = None
         self._starlink_last_error: str | None = None
+        self._nighthawk_verdict = "unknown"
+        self._nighthawk_raw = "reachable=0"
+        self._nighthawk_snapshot: NighthawkSnapshot | None = None
+        self._nighthawk_last_error: str | None = None
         self._tasks: set[asyncio.Task[None]] = set()
         self._running = False
         self._last_gps_fix: GpsdTpv | None = None
-        self._gpsd_client = gpsd_client or GpsdClient(settings.gpsd_host, settings.gpsd_port)
-        self._starlink_client = starlink_client or StarlinkGrpcClient(
+        self._gpsd_client = clients.gpsd or GpsdClient(settings.gpsd_host, settings.gpsd_port)
+        self._starlink_client = clients.starlink or StarlinkGrpcClient(
             settings.dish_host,
             settings.dish_port,
         )
-        self._location_evaluator = location_evaluator or LocationEvaluator(
+        self._nighthawk_client = clients.nighthawk or NighthawkClient(
+            settings.nighthawk_base_url,
+            timeout_seconds=settings.nighthawk_request_timeout_seconds,
+        )
+        self._location_evaluator = clients.location_evaluator or LocationEvaluator(
             LocationEvaluatorConfig(
                 home_latitude=settings.home_latitude,
                 home_longitude=settings.home_longitude,
@@ -66,7 +97,7 @@ class RouterSidecarService:
                 fix_staleness_seconds=settings.gps_fix_staleness_seconds,
             )
         )
-        self._starlink_evaluator = starlink_evaluator or StarlinkVerdictEvaluator(
+        self._starlink_evaluator = clients.starlink_evaluator or StarlinkVerdictEvaluator(
             StarlinkVerdictConfig(
                 obstruction_fraction_degraded=settings.starlink_obstruction_fraction_degraded,
                 obstruction_fraction_recovery=settings.starlink_obstruction_fraction_recovery,
@@ -80,14 +111,33 @@ class RouterSidecarService:
                 down_recovery_dwell_seconds=settings.starlink_down_recovery_dwell_seconds,
             )
         )
+        self._nighthawk_evaluator = clients.nighthawk_evaluator or NighthawkVerdictEvaluator(
+            NighthawkVerdictConfig(
+                rsrp_degraded=settings.nighthawk_rsrp_degraded,
+                rsrp_recovery=settings.nighthawk_rsrp_recovery,
+                rsrq_degraded=settings.nighthawk_rsrq_degraded,
+                rsrq_recovery=settings.nighthawk_rsrq_recovery,
+                sinr_degraded=settings.nighthawk_sinr_degraded,
+                sinr_recovery=settings.nighthawk_sinr_recovery,
+                radio_quality_degraded=settings.nighthawk_radio_quality_degraded,
+                radio_quality_recovery=settings.nighthawk_radio_quality_recovery,
+                sample_window_seconds=settings.nighthawk_signal_window_seconds,
+                dwell_seconds=settings.nighthawk_verdict_dwell_seconds,
+            )
+        )
         self.app: FastAPI = create_router_sidecar_app(
-            location_state=self.get_location_state,
-            starlink_verdict=self.get_starlink_verdict,
-            starlink_raw=self.get_starlink_raw,
-            starlink_status=self.get_starlink_status_payload,
-            starlink_history=self.get_starlink_history_payload,
-            starlink_diagnostics=self.get_starlink_diagnostics_payload,
-            starlink_device_info=self.get_starlink_device_info_payload,
+            RouterSidecarCallbacks(
+                location_state=self.get_location_state,
+                starlink_verdict=self.get_starlink_verdict,
+                starlink_raw=self.get_starlink_raw,
+                starlink_status=self.get_starlink_status_payload,
+                starlink_history=self.get_starlink_history_payload,
+                starlink_diagnostics=self.get_starlink_diagnostics_payload,
+                starlink_device_info=self.get_starlink_device_info_payload,
+                nighthawk_status=self.get_nighthawk_status_payload,
+                nighthawk_verdict=self.get_nighthawk_verdict,
+                nighthawk_raw=self.get_nighthawk_raw,
+            )
         )
 
     async def start(self) -> None:
@@ -99,6 +149,7 @@ class RouterSidecarService:
             self._create_task(self._gpsd_poll_loop(), "router-sidecar-gpsd")
             self._create_task(self._location_refresh_loop(), "router-sidecar-location")
             self._create_task(self._starlink_poll_loop(), "router-sidecar-starlink")
+            self._create_task(self._nighthawk_poll_loop(), "router-sidecar-nighthawk")
         logger.info("Router sidecar service started")
 
     async def stop(self) -> None:
@@ -127,6 +178,14 @@ class RouterSidecarService:
         """Return the cached Starlink raw key-value line."""
         return self._starlink_raw
 
+    def get_nighthawk_verdict(self) -> str:
+        """Return the cached Nighthawk verdict token."""
+        return self._nighthawk_verdict
+
+    def get_nighthawk_raw(self) -> str:
+        """Return the cached Nighthawk raw key-value line."""
+        return self._nighthawk_raw
+
     def get_starlink_status_payload(self) -> dict[str, Any]:
         """Return cached Starlink status with staleness metadata."""
         data = self._starlink_snapshot.status if self._starlink_snapshot else None
@@ -149,7 +208,13 @@ class RouterSidecarService:
         data = self._starlink_snapshot.device_info if self._starlink_snapshot else None
         return self._wrap_starlink_payload(data)
 
-    def _create_task(self, coroutine, name: str) -> None:
+    def get_nighthawk_status_payload(self) -> dict[str, Any]:
+        """Return cached Nighthawk model.json with staleness metadata."""
+        return self._wrap_nighthawk_payload(
+            self._nighthawk_snapshot.data if self._nighthawk_snapshot else None
+        )
+
+    def _create_task(self, coroutine: Coroutine[Any, Any, None], name: str) -> None:
         task = asyncio.create_task(coroutine, name=name)
         self._tasks.add(task)
         task.add_done_callback(self._tasks.discard)
@@ -195,6 +260,20 @@ class RouterSidecarService:
                 )
             await asyncio.sleep(self.settings.starlink_poll_interval_seconds)
 
+    async def _nighthawk_poll_loop(self) -> None:
+        while self._running:
+            try:
+                snapshot = await asyncio.to_thread(self._nighthawk_client.fetch_snapshot_blocking)
+                self._refresh_nighthawk(snapshot)
+            except asyncio.CancelledError:
+                raise
+            except Exception as exc:
+                logger.warning("Nighthawk poll failed: %s", exc)
+                self._refresh_nighthawk(
+                    NighthawkSnapshot(reachable=False, error=f"{type(exc).__name__}: {exc}")
+                )
+            await asyncio.sleep(self.settings.nighthawk_poll_interval_seconds)
+
     def _refresh_starlink(self, snapshot: StarlinkSnapshot) -> None:
         if snapshot.reachable:
             self._starlink_snapshot = snapshot
@@ -231,6 +310,51 @@ class RouterSidecarService:
             "age_s": age_s,
             "stale": stale,
             "error": self._starlink_last_error,
+            "data": data,
+        }
+
+    def _refresh_nighthawk(self, snapshot: NighthawkSnapshot) -> None:
+        if snapshot.reachable:
+            if snapshot.data is not None:
+                snapshot = NighthawkSnapshot(
+                    reachable=snapshot.reachable,
+                    data=sanitize_nighthawk_model(snapshot.data),
+                    fetched_at=snapshot.fetched_at,
+                    error=snapshot.error,
+                )
+            self._nighthawk_snapshot = snapshot
+            self._nighthawk_last_error = None
+            self._nighthawk_verdict = self._nighthawk_evaluator.evaluate(
+                snapshot,
+                now=datetime.now(UTC),
+            )
+            self._nighthawk_raw = format_nighthawk_raw(snapshot)
+        else:
+            self._nighthawk_last_error = snapshot.error or "unreachable"
+            self._nighthawk_verdict = "unknown"
+            self._nighthawk_raw = format_nighthawk_raw(snapshot)
+
+    def _wrap_nighthawk_payload(self, data: dict[str, Any] | None) -> dict[str, Any]:
+        snapshot = self._nighthawk_snapshot
+        if snapshot is None or snapshot.fetched_at is None:
+            return {
+                "fetched_at": None,
+                "age_s": None,
+                "stale": True,
+                "error": self._nighthawk_last_error,
+                "data": None,
+            }
+
+        age_s = max(0.0, time.time() - snapshot.fetched_at)
+        stale = (
+            self._nighthawk_last_error is not None
+            or age_s > self.settings.nighthawk_telemetry_staleness_seconds
+        )
+        return {
+            "fetched_at": snapshot.fetched_at,
+            "age_s": age_s,
+            "stale": stale,
+            "error": self._nighthawk_last_error,
             "data": data,
         }
 
