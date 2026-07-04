@@ -1537,7 +1537,7 @@
       "length": 8,
       "source_address": "0x9D",
       "description": "DC Dimmer Command 2",
-      "pdf_reference": "Sec. 6.24.6 (DGN 1FEDD)",
+      "pdf_reference": "Sec. 6.24.6 (DGN 1FEDB)",
       "signals": [
         {
           "name": "instance",
@@ -1558,8 +1558,7 @@
           "start_bit": 16,
           "length": 8,
           "byte_order": "big_endian",
-          "unit": "%",
-          "description": "Target brightness level (0\u2013100%); special: 254 = flash, 255 = ignore"
+          "description": "Target brightness level on the 0\u2013200 scale (0xC8 = 100%, 0x00 = off); special: 254 = flash, 255 = ignore"
         },
         {
           "name": "command",
@@ -1569,12 +1568,12 @@
           "byte_order": "big_endian"
         },
         {
-          "name": "delay_duration",
+          "name": "duration",
           "start_bit": 32,
           "length": 8,
           "byte_order": "big_endian",
           "unit": "s",
-          "description": "Delay before applying command (0\u2013255 s)"
+          "description": "Delay/duration before applying command (0\u2013255 s; 255 = instant)"
         },
         {
           "name": "interlock",
@@ -1600,7 +1599,7 @@
           "byte_order": "big_endian"
         }
       ],
-      "pgn": "0x1FED8"
+      "pgn": "0x1FEDB"
     },
     "436189103": {
       "name": "TANK_STATUS",
