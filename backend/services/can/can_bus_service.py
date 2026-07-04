@@ -43,6 +43,16 @@ LIGHT_STATUS_SIMULATION_TYPE = 2
 SIMULATION_ERROR_SLEEP_SECONDS = 5
 
 
+def _device_lookup_key(dgn_hex: str, instance: Any) -> tuple[str, str]:
+    """Normalize a spec DGN hex + instance into a coach-mapping device_lookup key.
+
+    Spec entries carry ``dgn_hex`` values like ``"0x1FEDA"`` while the coach
+    mapping's device_lookup keys are bare uppercase hex like ``"1FEDA"``, so the
+    ``0X`` prefix must be stripped after uppercasing for lookups to hit.
+    """
+    return (dgn_hex.upper().removeprefix("0X"), str(instance))
+
+
 class CANBusService(GuardrailParticipant):
     """
     Service that manages CAN bus integration.
@@ -63,6 +73,8 @@ class CANBusService(GuardrailParticipant):
         device_discovery_service: Any | None = None,
         entity_manager_service: Any | None = None,
         websocket_manager: Any | None = None,
+        entity_state_repository: Any | None = None,
+        diagnostics_repository: Any | None = None,
     ):
         """
         Initialize the CAN bus service with repository dependencies.
@@ -125,6 +137,8 @@ class CANBusService(GuardrailParticipant):
         self._device_discovery_service = device_discovery_service
         self._entity_manager_service = entity_manager_service
         self._websocket_manager = websocket_manager
+        self._entity_state_repository = entity_state_repository
+        self._diagnostics_repository = diagnostics_repository
 
         logger.info(
             "CANBusService initialized",
@@ -841,7 +855,7 @@ class CANBusService(GuardrailParticipant):
 
                     # Check if this maps to a known device/entity
                     if dgn_hex and instance is not None:
-                        device_key = (dgn_hex.upper(), str(instance))
+                        device_key = _device_lookup_key(dgn_hex, instance)
                         device_config = self.device_lookup.get(device_key)
 
                         if device_config:
@@ -854,6 +868,7 @@ class CANBusService(GuardrailParticipant):
                                 )
                         else:
                             logger.debug("Unmapped device: %s:%s", dgn_hex, instance)
+                            self._record_unmapped_device(dgn_hex, instance, entry, data, msg)
                             # Analyze unmapped but decodable message for patterns
                             if self.pattern_engine:
                                 try:
@@ -873,6 +888,7 @@ class CANBusService(GuardrailParticipant):
                     logger.error("Error decoding CAN message: %s", decode_error)
             else:
                 logger.debug("No decoder found for arbitration ID 0x%x", arbitration_id)
+                self._record_unknown_pgn(arbitration_id, pgn, data, msg)
                 # Analyze completely unknown message for patterns
                 if self.pattern_engine:
                     try:
@@ -889,6 +905,56 @@ class CANBusService(GuardrailParticipant):
 
         except Exception as e:
             logger.error("Error processing CAN message: %s", e)
+
+    def _record_unknown_pgn(
+        self, arbitration_id: int, pgn: int, data: bytes, msg: dict[str, Any]
+    ) -> None:
+        """Record an undecodable PGN in the diagnostics repository (best effort)."""
+        if self._diagnostics_repository is None:
+            return
+        try:
+            timestamp = float(msg.get("timestamp", time.time()))
+            self._diagnostics_repository.upsert_unknown_pgn(
+                f"{pgn:X}",
+                {
+                    "arbitration_id_hex": f"{arbitration_id:X}",
+                    "first_seen_timestamp": timestamp,
+                    "last_seen_timestamp": timestamp,
+                    "last_data_hex": data.hex().upper(),
+                },
+            )
+        except Exception as e:
+            logger.debug("Unable to record unknown PGN %X: %s", pgn, e)
+
+    def _record_unmapped_device(
+        self,
+        dgn_hex: str,
+        instance: Any,
+        entry: dict[str, Any],
+        data: bytes,
+        msg: dict[str, Any],
+    ) -> None:
+        """Record a decoded-but-unmapped device in the diagnostics repository (best effort)."""
+        if self._diagnostics_repository is None:
+            return
+        try:
+            timestamp = float(msg.get("timestamp", time.time()))
+            dgn_name = entry.get("name")
+            self._diagnostics_repository.upsert_unmapped_entry(
+                f"{dgn_hex}-{instance}",
+                {
+                    "pgn_hex": str(entry.get("pgn", dgn_hex)),
+                    "pgn_name": dgn_name,
+                    "dgn_hex": dgn_hex,
+                    "dgn_name": dgn_name,
+                    "instance": str(instance),
+                    "last_data_hex": data.hex().upper(),
+                    "first_seen_timestamp": timestamp,
+                    "last_seen_timestamp": timestamp,
+                },
+            )
+        except Exception as e:
+            logger.debug("Unable to record unmapped device %s:%s: %s", dgn_hex, instance, e)
 
     def _process_reassembled_message(
         self,
@@ -1091,6 +1157,11 @@ class CANBusService(GuardrailParticipant):
             if updated_entity:
                 logger.debug("Updated entity %s state from CAN message", entity_id)
 
+                # Persist to the runtime state repository so API reads
+                # (which go through EntityRuntimeStateRepository, not the
+                # EntityManager) see live CAN-derived state.
+                await self._persist_entity_state(entity_id, updated_entity)
+
                 # Broadcast the update via WebSocket
                 # Broadcast entity update via WebSocket
                 websocket_service = self._websocket_manager
@@ -1109,6 +1180,21 @@ class CANBusService(GuardrailParticipant):
 
         except Exception:
             logger.exception("Error updating entity %s from CAN message", entity_id)
+
+    async def _persist_entity_state(self, entity_id: str, updated_entity: Any) -> None:
+        """Persist a live entity update to the runtime state repository (best effort)."""
+        if self._entity_state_repository is None:
+            return
+        try:
+            await self._entity_state_repository.save_entity_state(
+                entity_id, updated_entity.to_dict()
+            )
+        except Exception as repo_error:
+            logger.debug(
+                "Unable to persist entity %s state to repository: %s",
+                entity_id,
+                repo_error,
+            )
 
     async def _update_light_state(
         self, payload: dict[str, Any], _decoded_data: dict[str, Any], raw_data: dict[str, Any]

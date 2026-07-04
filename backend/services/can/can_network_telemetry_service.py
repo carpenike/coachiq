@@ -86,7 +86,12 @@ class CANNetworkTelemetryService:
     async def _poll_loop(self) -> None:
         """Continuously sample interface counters until cancelled."""
         while True:
-            await self.sample_once()
+            try:
+                await self.sample_once()
+            except asyncio.CancelledError:
+                raise
+            except Exception as e:
+                logger.debug("CAN network telemetry sampling error: %s", e)
             await asyncio.sleep(self._sample_interval_seconds)
 
     async def sample_once(self) -> None:
