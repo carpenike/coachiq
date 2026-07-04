@@ -192,12 +192,6 @@ function NetworkStatsSidebar({
                 {stats.total > 0 ? Math.round((stats.errors / stats.total) * 100) : 0}%
               </Badge>
             </div>
-            <div className="flex justify-between text-sm">
-              <span>Last Update</span>
-              <Badge variant="outline">
-                {new Date().toLocaleTimeString()}
-              </Badge>
-            </div>
           </div>
         </CardContent>
       </Card>
@@ -573,10 +567,9 @@ export default function NetworkMap() {
   return (
     <AppLayout>
       <div className="flex-1 space-y-6 p-4 pt-6">
-        {/* Header */}
+        {/* Header (title comes from the app shell) */}
         <div className="flex justify-between items-center">
           <div>
-            <h1 className="text-3xl font-bold tracking-tight">Network Map</h1>
             <p className="text-muted-foreground">
               Device discovery and monitoring for CAN bus networks
             </p>
@@ -588,7 +581,9 @@ export default function NetworkMap() {
                 </Badge>
                 {networkTopology && (
                   <span className="text-sm text-muted-foreground">
-                    {networkTopology.total_devices} devices discovered
+                    {networkTopology.total_devices} device{networkTopology.total_devices === 1 ? "" : "s"} discovered
+                    {" · "}
+                    {deviceAvailability?.online_devices ?? networkTopology.online_devices ?? 0} online
                   </span>
                 )}
               </div>
@@ -841,8 +836,8 @@ export default function NetworkMap() {
                   <IconInfoCircle className="h-4 w-4" />
                   <AlertTitle>Performance Monitoring</AlertTitle>
                   <AlertDescription>
-                    For detailed performance analytics, visit the dedicated{' '}
-                    <a href="/performance" className="font-medium underline">Performance Analytics</a> page.
+                    For detailed service and interface telemetry, visit the{' '}
+                    <a href="/system" className="font-medium underline">System</a> page.
                   </AlertDescription>
                 </Alert>
               </div>

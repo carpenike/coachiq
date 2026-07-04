@@ -65,7 +65,7 @@ export function NavUser() {
   }
 
   const handleAdminSettingsClick = () => {
-    navigate("/admin-settings")
+    navigate("/admin")
   }
 
   // Loading state

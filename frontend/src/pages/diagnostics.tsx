@@ -1,598 +1,565 @@
 /**
- * Advanced Diagnostics Page
+ * Diagnostics — THE single fault page.
  *
- * Comprehensive diagnostic dashboard showing DTCs, system health,
- * fault correlations, and maintenance predictions in a user-friendly format.
+ * - DTC table from GET /api/v1/diagnostics/dtcs with severity/protocol
+ *   filters and an admin-gated Resolve action.
+ * - Health verdict from GET /api/v1/diagnostics/system-status, annotated
+ *   honestly when the coach connection is not live.
+ * - Statistics strip from GET /api/v1/diagnostics/statistics (counts +
+ *   trend word only — no fabricated accuracy percentages).
  *
- * Implements Gemini's Tier 1 recommendations:
- * - Human-readable diagnostic messages
- * - Clear system health indicators
- * - Mobile-friendly interface
- * - Peace of mind focus
+ * Empty states distinguish "bus is silent, faults cannot be reported"
+ * from "live bus, genuinely no faults" (per docs/frontend-redesign.md).
  */
 
-import type { DiagnosticTroubleCode, DTCFilters } from "@/api/types"
-import { AppLayout } from "@/components/app-layout"
-import SmartManualCard from "@/components/diagnostics/SmartManualCard"
-import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
-import { Badge } from "@/components/ui/badge"
-import { Button } from "@/components/ui/button"
-import { Card, CardAction, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { Skeleton } from "@/components/ui/skeleton"
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
-import { useDiagnosticsState, useResolveDTC } from "@/hooks/useDiagnostics"
 import {
-    IconActivity,
-    IconAlertCircle,
-    IconAlertTriangle,
-    IconBook,
-    IconCheck,
-    IconClock,
-    IconInfoCircle,
-    IconRefresh,
-    IconShield,
-    IconTool,
-    IconTrendingUp,
-    IconX,
-    IconXboxX
+  IconAlertTriangle,
+  IconCircleCheck,
+  IconStethoscope,
+  IconVolumeOff,
 } from "@tabler/icons-react"
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { useState } from "react"
 
-/**
- * Helper function to convert technical DTCs to human-readable messages
- */
-function getHumanReadableMessage(dtc: DiagnosticTroubleCode): string {
-  const system = dtc.system_type.toLowerCase()
-  const code = dtc.code.toLowerCase()
+import { apiGet, apiPost } from "@/api/client"
+import { Badge } from "@/components/ui/badge"
+import { Button } from "@/components/ui/button"
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select"
+import { Skeleton } from "@/components/ui/skeleton"
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table"
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
+import { useAuth } from "@/contexts"
+import { useCoachConnection } from "@/contexts/coach-connection"
+import { toast } from "@/hooks/use-toast"
+import { cn } from "@/lib/utils"
 
-  // Create human-readable messages based on system and common fault patterns
-  if (system.includes('engine')) {
-    if (code.includes('temp') || dtc.description.toLowerCase().includes('temperature')) {
-      return "Engine Temperature Issue: Engine running too hot. Check coolant level and radiator."
-    }
-    if (code.includes('oil') || dtc.description.toLowerCase().includes('pressure')) {
-      return "Engine Oil Pressure: Low oil pressure detected. Check oil level and pump."
-    }
-    return `Engine Issue: ${dtc.description || 'Engine system requires attention'}`
-  }
+//
+// ===== Wire types (match backend DiagnosticTroubleCode.to_dict()) =====
+//
 
-  if (system.includes('power') || system.includes('electrical')) {
-    if (code.includes('volt') || dtc.description.toLowerCase().includes('voltage')) {
-      return "Electrical System: Voltage issue detected. Check battery and charging system."
-    }
-    return `Power System: ${dtc.description || 'Electrical system requires attention'}`
-  }
-
-  if (system.includes('climate') || system.includes('hvac')) {
-    return `Climate Control: ${dtc.description || 'HVAC system requires attention'}`
-  }
-
-  if (system.includes('lighting')) {
-    return `Lighting System: ${dtc.description || 'Light circuit issue detected'}`
-  }
-
-  if (system.includes('tank') || system.includes('water')) {
-    return `Water System: ${dtc.description || 'Water or tank system issue detected'}`
-  }
-
-  // Default fallback with system name
-  return `${system.charAt(0).toUpperCase() + system.slice(1)} System: ${dtc.description || 'System requires attention'}`
+interface DtcRecord {
+  code: number
+  protocol: string
+  system_type: string
+  severity: string
+  first_occurrence: number
+  last_occurrence: number
+  occurrence_count: number
+  source_address: number | null
+  pgn: number | null
+  dgn: number | null
+  description: string
+  active: boolean
+  intermittent: boolean
+  resolved: boolean
+  acknowledged: boolean
 }
 
-/**
- * DTC Severity Badge Component
- */
-function DTCSeverityBadge({ severity }: { severity: string }) {
-  const variants = {
-    critical: { variant: "destructive" as const, icon: IconAlertCircle, label: "Critical" },
-    high: { variant: "destructive" as const, icon: IconAlertTriangle, label: "High" },
-    medium: { variant: "secondary" as const, icon: IconClock, label: "Medium" },
-    low: { variant: "outline" as const, icon: IconInfoCircle, label: "Low" },
-    info: { variant: "outline" as const, icon: IconInfoCircle, label: "Info" },
-  }
-
-  const config = variants[severity as keyof typeof variants] || variants.info
-  const Icon = config.icon
-
-  return (
-    <Badge variant={config.variant} className="gap-1">
-      <Icon className="h-3 w-3" />
-      {config.label}
-    </Badge>
-  )
+interface DtcCollection {
+  dtcs: DtcRecord[]
+  total_count: number
+  active_count: number
+  by_severity: Record<string, number>
+  by_protocol: Record<string, number>
 }
 
-/**
- * System Health Overview Card - Peace of Mind Focus
- */
-function SystemHealthCard() {
-  const { stats, isLoading, error } = useDiagnosticsState()
+interface DiagnosticsSystemStatus {
+  overall_health: string
+  health_score: number
+  active_systems: string[]
+  degraded_systems: string[]
+  last_assessment: number
+}
 
-  if (isLoading) {
+interface DiagnosticsStatistics {
+  metrics: {
+    total_dtcs: number
+    active_dtcs: number
+    resolved_dtcs: number
+    processing_rate: number
+    system_health_trend: "improving" | "stable" | "degrading"
+  }
+}
+
+//
+// ===== Constants =====
+//
+
+const SEVERITY_OPTIONS = [
+  { value: "critical", label: "Critical" },
+  { value: "high", label: "High" },
+  { value: "medium", label: "Medium" },
+  { value: "low", label: "Low" },
+  { value: "info", label: "Info" },
+] as const
+
+const PROTOCOL_OPTIONS = [
+  { value: "rvc", label: "RV-C" },
+  { value: "j1939", label: "J1939" },
+  { value: "firefly", label: "Firefly" },
+  { value: "spartan_k2", label: "Spartan K2" },
+] as const
+
+const PROTOCOL_LABELS: Record<string, string> = Object.fromEntries(
+  PROTOCOL_OPTIONS.map((option) => [option.value, option.label])
+)
+
+//
+// ===== Helpers =====
+//
+
+/** Backend timestamps are epoch seconds (floats). */
+function formatEpoch(seconds: number | null | undefined): string {
+  if (seconds === null || seconds === undefined || !Number.isFinite(seconds) || seconds <= 0) {
+    return "—"
+  }
+  const date = new Date(seconds * 1000)
+  if (Number.isNaN(date.getTime())) return "—"
+  const time = date.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })
+  const sameDay = new Date().toDateString() === date.toDateString()
+  return sameDay ? time : `${date.toLocaleDateString()} ${time}`
+}
+
+function severityBadgeClass(severity: string): string {
+  switch (severity) {
+    case "critical":
+      return "bg-red-100 text-red-800 dark:bg-red-950 dark:text-red-300 border-red-300 dark:border-red-800"
+    case "high":
+      return "bg-orange-100 text-orange-800 dark:bg-orange-950 dark:text-orange-300 border-orange-300 dark:border-orange-800"
+    case "medium":
+      return "bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300 border-amber-300 dark:border-amber-800"
+    case "low":
+      return "bg-slate-100 text-slate-700 dark:bg-slate-900 dark:text-slate-300 border-slate-300 dark:border-slate-700"
+    default:
+      return "text-muted-foreground"
+  }
+}
+
+function titleCase(value: string): string {
+  return value
+    .split(/[_\s]+/)
+    .map((word) => (word ? word[0]?.toUpperCase() + word.slice(1) : word))
+    .join(" ")
+}
+
+//
+// ===== Health verdict card =====
+//
+
+function HealthVerdictCard() {
+  const { coach } = useCoachConnection()
+  const { data, isLoading, error } = useQuery({
+    queryKey: ["diagnostics", "system-status"],
+    queryFn: () => apiGet<DiagnosticsSystemStatus>("/api/v1/diagnostics/system-status"),
+    refetchInterval: 45_000,
+    staleTime: 30_000,
+    retry: 1,
+  })
+
+  if (isLoading) return <Skeleton className="h-32" />
+
+  if (error || !data) {
     return (
       <Card>
         <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <IconShield className="size-5" />
-            <Skeleton className="h-5 w-32" />
-          </CardTitle>
+          <CardTitle className="text-base">Health verdict</CardTitle>
+          <CardDescription>
+            Couldn't load the health assessment
+            {error instanceof Error ? ` — ${error.message}` : ""}.
+          </CardDescription>
         </CardHeader>
-        <CardContent>
-          <Skeleton className="h-16 w-full" />
-        </CardContent>
       </Card>
     )
   }
 
-  if (error) {
-    return (
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2 text-destructive">
-            <IconX className="size-5" />
-            System Health
-          </CardTitle>
-        </CardHeader>
-        <CardContent>
-          <p className="text-sm text-muted-foreground">Unable to check system health</p>
-        </CardContent>
-      </Card>
-    )
-  }
-
-  const isHealthy = (stats?.active_dtcs || 0) === 0
-  const healthTrend = stats?.system_health_trend || 'stable'
-
-  const trendIcons = {
-    improving: { icon: IconTrendingUp, color: "text-green-500" },
-    stable: { icon: IconActivity, color: "text-blue-500" },
-    degrading: { icon: IconAlertTriangle, color: "text-amber-500" },
-  }
-
-  const TrendIcon = trendIcons[healthTrend]?.icon || IconActivity
-  const trendColor = trendIcons[healthTrend]?.color || "text-blue-500"
+  // Green verdict styling requires a LIVE coach connection (honesty rule:
+  // no "all good" verdict rendered from anything but live data).
+  const isLive = coach === "LIVE"
+  const looksHealthy = data.degraded_systems.length === 0
 
   return (
-    <Card className="@container/card from-primary/5 to-card bg-gradient-to-t shadow-xs">
-      <CardHeader>
-        <CardTitle className="@[250px]/card:text-lg flex items-center gap-2">
-          <IconShield className="size-5" />
-          System Health
-        </CardTitle>
-        <CardDescription>Overall diagnostic status</CardDescription>
-        <CardAction>
-          <Badge variant={isHealthy ? "default" : "destructive"}>
-            {isHealthy ? "All Systems Normal" : "Issues Detected"}
-          </Badge>
-        </CardAction>
-      </CardHeader>
-      <CardContent>
-        <div className="flex items-center justify-center p-6">
-          <div className="text-center">
-            {isHealthy ? (
-              <IconCheck className="size-12 text-green-500 mx-auto mb-2" />
-            ) : (
-              <IconAlertCircle className="size-12 text-amber-500 mx-auto mb-2" />
-            )}
-            <div className="font-semibold text-lg">
-              {isHealthy ? "Everything looks good!" : "Attention needed"}
-            </div>
-            <div className="text-sm text-muted-foreground mt-1">
-              {isHealthy
-                ? "All vehicle systems are operating normally"
-                : `${stats?.active_dtcs || 0} active diagnostic codes`
-              }
-            </div>
-            <div className="flex items-center justify-center gap-1 mt-2">
-              <TrendIcon className={`size-4 ${trendColor}`} />
-              <span className="text-sm capitalize">{healthTrend}</span>
-            </div>
-          </div>
+    <Card
+      className={cn(
+        isLive && looksHealthy && "border-green-300 dark:border-green-900",
+        data.degraded_systems.length > 0 && "border-amber-300 dark:border-amber-900"
+      )}
+    >
+      <CardHeader className="pb-2">
+        <div className="flex items-center justify-between gap-2">
+          <CardTitle className="text-base">Health verdict</CardTitle>
+          <IconStethoscope className="size-4 text-muted-foreground" />
         </div>
+      </CardHeader>
+      <CardContent className="space-y-2">
+        <div className="flex items-baseline gap-3">
+          <span
+            className={cn(
+              "text-2xl font-semibold",
+              isLive && looksHealthy && "text-green-700 dark:text-green-400"
+            )}
+          >
+            {titleCase(data.overall_health)}
+          </span>
+          <span className="text-sm text-muted-foreground">
+            score {Math.round(data.health_score)}/100
+          </span>
+        </div>
+        {data.degraded_systems.length > 0 && (
+          <p className="text-sm text-amber-700 dark:text-amber-400">
+            Degraded: {data.degraded_systems.map(titleCase).join(", ")}
+          </p>
+        )}
+        <p className="text-xs text-muted-foreground">
+          {data.active_systems.length} systems reporting · assessed{" "}
+          {formatEpoch(data.last_assessment)}
+        </p>
+        {!isLive && (
+          <p className="flex items-center gap-1.5 text-xs text-amber-700 dark:text-amber-400">
+            <IconAlertTriangle className="size-3.5 shrink-0" />
+            Based on last known data — the coach connection is not live.
+          </p>
+        )}
       </CardContent>
     </Card>
   )
 }
 
-/**
- * Active DTCs List Component - Human-Readable Focus
- */
-function ActiveDTCsList({ filters }: { filters?: DTCFilters }) {
-  const { dtcs, isLoading, error } = useDiagnosticsState(filters)
-  const resolveDTC = useResolveDTC()
+//
+// ===== Statistics strip =====
+//
 
-  if (isLoading) {
-    return (
-      <div className="space-y-3">
-        {Array.from({ length: 3 }).map((_, i) => (
-          <div key={i} className="flex items-start gap-3 p-4 border rounded-lg">
-            <Skeleton className="h-4 w-4 rounded-full mt-1" />
-            <div className="flex-1 space-y-2">
-              <Skeleton className="h-4 w-3/4" />
-              <Skeleton className="h-3 w-1/2" />
-            </div>
-            <Skeleton className="h-6 w-16" />
-          </div>
-        ))}
-      </div>
-    )
-  }
+function StatisticsStrip() {
+  const { data, isLoading, error } = useQuery({
+    queryKey: ["diagnostics", "statistics"],
+    queryFn: () => apiGet<DiagnosticsStatistics>("/api/v1/diagnostics/statistics"),
+    refetchInterval: 60_000,
+    staleTime: 30_000,
+    retry: 1,
+  })
 
-  if (error) {
-    return (
-      <Alert variant="destructive">
-        <IconAlertCircle className="h-4 w-4" />
-        <AlertTitle>Error Loading Issues</AlertTitle>
-        <AlertDescription>
-          Unable to load diagnostic information. Please check your connection and try again.
-        </AlertDescription>
-      </Alert>
-    )
-  }
+  if (isLoading) return <Skeleton className="h-24" />
 
-  if (!dtcs || dtcs.dtcs.length === 0) {
-    return (
-      <Card>
-        <CardContent className="p-6 text-center">
-          <IconCheck className="h-12 w-12 mx-auto mb-4 text-green-500" />
-          <h3 className="text-lg font-semibold mb-2">No Active Issues</h3>
-          <p className="text-muted-foreground">
-            All systems are operating normally with no diagnostic trouble codes.
-          </p>
-        </CardContent>
-      </Card>
-    )
-  }
-
-  const handleResolveDTC = (dtc: DiagnosticTroubleCode) => {
-    resolveDTC.mutate({
-      protocol: dtc.protocol,
-      code: typeof dtc.code === 'string' ? parseInt(dtc.code, 16) : dtc.code,
-      sourceAddress: dtc.source_address,
-    })
-  }
-
-  return (
-    <div className="space-y-3">
-      {dtcs.dtcs.map((dtc) => (
-        <Card key={`${dtc.protocol}-${dtc.code}-${dtc.source_address}`}>
-          <CardContent className="p-4">
-            <div className="flex items-start gap-3">
-              <div className="flex-shrink-0 mt-1">
-                <DTCSeverityBadge severity={dtc.severity} />
-              </div>
-              <div className="flex-1 min-w-0">
-                <div className="flex items-start justify-between gap-2">
-                  <div className="flex-1 min-w-0">
-                    <h4 className="font-medium text-sm leading-5 mb-1">
-                      {getHumanReadableMessage(dtc)}
-                    </h4>
-                    <div className="text-xs text-muted-foreground space-y-1">
-                      <div>System: {dtc.system_type} • Code: {dtc.code}</div>
-                      <div>
-                        First seen: {new Date(dtc.first_seen).toLocaleDateString()} •
-                        {dtc.count > 1 && ` Occurred ${dtc.count} times`}
-                      </div>
-                    </div>
-                  </div>
-                  <div className="flex-shrink-0">
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      onClick={() => handleResolveDTC(dtc)}
-                      disabled={resolveDTC.isPending || dtc.resolved}
-                      className="gap-2"
-                    >
-                      <IconCheck className="h-3 w-3" />
-                      {dtc.resolved ? 'Resolved' : 'Mark Fixed'}
-                    </Button>
-                  </div>
-                </div>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-      ))}
-    </div>
-  )
-}
-
-/**
- * DTC Filters Component
- */
-function DTCFilters({
-  filters,
-  onFiltersChange
-}: {
-  filters: DTCFilters
-  onFiltersChange: (filters: DTCFilters) => void
-}) {
-  return (
-    <div className="flex gap-3 flex-wrap">
-      <Select
-        value={filters.severity || "all"}
-        onValueChange={(value) => {
-          const newFilters: DTCFilters = { ...filters };
-          if (value !== "all") {
-            newFilters.severity = value;
-          } else {
-            delete newFilters.severity;
-          }
-          onFiltersChange(newFilters);
-        }}
-      >
-        <SelectTrigger className="w-32">
-          <SelectValue placeholder="Severity" />
-        </SelectTrigger>
-        <SelectContent>
-          <SelectItem value="all">All Severities</SelectItem>
-          <SelectItem value="critical">Critical</SelectItem>
-          <SelectItem value="high">High</SelectItem>
-          <SelectItem value="medium">Medium</SelectItem>
-          <SelectItem value="low">Low</SelectItem>
-          <SelectItem value="info">Info</SelectItem>
-        </SelectContent>
-      </Select>
-
-      <Select
-        value={filters.protocol || "all"}
-        onValueChange={(value) => {
-          const newFilters: DTCFilters = { ...filters };
-          if (value !== "all") {
-            newFilters.protocol = value;
-          } else {
-            delete newFilters.protocol;
-          }
-          onFiltersChange(newFilters);
-        }}
-      >
-        <SelectTrigger className="w-32">
-          <SelectValue placeholder="Protocol" />
-        </SelectTrigger>
-        <SelectContent>
-          <SelectItem value="all">All Protocols</SelectItem>
-          <SelectItem value="rvc">RV-C</SelectItem>
-          <SelectItem value="j1939">J1939</SelectItem>
-          <SelectItem value="firefly">Firefly</SelectItem>
-          <SelectItem value="spartan_k2">Spartan K2</SelectItem>
-        </SelectContent>
-      </Select>
-
-      <Select
-        value={filters.system_type || "all"}
-        onValueChange={(value) => {
-          const newFilters: DTCFilters = { ...filters };
-          if (value !== "all") {
-            newFilters.system_type = value;
-          } else {
-            delete newFilters.system_type;
-          }
-          onFiltersChange(newFilters);
-        }}
-      >
-        <SelectTrigger className="w-32">
-          <SelectValue placeholder="System" />
-        </SelectTrigger>
-        <SelectContent>
-          <SelectItem value="all">All Systems</SelectItem>
-          <SelectItem value="lighting">Lighting</SelectItem>
-          <SelectItem value="climate">Climate</SelectItem>
-          <SelectItem value="power">Power</SelectItem>
-          <SelectItem value="engine">Engine</SelectItem>
-          <SelectItem value="transmission">Transmission</SelectItem>
-        </SelectContent>
-      </Select>
-
-      {(filters.severity || filters.protocol || filters.system_type) && (
-        <Button
-          variant="ghost"
-          size="sm"
-          onClick={() => onFiltersChange({})}
-          className="gap-2"
-        >
-          <IconXboxX className="h-3 w-3" />
-          Clear Filters
-        </Button>
-      )}
-    </div>
-  )
-}
-
-/**
- * Diagnostic Statistics Component
- */
-function DiagnosticStatsCard() {
-  const { stats, isLoading, error } = useDiagnosticsState()
-
-  if (isLoading) {
+  if (error || !data) {
     return (
       <Card>
         <CardHeader>
-          <CardTitle>System Statistics</CardTitle>
+          <CardTitle className="text-base">Statistics</CardTitle>
+          <CardDescription>
+            Couldn't load fault statistics
+            {error instanceof Error ? ` — ${error.message}` : ""}.
+          </CardDescription>
         </CardHeader>
-        <CardContent>
-          <div className="grid grid-cols-2 gap-4">
-            {Array.from({ length: 4 }).map((_, i) => (
-              <div key={i} className="text-center">
-                <Skeleton className="h-8 w-16 mx-auto mb-2" />
-                <Skeleton className="h-4 w-20 mx-auto" />
-              </div>
-            ))}
-          </div>
-        </CardContent>
       </Card>
     )
   }
 
-  if (error || !stats) {
-    return (
-      <Card>
-        <CardHeader>
-          <CardTitle>System Statistics</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <p className="text-sm text-muted-foreground text-center">
-            Unable to load system statistics
-          </p>
-        </CardContent>
-      </Card>
-    )
-  }
+  const { metrics } = data
+  const stats = [
+    { label: "Total fault codes", value: metrics.total_dtcs },
+    { label: "Active", value: metrics.active_dtcs },
+    { label: "Resolved", value: metrics.resolved_dtcs },
+  ]
 
   return (
     <Card>
-      <CardHeader>
-        <CardTitle className="flex items-center gap-2">
-          <IconActivity className="size-5" />
-          System Statistics
-        </CardTitle>
-        <CardDescription>Diagnostic system performance</CardDescription>
+      <CardHeader className="pb-2">
+        <CardTitle className="text-base">Statistics</CardTitle>
       </CardHeader>
-      <CardContent>
-        <div className="grid grid-cols-2 gap-4">
-          <div className="text-center p-3 bg-background/50 rounded-lg">
-            <div className="text-2xl font-semibold tabular-nums">{stats.total_dtcs}</div>
-            <div className="text-xs text-muted-foreground">Total Issues</div>
+      <CardContent className="flex flex-wrap items-center gap-x-8 gap-y-3">
+        {stats.map((stat) => (
+          <div key={stat.label}>
+            <p className="text-xs text-muted-foreground">{stat.label}</p>
+            <p className="text-xl font-semibold tabular-nums">{stat.value}</p>
           </div>
-          <div className="text-center p-3 bg-background/50 rounded-lg">
-            <div className="text-2xl font-semibold tabular-nums">{stats.resolved_dtcs}</div>
-            <div className="text-xs text-muted-foreground">Resolved</div>
-          </div>
-          <div className="text-center p-3 bg-background/50 rounded-lg">
-            <div className="text-2xl font-semibold tabular-nums">{stats.correlation_accuracy.toFixed(1)}%</div>
-            <div className="text-xs text-muted-foreground">Accuracy</div>
-          </div>
-          <div className="text-center p-3 bg-background/50 rounded-lg">
-            <div className="text-2xl font-semibold tabular-nums capitalize">{stats.system_health_trend}</div>
-            <div className="text-xs text-muted-foreground">Trend</div>
-          </div>
+        ))}
+        <div>
+          <p className="text-xs text-muted-foreground">Trend</p>
+          <p className="text-xl font-medium capitalize">{metrics.system_health_trend}</p>
         </div>
       </CardContent>
     </Card>
   )
 }
 
-/**
- * Main Advanced Diagnostics Page Component
- */
-export default function AdvancedDiagnostics() {
-  const [filters, setFilters] = useState<DTCFilters>({})
-  const { dtcs, isLoading, error, refresh } = useDiagnosticsState(filters)
+//
+// ===== Resolve action =====
+//
 
-  if (error) {
+function ResolveButton({ dtc }: Readonly<{ dtc: DtcRecord }>) {
+  const { user } = useAuth()
+  const queryClient = useQueryClient()
+  const isAdmin = user?.role === "admin"
+
+  const resolveMutation = useMutation({
+    mutationFn: () =>
+      apiPost<{ resolved: boolean }>("/api/v1/diagnostics/dtcs/resolve", {
+        protocol: dtc.protocol,
+        code: dtc.code,
+        source_address: dtc.source_address ?? 0,
+      }),
+    onSuccess: (result) => {
+      if (result.resolved) {
+        toast({
+          title: "Fault code resolved",
+          description: `${PROTOCOL_LABELS[dtc.protocol] ?? dtc.protocol} code ${dtc.code} marked resolved.`,
+        })
+        void queryClient.invalidateQueries({ queryKey: ["diagnostics"] })
+      } else {
+        toast({
+          variant: "destructive",
+          title: "Could not resolve fault code",
+          description: `The backend did not resolve ${PROTOCOL_LABELS[dtc.protocol] ?? dtc.protocol} code ${dtc.code}.`,
+        })
+      }
+    },
+    onError: (error: Error) => {
+      toast({
+        variant: "destructive",
+        title: "Resolve failed",
+        description: error.message,
+      })
+    },
+  })
+
+  const button = (
+    <Button
+      variant="outline"
+      size="sm"
+      disabled={!isAdmin || resolveMutation.isPending}
+      onClick={() => resolveMutation.mutate()}
+    >
+      {resolveMutation.isPending ? "Resolving…" : "Resolve"}
+    </Button>
+  )
+
+  if (isAdmin) return button
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <span>{button}</span>
+      </TooltipTrigger>
+      <TooltipContent>Resolving fault codes requires an administrator account</TooltipContent>
+    </Tooltip>
+  )
+}
+
+//
+// ===== DTC table =====
+//
+
+function DtcTable({ dtcs }: Readonly<{ dtcs: DtcRecord[] }>) {
+  return (
+    <div className="overflow-x-auto">
+      <Table>
+        <TableHeader>
+          <TableRow>
+            <TableHead>Code</TableHead>
+            <TableHead>Severity</TableHead>
+            <TableHead>Protocol</TableHead>
+            <TableHead>System</TableHead>
+            <TableHead>Description</TableHead>
+            <TableHead>Occurred</TableHead>
+            <TableHead>Status</TableHead>
+            <TableHead className="text-right">Action</TableHead>
+          </TableRow>
+        </TableHeader>
+        <TableBody>
+          {dtcs.map((dtc) => (
+            <TableRow
+              key={`${dtc.protocol}-${dtc.code}-${dtc.source_address ?? 0}`}
+              className={cn(dtc.resolved && "opacity-60")}
+            >
+              <TableCell className="font-mono">{dtc.code}</TableCell>
+              <TableCell>
+                <Badge variant="outline" className={severityBadgeClass(dtc.severity)}>
+                  {titleCase(dtc.severity)}
+                </Badge>
+              </TableCell>
+              <TableCell>{PROTOCOL_LABELS[dtc.protocol] ?? titleCase(dtc.protocol)}</TableCell>
+              <TableCell>{titleCase(dtc.system_type)}</TableCell>
+              <TableCell className="max-w-72 truncate" title={dtc.description}>
+                {dtc.description || "—"}
+              </TableCell>
+              <TableCell className="whitespace-nowrap text-sm text-muted-foreground">
+                {formatEpoch(dtc.last_occurrence)}
+                {dtc.occurrence_count > 1 && ` (×${dtc.occurrence_count})`}
+              </TableCell>
+              <TableCell>
+                {dtc.resolved ? (
+                  <Badge variant="secondary">Resolved</Badge>
+                ) : (
+                  <Badge
+                    variant="outline"
+                    className="border-red-300 text-red-700 dark:border-red-800 dark:text-red-400"
+                  >
+                    Active
+                  </Badge>
+                )}
+              </TableCell>
+              <TableCell className="text-right">
+                {!dtc.resolved && <ResolveButton dtc={dtc} />}
+              </TableCell>
+            </TableRow>
+          ))}
+        </TableBody>
+      </Table>
+    </div>
+  )
+}
+
+//
+// ===== Empty state (honest about a silent bus) =====
+//
+
+function EmptyDtcState({ filtered }: Readonly<{ filtered: boolean }>) {
+  const { coach, canbus } = useCoachConnection()
+
+  if (filtered) {
     return (
-      <AppLayout pageTitle="System Health">
-        <div className="flex-1 space-y-6 p-4 pt-6">
-          <div className="flex items-center justify-between">
-            <div>
-              <h1 className="text-3xl font-bold tracking-tight">System Health</h1>
-              <p className="text-muted-foreground">
-                Vehicle system monitoring and diagnostic information
-              </p>
-            </div>
-            <Button onClick={refresh} variant="outline" className="gap-2">
-              <IconRefresh className="h-4 w-4" />
-              Retry
-            </Button>
-          </div>
+      <div className="flex flex-col items-center gap-2 py-10 text-center">
+        <p className="text-sm font-medium">No fault codes match the current filters</p>
+        <p className="text-sm text-muted-foreground">Clear the filters to see all fault codes.</p>
+      </div>
+    )
+  }
 
-          <Card>
-            <CardContent className="p-6 text-center">
-              <IconX className="h-12 w-12 mx-auto mb-4 text-muted-foreground" />
-              <h3 className="text-lg font-semibold mb-2">Unable to Load System Health</h3>
-              <p className="text-muted-foreground">
-                There was an error loading diagnostic data. Please check your connection and try again.
-              </p>
-            </CardContent>
-          </Card>
-        </div>
-      </AppLayout>
+  if (canbus === "silent") {
+    return (
+      <div className="flex flex-col items-center gap-2 py-10 text-center">
+        <IconVolumeOff className="size-8 text-amber-600 dark:text-amber-400" />
+        <p className="text-sm font-medium">No fault codes received</p>
+        <p className="max-w-md text-sm text-amber-700 dark:text-amber-400">
+          Note: the CAN bus is silent — faults cannot be reported. This does not mean the coach
+          is fault-free.
+        </p>
+      </div>
     )
   }
 
   return (
-    <AppLayout pageTitle="System Health">
-      <div className="flex-1 space-y-6 p-4 pt-6">
-        {/* Page Header */}
-        <div className="flex items-center justify-between">
-          <div>
-            <h1 className="text-3xl font-bold tracking-tight">System Health</h1>
-            <p className="text-muted-foreground">
-              Vehicle system monitoring and diagnostic information
-            </p>
-          </div>
-          <Button onClick={refresh} variant="outline" className="gap-2" disabled={isLoading}>
-            <IconRefresh className="h-4 w-4" />
-            Refresh
-          </Button>
-        </div>
+    <div className="flex flex-col items-center gap-2 py-10 text-center">
+      <IconCircleCheck
+        className={cn(
+          "size-8",
+          coach === "LIVE" ? "text-green-600 dark:text-green-400" : "text-muted-foreground"
+        )}
+      />
+      <p className="text-sm font-medium">No fault codes</p>
+      <p className="max-w-md text-sm text-muted-foreground">
+        The CAN bus is active and no diagnostic trouble codes have been reported.
+        {coach !== "LIVE" && " (Realtime connection is degraded — data may lag.)"}
+      </p>
+    </div>
+  )
+}
 
-        {/* Overview Cards */}
-        <div className="grid gap-6 md:grid-cols-2">
-          <SystemHealthCard />
-          <DiagnosticStatsCard />
-        </div>
+//
+// ===== Page =====
+//
 
-        {/* Main Content Tabs */}
-        <Tabs defaultValue="issues" className="space-y-4">
-          <TabsList>
-            <TabsTrigger value="issues" className="gap-2">
-              <IconAlertTriangle className="h-4 w-4" />
-              Current Issues
-            </TabsTrigger>
-            <TabsTrigger value="help" className="gap-2">
-              <IconBook className="h-4 w-4" />
-              Smart Manual
-            </TabsTrigger>
-            <TabsTrigger value="maintenance" className="gap-2">
-              <IconTool className="h-4 w-4" />
-              Maintenance
-            </TabsTrigger>
-          </TabsList>
+export default function DiagnosticsPage() {
+  const [severity, setSeverity] = useState<string>("all")
+  const [protocol, setProtocol] = useState<string>("all")
 
-          <TabsContent value="issues" className="space-y-4">
-            <div className="flex items-center justify-between">
-              <h2 className="text-lg font-semibold">Current System Issues</h2>
-              <DTCFilters filters={filters} onFiltersChange={setFilters} />
-            </div>
-            <div className="grid gap-6 lg:grid-cols-2">
-              <div>
-                <ActiveDTCsList filters={filters} />
-              </div>
-              <div>
-                {dtcs?.dtcs && dtcs.dtcs.length > 0 && dtcs.dtcs[0] ? (
-                  <SmartManualCard activeDTC={dtcs.dtcs[0]} />
-                ) : (
-                  <SmartManualCard />
-                )}
-              </div>
-            </div>
-          </TabsContent>
+  const filtersActive = severity !== "all" || protocol !== "all"
 
-          <TabsContent value="help" className="space-y-4">
-            <h2 className="text-lg font-semibold">Smart Manual & Troubleshooting</h2>
-            <SmartManualCard />
-          </TabsContent>
+  const dtcsQuery = useQuery({
+    queryKey: ["diagnostics", "dtcs", { severity, protocol }],
+    queryFn: () => {
+      const params = new URLSearchParams()
+      if (severity !== "all") params.set("severity", severity)
+      if (protocol !== "all") params.set("protocol", protocol)
+      const query = params.toString()
+      const suffix = query ? `?${query}` : ""
+      return apiGet<DtcCollection>(`/api/v1/diagnostics/dtcs${suffix}`)
+    },
+    refetchInterval: 30_000,
+    staleTime: 15_000,
+    retry: 1,
+  })
 
-          <TabsContent value="maintenance" className="space-y-4">
-            <h2 className="text-lg font-semibold">Maintenance Recommendations</h2>
-            <Card>
-              <CardContent className="p-6 text-center">
-                <IconTool className="h-12 w-12 mx-auto mb-4 text-green-500" />
-                <h3 className="text-lg font-semibold mb-2">Predictive Maintenance Active</h3>
-                <p className="text-muted-foreground mb-4">
-                  Visit the <strong>Maintenance</strong> page for detailed component health tracking, trend analysis, and maintenance recommendations.
-                </p>
-                <Button variant="outline" onClick={() => window.location.href = '/maintenance'} className="gap-2">
-                  <IconTool className="h-4 w-4" />
-                  View Maintenance Dashboard
-                </Button>
-              </CardContent>
-            </Card>
-          </TabsContent>
-        </Tabs>
+  const dtcs = dtcsQuery.data?.dtcs ?? []
+
+  return (
+    <div className="flex-1 space-y-6 p-4 pt-6 lg:px-6">
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+        <HealthVerdictCard />
+        <StatisticsStrip />
       </div>
-    </AppLayout>
+
+      <Card>
+        <CardHeader className="pb-3">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <CardTitle className="text-base">Fault codes</CardTitle>
+              <CardDescription>
+                Diagnostic trouble codes reported on the coach's CAN networks.
+              </CardDescription>
+            </div>
+            <div className="flex gap-2">
+              <Select value={severity} onValueChange={setSeverity}>
+                <SelectTrigger className="w-36" aria-label="Filter by severity">
+                  <SelectValue placeholder="Severity" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All severities</SelectItem>
+                  {SEVERITY_OPTIONS.map((option) => (
+                    <SelectItem key={option.value} value={option.value}>
+                      {option.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <Select value={protocol} onValueChange={setProtocol}>
+                <SelectTrigger className="w-36" aria-label="Filter by protocol">
+                  <SelectValue placeholder="Protocol" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All protocols</SelectItem>
+                  {PROTOCOL_OPTIONS.map((option) => (
+                    <SelectItem key={option.value} value={option.value}>
+                      {option.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+        </CardHeader>
+        <CardContent>
+          {dtcsQuery.isLoading && <Skeleton className="h-40" />}
+
+          {dtcsQuery.error && (
+            <div className="flex flex-col items-center gap-2 py-10 text-center">
+              <IconAlertTriangle className="size-8 text-destructive" />
+              <p className="text-sm font-medium">Couldn't load fault codes</p>
+              <p className="text-sm text-muted-foreground">
+                {dtcsQuery.error instanceof Error ? dtcsQuery.error.message : "Unknown error"}
+              </p>
+            </div>
+          )}
+
+          {!dtcsQuery.isLoading && !dtcsQuery.error && dtcs.length === 0 && (
+            <EmptyDtcState filtered={filtersActive} />
+          )}
+
+          {!dtcsQuery.isLoading && !dtcsQuery.error && dtcs.length > 0 && <DtcTable dtcs={dtcs} />}
+        </CardContent>
+      </Card>
+    </div>
   )
 }

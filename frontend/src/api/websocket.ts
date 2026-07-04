@@ -200,6 +200,17 @@ export class RVCWebSocketClient {
       this.cleanup();
       this._state = 'disconnected';
 
+      // Notify app-level listeners (e.g. CoachConnectionProvider) of close
+      // codes so cross-cutting concerns like auth (4401) can react without
+      // hijacking this connection's handler chain.
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(
+          new CustomEvent('coachiq:ws-close', {
+            detail: { endpoint: this.endpoint, code: event.code, reason: event.reason },
+          })
+        );
+      }
+
       // Handle authentication-related closures
       if (event.code === 1008) { // Policy violation (auth failure)
         console.warn(`WebSocket authentication failed: ${event.reason}`);

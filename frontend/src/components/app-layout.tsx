@@ -1,52 +1,21 @@
-import { AppSidebar } from "@/components/app-sidebar"
-import { SiteHeader } from "@/components/site-header"
-import {
-  SidebarInset,
-  SidebarProvider,
-} from "@/components/ui/sidebar"
+/**
+ * TRANSITIONAL passthrough — the old per-page AppLayout (sidebar + header +
+ * footer) has been replaced by the app-shell layout route
+ * (src/components/app-shell.tsx). Old pages still wrap themselves in
+ * <AppLayout>, so this renders children only; when the last old page is
+ * rewritten, delete this file.
+ */
+
 import * as React from "react"
 
 interface AppLayoutProps {
   children: React.ReactNode
+  /** Ignored — the header title now derives from the route registry. */
   pageTitle?: string
+  /** Ignored — kept for old call sites. */
   sidebarVariant?: "inset" | "sidebar" | "floating"
 }
 
-function AppFooter() {
-  return (
-    <footer className="border-t bg-background px-6 py-4">
-      <div className="flex items-center justify-between text-sm text-muted-foreground">
-        <p>&copy; 2025 CoachIQ. All rights reserved.</p>
-        <p>Version 1.0.0</p>
-      </div>
-    </footer>
-  )
-}
-
-export function AppLayout({
-  children,
-  pageTitle = "Application",
-  sidebarVariant = "inset"
-}: AppLayoutProps) {
-  return (
-    <SidebarProvider
-      style={
-        {
-          "--sidebar-width": "calc(var(--spacing) * 72)",
-          "--header-height": "calc(var(--spacing) * 12)",
-        } as React.CSSProperties
-      }
-    >
-      <AppSidebar variant={sidebarVariant} />
-      <SidebarInset>
-        <SiteHeader pageTitle={pageTitle} />
-        <div className="flex flex-1 flex-col min-h-[calc(100vh-var(--header-height))]">
-          <main className="@container/main flex flex-1 flex-col gap-2">
-            {children}
-          </main>
-          <AppFooter />
-        </div>
-      </SidebarInset>
-    </SidebarProvider>
-  )
+export function AppLayout({ children }: AppLayoutProps) {
+  return <>{children}</>
 }

@@ -16,6 +16,7 @@ import { Skeleton } from "@/components/ui/skeleton"
 // Table components replaced by VirtualizedTable
 import { fetchEnhancedCANStatistics } from "@/api/endpoints"
 import { VirtualizedTable, type VirtualizedTableColumn } from "@/components/virtualized-table"
+import { useCoachConnection } from "@/contexts/coach-connection"
 import { useCANMetrics, useCANStatistics } from "@/hooks/useSystem"
 import { useVirtualizedTable } from "@/hooks/useVirtualizedTable"
 import { useCANScanWebSocket } from "@/hooks/useWebSocket"
@@ -25,11 +26,15 @@ import {
     IconFilter,
     IconPlayerPause,
     IconPlayerPlay,
+    IconPlugConnectedX,
     IconRefresh,
     IconTrash
 } from "@tabler/icons-react"
 import { useQuery } from "@tanstack/react-query"
-import { useMemo, useState } from "react"
+import { useEffect, useMemo, useState } from "react"
+
+/** Bound the initial skeleton state — after this we show an explicit status instead. */
+const INITIAL_LOAD_GRACE_MS = 5000
 
 /**
  * CAN message statistics component
@@ -215,7 +220,15 @@ function SourceBadge({ source }: { source: number }) {
 /**
  * Enhanced CAN message table with virtualization
  */
-function CANMessageTable({ messages, isPaused }: { messages: CANMessage[]; isPaused: boolean }) {
+function CANMessageTable({
+  messages,
+  isPaused,
+  emptyMessage,
+}: {
+  messages: CANMessage[]
+  isPaused: boolean
+  emptyMessage?: string
+}) {
   const { visibleData, totalItems = 0 } = useVirtualizedTable({
     data: messages,
     maxItems: 5000,
@@ -314,7 +327,7 @@ function CANMessageTable({ messages, isPaused }: { messages: CANMessage[]; isPau
           columns={columns}
           height={400}
           itemHeight={40}
-          emptyMessage={isPaused ? "Message capture paused" : "No messages received"}
+          emptyMessage={isPaused ? "Message capture paused" : emptyMessage ?? "No messages received"}
           getRowKey={(message, index) => `${message.timestamp}-${index}`}
           className={visibleData.some(m => m.error) ? "has-errors" : ""}
         />
@@ -414,6 +427,15 @@ export default function CANSniffer() {
   const [isPaused, setIsPaused] = useState(false)
   const [maxMessages] = useState(1000)
   const [messages, setMessages] = useState<CANMessage[]>([])
+  const { websocket, reason, retry } = useCoachConnection()
+
+  // Bound the initial skeleton state: after the grace window, show an
+  // explicit connection/empty state instead of skeletons-forever.
+  const [graceExpired, setGraceExpired] = useState(false)
+  useEffect(() => {
+    const timer = setTimeout(() => setGraceExpired(true), INITIAL_LOAD_GRACE_MS)
+    return () => clearTimeout(timer)
+  }, [])
 
   // WebSocket connection for real-time CAN messages.
   // The generic `<CANMessage>` opts into a typed callback; payloads are
@@ -434,21 +456,33 @@ export default function CANSniffer() {
 
   const messageArray = messages
 
+  // Track when we started listening on a live connection, so an empty
+  // table can honestly say "no traffic observed since HH:MM:SS".
+  const [listeningSince, setListeningSince] = useState<Date | null>(null)
+  useEffect(() => {
+    if (isConnected) {
+      setListeningSince((prev) => prev ?? new Date())
+    } else {
+      setListeningSince(null)
+    }
+  }, [isConnected])
+
   const handleClearMessages = () => {
     setMessages([])
   }
 
-  // Loading state is based on WebSocket connection status
-  const isLoading = !isConnected && messages.length === 0
   const error = wsError
 
-  if (isLoading) {
+  // Genuine initial load only: sniffer socket still coming up, nothing
+  // received yet, and we're within the bounded grace window.
+  const isInitialLoad = !isConnected && messages.length === 0 && !graceExpired && !error
+
+  if (isInitialLoad) {
     return (
       <AppLayout>
         <div className="flex-1 space-y-6 p-4 pt-6">
           <div className="flex justify-between items-center">
             <div>
-              <Skeleton className="h-8 w-48 mb-2" />
               <Skeleton className="h-4 w-96" />
             </div>
             <div className="flex gap-2">
@@ -482,6 +516,41 @@ export default function CANSniffer() {
                   <Skeleton key={i} className="h-10 w-full" />
                 ))}
               </div>
+            </CardContent>
+          </Card>
+        </div>
+      </AppLayout>
+    )
+  }
+
+  // WebSocket is not connected (and the grace window elapsed): show an
+  // explicit disconnected state instead of skeletons or an empty table.
+  if (!isConnected && !isPaused && !error) {
+    const websocketLabel =
+      websocket === "connecting" ? "still connecting" : websocket === "down" ? "down" : "not connected"
+    return (
+      <AppLayout>
+        <div className="flex-1 space-y-6 p-4 pt-6">
+          <Card>
+            <CardContent className="flex flex-col items-center gap-4 py-16 text-center">
+              <IconPlugConnectedX className="h-12 w-12 text-muted-foreground" />
+              <div className="space-y-1">
+                <p className="font-medium">
+                  CAN sniffer requires the realtime connection — WebSocket is {websocketLabel}
+                </p>
+                <p className="text-sm text-muted-foreground">{reason}</p>
+              </div>
+              <Button
+                onClick={() => {
+                  retry()
+                  void connect()
+                }}
+                variant="outline"
+                className="gap-2"
+              >
+                <IconRefresh className="h-4 w-4" />
+                Retry Connection
+              </Button>
             </CardContent>
           </Card>
         </div>
@@ -582,10 +651,9 @@ export default function CANSniffer() {
   return (
     <AppLayout>
       <div className="flex-1 space-y-6 p-4 pt-6">
-        {/* Header */}
+        {/* Header (title comes from the app shell) */}
         <div className="flex justify-between items-center">
           <div>
-            <h1 className="text-3xl font-bold tracking-tight">CAN Sniffer</h1>
             <p className="text-muted-foreground">
               Real-time CAN bus monitoring and message analysis
             </p>
@@ -625,7 +693,15 @@ export default function CANSniffer() {
         <div className="grid gap-8 lg:grid-cols-4">
           {/* Message Table - Takes 3/4 width */}
           <div className="lg:col-span-3">
-            <CANMessageTable messages={messageArray} isPaused={isPaused} />
+            <CANMessageTable
+              messages={messageArray}
+              isPaused={isPaused}
+              emptyMessage={
+                listeningSince
+                  ? `Listening — no CAN traffic observed since ${listeningSince.toLocaleTimeString()}`
+                  : "No messages received"
+              }
+            />
           </div>
 
           {/* Sidebar - Takes 1/4 width */}
