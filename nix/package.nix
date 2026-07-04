@@ -99,6 +99,17 @@
       # from [tool.poetry.scripts] in pyproject.toml:
       # - coachiq-daemon (from backend.cli:main)
       # - coachiq-validate-config (from backend.core.config:validate_config_cli)
+      # - coachiq-can-re (from dev_tools.can_re.cli:main)
+
+      # On-device CAN reverse-engineering CLI. Point it at the packaged RV-C
+      # spec so PGN naming works without a repo checkout, and (on Linux, the
+      # coach target) put can-utils on its PATH since it shells out to
+      # candump/cansend. can-utils is Linux-only, so it is omitted on darwin
+      # builds where the CLI's capture subcommand is not usable anyway.
+      wrapProgram $out/bin/coachiq-can-re \
+        --set-default COACHIQ_RVC_SPEC_PATH $out/share/coachiq/config/rvc.json \
+        ${pkgs.lib.optionalString pkgs.stdenv.isLinux
+          "--prefix PATH : ${pkgs.lib.makeBinPath [ pkgs.can-utils ]}"}
 
       # Health check script with Nix-compatible shebang
       mkdir -p $out/share/coachiq/nix

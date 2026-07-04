@@ -17,6 +17,7 @@ classifiers = [
 ]
 include = [
     "backend/**/*",
+    "dev_tools/can_re/**/*",
     "frontend/dist/**/*",
     "config/**/*"
 ]
@@ -25,6 +26,11 @@ repository = "https://github.com/carpenike/coachiq"
 
 [[tool.poetry.packages]]
 include = "backend"
+
+# Ships the on-device CAN reverse-engineering CLI (coachiq-can-re). Pure
+# stdlib; the other dev_tools modules come along inert (not imported at runtime).
+[[tool.poetry.packages]]
+include = "dev_tools"
 
 # ------------------------------------------------------------------
 # Runtime dependencies + Python version (required by Poetry solver)
@@ -74,6 +80,7 @@ sqlite-vec = ">=0.1.6,<0.2.0"
 [tool.poetry.scripts]
 coachiq-daemon = "backend.cli:main"
 coachiq-validate-config = "backend.core.config:validate_config_cli"
+coachiq-can-re = "dev_tools.can_re.cli:main"
 
 [tool.ruff]
 line-length = 100
