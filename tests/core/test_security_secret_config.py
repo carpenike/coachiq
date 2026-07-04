@@ -124,3 +124,33 @@ def test_empty_secret_file_is_rejected(tmp_path: Path) -> None:
 
     with pytest.raises(ValidationError, match="Secret file is empty"):
         _settings(environment="production", security={"secret_key_file": path})
+
+
+def test_refresh_token_secret_defaults_to_secret_key() -> None:
+    """Unset refresh_token_secret falls back to secret_key, not a random value."""
+    expected = "auth-secret-for-tests-32bytes-value"
+    settings = _settings(auth={"enabled": True, "secret_key": expected})
+
+    assert settings.auth.refresh_token_secret == expected
+
+
+def test_refresh_token_secret_is_stable_across_constructions() -> None:
+    """Refresh token secret is stable across boots when the env var is unset.
+
+    Regression guard: an auto-generating "before" field_validator used to mint a
+    fresh ``refresh-<token>`` value on every construction, so legacy-mode refresh
+    tokens (JWTs signed with this secret) were invalidated on every restart. The
+    model-validator fallback to ``secret_key`` must apply instead, giving a stable
+    secret derived from the persisted ``COACHIQ_AUTH__SECRET_KEY``.
+    """
+    expected = "auth-secret-for-tests-32bytes-value"
+    env = isolated_env({"COACHIQ_ENV": "development", "COACHIQ_AUTH__SECRET_KEY": expected})
+
+    with patch.dict(os.environ, env, clear=True):
+        first = make_test_settings(auth={"enabled": True})
+    with patch.dict(os.environ, env, clear=True):
+        second = make_test_settings(auth={"enabled": True})
+
+    assert first.auth.refresh_token_secret == expected
+    assert second.auth.refresh_token_secret == expected
+    assert first.auth.refresh_token_secret == second.auth.refresh_token_secret

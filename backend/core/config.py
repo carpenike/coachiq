@@ -1076,16 +1076,12 @@ class AuthenticationSettings(BaseSettings):
         default=3, description="Remaining backup codes threshold for regeneration", ge=1, le=10
     )
 
-    @field_validator("refresh_token_secret", mode="before")
-    @classmethod
-    def generate_refresh_secret(cls, v: str, values: dict) -> str:
-        """Generate refresh token secret if not provided."""
-        if not v:
-            # Generate a different secret from the JWT secret for additional security
-            import secrets
-
-            return f"refresh-{secrets.token_urlsafe(32)}"
-        return v
+    # NOTE: refresh_token_secret intentionally has no "before" field_validator to
+    # auto-generate a random value. Doing so would produce a NEW secret on every
+    # process boot (invalidating all legacy-mode refresh tokens on restart) and would
+    # pre-empt the validate_jwt_secret model-validator fallback below, which derives a
+    # stable secret from the persisted secret_key. Leave the default empty so that
+    # fallback applies.
 
 
 class FeaturesSettings(BaseSettings):
