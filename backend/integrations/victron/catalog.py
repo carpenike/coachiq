@@ -97,6 +97,51 @@ def _system_state(values: dict[str, Any]) -> str:
     return SYSTEM_STATE_NAMES.get(code, f"state_{code}")
 
 
+# dbus-generator /State.
+GENERATOR_STATE_NAMES: dict[int, str] = {
+    0: "stopped",
+    1: "running",
+    2: "warm_up",
+    3: "cool_down",
+    10: "error",
+}
+
+
+def _generator_state(values: dict[str, Any]) -> str:
+    code = values.get("generator_state")
+    if not isinstance(code, int):
+        return "unknown"
+    return GENERATOR_STATE_NAMES.get(code, f"state_{code}")
+
+
+def _dc_system_state(values: dict[str, Any]) -> str:
+    power = values.get("power")
+    if not isinstance(power, int | float):
+        return "unknown"
+    return "active" if abs(power) > 1 else "idle"
+
+
+def _temperature_state(values: dict[str, Any]) -> str:
+    if values.get("low_battery") == 1:
+        return "low_battery"
+    return "ok" if isinstance(values.get("temperature"), int | float) else "unknown"
+
+
+def _temperature_extras(values: dict[str, Any]) -> dict[str, Any]:
+    """Convert Venus °C to the `current_temp_f` field the climate UI reads."""
+    celsius = values.get("temperature")
+    if not isinstance(celsius, int | float):
+        return {}
+    return {"current_temp_f": round(celsius * 9 / 5 + 32, 1)}
+
+
+def _gps_state(values: dict[str, Any]) -> str:
+    fix = values.get("fix")
+    if not isinstance(fix, int):
+        return "unknown"
+    return "fix" if fix == 1 else "no_fix"
+
+
 @dataclass(frozen=True)
 class VictronEntityDef:
     """Maps one Venus OS service type onto a CoachIQ entity."""
@@ -111,6 +156,8 @@ class VictronEntityDef:
     suggested_area: str = "electrical"
     # Derives the human-readable entity state string from the signal dict.
     state_fn: Callable[[dict[str, Any]], str] = _system_state
+    # Optional extra derived signals (e.g. unit conversions) merged in at flush.
+    derive_fn: Callable[[dict[str, Any]], dict[str, Any]] | None = None
 
 
 VICTRON_ENTITY_DEFS: tuple[VictronEntityDef, ...] = (
@@ -188,6 +235,68 @@ VICTRON_ENTITY_DEFS: tuple[VictronEntityDef, ...] = (
             "Dc/0/Current": "battery_current",
             "Yield/User": "yield_total_kwh",
             "History/Daily/0/Yield": "yield_today_kwh",
+        },
+    ),
+    VictronEntityDef(
+        key="victron_generator",
+        service_type="generator",
+        device_type="generator",
+        friendly_name="Generator",
+        state_fn=_generator_state,
+        paths={
+            "State": "generator_state",
+            "Error": "error_code",
+            "Runtime": "runtime_seconds",
+            "TodayRuntime": "runtime_today_seconds",
+            "AccumulatedRuntime": "runtime_total_seconds",
+            "ManualStart": "manual_start",
+            "AutoStartEnabled": "autostart_enabled",
+            "RunningByCondition": "running_by_condition",
+            "QuietHours": "quiet_hours",
+        },
+    ),
+    VictronEntityDef(
+        key="victron_dc_loads",
+        service_type="dcsystem",
+        device_type="dc_system",
+        friendly_name="DC Loads",
+        state_fn=_dc_system_state,
+        paths={
+            "Dc/0/Power": "power",
+            "Dc/0/Voltage": "voltage",
+            "Dc/0/Current": "current",
+            "ProductName": "product_name",
+        },
+    ),
+    VictronEntityDef(
+        key="victron_temperature",
+        service_type="temperature",
+        device_type="temperature",
+        friendly_name="Temperature Sensor",
+        state_fn=_temperature_state,
+        derive_fn=_temperature_extras,
+        paths={
+            "Temperature": "temperature",
+            "Humidity": "humidity",
+            "CustomName": "custom_name",
+            "BatteryVoltage": "sensor_battery_voltage",
+            "Alarms/LowBattery": "low_battery",
+        },
+    ),
+    VictronEntityDef(
+        key="victron_gps",
+        service_type="gps",
+        device_type="gps",
+        friendly_name="GPS",
+        state_fn=_gps_state,
+        paths={
+            "Fix": "fix",
+            "Position/Latitude": "latitude",
+            "Position/Longitude": "longitude",
+            "Speed": "speed_mps",
+            "Course": "course_deg",
+            "Altitude": "altitude_m",
+            "NrOfSatellites": "satellites",
         },
     ),
     VictronEntityDef(

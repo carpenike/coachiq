@@ -200,6 +200,8 @@ class VictronService:
         pending.clear()
 
         entity_def = self._def_for_entity(entity_id)
+        if entity_def and entity_def.derive_fn:
+            merged.update(entity_def.derive_fn(merged))
         state_label = entity_def.state_fn(merged) if entity_def else "unknown"
         # MQTT values arrive already decoded, so raw mirrors value; the v2
         # entities API surfaces `raw` as the state dict, and the frontend
@@ -212,6 +214,11 @@ class VictronService:
             "raw": signals,
             "state": state_label,
         }
+        # Devices that carry a user-assigned name on the bus (e.g. RuuviTag
+        # CustomName) override the generic catalog friendly name.
+        custom_name = merged.get("custom_name")
+        if isinstance(custom_name, str) and custom_name.strip():
+            payload["friendly_name"] = custom_name.strip()
         updated_entity = entity_manager.update_entity_state(entity_id, payload)
         if updated_entity is None:
             return

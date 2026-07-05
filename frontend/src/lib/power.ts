@@ -8,4 +8,6 @@ export const POWER_DEVICE_TYPES = new Set([
   "battery",
   "solar_controller",
   "power_system",
+  "generator",
+  "dc_system",
 ])
