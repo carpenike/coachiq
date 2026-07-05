@@ -1,11 +1,15 @@
 # CAN reverse-engineering findings (2021 Entegra Aspire 44R)
 
-Passive-sniff observations from the coach bus, gathered while diagnosing why
-CoachIQ can receive live state but cannot command lights. Tooling to reproduce
-and extend this lives in [`dev_tools/can_re/`](../dev_tools/can_re/README.md).
+The living map of this coach's CAN bus: who talks, which DGNs carry what, and
+which command dialects the Firefly system honors — all verified on the wire.
+Tooling to reproduce and extend this lives in
+[`dev_tools/can_re/`](../dev_tools/can_re/README.md).
 
-**Status:** receive path proven end to end; **transmit/control is blocked** on
-learning the Firefly command dialect. This document is the map for that work.
+**Status (2026-07-05):** RX and TX both proven end to end. CoachIQ controls
+**lights** (DC_DIMMER_COMMAND_2 with the payload dialect below) and **climate**
+(standard THERMOSTAT_COMMAND_1) from SA `0xF9`, with the G6 echoing commanded
+state in its next status broadcast. The idle-vs-action capture diff remains
+the method for mapping anything new (awnings, generator, Aqua-Hot commands).
 
 ## Bus topology
 
@@ -28,46 +32,41 @@ The RV-C name lookup resolving the `0x4F` proprietary frames to `ATS_AC_STATUS_*
 means a large slice of the "proprietary" traffic is **AC power management, not
 lighting** — it can be set aside when hunting the light-command frame.
 
-## Why standard commands don't work
+## The light command dialect (RESOLVED 2026-07-04)
 
-1. **The G6 is a continuous master.** It re-broadcasts `DC_DIMMER_COMMAND_2`
-   (`1FEDB`, from SA `0x9C`) at ~2 Hz per output, cycling byte-0 (instance)
-   through `{0x13, 0x16, 0x32, 0xB5..0xBC}` — ~11 outputs. A single competing
-   command from CoachIQ (SA `0xF9`) is overwritten within ~90 ms. Verified: a
-   30-command burst of standard `DC_DIMMER_COMMAND_2` produced **no change** in
-   the target's `DC_DIMMER_STATUS_3` broadcast.
+Early standard-frame attempts failed and pointed at a proprietary dialect;
+the real causes turned out to be mundane (full chain in the PR #185–#188
+history): the payload byte layout was wrong, and — the biggest single cause —
+**the CAN TX writer was never started** after the service-layer rebuild, so
+commands built frames that nothing transmitted.
 
-2. **Instance numbering doesn't match.** The coach mapping calls the bedroom
-   ceiling light instance **25 (`0x19`)**, but the G6 never commands `0x19` on
-   the wire — its instance set is `{0x13, 0x16, 0x32, 0xB5..0xBC}`. So either
-   the mapping's instances are wrong, or Firefly addresses outputs by a
-   different scheme (zone/group) in a proprietary frame. **This is the open
-   question a button-press capture resolves.**
+The working dialect, verified by DC_DIMMER_STATUS_3 echoing commanded levels:
 
-## The open question → how to answer it
+- Frame `0x19FEDBF9` (DC_DIMMER_COMMAND_2, prio 6, SA `0xF9`), payload
+  `[instance, 0xFF group, level 0-200, 0x00 set-level, 0xFF duration, 0x00,
+  0xFF, 0xFF]`.
+- The mapping's instances (25/`0x19` etc.) were CORRECT; the instance set the
+  G6 cycles in its own ~2 Hz re-broadcasts is unrelated to what the modules
+  accept from other senders.
+- Some lights are multi-channel (bedroom ceiling = instances 25 **and** 26);
+  the command fans out to each (`command.instances` in the coach mapping).
+
+## The method: idle vs. action capture diffs
 
 Whatever a Vegatouch Mira button toggles is, by definition, the command the
-Firefly system honors. Capture idle vs. a button press and diff:
+Firefly system honors — and whatever changes on the panel shows up as a
+status delta. This cracked both lights and climate, and is the template for
+anything new (awnings, generator, Aqua-Hot burner/electric):
 
 ```
-python -m dev_tools.can_re.capture --iface can1 --seconds 6 --label idle       --out captures/idle.jsonl
-python -m dev_tools.can_re.capture --iface can1 --seconds 6 --label ceiling-on  --out captures/ceiling-on.jsonl   # press the button now
-python -m dev_tools.can_re.diff captures/idle.jsonl captures/ceiling-on.jsonl --noise captures/idle2.jsonl
+coachiq-can-re capture --iface can1 --seconds 10 --label idle   --out captures/idle.jsonl
+coachiq-can-re capture --iface can1 --seconds 10 --label action --out captures/action.jsonl   # press the button now
+coachiq-can-re diff captures/idle.jsonl captures/action.jsonl --noise captures/idle2.jsonl
 ```
 
-The surviving ranked change is the control frame. Likely outcomes, in order of
-prior probability:
-
-1. A **proprietary `0x1FFxx` frame from SA `0x9C`** carries the real command
-   (Firefly's private channel). Decode it, emit it as `0x9C`/that PGN.
-2. It **is** `DC_DIMMER_COMMAND_2` but with a different instance/group byte than
-   our mapping assumes — fix the mapping, keep the standard encoder.
-3. The module only accepts commands from the master's SA `0x9C` — we'd emit as
-   `0x9C` (impersonation) rather than `0xF9`.
-
-Once known, implement in `backend/integrations/rvc/encoder.py` behind the
-existing command path, then the acknowledgment matcher in
-`entity_domain_service._wait_for_acknowledgment` starts confirming.
+A live `candump -ta can1,<id>:<mask>` watch during single presses is even
+better for instance identification — that is how the thermostat zone order,
+the ambient sensor channels, and the Bay/Floor zones were pinned.
 
 ## Climate (heating / cooling) — survey 2026-07-04
 
@@ -122,6 +121,19 @@ The coach mapping joins channels 0/1/5 to the Front/Rear/Mid zones and 2/4 to
 the Bay/Floor heat zones (status instances 5/6). A separate node at SA `0x75`
 also broadcasts `1FF9C` instance 0x13 (~82 °F, tracks bay/outdoor-ish —
 unidentified).
+
+## Trust level of config/rvc.json
+
+Treat unverified spec entries as **claims, not facts** — parts of the file
+were generated rather than transcribed. Confirmed cases (all fixed):
+THERMOSTAT_AMBIENT_STATUS had a fabricated signal layout, THERMOSTAT_COMMAND_1
+had the wrong PGN (`FEF6` vs real `1FEF9`), and auto-generated `UNKNOWN_*`
+placeholders shadowed real entries because the loader keys the decoder by PGN
+with last-entry-wins (that one blanked every climate temperature and all AC
+status in production). A scan found ~16 more entries whose `pgn` contradicts
+their own pdf_reference (generator commands among them) — tracked as the
+spec-audit follow-up task. Before building on an untested entry, verify it
+against the official RV-C PDF or a live capture.
 
 ## Guardrail
 

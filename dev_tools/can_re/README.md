@@ -1,9 +1,11 @@
 # CAN reverse-engineering toolkit
 
 Standalone capture / census / diff tools for reverse-engineering the coach's
-CAN traffic — built to crack the **Firefly G6 command dialect** that standard
-RV-C `DC_DIMMER_COMMAND_2` frames do not drive (see
-[`docs/can-re-findings.md`](../../docs/can-re-findings.md)).
+CAN traffic. Originally built to crack the Firefly light-command dialect;
+that and the climate zone/sensor maps are cracked and shipped (see
+[`docs/can-re-findings.md`](../../docs/can-re-findings.md) for everything
+learned so far). The toolkit remains the standing method for mapping whatever
+is next — awnings, generator, Aqua-Hot commands, tank sensors.
 
 These talk to SocketCAN directly via `candump`/`cansend`. They need **no**
 running CoachIQ app and **no** auth, so you can run them from the coach while
@@ -64,10 +66,13 @@ Reading the output:
   press is the signal; one-off flickers are noise. Longer captures (`--seconds
   15`) also help.
 
-Repeat for OFF, dim up/down, and a couple of different lights. The frame + byte
-that consistently tracks the action **is** the command the Firefly system uses.
-Send me the `captures/*.jsonl` files (or just the diff output) and that's enough
-to implement the encoder.
+Repeat the press two or three times. The frame + byte that consistently
+tracks the action **is** the signal — record the result in
+`docs/can-re-findings.md` and wire it into the coach mapping
+(`config/2021_Entegra_Aspire_44R.yml`, entity-first schema: add a `sources`
+entry for a status feed, or a `command` target plus encoder support for a new
+control). The light and climate encoders in
+`backend/integrations/can/message_factory.py` are the pattern to follow.
 
 Tip: `can0` and `can1` are bridged on this coach, so either interface sees the
 same traffic — `can1` is fine.
