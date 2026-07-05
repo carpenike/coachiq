@@ -1184,22 +1184,7 @@ class CANBusService(GuardrailParticipant):
             # Build state update payload
             timestamp = msg.get("timestamp", time.time())
 
-            # Merge with the entity's previous signal dicts rather than
-            # replacing them: some entities are fed by more than one DGN
-            # (a climate zone combines THERMOSTAT_STATUS_1 setpoints with
-            # THERMOSTAT_AMBIENT_STATUS temperature; the Aqua-Hot combines
-            # WATERHEATER_STATUS and WATERHEATER_STATUS_2), and
-            # Entity.update_state swaps value/raw wholesale. Tolerate
-            # Entity look-alikes that don't expose get_state().
-            previous_value: dict[str, Any] = {}
-            previous_raw: dict[str, Any] = {}
-            get_state = getattr(entity, "get_state", None)
-            if callable(get_state):
-                previous_state = get_state()
-                previous_value = dict(getattr(previous_state, "value", None) or {})
-                previous_raw = dict(getattr(previous_state, "raw", None) or {})
-            merged_value = {**previous_value, **(decoded_data or {})}
-            merged_raw = {**previous_raw, **(raw_data or {})}
+            merged_value, merged_raw = self._merged_signal_dicts(entity, decoded_data, raw_data)
 
             payload = {
                 "entity_id": entity_id,
@@ -1237,16 +1222,19 @@ class CANBusService(GuardrailParticipant):
                 # EntityManager) see live CAN-derived state.
                 await self._persist_entity_state(entity_id, updated_entity)
 
-                # Broadcast the update via WebSocket
-                # Broadcast entity update via WebSocket
+                # Broadcast the update via WebSocket. Envelope matches what
+                # the frontend's entity_update handler expects (data ->
+                # {entity_id, entity_data}), same as the control paths emit.
                 websocket_service = self._websocket_manager
                 if websocket_service:
                     broadcast_data = {
                         "type": "entity_update",
-                        "entity_id": entity_id,
-                        "data": updated_entity.to_dict(),
+                        "data": {
+                            "entity_id": entity_id,
+                            "entity_data": updated_entity.to_dict(),
+                        },
                     }
-                    await websocket_service.broadcast_data(broadcast_data)
+                    await websocket_service.broadcast_to_data_clients(broadcast_data)
 
                 # Check if this completes a pending command (for optimistic UI updates)
                 await self._check_pending_command_completion(entity_id, payload)
@@ -1255,6 +1243,32 @@ class CANBusService(GuardrailParticipant):
 
         except Exception:
             logger.exception("Error updating entity %s from CAN message", entity_id)
+
+    @staticmethod
+    def _merged_signal_dicts(
+        entity: Any,
+        decoded_data: dict[str, Any] | None,
+        raw_data: dict[str, Any] | None,
+    ) -> tuple[dict[str, Any], dict[str, Any]]:
+        """Merge new decoded/raw signals over the entity's previous ones.
+
+        Some entities are fed by more than one DGN (a climate zone combines
+        THERMOSTAT_STATUS_1 setpoints with THERMOSTAT_AMBIENT_STATUS
+        temperature; the Aqua-Hot combines WATERHEATER_STATUS and
+        WATERHEATER_STATUS_2), and Entity.update_state swaps value/raw
+        wholesale. Tolerates Entity look-alikes without get_state().
+        """
+        previous_value: dict[str, Any] = {}
+        previous_raw: dict[str, Any] = {}
+        get_state = getattr(entity, "get_state", None)
+        if callable(get_state):
+            previous_state = get_state()
+            previous_value = dict(getattr(previous_state, "value", None) or {})
+            previous_raw = dict(getattr(previous_state, "raw", None) or {})
+        return (
+            {**previous_value, **(decoded_data or {})},
+            {**previous_raw, **(raw_data or {})},
+        )
 
     async def _persist_entity_state(self, entity_id: str, updated_entity: Any) -> None:
         """Persist a live entity update to the runtime state repository (best effort)."""

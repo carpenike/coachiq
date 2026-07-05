@@ -87,13 +87,22 @@ Control: `THERMOSTAT_COMMAND_1` (DGN `1FEF9`, sent as `0x19FEF9F9`) with the
 payload mirroring the STATUS_1 layout: `[instance, mode|fan<<4|sched<<6,
 fan_speed(0-200), heat_lo, heat_hi, cool_lo, cool_hi, FF]`. The spec JSON had
 the wrong PGN (`FEF6`) and a "tenths of °C" layout — both corrected.
-**Not yet wire-verified** — the ceiling-light experience says the G6 may want
-a particular dialect; verify with a setpoint change and diff the `1FFE2` echo.
 
-Open item: instance → zone naming (Front/Mid/Rear/Bay/Floor×3) is provisional,
-inferred from mode/fan/setpoint patterns. Confirm by changing one setpoint on
-the Mira and diffing captures, or by comparing live temps against the Mira
-climate screen.
+**Wire-verified 2026-07-04 (evening):** unlike the dimmers, the G6 accepts the
+standard command from SA `0xF9` as-is — an app-driven setpoint change on
+instance 0 was echoed in the very next `1FFE2` broadcast, and the G6 then
+cascaded it into the linked heat instance. No Firefly dialect needed.
+
+Zone mapping, confirmed live (pressing + on each Mira zone in display order
+stepped these instances in order):
+
+- 0 = Front, 1 = Mid, 2 = Rear (cool-capable; the G6 re-syncs heat==cool a few
+  seconds after a cool-side change — the Mira's + steps cool only, in 0.5 °F
+  raw steps).
+- 3 tracks zone 0's setpoint and 4 tracks zone 2's — per-zone Aqua-Hot heat
+  counterparts, not independent zones.
+- 5, 6 = heat-only, not yet correlated to a Mira control (likely Bay / Floor);
+  press those Mira buttons and diff to identify.
 
 ## Guardrail
 
