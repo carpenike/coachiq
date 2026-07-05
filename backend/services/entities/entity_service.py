@@ -29,6 +29,7 @@ from backend.integrations.can.manager import can_tx_queue
 from backend.integrations.can.message_factory import (
     create_light_can_message,
     create_thermostat_can_message,
+    create_water_heater_can_message,
 )
 from backend.integrations.rvc import climate_units
 from backend.models.entity import (
@@ -552,9 +553,11 @@ class EntityService:
             return await self.control_light(entity_id, command, user_context=user_context)
         if device_type == "climate":
             return await self.control_climate(entity_id, command, user_context=user_context)
+        if device_type == "water_heater":
+            return await self.control_water_heater(entity_id, command, user_context=user_context)
         msg = (
             f"Control not supported for device type '{device_type}'. "
-            "Supported types: light, climate"
+            "Supported types: light, climate, water_heater"
         )
         raise ValueError(msg)
 
@@ -873,6 +876,118 @@ class EntityService:
             brightness=0,
             action=decision.action,
         )
+
+    async def control_water_heater(
+        self,
+        entity_id: str,
+        cmd: ControlCommand,
+        user_context: dict[str, Any] | None = None,
+    ) -> ControlEntityResponse:
+        """
+        Control the Aqua-Hot / water heater (device_type ``water_heater``).
+
+        Supports ``set`` with parameters ``burner`` and/or ``electric``
+        (booleans), which compose into the RV-C operating_mode bitfield
+        (burner=0x1, electric=0x2) over the unit's live state, or an explicit
+        ``mode`` label (off/combustion/electric/gas_electric/automatic).
+        Sends WATERHEATER_COMMAND (1FFF6) with the setpoint left as
+        "no change" — mode is the only thing commanded.
+        """
+        _require_role(user_context, operation=f"control_water_heater({entity_id})")
+
+        entity = await self._entity_state_repo.get_entity_state(entity_id)
+        if not entity:
+            msg = f"Entity '{entity_id}' not found"
+            raise ValueError(msg)
+        if entity.get("device_type") != "water_heater":
+            msg = f"Entity '{entity_id}' is not controllable as a water heater"
+            raise ValueError(msg)
+        if cmd.command != "set":
+            msg = f"Water heater only supports the 'set' command, got '{cmd.command}'"
+            raise ValueError(msg)
+
+        raw = entity.get("raw") or {}
+        target_mode, action = self._resolve_water_heater_mode(cmd.parameters or {}, raw)
+
+        instance = entity.get("instance")
+        if instance is None:
+            msg = f"Entity {entity_id} missing 'instance' for CAN message creation"
+            raise RuntimeError(msg)
+        physical_interface = self._resolve_physical_interface(entity)
+
+        # Optimistic update mirrors the RX shaping; the 1FFF7 status echo
+        # confirms (or corrects) it.
+        new_raw = dict(raw)
+        new_raw["operating_mode"] = target_mode
+        state_label = climate_units.WATER_HEATER_MODE_LABELS.get(target_mode, "unknown")
+        entity.update({"timestamp": time.time(), "state": state_label, "raw": new_raw})
+        await self._entity_state_repo.save_entity_state(entity_id, entity)
+        await self.websocket_manager.broadcast_to_data_clients(
+            {
+                "type": "entity_update",
+                "data": {"entity_id": entity_id, "entity_data": entity},
+            }
+        )
+
+        try:
+            can_message = create_water_heater_can_message(
+                instance=int(instance), operating_mode=target_mode
+            )
+            await can_tx_queue.put((can_message, physical_interface))
+            logger.info(
+                "Sent WATERHEATER_COMMAND for %s (instance %s) on %s: %s",
+                entity_id,
+                instance,
+                physical_interface,
+                action,
+            )
+        except Exception as e:
+            logger.error("CAN command failed for %s: %s", entity_id, e)
+            msg = f"CAN command failed: {e}"
+            raise RuntimeError(msg) from e
+
+        return ControlEntityResponse(
+            status="success",
+            entity_id=entity_id,
+            command="set",
+            state=state_label,
+            brightness=0,
+            action=action,
+        )
+
+    @staticmethod
+    def _resolve_water_heater_mode(params: dict[str, Any], raw: dict[str, Any]) -> tuple[int, str]:
+        """Pure resolution of the target operating_mode from command parameters."""
+        allowed = {"burner", "electric", "mode"}
+        unknown = set(params) - allowed
+        if unknown:
+            msg = f"Unknown water heater parameters {sorted(unknown)}; allowed: {sorted(allowed)}"
+            raise ValueError(msg)
+        if not params:
+            msg = f"Water heater 'set' requires parameters; allowed: {sorted(allowed)}"
+            raise ValueError(msg)
+
+        if "mode" in params:
+            label = str(params["mode"]).lower()
+            mode_raw = {v: k for k, v in climate_units.WATER_HEATER_MODE_LABELS.items()}.get(label)
+            if mode_raw is None:
+                msg = (
+                    f"Unknown water heater mode '{label}'; allowed: "
+                    f"{sorted(climate_units.WATER_HEATER_MODE_LABELS.values())}"
+                )
+                raise ValueError(msg)
+            return mode_raw, f"mode {label}"
+
+        burner_on, electric_on = climate_units.water_heater_mode_bits(raw)
+        changes: list[str] = []
+        if "burner" in params:
+            burner_on = bool(params["burner"])
+            changes.append(f"burner {'on' if burner_on else 'off'}")
+        if "electric" in params:
+            electric_on = bool(params["electric"])
+            changes.append(f"electric {'on' if electric_on else 'off'}")
+        target_mode = (1 if burner_on else 0) | (2 if electric_on else 0)
+        return target_mode, "; ".join(changes)
 
     @staticmethod
     def _resolve_physical_interface(entity_config: dict[str, Any]) -> str:

@@ -21,6 +21,15 @@ import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog"
+import { Progress } from "@/components/ui/progress"
+import {
   Select,
   SelectContent,
   SelectItem,
@@ -57,15 +66,6 @@ const MODE_DISPLAY = new Map<string, string>([
 
 /** Modes offered in the zone mode selector (aux/defrost intentionally omitted). */
 const SELECTABLE_MODES = ["off", "cool", "heat", "auto", "fan_only"]
-
-/** WATERHEATER_STATUS operating_mode display labels. */
-const WATER_HEATER_MODE_DISPLAY = new Map<number, string>([
-  [0, "Off"],
-  [1, "Burner"],
-  [2, "Electric"],
-  [3, "Burner + Electric"],
-  [4, "Auto"],
-])
 
 const SETPOINT_MIN_F = 40
 const SETPOINT_MAX_F = 105
@@ -152,6 +152,21 @@ function reportCommandError(error: Error, entityName: string) {
     title: `Command failed: ${entityName}`,
     description: error.message,
   })
+}
+
+/** A `set`-command sender bound to one entity, with toast feedback. */
+function useSetParameters(entity: EntitySchema) {
+  const control = useControlEntity()
+  const send = (parameters: Record<string, string | number | boolean>, label: string) => {
+    control.mutate(
+      { entityId: entity.entity_id, command: { command: "set", parameters } },
+      {
+        onSuccess: (result) => reportCommandResult(result, `${entity.name} ${label}`.trim()),
+        onError: (error) => reportCommandError(error, `${entity.name} ${label}`.trim()),
+      }
+    )
+  }
+  return { send, isPending: control.isPending }
 }
 
 //
@@ -381,23 +396,12 @@ function ThermostatZoneCard({
   controlsDisabled,
   disabledReason,
 }: Readonly<IZoneCardProps>) {
-  const control = useControlEntity()
+  const { send: sendParameters, isPending } = useSetParameters(entity)
   const isAvailable = entity.available !== false
   const cardDisabled = controlsDisabled || !isAvailable
   const cardReason = !isAvailable ? "Zone is not responding on the CAN bus" : disabledReason
   const mode = zoneMode(entity)
-
-  const sendParameters = (parameters: Record<string, string | number>, label: string) => {
-    control.mutate(
-      { entityId: entity.entity_id, command: { command: "set", parameters } },
-      {
-        onSuccess: (result) => reportCommandResult(result, `${entity.name} ${label}`),
-        onError: (error) => reportCommandError(error, `${entity.name} ${label}`),
-      }
-    )
-  }
-
-  const rowDisabled = cardDisabled || control.isPending
+  const rowDisabled = cardDisabled || isPending
 
   return (
     <Card className={cn(!isAvailable && "opacity-60")}>
@@ -502,24 +506,113 @@ function AcUnitRow({ entity }: Readonly<{ entity: EntitySchema }>) {
   )
 }
 
-function AquaHotRow({ entity }: Readonly<{ entity: EntitySchema }>) {
+interface IAquaHotRowProps {
+  entity: EntitySchema
+  controlsDisabled: boolean
+  disabledReason: string
+}
+
+/** Switch with a text caption; Switch already carries its own aria-label. */
+function CaptionedSwitch({
+  caption,
+  checked,
+  disabled,
+  onCheckedChange,
+  ariaLabel,
+}: Readonly<{
+  caption: string
+  checked: boolean
+  disabled: boolean
+  onCheckedChange: (on: boolean) => void
+  ariaLabel: string
+}>) {
+  return (
+    <span className="flex items-center gap-1.5 text-xs text-muted-foreground">
+      <Switch
+        checked={checked}
+        disabled={disabled}
+        onCheckedChange={onCheckedChange}
+        aria-label={ariaLabel}
+      />
+      {caption}
+    </span>
+  )
+}
+
+function BurnerConfirmDialog({
+  open,
+  onOpenChange,
+  onConfirm,
+}: Readonly<{ open: boolean; onOpenChange: (o: boolean) => void; onConfirm: () => void }>) {
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>Light the Aqua-Hot burner?</DialogTitle>
+          <DialogDescription>
+            This ignites the diesel burner. The Aqua-Hot&apos;s own controller manages flame
+            supervision and the high-temperature limit; CoachIQ only requests the mode.
+          </DialogDescription>
+        </DialogHeader>
+        <DialogFooter>
+          <Button variant="outline" onClick={() => onOpenChange(false)}>
+            Cancel
+          </Button>
+          <Button onClick={onConfirm}>Light burner</Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  )
+}
+
+function AquaHotRow({ entity, controlsDisabled, disabledReason }: Readonly<IAquaHotRowProps>) {
+  const { send, isPending } = useSetParameters(entity)
   const waterF = numberField(entity, "water_temp_f")
   const modeRaw = numberField(entity, "operating_mode")
-  const burner = numberField(entity, "burner_status")
-  const element = numberField(entity, "ac_element_status")
-  let modeLabel = "—"
-  if (modeRaw !== null) {
-    modeLabel = WATER_HEATER_MODE_DISPLAY.get(modeRaw) ?? `mode ${modeRaw}`
-  }
+  // operating_mode is a bitfield: burner = 0x1, electric = 0x2. Verified on
+  // the coach (2026-07-05): 00 off, 01 burner, 02 electric, 03 both.
+  const burnerOn = modeRaw !== null && (modeRaw & 1) !== 0
+  const electricOn = modeRaw !== null && (modeRaw & 2) !== 0
+  const isAvailable = entity.available !== false
+  const disabled = controlsDisabled || !isAvailable || isPending || modeRaw === null
+  const rowReason = !isAvailable ? "Aqua-Hot is not responding on the CAN bus" : disabledReason
+  const [confirmBurner, setConfirmBurner] = useState(false)
+
+  let modeLabel = "Off"
+  if (modeRaw === null) modeLabel = "—"
+  else if (burnerOn && electricOn) modeLabel = "Burner + Electric"
+  else if (burnerOn) modeLabel = "Burner"
+  else if (electricOn) modeLabel = "Electric"
+
+  const controls = (
+    <div className="flex items-center gap-4">
+      <CaptionedSwitch
+        caption="Electric"
+        checked={electricOn}
+        disabled={disabled}
+        onCheckedChange={(on) => send({ electric: on }, "electric")}
+        ariaLabel={`${entity.name} electric element`}
+      />
+      <CaptionedSwitch
+        caption="Burner"
+        checked={burnerOn}
+        disabled={disabled}
+        onCheckedChange={(on) => (on ? setConfirmBurner(true) : send({ burner: false }, "burner"))}
+        ariaLabel={`${entity.name} burner`}
+      />
+    </div>
+  )
+
   return (
     <div className="flex items-center justify-between py-2">
       <div>
         <p className="text-sm font-medium">{entity.name}</p>
-        <p className="text-xs text-muted-foreground">Updated {relativeTime(entity.last_updated)}</p>
+        <p className="text-xs text-muted-foreground">
+          {modeLabel} · updated {relativeTime(entity.last_updated)}
+        </p>
       </div>
-      <div className="flex items-center gap-2">
-        <Badge variant="secondary">{modeLabel}</Badge>
-        {burner === 1 && (
+      <div className="flex items-center gap-3">
+        {burnerOn && (
           <Badge
             className="bg-orange-100 text-orange-800 dark:bg-orange-900 dark:text-orange-200"
             variant="secondary"
@@ -527,9 +620,68 @@ function AquaHotRow({ entity }: Readonly<{ entity: EntitySchema }>) {
             burner lit
           </Badge>
         )}
-        {element === 1 && <Badge variant="secondary">element on</Badge>}
         <span className="text-sm tabular-nums">{formatTempF(waterF)}</span>
+        {controlsDisabled || !isAvailable ? (
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <div>{controls}</div>
+            </TooltipTrigger>
+            <TooltipContent>{rowReason}</TooltipContent>
+          </Tooltip>
+        ) : (
+          controls
+        )}
       </div>
+
+      <BurnerConfirmDialog
+        open={confirmBurner}
+        onOpenChange={setConfirmBurner}
+        onConfirm={() => {
+          setConfirmBurner(false)
+          send({ burner: true }, "burner")
+        }}
+      />
+    </div>
+  )
+}
+
+// ----- Tanks -----------------------------------------------------------------
+
+const TANK_ORDER = ["tank_fresh", "tank_grey", "tank_black"]
+
+function TankRow({ entity }: Readonly<{ entity: EntitySchema }>) {
+  const pct = numberField(entity, "level_pct")
+  // Fresh water low is bad; waste tanks high is bad — colour accordingly.
+  const isWaste = entity.entity_id !== "tank_fresh"
+  const alarm = pct !== null && (isWaste ? pct >= 85 : pct <= 15)
+  return (
+    <div className="py-2">
+      <div className="flex items-center justify-between">
+        <p className="text-sm font-medium">{entity.name}</p>
+        <span className={cn("text-sm tabular-nums", alarm && "font-semibold text-destructive")}>
+          {pct === null ? "—" : `${pct}%`}
+        </span>
+      </div>
+      <Progress value={pct ?? 0} className="mt-1.5 h-2" />
+    </div>
+  )
+}
+
+function TankSection({ tanks }: Readonly<{ tanks: EntitySchema[] }>) {
+  if (tanks.length === 0) return null
+  const ordered = [...tanks].sort(
+    (a, b) => TANK_ORDER.indexOf(a.entity_id) - TANK_ORDER.indexOf(b.entity_id)
+  )
+  return (
+    <div className="space-y-3">
+      <h2 className="text-sm font-medium text-muted-foreground">Tanks</h2>
+      <Card>
+        <CardContent className="divide-y pt-2">
+          {ordered.map((entity) => (
+            <TankRow key={entity.entity_id} entity={entity} />
+          ))}
+        </CardContent>
+      </Card>
     </div>
   )
 }
@@ -577,10 +729,19 @@ function ZoneSection({
   )
 }
 
+interface IEquipmentSectionProps {
+  acUnits: EntitySchema[]
+  waterHeaters: EntitySchema[]
+  controlsDisabled: boolean
+  disabledReason: string
+}
+
 function EquipmentSection({
   acUnits,
   waterHeaters,
-}: Readonly<{ acUnits: EntitySchema[]; waterHeaters: EntitySchema[] }>) {
+  controlsDisabled,
+  disabledReason,
+}: Readonly<IEquipmentSectionProps>) {
   if (acUnits.length === 0 && waterHeaters.length === 0) return null
   return (
     <div className="space-y-3">
@@ -591,7 +752,38 @@ function EquipmentSection({
             <AcUnitRow key={entity.entity_id} entity={entity} />
           ))}
           {waterHeaters.map((entity) => (
-            <AquaHotRow key={entity.entity_id} entity={entity} />
+            <AquaHotRow
+              key={entity.entity_id}
+              entity={entity}
+              controlsDisabled={controlsDisabled}
+              disabledReason={disabledReason}
+            />
+          ))}
+        </CardContent>
+      </Card>
+    </div>
+  )
+}
+
+function OutsideTempRow({ sensors }: Readonly<{ sensors: EntitySchema[] }>) {
+  if (sensors.length === 0) return null
+  return (
+    <div className="space-y-3">
+      <h2 className="text-sm font-medium text-muted-foreground">Sensors</h2>
+      <Card>
+        <CardContent className="divide-y pt-2">
+          {sensors.map((entity) => (
+            <div key={entity.entity_id} className="flex items-center justify-between py-2">
+              <div>
+                <p className="text-sm font-medium">{entity.name}</p>
+                <p className="text-xs text-muted-foreground">
+                  Updated {relativeTime(entity.last_updated)}
+                </p>
+              </div>
+              <span className="text-lg font-semibold tabular-nums">
+                {formatTempF(numberField(entity, "current_temp_f"))}
+              </span>
+            </div>
           ))}
         </CardContent>
       </Card>
@@ -625,11 +817,17 @@ function NoZonesCard() {
 // ===== Page =====
 //
 
+function useEntitiesByType(deviceType: string): EntitySchema[] {
+  return useEntities({ device_type: deviceType, page_size: 100 }).data?.entities ?? []
+}
+
 export default function ClimatePage() {
   const { coach, reason } = useCoachConnection()
   const zonesQuery = useEntities({ device_type: "climate", page_size: 100 })
-  const acQuery = useEntities({ device_type: "air_conditioner", page_size: 100 })
-  const waterHeaterQuery = useEntities({ device_type: "water_heater", page_size: 100 })
+  const acUnits = useEntitiesByType("air_conditioner")
+  const waterHeaters = useEntitiesByType("water_heater")
+  const tanks = useEntitiesByType("tank")
+  const sensors = useEntitiesByType("temperature")
 
   const zones = (zonesQuery.data?.entities ?? []).filter(
     (entity) => entity.device_type === "climate"
@@ -685,9 +883,13 @@ export default function ClimatePage() {
             heatOnly
           />
           <EquipmentSection
-            acUnits={acQuery.data?.entities ?? []}
-            waterHeaters={waterHeaterQuery.data?.entities ?? []}
+            acUnits={acUnits}
+            waterHeaters={waterHeaters}
+            controlsDisabled={controlsDisabled}
+            disabledReason={disabledReason}
           />
+          <TankSection tanks={tanks} />
+          <OutsideTempRow sensors={sensors} />
         </>
       )}
     </div>

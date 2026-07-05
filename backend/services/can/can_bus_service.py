@@ -1208,7 +1208,13 @@ class CANBusService(GuardrailParticipant):
             device_type = device_config.get("device_type")
             if device_type == "light":
                 await self._update_light_state(payload, decoded_data, raw_data)
-            elif device_type in ("climate", "air_conditioner", "water_heater"):
+            elif device_type in (
+                "climate",
+                "air_conditioner",
+                "water_heater",
+                "tank",
+                "temperature",
+            ):
                 self._update_climate_family_state(device_type, payload, merged_raw)
 
             # Update the entity state
@@ -1357,6 +1363,12 @@ class CANBusService(GuardrailParticipant):
             elif device_type == "water_heater":
                 merged_raw.update(climate_units.derive_water_heater_fields(merged_raw))
                 payload["state"] = climate_units.water_heater_state_label(merged_raw)
+            elif device_type == "tank":
+                merged_raw.update(climate_units.derive_tank_fields(merged_raw))
+                payload["state"] = climate_units.tank_state_label(merged_raw)
+            elif device_type == "temperature":
+                merged_raw.update(climate_units.derive_climate_fields(merged_raw))
+                payload["state"] = climate_units.temperature_state_label(merged_raw)
         except Exception as e:
             logger.error("Error shaping %s state: %s", device_type, e)
 

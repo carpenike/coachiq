@@ -858,6 +858,44 @@
       ],
       "pgn": "0x1FF85"
     },
+    "436205305": {
+      "name": "WATERHEATER_COMMAND",
+      "id": 436205305,
+      "extended": true,
+      "length": 8,
+      "source_address": "0xF9",
+      "description": "Water Heater Command (sent by CoachIQ). Byte layout matches the official RV-C 2023-11 spec Sec. 6.9.3b (instance, operating_mode, uint16 setpoint). Whether the coach's Aqua-Hot node honors a command from SA 0xF9 is not yet wire-verified.",
+      "pdf_reference": "Sec. 6.9.3 (DGN 1FFF6h)",
+      "signals": [
+        {
+          "name": "instance",
+          "start_bit": 0,
+          "length": 8,
+          "description": "Water heater instance number (0 = all)",
+          "byte_order": "big_endian"
+        },
+        {
+          "name": "operating_mode",
+          "start_bit": 8,
+          "length": 8,
+          "description": "0 = off, 1 = combustion, 2 = electric, 3 = gas/electric, 4 = automatic",
+          "byte_order": "big_endian",
+          "unavailable_raw_values": [255]
+        },
+        {
+          "name": "setpoint_temperature",
+          "start_bit": 16,
+          "length": 16,
+          "byte_order": "little_endian",
+          "scale": 0.03125,
+          "offset": -273,
+          "unit": "deg C",
+          "description": "Desired water temperature (Table 5.3 uint16 temperature); 65535 = no change",
+          "unavailable_raw_values": [65535]
+        }
+      ],
+      "pgn": "0x1FFF6"
+    },
     "436205470": {
       "name": "WATERHEATER_STATUS",
       "id": 436205470,

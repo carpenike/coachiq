@@ -104,3 +104,41 @@ def create_thermostat_can_message(  # noqa: PLR0913 - one arg per THERMOSTAT_COM
     )
 
     return can.Message(arbitration_id=arbitration_id, data=payload_data, is_extended_id=True)
+
+
+def create_water_heater_can_message(instance: int, operating_mode: int) -> can.Message:
+    """
+    Constructs a can.Message for an RV-C WATERHEATER_COMMAND (DGN 0x1FFF6).
+
+    Sets the operating mode only (0=off, 1=combustion, 2=electric,
+    3=gas/electric, 4=automatic); the setpoint field carries the RV-C
+    "no change" sentinel (0xFFFF). Layout mirrors WATERHEATER_STATUS per
+    RV-C Sec. 6.9.3 — NOT yet wire-verified against the coach's Aqua-Hot
+    node (see docs/can-re-findings.md before trusting it blindly).
+
+    Args:
+        instance: Water heater instance (1 on the Aspire 44R; 0 = all).
+        operating_mode: Target mode (burner bit 0x1 | electric bit 0x2).
+
+    Returns:
+        A can.Message object ready to be sent.
+    """
+    pgn = 0x1FFF6
+    prio = 6
+    sa = 0xF9  # CoachIQ's source address, same as the other command paths
+    arbitration_id = (prio << 26) | (pgn << 8) | sa  # 0x19FFF6F9
+
+    payload_data = bytes(
+        [
+            instance & 0xFF,
+            operating_mode & 0xFF,
+            0xFF,  # setpoint LSB: no change
+            0xFF,  # setpoint MSB: no change
+            0xFF,
+            0xFF,
+            0xFF,
+            0xFF,
+        ]
+    )
+
+    return can.Message(arbitration_id=arbitration_id, data=payload_data, is_extended_id=True)
