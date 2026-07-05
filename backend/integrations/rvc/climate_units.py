@@ -12,6 +12,8 @@ docs/can-re-findings.md.
 from typing import Any
 
 RAW_TEMP_UNAVAILABLE = 0xFFFF
+# 8-bit "data not available" sentinel (RV-C Table 5.3), used by tank levels.
+RAW_U8_UNAVAILABLE = 0xFF
 
 # THERMOSTAT_STATUS_1 / THERMOSTAT_COMMAND_1 operating_mode (4-bit)
 OPERATING_MODE_LABELS: dict[int, str] = {
@@ -159,7 +161,7 @@ def derive_tank_fields(raw: dict[str, Any]) -> dict[str, Any]:
     level = _raw_int(raw, "relative_level")
     resolution = _raw_int(raw, "resolution")
     if level is not None and resolution:
-        if level == 0xFF or resolution == 0xFF:
+        if RAW_U8_UNAVAILABLE in (level, resolution):
             derived["level_pct"] = None
         else:
             derived["level_pct"] = max(0, min(100, round(level / resolution * 100)))
