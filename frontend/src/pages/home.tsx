@@ -603,10 +603,13 @@ export default function HomePage() {
   const { data: entityCollection, isLoading, error } = useEntities({ page_size: 100 })
 
   const entities = entityCollection?.entities ?? []
-  // Power entities get their own read-only section; keeping them out of the
-  // zone grid also keeps them away from DeviceRow's toggle switch.
+  // Victron entities are telemetry, never switches: power devices get their
+  // own section, and the rest (temperature sensors, GPS) live on their own
+  // pages — none of them belong in the zone grid, whose DeviceRow renders a
+  // toggle switch for every row.
   const zoneEntities = entities.filter(
-    (entity) => !POWER_DEVICE_TYPES.has(entity.device_type)
+    (entity) =>
+      entity.protocol !== "victron" && !POWER_DEVICE_TYPES.has(entity.device_type)
   )
   const zones = groupEntitiesByZone(zoneEntities, config)
 

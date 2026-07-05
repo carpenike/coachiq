@@ -12,8 +12,10 @@ import {
   IconBattery,
   IconBolt,
   IconChevronRight,
+  IconEngine,
   IconPlugConnected,
   IconSun,
+  IconTopologyStar3,
 } from "@tabler/icons-react"
 import { Link } from "react-router-dom"
 
@@ -171,11 +173,45 @@ function SolarCard({ entity }: Readonly<{ entity: EntitySchema }>) {
   )
 }
 
+function fmtRuntimeHours(seconds: number | null): string {
+  if (seconds === null) return "—"
+  return `${(seconds / 3600).toFixed(1)} h`
+}
+
+function GeneratorCard({ entity }: Readonly<{ entity: EntitySchema }>) {
+  const state = entity.state ?? {}
+  return (
+    <PowerCard entity={entity} icon={IconEngine}>
+      <StatRow
+        label="Autostart"
+        value={num(state.autostart_enabled) === 1 ? "Enabled" : "Disabled"}
+      />
+      <StatRow label="Run today" value={fmtRuntimeHours(num(state.runtime_today_seconds))} />
+      <StatRow label="Total runtime" value={fmtRuntimeHours(num(state.runtime_total_seconds))} />
+    </PowerCard>
+  )
+}
+
+function DcLoadsCard({ entity }: Readonly<{ entity: EntitySchema }>) {
+  const state = entity.state ?? {}
+  return (
+    <PowerCard entity={entity} icon={IconTopologyStar3}>
+      <div className="mb-2">
+        <p className="text-2xl font-semibold tabular-nums">{fmtWatts(num(state.power))}</p>
+      </div>
+      <StatRow label="Voltage" value={fmtNumber(num(state.voltage), "V")} />
+      <StatRow label="Current" value={fmtNumber(num(state.current), "A")} />
+    </PowerCard>
+  )
+}
+
 const CARD_ORDER: Record<string, number> = {
   power_system: 0,
   inverter_charger: 1,
   battery: 2,
   solar_controller: 3,
+  dc_system: 4,
+  generator: 5,
 }
 
 function cardFor(entity: EntitySchema) {
@@ -188,6 +224,10 @@ function cardFor(entity: EntitySchema) {
       return <BatteryCard key={entity.entity_id} entity={entity} />
     case "solar_controller":
       return <SolarCard key={entity.entity_id} entity={entity} />
+    case "generator":
+      return <GeneratorCard key={entity.entity_id} entity={entity} />
+    case "dc_system":
+      return <DcLoadsCard key={entity.entity_id} entity={entity} />
     default:
       return null
   }
@@ -216,7 +256,7 @@ export function PowerSection({
           <IconChevronRight className="size-4 transition-transform group-hover:translate-x-0.5" aria-hidden />
         </Link>
       )}
-      <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
+      <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
         {powerEntities.map(cardFor)}
       </div>
     </div>

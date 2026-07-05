@@ -145,10 +145,10 @@ class TestUpdateFlow:
         await service._handle_update(
             VictronUpdate(
                 portal_id=PORTAL,
-                service_type="temperature",
-                instance="21",
-                path="Temperature",
-                value=20.5,
+                service_type="ble",
+                instance="0",
+                path="State",
+                value=1,
             )
         )
         assert service._pending == {}
@@ -173,6 +173,33 @@ class TestUpdateFlow:
         assert (
             entity_manager_service.get_entity_manager().get_entity("victron_solar_280") is not None
         )
+
+    async def test_temperature_sensor_derives_fahrenheit_and_custom_name(self):
+        service, entity_manager_service, _, _ = make_service()
+        for path, value in (
+            ("Temperature", 30.0),
+            ("Humidity", 81.65),
+            ("CustomName", "Outside"),
+        ):
+            await service._handle_update(
+                VictronUpdate(
+                    portal_id=PORTAL,
+                    service_type="temperature",
+                    instance="21",
+                    path=path,
+                    value=value,
+                )
+            )
+        await service._flush_entity("victron_temperature")
+
+        entity = entity_manager_service.get_entity_manager().get_entity("victron_temperature")
+        assert entity is not None
+        state = entity.get_state()
+        # Climate page reads current_temp_f; RuuviTag custom name becomes the label.
+        assert state.value["current_temp_f"] == 86.0
+        assert state.value["humidity"] == 81.65
+        assert state.friendly_name == "Outside"
+        assert state.state == "ok"
 
     async def test_battery_state_derivation(self):
         service, entity_manager_service, _, _ = make_service()
