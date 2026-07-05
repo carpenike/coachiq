@@ -55,10 +55,13 @@ const MODE_LABELS = new Map<number, string>([
   [4, "fan_only"],
   [5, "aux_heat"],
 ])
+// operating_mode 2 ("heat") drives the rooftop heat pump on this coach — all
+// three zones have one (verified 2026-07-05). Aqua-Hot heat is a separate
+// heat source on the counterpart zones (climate_front_heat / _rear_heat).
 const MODE_DISPLAY = new Map<string, string>([
   ["off", "Off"],
   ["cool", "Cool"],
-  ["heat", "Heat"],
+  ["heat", "Heat Pump"],
   ["auto", "Auto"],
   ["fan_only", "Fan Only"],
   ["aux_heat", "Aux Heat"],

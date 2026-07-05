@@ -103,6 +103,26 @@ stepped these instances in order):
 - 5 = **Bay**, 6 = **Floor** — identified live 2026-07-05: the Mira's Bay
   setpoint button stepped zone 5, the Floor button stepped zone 6.
 
+**Heat modes (mapped live 2026-07-05 by cycling the Mira mode buttons):**
+`operating_mode` (low nibble of byte 1): 0=off, 1=cool, **2=heat (drives the
+rooftop HEAT PUMP on the main zones)**, 3=auto (a *setting* — the status
+reports the resolved mode, so a heating zone still shows 2). fan_mode nibble:
+0=auto, 1=on.
+
+The coach has two independent heat sources per zone, and they can run
+together:
+- **Heat Pump** = the main zone's own instance in mode 2. All three main
+  zones (Front/Mid/Rear) have a heat pump.
+- **Aqua-Hot heat** = the counterpart zone in mode 2 — **inst 3 = Front,
+  inst 4 = Rear** (Mid has no Aqua-Hot), plus inst 5 = Bay, 6 = Floor. These
+  are the `climate_*_heat` entities. Pressing "Aqua-Hot" for Front lit inst 3
+  while Front's own inst 0 stayed in heat-pump mode 2 — confirming they're
+  separate, stackable sources.
+
+So heat-pump control needs no new code (the "heat" command already sends
+mode 2, the exact frame the Mira emits), and Aqua-Hot heat is the existing
+counterpart-zone cards.
+
 **`1FF9C` ambient instances are SENSOR CHANNELS, not zone instances** —
 discovered when the UI showed the rear temperature on the Mid card
 (2026-07-05). Verified against the Mira display plus a thumb-on-sensor test
