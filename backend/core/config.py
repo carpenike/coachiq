@@ -1250,6 +1250,45 @@ class VictronSettings(BaseSettings):
     )
 
 
+class TripLogSettings(BaseSettings):
+    """GPS trip log (breadcrumb) settings.
+
+    Reads position from the local gpsd (the same daemon the router sidecar
+    uses) and records distance-sampled breadcrumbs segmented into trips.
+    """
+
+    model_config = SettingsConfigDict(env_prefix="COACHIQ_TRIP_LOG__", case_sensitive=False)
+
+    enabled: bool = Field(default=False, description="Enable GPS trip logging")
+    gpsd_host: str = Field(default="127.0.0.1", description="gpsd host")
+    gpsd_port: int = Field(default=2947, description="gpsd JSON port", ge=1, le=65535)
+    min_distance_m: float = Field(
+        default=50.0,
+        description="Minimum distance between recorded breadcrumbs in meters",
+        gt=0,
+    )
+    min_interval_seconds: float = Field(
+        default=15.0,
+        description="Minimum time between recorded breadcrumbs while moving (0 disables)",
+        ge=0,
+    )
+    stationary_speed_mps: float = Field(
+        default=1.0,
+        description="Below this speed the RV is considered stationary",
+        ge=0,
+    )
+    trip_gap_minutes: float = Field(
+        default=20.0,
+        description="Stationary time that closes the current trip",
+        gt=0,
+    )
+    retention_days: int = Field(
+        default=0,
+        description="Days of breadcrumbs to keep; 0 keeps everything",
+        ge=0,
+    )
+
+
 class J1939Settings(BaseSettings):
     """J1939 protocol configuration settings."""
 
@@ -1964,6 +2003,7 @@ class Settings(BaseSettings):
     j1939: J1939Settings = Field(default_factory=J1939Settings)
     firefly: FireflySettings = Field(default_factory=FireflySettings)
     victron: VictronSettings = Field(default_factory=VictronSettings)
+    trip_log: TripLogSettings = Field(default_factory=TripLogSettings)
     spartan_k2: SpartanK2Settings = Field(default_factory=SpartanK2Settings)
     multi_network: MultiNetworkSettings = Field(default_factory=MultiNetworkSettings)
     persistence: PersistenceSettings = Field(default_factory=PersistenceSettings)

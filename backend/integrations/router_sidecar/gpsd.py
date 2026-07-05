@@ -10,7 +10,7 @@ from typing import Any
 
 @dataclass(frozen=True, slots=True)
 class GpsdTpv:
-    """A gpsd TPV fix relevant to home/away evaluation."""
+    """A gpsd TPV fix (position, and motion fields when the receiver reports them)."""
 
     lat: float | None
     lon: float | None
@@ -18,6 +18,10 @@ class GpsdTpv:
     mode: int
     status: int | None = None
     eph: float | None = None
+    # Motion/altitude fields used by the trip log (None when absent from TPV).
+    speed: float | None = None  # m/s over ground
+    track: float | None = None  # course over ground, degrees true
+    alt: float | None = None  # meters (altMSL preferred over legacy alt)
 
     @classmethod
     def from_json(cls, payload: dict[str, Any]) -> "GpsdTpv | None":
@@ -32,6 +36,11 @@ class GpsdTpv:
             mode=int(payload.get("mode") or 0),
             status=int(payload["status"]) if payload.get("status") is not None else None,
             eph=_float_or_none(payload.get("eph")),
+            speed=_float_or_none(payload.get("speed")),
+            track=_float_or_none(payload.get("track")),
+            alt=_first_not_none(
+                _float_or_none(payload.get("altMSL")), _float_or_none(payload.get("alt"))
+            ),
         )
 
 
@@ -64,6 +73,13 @@ class GpsdClient:
         finally:
             writer.close()
             await writer.wait_closed()
+
+
+def _first_not_none(*values: float | None) -> float | None:
+    for value in values:
+        if value is not None:
+            return value
+    return None
 
 
 def _float_or_none(value: Any) -> float | None:

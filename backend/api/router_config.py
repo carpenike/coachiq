@@ -27,6 +27,7 @@ from backend.api.routers import (
     docs,
     guardrails,
     health,
+    location,
     logs,
     multi_network,
     mcp_oauth,
@@ -88,6 +89,7 @@ def configure_routers(app: FastAPI) -> None:
     app.include_router(guardrails.router)
     app.include_router(pin_auth.router)
     app.include_router(victron.router)
+    app.include_router(location.router)
     app.include_router(security_config.router)
     app.include_router(security_dashboard.router)
 
