@@ -27,6 +27,7 @@ DGN_GPS_DATE_TIME_STATUS = 0x1FEA0
 DGN_GPS_POSITION = 0x0FEF3
 DGN_GPS_STATUS = 0x1FED3
 DGN_GPS_TIME_STATUS = 0x1FDDF
+DGN_COMPASS_BEARING_STATUS = 0x1FFA0
 
 # RV-C timezone codes confirmed from spec table 6.4.2b (fragments); zones we
 # cannot map are sent as 255 (not available).
@@ -105,6 +106,22 @@ def encode_gps_status(
         + speed_raw.to_bytes(2, "little")
         + altitude_raw.to_bytes(2, "little")
         + bytes([satellites if satellites is not None else _NOT_AVAILABLE_U8, fix])
+    )
+
+
+def encode_compass_bearing(bearing_deg: float | None) -> bytes:
+    """COMPASS_BEARING_STATUS payload (spec 6.34.2).
+
+    Bearing uint16 at 1/128°, calibration offset 0 (GPS course has none),
+    calibration status 00b = calibrated. Bytes 5-7 are undefined (0xFF).
+    """
+    bearing_raw = (
+        min(round((bearing_deg % 360.0) * 128), 0xFFFE) if bearing_deg is not None else 0xFFFF
+    )
+    return (
+        bearing_raw.to_bytes(2, "little")
+        + (0).to_bytes(2, "little")
+        + bytes([0b1111_1100, 0xFF, 0xFF, 0xFF])
     )
 
 
