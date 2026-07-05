@@ -15,7 +15,10 @@ from datetime import UTC, datetime
 from typing import Any
 
 import pyotp
-from passlib.hash import bcrypt
+
+# passlib ships no type stubs; without the ignore, pyright's verdict on this
+# symbol flapped with module analysis order and destabilized the CI baseline.
+from passlib.hash import bcrypt  # pyright: ignore[reportAttributeAccessIssue]
 
 from backend.core.performance import PerformanceMonitor
 from backend.repositories.auth_repository import MfaRepository

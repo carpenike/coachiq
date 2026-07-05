@@ -2423,42 +2423,15 @@
           "byte_order": "big_endian"
         },
         {
-          "name": "coolant_low_limit",
-          "start_bit": 8,
-          "length": 6,
-          "byte_order": "big_endian",
-          "unit": "\u00b0C",
-          "description": "Low temperature threshold to trigger heating behavior"
-        },
-        {
-          "name": "coolant_high_limit",
-          "start_bit": 16,
-          "length": 6,
-          "byte_order": "big_endian",
-          "unit": "\u00b0C",
-          "description": "High temperature threshold to trigger cooling behavior"
-        },
-        {
-          "name": "control_mode",
-          "start_bit": 24,
-          "length": 8,
-          "description": "Control strategy or operational override (implementation-specific)",
-          "byte_order": "big_endian"
-        },
-        {
-          "name": "status_flags",
-          "start_bit": 32,
-          "length": 8,
-          "description": "Bitfield representing override, error, or status conditions",
-          "byte_order": "big_endian"
-        },
-        {
           "name": "ambient_temperature",
-          "start_bit": 40,
+          "start_bit": 8,
           "length": 16,
           "byte_order": "little_endian",
-          "unit": "\u00b0C",
-          "description": "Current ambient temperature reading"
+          "scale": 0.03125,
+          "offset": -273,
+          "unit": "deg C",
+          "description": "Current ambient temperature (Table 5.3 uint16 temperature; bytes 1-2, verified on the 2021 Aspire 44R bus 2026-07-04)",
+          "unavailable_raw_values": [65535]
         }
       ],
       "pgn": "0x1FF9C"
@@ -2681,9 +2654,9 @@
       ],
       "pgn": "0x1FACE"
     },
-    "419362333": {
+    "436140445": {
       "name": "THERMOSTAT_COMMAND_1",
-      "id": 419362333,
+      "id": 436140445,
       "extended": true,
       "length": 8,
       "source_address": "0x9D",
@@ -2723,27 +2696,35 @@
           "start_bit": 16,
           "length": 8,
           "byte_order": "big_endian",
+          "scale": 0.5,
           "unit": "%",
-          "description": "0 = Auto, >0 = Manual override (1\u2013100%)"
+          "description": "0 = Automatic fan speed; >0 = manual override (raw 0-200 half-percent, mirrors THERMOSTAT_STATUS_1)",
+          "unavailable_raw_values": [255]
         },
         {
           "name": "setpoint_heat",
           "start_bit": 24,
           "length": 16,
-          "byte_order": "big_endian",
-          "unit": "\u00b0C",
-          "description": "Heat setpoint in tenths of \u00b0C"
+          "byte_order": "little_endian",
+          "scale": 0.03125,
+          "offset": -273,
+          "unit": "deg C",
+          "description": "Setpoint for heating (Table 5.3 uint16 temperature, mirrors THERMOSTAT_STATUS_1)",
+          "unavailable_raw_values": [65535]
         },
         {
           "name": "setpoint_cool",
           "start_bit": 40,
           "length": 16,
-          "byte_order": "big_endian",
-          "unit": "\u00b0C",
-          "description": "Cool setpoint in tenths of \u00b0C"
+          "byte_order": "little_endian",
+          "scale": 0.03125,
+          "offset": -273,
+          "unit": "deg C",
+          "description": "Setpoint for cooling (Table 5.3 uint16 temperature, mirrors THERMOSTAT_STATUS_1)",
+          "unavailable_raw_values": [65535]
         }
       ],
-      "pgn": "0xFEF6"
+      "pgn": "0x1FEF9"
     },
     "419362589": {
       "name": "THERMOSTAT_SCHEDULE_COMMAND_2",

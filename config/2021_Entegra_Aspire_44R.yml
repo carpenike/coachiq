@@ -33,6 +33,7 @@ dgn_pairs:
   "1FEDB": "1FEDA" # Light/lock command -> Light/lock status
   "1FED8": "1FEDA" # Alternative dimmer command -> dimmer status
   "1FFE0": "1FFE1" # A/C command -> A/C status
+  "1FEF9": "1FFE2" # Thermostat command -> Thermostat status
 
 # Logical Interface Requirements (physical mapping handled by runtime config)
 interface_requirements:
@@ -156,6 +157,37 @@ templates:
     category: security
     capabilities: [lock_unlock]
     lock_types: ["electronic"]
+
+  # Climate templates. The G6 broadcasts THERMOSTAT_STATUS_1 (1FFE2) and
+  # THERMOSTAT_AMBIENT_STATUS (1FF9C) for 7 zone instances; commands go out
+  # as THERMOSTAT_COMMAND_1 (1FEF9). Bus survey 2026-07-04.
+  climate_zone: &climate_zone
+    <<: *rvc_device
+    device_type: climate
+    category: climate
+    capabilities: [temperature, setpoint, operating_mode, fan]
+
+  # Heat-only zones (Aqua-Hot bay / floor loops): no compressor, no fan control.
+  climate_zone_heat_only: &climate_zone_heat_only
+    <<: *rvc_device
+    device_type: climate
+    category: climate
+    capabilities: [temperature, setpoint_heat]
+
+  # Read-only HVAC equipment status (rooftop ACs, Aqua-Hot).
+  ac_unit_status: &ac_unit_status
+    <<: *rvc_device
+    device_type: air_conditioner
+    category: climate
+    read_only: true
+    capabilities: [fan_speed, output_level]
+
+  water_heater_status: &water_heater_status
+    <<: *rvc_device
+    device_type: water_heater
+    category: climate
+    read_only: true
+    capabilities: [water_temperature, burner, electric_element]
 
   # Sensor templates
   sensor_base: &sensor_base
@@ -528,6 +560,115 @@ areas:
       remote_unlock: true
       <<: *lock_device
 
+# Thermostat Status 1 (DGN: 1FFE2) - zone setpoints/mode/fan from the G6 (SA 0x9C).
+# Instance -> zone naming is PROVISIONAL (bus survey 2026-07-04): instances 0-2
+# run Cool with fan and match the Mira's Front/Mid/Rear zones; 3-6 are heat-only
+# (Bay + floor loops). Verify by changing one setpoint on the Mira panel and
+# watching which instance moves (coachiq-can-re diff), then correct names here.
+1FFE2:
+  0:
+    - &climate_front_zone
+      entity_id: climate_front
+      friendly_name: "Front Zone"
+      area: interior.living_main
+      <<: *climate_zone
+  1:
+    - &climate_mid_zone
+      entity_id: climate_mid
+      friendly_name: "Mid Zone"
+      area: interior.living_main
+      <<: *climate_zone
+  2:
+    - &climate_rear_zone
+      entity_id: climate_rear
+      friendly_name: "Rear Zone"
+      area: interior.bedroom
+      <<: *climate_zone
+  3:
+    - &climate_bay_zone
+      entity_id: climate_bay
+      friendly_name: "Bay Heat (Aqua-Hot)"
+      area: exterior.basement
+      <<: *climate_zone_heat_only
+  4:
+    - &climate_floor_front_zone
+      entity_id: climate_floor_front
+      friendly_name: "Front Floor Heat"
+      area: interior.living_main
+      <<: *climate_zone_heat_only
+  5:
+    - &climate_floor_mid_zone
+      entity_id: climate_floor_mid
+      friendly_name: "Mid Floor Heat"
+      area: interior.living_main
+      <<: *climate_zone_heat_only
+  6:
+    - &climate_floor_rear_zone
+      entity_id: climate_floor_rear
+      friendly_name: "Rear Floor Heat"
+      area: interior.bedroom
+      <<: *climate_zone_heat_only
+
+# Thermostat Ambient Status (DGN: 1FF9C) - per-zone measured temperature.
+# Same instances/entities as 1FFE2; the decoder merges ambient_temperature
+# into each zone's state. Instance 3 (bay) reported an implausible reading
+# (sensor absent?) and instance 6 was not observed broadcasting.
+1FF9C:
+  0:
+    - <<: *climate_front_zone
+  1:
+    - <<: *climate_mid_zone
+  2:
+    - <<: *climate_rear_zone
+  3:
+    - <<: *climate_bay_zone
+  4:
+    - <<: *climate_floor_front_zone
+  5:
+    - <<: *climate_floor_mid_zone
+  6:
+    - <<: *climate_floor_rear_zone
+
+# Air Conditioner Status (DGN: 1FFE1) - rooftop AC units report from their own
+# source addresses (0x96-0x98, instances 1-3). Read-only; the thermostat zones
+# above are the control surface (the G6 re-broadcasts AIR_CONDITIONER_COMMAND
+# at 1 Hz per unit, so commanding units directly would fight the master).
+# A fourth node (SA 0x99) broadcasts instance 0x51 with an odd payload - left
+# unmapped until identified. Unit -> zone pairing is provisional.
+1FFE1:
+  1:
+    - entity_id: ac_unit_1
+      friendly_name: "AC Unit 1 (Front)"
+      area: interior.living_main
+      <<: *ac_unit_status
+  2:
+    - entity_id: ac_unit_2
+      friendly_name: "AC Unit 2 (Mid)"
+      area: interior.living_main
+      <<: *ac_unit_status
+  3:
+    - entity_id: ac_unit_3
+      friendly_name: "AC Unit 3 (Rear)"
+      area: interior.bedroom
+      <<: *ac_unit_status
+
+# Water Heater Status (DGN: 1FFF7) - the Aqua-Hot hydronic heater (SA 0x9E).
+# Observed live: operating_mode 3 (gas/electric), loop temp ~92 C. Read-only
+# for now; burner/electric toggles need a command-dialect wire test first.
+1FFF7:
+  1:
+    - &aqua_hot_status
+      entity_id: aqua_hot
+      friendly_name: "Aqua-Hot"
+      area: exterior.basement
+      <<: *water_heater_status
+
+# Water Heater Status 2 (DGN: 1FE99) - electric element level / burner detail;
+# merged into the same aqua_hot entity.
+1FE99:
+  1:
+    - <<: *aqua_hot_status
+
 # ============================================================================
 # COMMAND PGNs - For sending control commands to devices
 # ============================================================================
@@ -814,7 +955,17 @@ validation_rules:
       ["entity_id", "friendly_name", "device_type", "capabilities"]
     entity_id_pattern: "^[a-z][a-z0-9_]*[a-z0-9]$"
     max_instances_per_dgn: 255
-    supported_device_types: ["light", "lock", "sensor", "switch", "dimmer"]
+    supported_device_types:
+      [
+        "light",
+        "lock",
+        "sensor",
+        "switch",
+        "dimmer",
+        "climate",
+        "air_conditioner",
+        "water_heater",
+      ]
 
   # Interface validation
   interface_validation:

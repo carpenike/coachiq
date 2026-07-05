@@ -26,7 +26,11 @@ from typing import Any
 
 from backend.core.config import get_can_settings
 from backend.integrations.can.manager import can_tx_queue
-from backend.integrations.can.message_factory import create_light_can_message
+from backend.integrations.can.message_factory import (
+    create_light_can_message,
+    create_thermostat_can_message,
+)
+from backend.integrations.rvc import climate_units
 from backend.models.entity import (
     ControlCommand,
     ControlEntityResponse,
@@ -193,6 +197,27 @@ class _LightCommandDecision:
             action=f"Brightness {direction} to {new_brightness}%",
             persist_last_known=persist,
         )
+
+
+@dataclass(frozen=True, slots=True)
+class _ClimateCommandDecision:
+    """Pure result of resolving a climate ``ControlCommand`` against live state.
+
+    THERMOSTAT_COMMAND_1 carries the zone's complete state in one frame, so
+    the decision holds every field the encoder needs — requested changes
+    merged over the zone's current raw signals. Built by
+    :meth:`EntityService._resolve_climate_command`, consumed by
+    :meth:`EntityService._execute_climate_command`.
+    """
+
+    operating_mode: int
+    fan_mode: int
+    schedule_mode: int
+    fan_speed_raw: int
+    setpoint_heat_raw: int
+    setpoint_cool_raw: int
+    action: str
+    state_label: str
 
 
 class EntityService:
@@ -525,7 +550,12 @@ class EntityService:
 
         if device_type == "light":
             return await self.control_light(entity_id, command, user_context=user_context)
-        msg = f"Control not supported for device type '{device_type}'. Supported types: light"
+        if device_type == "climate":
+            return await self.control_climate(entity_id, command, user_context=user_context)
+        msg = (
+            f"Control not supported for device type '{device_type}'. "
+            "Supported types: light, climate"
+        )
         raise ValueError(msg)
 
     async def control_light(
@@ -600,6 +630,266 @@ class EntityService:
             target_brightness_ui=decision.new_brightness,
             action_description=decision.action,
         )
+
+    async def control_climate(
+        self,
+        entity_id: str,
+        cmd: ControlCommand,
+        user_context: dict[str, Any] | None = None,
+    ) -> ControlEntityResponse:
+        """
+        Control a thermostat zone (device_type ``climate``).
+
+        Climate zones only support ``set`` with ``parameters``; recognized
+        keys: ``setpoint_f`` (drives heat and cool together, matching how the
+        G6 keeps them in lockstep), ``setpoint_heat_f`` / ``setpoint_cool_f``,
+        ``mode`` (off/cool/heat/auto/fan_only), ``fan_mode`` (auto/on) and
+        ``fan_speed_pct`` (0-100).
+
+        THERMOSTAT_COMMAND_1 carries the full zone state in one frame, so
+        unchanged fields are filled from the zone's live RX state rather than
+        relying on the Firefly G6 honoring RV-C "no change" sentinels. That
+        also means a zone cannot be commanded until its status has been seen
+        on the bus at least once.
+        """
+        _require_role(user_context, operation=f"control_climate({entity_id})")
+
+        entity = await self._entity_state_repo.get_entity_state(entity_id)
+        if not entity:
+            msg = f"Entity '{entity_id}' not found"
+            raise ValueError(msg)
+        if entity.get("device_type") != "climate":
+            msg = f"Entity '{entity_id}' is not controllable as a climate zone"
+            raise ValueError(msg)
+
+        if cmd.command != "set":
+            msg = f"Climate zones only support the 'set' command, got '{cmd.command}'"
+            raise ValueError(msg)
+
+        current = self._read_climate_current_raw(entity_id, entity)
+        decision = self._resolve_climate_command(cmd.parameters or {}, current)
+
+        return await self._execute_climate_command(
+            entity_id=entity_id,
+            entity=entity,
+            decision=decision,
+        )
+
+    @staticmethod
+    def _read_climate_current_raw(entity_id: str, entity: dict[str, Any]) -> dict[str, int]:
+        """Snapshot the zone's live raw thermostat signals for command fill-in."""
+        raw = entity.get("raw") or {}
+        current: dict[str, int] = {}
+        missing: list[str] = []
+        for field in (
+            "operating_mode",
+            "fan_mode",
+            "schedule_mode",
+            "fan_speed",
+            "setpoint_heat",
+            "setpoint_cool",
+        ):
+            value = raw.get(field)
+            try:
+                current[field] = int(value)  # type: ignore[arg-type]
+            except (TypeError, ValueError):
+                missing.append(field)
+        # schedule_mode is the only field we can safely default: the G6
+        # broadcasts 0 (disabled) for every zone.
+        if "schedule_mode" in missing:
+            missing.remove("schedule_mode")
+            current["schedule_mode"] = 0
+        if missing:
+            msg = (
+                f"No live thermostat state for '{entity_id}' yet (missing {missing}); "
+                "cannot build a full THERMOSTAT_COMMAND_1 frame. Wait for the zone's "
+                "status broadcast (every ~5s when the CAN bus is up)."
+            )
+            raise ValueError(msg)
+        return current
+
+    @staticmethod
+    def _resolve_climate_command(  # noqa: C901 - flat parameter validation tree
+        params: dict[str, Any], current: dict[str, int]
+    ) -> "_ClimateCommandDecision":
+        """Pure decision tree: merge requested changes over the live zone state."""
+        allowed = {
+            "setpoint_f",
+            "setpoint_heat_f",
+            "setpoint_cool_f",
+            "mode",
+            "fan_mode",
+            "fan_speed_pct",
+        }
+        unknown = set(params) - allowed
+        if unknown:
+            msg = f"Unknown climate parameters {sorted(unknown)}; allowed: {sorted(allowed)}"
+            raise ValueError(msg)
+        if not params:
+            msg = f"Climate 'set' requires parameters; allowed: {sorted(allowed)}"
+            raise ValueError(msg)
+
+        operating_mode = current["operating_mode"]
+        fan_mode = current["fan_mode"]
+        fan_speed_raw = current["fan_speed"]
+        setpoint_heat_raw = current["setpoint_heat"]
+        setpoint_cool_raw = current["setpoint_cool"]
+        changes: list[str] = []
+
+        if "mode" in params:
+            label = str(params["mode"]).lower()
+            if label not in climate_units.OPERATING_MODE_RAW:
+                msg = (
+                    f"Unknown climate mode '{label}'; "
+                    f"allowed: {sorted(climate_units.OPERATING_MODE_RAW)}"
+                )
+                raise ValueError(msg)
+            operating_mode = climate_units.OPERATING_MODE_RAW[label]
+            changes.append(f"mode {label}")
+
+        if "fan_mode" in params:
+            label = str(params["fan_mode"]).lower()
+            if label not in climate_units.FAN_MODE_RAW:
+                msg = f"Unknown fan_mode '{label}'; allowed: {sorted(climate_units.FAN_MODE_RAW)}"
+                raise ValueError(msg)
+            fan_mode = climate_units.FAN_MODE_RAW[label]
+            changes.append(f"fan {label}")
+
+        if "fan_speed_pct" in params:
+            pct = float(params["fan_speed_pct"])
+            if not 0 <= pct <= climate_units.FAN_SPEED_MAX_PCT:
+                msg = f"fan_speed_pct must be 0-{climate_units.FAN_SPEED_MAX_PCT}, got {pct}"
+                raise ValueError(msg)
+            fan_speed_raw = round(pct * 2)
+            changes.append(f"fan speed {pct:g}%")
+
+        def _setpoint_raw(key: str) -> int:
+            fahrenheit = float(params[key])
+            if not climate_units.SETPOINT_MIN_F <= fahrenheit <= climate_units.SETPOINT_MAX_F:
+                msg = (
+                    f"{key} must be {climate_units.SETPOINT_MIN_F:g}-"
+                    f"{climate_units.SETPOINT_MAX_F:g} F, got {fahrenheit:g}"
+                )
+                raise ValueError(msg)
+            return climate_units.f_to_raw_temp(fahrenheit)
+
+        if "setpoint_f" in params:
+            setpoint_heat_raw = setpoint_cool_raw = _setpoint_raw("setpoint_f")
+            changes.append(f"setpoint {float(params['setpoint_f']):g}F")
+        if "setpoint_heat_f" in params:
+            setpoint_heat_raw = _setpoint_raw("setpoint_heat_f")
+            changes.append(f"heat setpoint {float(params['setpoint_heat_f']):g}F")
+        if "setpoint_cool_f" in params:
+            setpoint_cool_raw = _setpoint_raw("setpoint_cool_f")
+            changes.append(f"cool setpoint {float(params['setpoint_cool_f']):g}F")
+
+        return _ClimateCommandDecision(
+            operating_mode=operating_mode,
+            fan_mode=fan_mode,
+            schedule_mode=current["schedule_mode"],
+            fan_speed_raw=fan_speed_raw,
+            setpoint_heat_raw=setpoint_heat_raw,
+            setpoint_cool_raw=setpoint_cool_raw,
+            action="; ".join(changes),
+            state_label=climate_units.OPERATING_MODE_LABELS.get(operating_mode, "unknown"),
+        )
+
+    async def _execute_climate_command(
+        self,
+        entity_id: str,
+        entity: dict[str, Any],
+        decision: "_ClimateCommandDecision",
+    ) -> ControlEntityResponse:
+        """Send THERMOSTAT_COMMAND_1 and apply the optimistic state update."""
+        instance = entity.get("instance")
+        if instance is None:
+            msg = f"Entity {entity_id} missing 'instance' for CAN message creation"
+            raise RuntimeError(msg)
+
+        physical_interface = self._resolve_physical_interface(entity)
+
+        # Optimistic update mirrors the RX shaping in can_bus_service so the
+        # UI reflects the command immediately; the G6's next status broadcast
+        # confirms (or corrects) it.
+        raw = dict(entity.get("raw") or {})
+        raw.update(
+            {
+                "operating_mode": decision.operating_mode,
+                "fan_mode": decision.fan_mode,
+                "schedule_mode": decision.schedule_mode,
+                "fan_speed": decision.fan_speed_raw,
+                "setpoint_heat": decision.setpoint_heat_raw,
+                "setpoint_cool": decision.setpoint_cool_raw,
+            }
+        )
+        raw.update(climate_units.derive_climate_fields(raw))
+
+        entity.update(
+            {
+                "timestamp": time.time(),
+                "state": decision.state_label,
+                "raw": raw,
+            }
+        )
+        await self._entity_state_repo.save_entity_state(entity_id, entity)
+        await self.websocket_manager.broadcast_to_data_clients(
+            {
+                "type": "entity_update",
+                "data": {
+                    "entity_id": entity_id,
+                    "entity_data": entity,
+                },
+            }
+        )
+
+        try:
+            can_message = create_thermostat_can_message(
+                instance=int(instance),
+                operating_mode=decision.operating_mode,
+                fan_mode=decision.fan_mode,
+                schedule_mode=decision.schedule_mode,
+                fan_speed_raw=decision.fan_speed_raw,
+                setpoint_heat_raw=decision.setpoint_heat_raw,
+                setpoint_cool_raw=decision.setpoint_cool_raw,
+            )
+            await can_tx_queue.put((can_message, physical_interface))
+            logger.debug(
+                "Sent THERMOSTAT_COMMAND_1 for %s (instance %s) on %s: %s",
+                entity_id,
+                instance,
+                physical_interface,
+                decision.action,
+            )
+        except Exception as e:
+            logger.error("CAN command failed for %s: %s", entity_id, e)
+            msg = f"CAN command failed: {e}"
+            raise RuntimeError(msg) from e
+
+        return ControlEntityResponse(
+            status="success",
+            entity_id=entity_id,
+            command="set",
+            state=decision.state_label,
+            brightness=0,
+            action=decision.action,
+        )
+
+    @staticmethod
+    def _resolve_physical_interface(entity_config: dict[str, Any]) -> str:
+        """Resolve the entity's logical CAN interface (e.g. 'house') to a physical one."""
+        logical_interface = entity_config.get("interface", "house")
+        can_settings = get_can_settings()
+        physical_interface = can_settings.interface_mappings.get(logical_interface)
+        if not physical_interface:
+            logger.warning(
+                "No mapping found for logical interface '%s', "
+                "falling back to first available interface",
+                logical_interface,
+            )
+            physical_interface = (
+                can_settings.all_interfaces[0] if can_settings.all_interfaces else "can0"
+            )
+        return physical_interface
 
     @staticmethod
     def _read_light_current_state(entity: Any) -> tuple[bool, int]:
@@ -754,20 +1044,8 @@ class EntityService:
             raise RuntimeError(msg)
 
         # Get entity's logical interface and resolve to physical interface
-        logical_interface = entity_config.get(
-            "interface", "house"
-        )  # Default to "house" if not specified
-        can_settings = get_can_settings()
-
-        # Resolve logical interface to physical interface using interface mappings
-        physical_interface = can_settings.interface_mappings.get(logical_interface)
-        if not physical_interface:
-            logger.warning(
-                f"No mapping found for logical interface '{logical_interface}', falling back to first available interface"
-            )
-            physical_interface = (
-                can_settings.all_interfaces[0] if can_settings.all_interfaces else "can0"
-            )
+        logical_interface = entity_config.get("interface", "house")
+        physical_interface = self._resolve_physical_interface(entity_config)
 
         # Create optimistic update payload
         ts = time.time()

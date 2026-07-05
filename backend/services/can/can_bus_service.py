@@ -23,6 +23,7 @@ from backend.integrations.diagnostics.handler import DiagnosticHandler
 from backend.integrations.diagnostics.models import DTCSeverity, ProtocolType, SystemType
 from backend.integrations.rvc import (
     BAMHandler,
+    climate_units,
     decode_component_id,
     decode_payload,
     decode_product_id,
@@ -1183,12 +1184,28 @@ class CANBusService(GuardrailParticipant):
             # Build state update payload
             timestamp = msg.get("timestamp", time.time())
 
-            # Start with the decoded and raw data
+            # Merge with the entity's previous signal dicts rather than
+            # replacing them: some entities are fed by more than one DGN
+            # (a climate zone combines THERMOSTAT_STATUS_1 setpoints with
+            # THERMOSTAT_AMBIENT_STATUS temperature; the Aqua-Hot combines
+            # WATERHEATER_STATUS and WATERHEATER_STATUS_2), and
+            # Entity.update_state swaps value/raw wholesale. Tolerate
+            # Entity look-alikes that don't expose get_state().
+            previous_value: dict[str, Any] = {}
+            previous_raw: dict[str, Any] = {}
+            get_state = getattr(entity, "get_state", None)
+            if callable(get_state):
+                previous_state = get_state()
+                previous_value = dict(getattr(previous_state, "value", None) or {})
+                previous_raw = dict(getattr(previous_state, "raw", None) or {})
+            merged_value = {**previous_value, **(decoded_data or {})}
+            merged_raw = {**previous_raw, **(raw_data or {})}
+
             payload = {
                 "entity_id": entity_id,
                 "timestamp": timestamp,
-                "value": decoded_data or {},
-                "raw": raw_data or {},
+                "value": merged_value,
+                "raw": merged_raw,
             }
 
             # Add configuration fields from device config
@@ -1202,9 +1219,12 @@ class CANBusService(GuardrailParticipant):
                 if config_field in device_config:
                     payload[config_field] = device_config[config_field]
 
-            # Handle light-specific state updates
-            if device_config.get("device_type") == "light":
+            # Handle device-type-specific state shaping
+            device_type = device_config.get("device_type")
+            if device_type == "light":
                 await self._update_light_state(payload, decoded_data, raw_data)
+            elif device_type in ("climate", "air_conditioner", "water_heater"):
+                self._update_climate_family_state(device_type, payload, merged_raw)
 
             # Update the entity state
             updated_entity = entity_manager.update_entity_state(entity_id, payload)
@@ -1301,6 +1321,30 @@ class CANBusService(GuardrailParticipant):
                     "brightness": 0,
                 }
             )
+
+    @staticmethod
+    def _update_climate_family_state(
+        device_type: str, payload: dict[str, Any], merged_raw: dict[str, Any]
+    ) -> None:
+        """Shape state for climate-family entities (thermostat zones, ACs, Aqua-Hot).
+
+        Adds UI-friendly derived fields (Fahrenheit temperatures, percent fan
+        speeds) into the raw signal dict — the v2 entities API exposes that
+        dict as the entity's ``state`` — and sets the human-readable ``state``
+        string from the operating mode.
+        """
+        try:
+            if device_type == "climate":
+                merged_raw.update(climate_units.derive_climate_fields(merged_raw))
+                payload["state"] = climate_units.climate_state_label(merged_raw)
+            elif device_type == "air_conditioner":
+                merged_raw.update(climate_units.derive_ac_fields(merged_raw))
+                payload["state"] = climate_units.ac_state_label(merged_raw)
+            elif device_type == "water_heater":
+                merged_raw.update(climate_units.derive_water_heater_fields(merged_raw))
+                payload["state"] = climate_units.water_heater_state_label(merged_raw)
+        except Exception as e:
+            logger.error("Error shaping %s state: %s", device_type, e)
 
     async def _check_pending_command_completion(
         self, entity_id: str, payload: dict[str, Any]

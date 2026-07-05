@@ -23,6 +23,7 @@ import {
   IconSettings,
   IconShield,
   IconStethoscope,
+  IconTemperature,
   IconTool,
   IconWifi,
 } from "@tabler/icons-react"
@@ -34,6 +35,7 @@ import HomePage from "@/pages/home"
 import CanSniffer from "@/pages/can-sniffer"
 import CanTools from "@/pages/can-tools"
 import DeviceMapping from "@/pages/device-mapping"
+import ClimatePage from "@/pages/climate"
 import DevicesPage from "@/pages/devices"
 import DiagnosticsPage from "@/pages/diagnostics"
 import Lights from "@/pages/lights"
@@ -62,6 +64,7 @@ export const appRoutes: IAppRoute[] = [
   // ===== Owner section =====
   { path: "/", title: "Home", icon: IconHome, section: "owner", element: <HomePage /> },
   { path: "/lights", title: "Lights", icon: IconBulb, section: "owner", element: <Lights /> },
+  { path: "/climate", title: "Climate", icon: IconTemperature, section: "owner", element: <ClimatePage /> },
   { path: "/devices", title: "Devices", icon: IconCpu, section: "owner", element: <DevicesPage /> },
   { path: "/diagnostics", title: "Diagnostics", icon: IconStethoscope, section: "owner", element: <DiagnosticsPage /> },
   { path: "/system", title: "System", icon: IconListDetails, section: "owner", element: <SystemPage /> },
