@@ -31,13 +31,21 @@ class RVCConfiguration(BaseModel):
     """
     Structured RVC configuration data.
 
-    This replaces the complex 10-element tuple returned by load_config_data()
+    This replaces the complex tuple returned by load_config_data()
     with a properly typed structure that is easier to work with and maintain.
     """
 
     # Core RVC specification data
     dgn_dict: dict[int, dict[str, Any]] = Field(
         default_factory=dict, description="Dictionary mapping DGNs to specification entries"
+    )
+
+    frame_id_dict: dict[int, dict[str, Any]] = Field(
+        default_factory=dict,
+        description=(
+            "Dictionary mapping wire-captured 29-bit CAN arbitration ids to "
+            "specification entries, for exact-id decoder lookups"
+        ),
     )
 
     spec_meta: RVCSpecMeta = Field(

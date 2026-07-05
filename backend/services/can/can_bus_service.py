@@ -120,6 +120,7 @@ class CANBusService(GuardrailParticipant):
 
         # RVC decoder data - will be loaded on startup
         self.decoder_map: dict[int, dict[str, Any]] = {}
+        self.decoder_frame_id_map: dict[int, dict[str, Any]] = {}
         self.decoder_pgn_map: dict[int, dict[str, Any]] = {}
         self.device_lookup: dict[tuple[str, str], Any] = {}
         self.status_lookup: dict[tuple[str, str], dict[str, Any]] = {}
@@ -397,7 +398,13 @@ class CANBusService(GuardrailParticipant):
 
             # Extract values from structured config
             self.decoder_map = rvc_config.dgn_dict
-            self.decoder_pgn_map = self._build_decoder_pgn_map(self.decoder_map)
+            self.decoder_frame_id_map = rvc_config.frame_id_dict
+            # Build the PGN fallback from the id-keyed map when available:
+            # dgn_dict drops spec entries that share a PGN (its keys collide),
+            # so it under-populates the fallback.
+            self.decoder_pgn_map = self._build_decoder_pgn_map(
+                self.decoder_frame_id_map or self.decoder_map
+            )
             self.entity_id_lookup = rvc_config.inst_map  # entity ID to config lookup
             self.pgn_hex_to_name_map = rvc_config.pgn_hex_to_name_map  # PGN hex to name mapping
 
@@ -447,8 +454,13 @@ class CANBusService(GuardrailParticipant):
         return pgn_map
 
     def _get_decoder_entry(self, arbitration_id: int, pgn: int) -> dict[str, Any] | None:
-        """Get a decoder entry by exact ID or PGN fallback."""
-        entry = self.decoder_map.get(arbitration_id)
+        """Get a decoder entry by exact 29-bit arbitration id, else PGN fallback.
+
+        The exact match must use the id-keyed map: decoder_map (dgn_dict) keys
+        are ``(priority << 18) | pgn`` with an assumed priority, so they never
+        equal a full arbitration id.
+        """
+        entry = self.decoder_frame_id_map.get(arbitration_id)
         if entry is not None:
             return entry
         return self.decoder_pgn_map.get(pgn)

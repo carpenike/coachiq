@@ -8,6 +8,10 @@ Covers the root-cause fixes for live-data gaps in the RX pipeline:
   updated from live CAN traffic.
 - DiagnosticsRepository upsert helpers used to record unknown PGNs and
   unmapped devices from the RX path (count increments, first-seen preserved).
+- Decoder entry lookup: the exact-match branch keys off the wire-captured
+  29-bit arbitration id (``frame_id_dict``), not ``dgn_dict`` whose keys are
+  ``(priority << 18) | pgn`` with an assumed priority 6 and therefore can
+  never equal a real arbitration id.
 """
 
 from types import SimpleNamespace
@@ -21,7 +25,9 @@ from backend.services.can.can_bus_service import CANBusService, _device_lookup_k
 pytestmark = [pytest.mark.unit]
 
 
-def _make_message(arbitration_id: int = 0x19FEDA80, data: bytes = b"\x01\x02\x03\x04") -> SimpleNamespace:
+def _make_message(
+    arbitration_id: int = 0x19FEDA80, data: bytes = b"\x01\x02\x03\x04"
+) -> SimpleNamespace:
     """Build a minimal python-can-like message stub for the sniffer path."""
     return SimpleNamespace(
         arbitration_id=arbitration_id,
@@ -100,6 +106,92 @@ class TestDeviceLookupKeyNormalization:
 
     def test_lowercase_prefix_and_hex_are_uppercased(self):
         assert _device_lookup_key("0x1feda", "25") == ("1FEDA", "25")
+
+
+class TestDecoderEntryLookup:
+    """_get_decoder_entry: exact arbitration-id match first, PGN fallback second."""
+
+    # ATS_AC_STATUS_1 broadcasts at priority 3 from source 0x4F: id 0x0DFFAD4F,
+    # PGN 0x1FFAD. Its dgn_dict key would be (6 << 18) | 0x1FFAD — never the id.
+    ATS_ARBITRATION_ID = 0x0DFFAD4F
+    ATS_PGN = 0x1FFAD
+
+    def _service_with_decoders(self) -> CANBusService:
+        service = _make_service(None)
+        self.exact_entry = {"name": "ATS_AC_STATUS_1", "pgn": "0x1FFAD"}
+        self.fallback_entry = {"name": "GENERIC_AC_STATUS", "pgn": "0x1FFAD"}
+        service.decoder_frame_id_map = {self.ATS_ARBITRATION_ID: self.exact_entry}
+        service.decoder_pgn_map = {self.ATS_PGN: self.fallback_entry}
+        return service
+
+    def test_exact_arbitration_id_match_wins_over_pgn_fallback(self):
+        service = self._service_with_decoders()
+
+        entry = service._get_decoder_entry(self.ATS_ARBITRATION_ID, self.ATS_PGN)
+
+        assert entry is self.exact_entry
+
+    def test_unknown_source_address_falls_back_to_pgn(self):
+        service = self._service_with_decoders()
+
+        # Same frame from a different source address: no exact-id hit.
+        entry = service._get_decoder_entry(0x0DFFAD99, self.ATS_PGN)
+
+        assert entry is self.fallback_entry
+
+    def test_synthesized_dgn_key_is_not_treated_as_exact_match(self):
+        """A dgn_dict-style key must never satisfy the exact-id branch."""
+        service = self._service_with_decoders()
+        dgn_key = (6 << 18) | self.ATS_PGN
+        service.decoder_frame_id_map = {}
+        service.decoder_map = {dgn_key: self.exact_entry}
+        service.decoder_pgn_map = {}
+
+        assert service._get_decoder_entry(self.ATS_ARBITRATION_ID, self.ATS_PGN) is None
+
+    def test_no_match_returns_none(self):
+        service = self._service_with_decoders()
+
+        assert service._get_decoder_entry(0x18FF0102, 0x1FF01) is None
+
+
+class TestFrameIdDictWiring:
+    """The spec's wire-captured ids must reach the service's exact-id map."""
+
+    @pytest.fixture(scope="class")
+    def rvc_config(self):
+        from backend.integrations.rvc import load_config_data_v2
+
+        return load_config_data_v2()
+
+    def test_frame_id_dict_keys_are_wire_arbitration_ids(self, rvc_config):
+        assert rvc_config.frame_id_dict
+        for frame_id, entry in rvc_config.frame_id_dict.items():
+            assert frame_id == entry["id"]
+            # The embedded PGN must round-trip out of the arbitration id,
+            # otherwise the exact-match and fallback branches would disagree.
+            assert (frame_id >> 8) & 0x3FFFF == int(entry["pgn"], 16)
+
+    def test_priority_3_ats_frames_are_reachable_by_exact_id(self, rvc_config):
+        # ATS_AC_STATUS_* broadcast at priority 3 (0x0DFFxxxx). dgn_dict keys
+        # assume priority 6, so only the id-keyed map can exact-match them.
+        ats_ids = [
+            frame_id
+            for frame_id, entry in rvc_config.frame_id_dict.items()
+            if str(entry.get("name", "")).startswith("ATS_AC_STATUS")
+        ]
+        assert ats_ids, "expected ATS_AC_STATUS_* entries in the spec"
+        for frame_id in ats_ids:
+            assert (frame_id >> 26) & 0x7 == 3
+            assert frame_id not in rvc_config.dgn_dict
+
+    def test_every_dgn_dict_entry_is_reachable_by_exact_id(self, rvc_config):
+        # Entries sharing a PGN overwrite each other in dgn_dict, so the
+        # id-keyed map is a superset: every surviving dgn_dict entry must be
+        # reachable through its own wire id.
+        assert len(rvc_config.frame_id_dict) >= len(rvc_config.dgn_dict)
+        for entry in rvc_config.dgn_dict.values():
+            assert rvc_config.frame_id_dict[entry["id"]] == entry
 
 
 class TestDiagnosticsRepositoryUpserts:
