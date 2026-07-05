@@ -6,7 +6,7 @@
  */
 
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { act, renderHook } from '@testing-library/react';
+import { renderHook } from '@testing-library/react';
 import { waitFor } from '@testing-library/dom';
 import type { ReactNode } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -81,6 +81,16 @@ class MockWebSocket {
 // Mock WebSocket for testing
 global.WebSocket = MockWebSocket as unknown as typeof WebSocket;
 
+/** Fresh hook options per call: new handler identities every render, like real inline callers. */
+function freshHandlerOptions() {
+  return {
+    endpoint: '/ws/can-sniffer',
+    autoConnect: true,
+    onMessage: (_message: unknown): undefined => undefined,
+    subscriptions: [{ handler: (_message: unknown): undefined => undefined }],
+  };
+}
+
 // Test utilities
 function createWrapper() {
   const queryClient = new QueryClient({
@@ -148,15 +158,11 @@ describe('WebSocket Integration Tests', () => {
     it('should stay connected across re-renders with inline handlers', async () => {
       // Regression guard for the PR #218 bug class: inline handlers used to
       // change identity every render, re-run the connection effect, and tear
-      // the socket down mid-connect.
+      // the socket down mid-connect. freshHandlerOptions() runs on every
+      // render, so the handler identities churn exactly like real callers'
+      // inline handlers do — that churn is what this test exercises.
       const { result, rerender } = renderHook(
-        () =>
-          useWebSocket({
-            endpoint: '/ws/can-sniffer',
-            autoConnect: true,
-            onMessage: () => {},
-            subscriptions: [{ handler: () => {} }],
-          }),
+        () => useWebSocket(freshHandlerOptions()),
         { wrapper: createWrapper() }
       );
 
