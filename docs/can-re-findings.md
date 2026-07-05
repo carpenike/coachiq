@@ -101,8 +101,27 @@ stepped these instances in order):
   raw steps).
 - 3 tracks zone 0's setpoint and 4 tracks zone 2's — per-zone Aqua-Hot heat
   counterparts, not independent zones.
-- 5, 6 = heat-only, not yet correlated to a Mira control (likely Bay / Floor);
-  press those Mira buttons and diff to identify.
+- 5, 6 = heat-only, not yet correlated to a Mira control (Bay + Floor in some
+  order); change the Bay or Floor setpoint on the Mira and diff to identify.
+
+**`1FF9C` ambient instances are SENSOR CHANNELS, not zone instances** —
+discovered when the UI showed the rear temperature on the Mid card
+(2026-07-05). Verified against the Mira display plus a thumb-on-sensor test
+(channel 5 rose 70.3→77.5 °F while warming the Mid wall sensor):
+
+| channel | sensor | reading at test |
+|---|---|---|
+| 0 | Front zone air | 69.8 (Mira Front 69) |
+| 1 | **Rear** zone air | 96.8 (Mira Rear 97) |
+| 2 | Bay | 81.5 (Mira Bay 81) |
+| 3 | disconnected | −88 °C |
+| 4 | Floor | 70.2 (Mira Floor 70) |
+| 5 | **Mid** zone air | thumb test |
+
+The coach mapping joins channels 0/1/5 to the Front/Rear/Mid zones and leaves
+2/4 unmapped until the Bay/Floor status zones (1FFE2 5/6) are identified.
+A separate node at SA `0x75` also broadcasts `1FF9C` instance 0x13 (~82 °F,
+tracks bay/outdoor-ish — unidentified).
 
 ## Guardrail
 
