@@ -28,10 +28,12 @@ from backend.integrations.rvc.decode import (
     decode_payload_safe,
     get_bits,
     get_missing_dgns,
+    is_entity_first_mapping,
     load_config_data,
     record_missing_dgn,
 )
 from backend.integrations.rvc.decoder_core import DecodedValue
+from backend.integrations.rvc.mapping_schema import EntityMappingConfig
 
 # The historical hard-coded `/workspace/backend/integrations/rvc/config` path
 # referred to a devcontainer mount that no longer exists. The reference
@@ -223,15 +225,28 @@ class TestCoachMappingFiles:
         return sorted(mapping_files)  # Sort for consistent test ordering
 
     def test_mapping_file_structure(self, mapping_files):
-        """Test that mapping files have required structure."""
+        """Test that mapping files have required structure.
+
+        Two mapping schemas coexist: the legacy DGN-first format (top-level
+        DGN hex sections plus a ``templates`` library) and the entity-first
+        format (top-level ``entities``, compiled by mapping_schema.py),
+        which has no ``templates`` section by design.
+        """
         for mapping_path in mapping_files:
             with open(mapping_path, encoding="utf-8") as f:
                 mapping = yaml.safe_load(f)
 
-            # Required top-level sections
+            # Required top-level sections in both schemas
             assert "coach_info" in mapping
             assert "dgn_pairs" in mapping
-            assert "templates" in mapping
+
+            if is_entity_first_mapping(mapping):
+                # Validate against the production pydantic schema so the
+                # test rejects exactly what load_config_data() would reject.
+                config = EntityMappingConfig.model_validate(mapping)
+                assert config.entities, f"{mapping_path} declares no entities"
+            else:
+                assert "templates" in mapping
 
             # Coach info structure
             coach_info = mapping["coach_info"]
