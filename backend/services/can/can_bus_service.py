@@ -26,7 +26,6 @@ from backend.integrations.rvc import (
     climate_units,
     decode_component_id,
     decode_payload,
-    decode_product_id,
 )
 from backend.integrations.rvc.decoder_core import DecodedValue
 from backend.repositories.can_tracking_repository import CANTrackingRepository
@@ -34,11 +33,17 @@ from backend.repositories.system_state_repository import SystemStateRepository
 
 logger = get_logger(__name__, "CANBusService")
 
-DM_RV_PGN = 0xFECA
+# The coach bus carries both diagnostic dialects: J1939 DM1 (PGN FECA) from
+# the chassis nodes, and RV-C DM_RV (DGN 1FECA, Sec. 3.2.5.1) from house nodes
+# such as the ATS at SA 0x4F. Both share the same payload layout.
+J1939_DM1_PGN = 0xFECA
+DM_RV_PGN = 0x1FECA
+DIAGNOSTIC_PGNS = {J1939_DM1_PGN, DM_RV_PGN}
 DM_RV_CLEAR_SPN = 0x7FFFF
 DM_RV_CLEAR_FMI = 31
 DM_RV_CLEAR_OCCURRENCE_COUNT = 127
-PRODUCT_IDENTIFICATION_PGN = 0x1FEF2
+# RV-C Product Identification (Sec. 3.2.8) shares DGN FEEB and the
+# '*'-delimited multi-packet payload with the J1939 Component ID.
 COMPONENT_IDENTIFICATION_PGN = 0xFEEB
 PENDING_COMMAND_WINDOW_SECONDS = 5.0
 LIGHT_STATUS_SIMULATION_TYPE = 2
@@ -1020,12 +1025,6 @@ class CANBusService(GuardrailParticipant):
         msg: dict[str, Any],
     ) -> None:
         """Process a completed BAM message from the receive path."""
-        if target_pgn == PRODUCT_IDENTIFICATION_PGN:
-            decoded = decode_product_id(reassembled_data)
-            logger.info("Decoded Product ID: %s", decoded)
-            # Future work: update entity with product information.
-            return
-
         if target_pgn == COMPONENT_IDENTIFICATION_PGN:
             self._record_component_identification(source_address, reassembled_data, msg)
             return
@@ -1094,7 +1093,7 @@ class CANBusService(GuardrailParticipant):
             return
 
         pgn = (arbitration_id >> 8) & 0x3FFFF
-        if pgn != DM_RV_PGN:
+        if pgn not in DIAGNOSTIC_PGNS:
             return
 
         source_address = arbitration_id & 0xFF
@@ -1129,17 +1128,22 @@ class CANBusService(GuardrailParticipant):
         else:
             severity = DTCSeverity.MEDIUM
 
+        if pgn == J1939_DM1_PGN:
+            protocol, system_type, dialect = ProtocolType.J1939, SystemType.CHASSIS, "DM1"
+        else:
+            protocol, system_type, dialect = ProtocolType.RVC, SystemType.UNKNOWN, "DM_RV"
+
         code = (spn << 5) | fmi
         self._diagnostic_handler.process_dtc(
             code=code,
-            protocol=ProtocolType.J1939,
-            system_type=SystemType.CHASSIS,
+            protocol=protocol,
+            system_type=system_type,
             source_address=source_address,
             pgn=pgn,
             dgn=pgn,
             raw_data=data,
             severity=severity,
-            description=f"DM_RV active DTC SPN {spn} FMI {fmi}",
+            description=f"{dialect} active DTC SPN {spn} FMI {fmi}",
             metadata={
                 "spn": spn,
                 "fmi": fmi,

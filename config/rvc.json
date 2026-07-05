@@ -1,14 +1,14 @@
 {
   "$schema": "https://carpenike.github.io/coachiq/schemas/rvc-schema.json",
-  "version": "2023-05-23",
+  "version": "2026-07-05",
   "pgns": {
     "419351199": {
-      "name": "DM_RV",
+      "name": "J1939_DM1",
       "id": 419351199,
       "extended": true,
       "length": 8,
-      "description": "Active Diagnostic Message (DM_RV)",
-      "pdf_reference": "Sec. 3.2.5.1 (DGN 1FECA)",
+      "description": "J1939 DM1 \u2014 Active Diagnostic Trouble Codes (chassis/house nodes)",
+      "pdf_reference": "SAE J1939-73 (PGN FECA); layout mirrors RV-C DM_RV Table 3.2.5.1b",
       "signals": [
         {
           "name": "operating_status",
@@ -49,99 +49,64 @@
           "name": "SPN_MSB",
           "start_bit": 16,
           "length": 8,
+          "description": "SPN low byte (spec byte 2, 'SPN-MSB')",
           "byte_order": "big_endian"
         },
         {
           "name": "SPN_ISB",
           "start_bit": 24,
           "length": 8,
-          "byte_order": "big_endian"
-        },
-        {
-          "name": "SPN_LSB",
-          "start_bit": 32,
-          "length": 3,
+          "description": "SPN middle byte",
           "byte_order": "big_endian"
         },
         {
           "name": "FMI",
-          "start_bit": 35,
+          "start_bit": 32,
           "length": 5,
-          "description": "Failure Mode Identifier (reason for fault)",
+          "description": "Failure Mode Identifier (byte 4 bits 0-4)",
+          "byte_order": "big_endian"
+        },
+        {
+          "name": "SPN_LSB",
+          "start_bit": 37,
+          "length": 3,
+          "description": "SPN top 3 bits (byte 4 bits 5-7, spec 'SPN-LSB')",
           "byte_order": "big_endian"
         },
         {
           "name": "occurrence_count",
           "start_bit": 40,
           "length": 7,
+          "description": "7Fh if not available",
           "byte_order": "big_endian"
         },
         {
           "name": "reserved1",
           "start_bit": 47,
           "length": 1,
+          "description": "Always 1",
           "byte_order": "big_endian"
         },
         {
           "name": "DSA_extension",
           "start_bit": 48,
           "length": 8,
+          "description": "FFh = no DSA extension defined",
           "byte_order": "big_endian"
         },
         {
           "name": "bank_select",
           "start_bit": 56,
           "length": 4,
-          "byte_order": "big_endian"
-        },
-        {
-          "name": "reserved2",
-          "start_bit": 60,
-          "length": 4,
+          "description": "0-13 where bank selection is supported, Fh otherwise",
           "byte_order": "big_endian"
         }
       ],
-      "pgn": "0xFECA"
-    },
-    "494861974": {
-      "name": "PRODUCT_ID",
-      "id": 494861974,
-      "extended": true,
-      "length": null,
-      "description": "Product Identification (multi-packet)",
-      "pdf_reference": "Sec. 3.2.8 (DGN 1FECA)",
-      "notes": "Multi-packet ASCII message with fields: Manufacturer, Product Code, Model Version, Serial Number",
-      "transport_protocol": "BAM",
-      "signals": [
-        {
-          "name": "manufacturer_name",
-          "start_bit": 0,
-          "length": 0,
-          "byte_order": "big_endian"
-        },
-        {
-          "name": "product_code",
-          "start_bit": 0,
-          "length": 0,
-          "byte_order": "big_endian"
-        },
-        {
-          "name": "model_version",
-          "start_bit": 0,
-          "length": 0,
-          "byte_order": "big_endian"
-        },
-        {
-          "name": "serial_number",
-          "start_bit": 0,
-          "length": 0,
-          "byte_order": "big_endian"
-        }
-      ],
-      "pgn": "0x17EFE"
+      "pgn": "0xFECA",
+      "notes": "Heartbeats from SAs 0x8E-0x9F, 0xAF, 0xFC in 2026-07-05 live census (nixpi can1). RV-C DM_RV is the separate DGN 1FECA entry."
     },
     "436199830": {
-      "name": "AIR_CONDITIONER_STATUS_96",
+      "name": "AIR_CONDITIONER_STATUS",
       "id": 436199830,
       "extended": true,
       "length": 8,
@@ -218,87 +183,8 @@
           "description": "Additional offset to trigger a high output mode or second-stage cooling"
         }
       ],
-      "pgn": "0x1FFE1"
-    },
-    "436199831": {
-      "name": "AIR_CONDITIONER_STATUS_97",
-      "id": 436199831,
-      "extended": true,
-      "length": 8,
-      "source_address": "0x97",
-      "description": "Air Conditioner Status",
-      "pdf_reference": "Sec. 6.17.2",
-      "signals": [
-        {
-          "name": "instance",
-          "start_bit": 0,
-          "length": 8,
-          "description": "Instance ID of the air conditioner reporting status (1 = first unit, etc.)",
-          "byte_order": "big_endian"
-        },
-        {
-          "name": "operating_mode",
-          "start_bit": 8,
-          "length": 8,
-          "description": "0 = Automatic (responding to thermostat), 1 = Manual override",
-          "byte_order": "big_endian"
-        },
-        {
-          "name": "max_fan_speed",
-          "start_bit": 16,
-          "length": 8,
-          "byte_order": "big_endian",
-          "scale": 0.5,
-          "unit": "%",
-          "description": "Current cap on fan speed due to internal or external limits"
-        },
-        {
-          "name": "max_ac_output_level",
-          "start_bit": 24,
-          "length": 8,
-          "byte_order": "big_endian",
-          "scale": 0.5,
-          "unit": "%",
-          "description": "Maximum allowed compressor output (e.g., due to load management or self-protection)"
-        },
-        {
-          "name": "fan_speed",
-          "start_bit": 32,
-          "length": 8,
-          "byte_order": "big_endian",
-          "scale": 0.5,
-          "unit": "%",
-          "description": "Actual fan speed in use"
-        },
-        {
-          "name": "ac_output_level",
-          "start_bit": 40,
-          "length": 8,
-          "byte_order": "big_endian",
-          "scale": 0.5,
-          "unit": "%",
-          "description": "Actual compressor output level"
-        },
-        {
-          "name": "dead_band",
-          "start_bit": 48,
-          "length": 8,
-          "byte_order": "big_endian",
-          "scale": 0.1,
-          "unit": "\u00b0C",
-          "description": "Temperature swing around the setpoint before the compressor cycles"
-        },
-        {
-          "name": "second_stage_dead_band",
-          "start_bit": 56,
-          "length": 8,
-          "byte_order": "big_endian",
-          "scale": 0.1,
-          "unit": "\u00b0C",
-          "description": "Additional offset to trigger a high output mode or second-stage cooling"
-        }
-      ],
-      "pgn": "0x1FFE1"
+      "pgn": "0x1FFE1",
+      "notes": "Rooftop units report from SAs 0x96-0x99; all decode via the PGN fallback map (2026-07-05 live census (nixpi can1))."
     },
     "436199581": {
       "name": "AIR_CONDITIONER_COMMAND",
@@ -331,7 +217,9 @@
           "scale": 0.5,
           "unit": "%",
           "description": "Limits fan speed output for power-sharing; 255 = don't change",
-          "unavailable_raw_values": [255]
+          "unavailable_raw_values": [
+            255
+          ]
         },
         {
           "name": "max_ac_output_level",
@@ -341,7 +229,9 @@
           "scale": 0.5,
           "unit": "%",
           "description": "Limits compressor output; final level may be affected by internal constraints",
-          "unavailable_raw_values": [255]
+          "unavailable_raw_values": [
+            255
+          ]
         },
         {
           "name": "fan_speed",
@@ -351,7 +241,9 @@
           "scale": 0.5,
           "unit": "%",
           "description": "0 = off or automatic; >0 = manual override",
-          "unavailable_raw_values": [255]
+          "unavailable_raw_values": [
+            255
+          ]
         },
         {
           "name": "ac_output_level",
@@ -361,7 +253,9 @@
           "scale": 0.5,
           "unit": "%",
           "description": "Desired compressor output level; power-sharing and timing delays may alter response",
-          "unavailable_raw_values": [255]
+          "unavailable_raw_values": [
+            255
+          ]
         },
         {
           "name": "dead_band",
@@ -371,7 +265,9 @@
           "byte_order": "big_endian",
           "scale": 0.1,
           "unit": "deg C",
-          "unavailable_raw_values": [255]
+          "unavailable_raw_values": [
+            255
+          ]
         },
         {
           "name": "second_stage_dead_band",
@@ -381,79 +277,69 @@
           "byte_order": "big_endian",
           "scale": 0.1,
           "unit": "deg C",
-          "unavailable_raw_values": [255]
+          "unavailable_raw_values": [
+            255
+          ]
         }
       ],
       "pgn": "0x1FFE0"
     },
     "419363999": {
-      "name": "FLOOR_HEAT_STATUS",
+      "name": "UNKNOWN_18FEFC9F",
       "id": 419363999,
       "extended": true,
       "length": 8,
       "source_address": "0x9F",
-      "description": "Floor Heat Status",
-      "pdf_reference": "Sec. 6.36.2 (DGN 1FEFC)",
+      "description": "Quarantined: PGN FEFC from SA 0x9F is J1939 Dash Display from the chassis gateway (wire-confirmed in 2026-07-05 live census (nixpi can1)), not RV-C FLOOR_HEAT_STATUS (DGN 1FEFC).",
+      "pdf_reference": "\u2014",
       "signals": [
         {
-          "name": "instance",
+          "name": "byte_0",
           "start_bit": 0,
           "length": 8,
-          "description": "Unique ID for each floor heat unit (not tied to thermostat zones)",
           "byte_order": "big_endian"
         },
         {
-          "name": "operating_mode",
+          "name": "byte_1",
           "start_bit": 8,
-          "length": 2,
-          "description": "00 = Automatic, 01 = Manual",
+          "length": 8,
           "byte_order": "big_endian"
         },
         {
-          "name": "operating_status",
-          "start_bit": 10,
-          "length": 2,
-          "description": "00 = Off, 01 = On",
-          "byte_order": "big_endian"
-        },
-        {
-          "name": "heat_element_status",
-          "start_bit": 12,
-          "length": 2,
-          "description": "00 = Off, 01 = On",
-          "byte_order": "big_endian"
-        },
-        {
-          "name": "schedule_mode",
-          "start_bit": 14,
-          "length": 2,
-          "description": "00 = Disabled, 01 = Enabled (use programmed schedule)",
-          "byte_order": "big_endian"
-        },
-        {
-          "name": "measured_temperature",
+          "name": "byte_2",
           "start_bit": 16,
-          "length": 16,
-          "byte_order": "little_endian",
-          "unit": "\u00b0C",
-          "description": "Measured temperature from the floor heat sensor"
+          "length": 8,
+          "byte_order": "big_endian"
         },
         {
-          "name": "set_point",
+          "name": "byte_3",
+          "start_bit": 24,
+          "length": 8,
+          "byte_order": "big_endian"
+        },
+        {
+          "name": "byte_4",
           "start_bit": 32,
-          "length": 16,
-          "byte_order": "little_endian",
-          "unit": "\u00b0C",
-          "description": "Desired floor heat temperature"
+          "length": 8,
+          "byte_order": "big_endian"
         },
         {
-          "name": "dead_band",
+          "name": "byte_5",
+          "start_bit": 40,
+          "length": 8,
+          "byte_order": "big_endian"
+        },
+        {
+          "name": "byte_6",
           "start_bit": 48,
           "length": 8,
-          "byte_order": "big_endian",
-          "unit": "\u00b0C",
-          "scale": 0.1,
-          "description": "Allowed temperature deviation before system turns off/on (0.0\u201325.0\u00b0C)"
+          "byte_order": "big_endian"
+        },
+        {
+          "name": "byte_7",
+          "start_bit": 56,
+          "length": 8,
+          "byte_order": "big_endian"
         }
       ],
       "pgn": "0xFEFC"
@@ -597,7 +483,9 @@
           "scale": 0.05,
           "unit": "Vac",
           "description": "Root Mean Square Voltage",
-          "unavailable_raw_values": [65535]
+          "unavailable_raw_values": [
+            65535
+          ]
         },
         {
           "name": "rms_current",
@@ -608,7 +496,9 @@
           "offset": -1600,
           "unit": "Aac",
           "description": "Root Mean Square Current (0 A = raw 0x7D00)",
-          "unavailable_raw_values": [65535]
+          "unavailable_raw_values": [
+            65535
+          ]
         },
         {
           "name": "frequency",
@@ -618,7 +508,9 @@
           "scale": 0.0078125,
           "unit": "Hz",
           "description": "AC frequency (typically 50/60Hz)",
-          "unavailable_raw_values": [65535]
+          "unavailable_raw_values": [
+            65535
+          ]
         },
         {
           "name": "fault_open_ground",
@@ -696,7 +588,9 @@
           "scale": 0.05,
           "unit": "Vac",
           "description": "Peak voltage measured",
-          "unavailable_raw_values": [65535]
+          "unavailable_raw_values": [
+            65535
+          ]
         },
         {
           "name": "peak_current",
@@ -707,7 +601,9 @@
           "offset": -1600,
           "unit": "Aac",
           "description": "Peak current measured (0 A = raw 0x7D00)",
-          "unavailable_raw_values": [65535]
+          "unavailable_raw_values": [
+            65535
+          ]
         },
         {
           "name": "ground_current",
@@ -718,7 +614,9 @@
           "offset": -1600,
           "unit": "Aac",
           "description": "Leakage/ground current detected (0 A = raw 0x7D00)",
-          "unavailable_raw_values": [65535]
+          "unavailable_raw_values": [
+            65535
+          ]
         },
         {
           "name": "capacity",
@@ -727,7 +625,9 @@
           "byte_order": "big_endian",
           "unit": "Aac",
           "description": "Configured breaker or current limit capacity",
-          "unavailable_raw_values": [255]
+          "unavailable_raw_values": [
+            255
+          ]
         }
       ],
       "pgn": "0x1FFAC"
@@ -918,7 +818,9 @@
           "length": 8,
           "description": "0 = off, 1 = combustion, 2 = electric, 3 = gas/electric, 4 = automatic, 5 = test combustion, 6 = test electric",
           "byte_order": "big_endian",
-          "unavailable_raw_values": [255]
+          "unavailable_raw_values": [
+            255
+          ]
         },
         {
           "name": "setpoint_temperature",
@@ -929,7 +831,9 @@
           "offset": -273,
           "unit": "deg C",
           "description": "Desired water temperature (Table 5.3 uint16 temperature)",
-          "unavailable_raw_values": [65535]
+          "unavailable_raw_values": [
+            65535
+          ]
         },
         {
           "name": "water_temperature",
@@ -940,7 +844,9 @@
           "offset": -273,
           "unit": "deg C",
           "description": "Actual water temperature (Table 5.3 uint16 temperature)",
-          "unavailable_raw_values": [65535]
+          "unavailable_raw_values": [
+            65535
+          ]
         },
         {
           "name": "thermostat_status",
@@ -948,7 +854,9 @@
           "length": 2,
           "description": "00 = set point met, 01 = set point not met",
           "byte_order": "big_endian",
-          "unavailable_raw_values": [3]
+          "unavailable_raw_values": [
+            3
+          ]
         },
         {
           "name": "burner_status",
@@ -956,7 +864,9 @@
           "length": 2,
           "description": "00 = off, 01 = burner is lit",
           "byte_order": "big_endian",
-          "unavailable_raw_values": [3]
+          "unavailable_raw_values": [
+            3
+          ]
         },
         {
           "name": "ac_element_status",
@@ -964,7 +874,9 @@
           "length": 2,
           "description": "00 = inactive, 01 = active",
           "byte_order": "big_endian",
-          "unavailable_raw_values": [3]
+          "unavailable_raw_values": [
+            3
+          ]
         },
         {
           "name": "high_temperature_limit_switch_status",
@@ -972,7 +884,9 @@
           "length": 2,
           "description": "00 = not tripped, 01 = tripped",
           "byte_order": "big_endian",
-          "unavailable_raw_values": [3]
+          "unavailable_raw_values": [
+            3
+          ]
         },
         {
           "name": "failure_to_ignite_status",
@@ -980,7 +894,9 @@
           "length": 2,
           "description": "00 = no failure, 01 = failed to ignite",
           "byte_order": "big_endian",
-          "unavailable_raw_values": [3]
+          "unavailable_raw_values": [
+            3
+          ]
         },
         {
           "name": "ac_power_failure_status",
@@ -988,7 +904,9 @@
           "length": 2,
           "description": "00 = AC power present, 01 = AC power not present",
           "byte_order": "big_endian",
-          "unavailable_raw_values": [3]
+          "unavailable_raw_values": [
+            3
+          ]
         },
         {
           "name": "dc_power_failure_status",
@@ -996,7 +914,9 @@
           "length": 2,
           "description": "00 = DC power present, 01 = DC power not present",
           "byte_order": "big_endian",
-          "unavailable_raw_values": [3]
+          "unavailable_raw_values": [
+            3
+          ]
         },
         {
           "name": "dc_power_warning_status",
@@ -1004,7 +924,9 @@
           "length": 2,
           "description": "00 = DC power sufficient, 01 = DC power warning",
           "byte_order": "big_endian",
-          "unavailable_raw_values": [3]
+          "unavailable_raw_values": [
+            3
+          ]
         }
       ],
       "pgn": "0x1FFF7"
@@ -1046,7 +968,9 @@
           "byte_order": "little_endian",
           "unit": "s",
           "description": "Duration of engine preheat in seconds",
-          "unavailable_raw_values": [65535]
+          "unavailable_raw_values": [
+            65535
+          ]
         },
         {
           "name": "lockout_time",
@@ -1055,7 +979,9 @@
           "byte_order": "little_endian",
           "unit": "s",
           "description": "Duration in seconds before the heater can retry after a failure",
-          "unavailable_raw_values": [65535]
+          "unavailable_raw_values": [
+            65535
+          ]
         }
       ],
       "pgn": "0x1FE98"
@@ -1232,90 +1158,61 @@
       "pgn": "0x1FE97"
     },
     "435867597": {
-      "name": "DC_MOTOR_CONTROL_STATUS",
+      "name": "UNKNOWN_19FACFCD",
       "id": 435867597,
       "extended": true,
       "length": 8,
       "source_address": "0x9D",
-      "description": "DC Motor Control Status",
-      "pdf_reference": "Sec. 6.27.2",
+      "description": "Quarantined: DGN 1FACF is not defined in RV-C 2023-11 (proprietary range); seen live from SA 0x9C in 2026-07-05 live census (nixpi can1). Spec DC_MOTOR_CONTROL_STATUS is DGN 1FEE0 (Sec. 6.27.2).",
+      "pdf_reference": "\u2014",
       "signals": [
         {
-          "name": "instance",
+          "name": "byte_0",
           "start_bit": 0,
           "length": 8,
           "byte_order": "big_endian"
         },
         {
-          "name": "motor_duty",
+          "name": "byte_1",
           "start_bit": 8,
           "length": 8,
-          "byte_order": "big_endian",
-          "scale": 0.4,
-          "unit": "%"
+          "byte_order": "big_endian"
         },
         {
-          "name": "motor_status",
+          "name": "byte_2",
           "start_bit": 16,
-          "length": 2,
+          "length": 8,
           "byte_order": "big_endian"
         },
         {
-          "name": "forward_status",
-          "start_bit": 18,
-          "length": 2,
+          "name": "byte_3",
+          "start_bit": 24,
+          "length": 8,
           "byte_order": "big_endian"
         },
         {
-          "name": "reverse_status",
-          "start_bit": 20,
-          "length": 2,
-          "byte_order": "big_endian"
-        },
-        {
-          "name": "duration",
+          "name": "byte_4",
           "start_bit": 32,
           "length": 8,
-          "byte_order": "big_endian",
-          "unit": "s"
+          "byte_order": "big_endian"
         },
         {
-          "name": "last_command",
+          "name": "byte_5",
           "start_bit": 40,
           "length": 8,
           "byte_order": "big_endian"
         },
         {
-          "name": "overcurrent_status",
+          "name": "byte_6",
           "start_bit": 48,
-          "length": 2,
+          "length": 8,
           "byte_order": "big_endian"
         },
         {
-          "name": "override_status",
-          "start_bit": 50,
-          "length": 2,
-          "byte_order": "big_endian"
-        },
-        {
-          "name": "disable1_status",
-          "start_bit": 52,
-          "length": 2,
-          "byte_order": "big_endian"
-        },
-        {
-          "name": "disable2_status",
-          "start_bit": 54,
-          "length": 2,
-          "byte_order": "big_endian"
-        },
-        {
-          "name": "short_duration",
+          "name": "byte_7",
           "start_bit": 56,
           "length": 8,
-          "byte_order": "big_endian",
-          "scale": 5,
-          "unit": "ms"
+          "byte_order": "big_endian"
         }
       ],
       "pgn": "0x1FACF"
@@ -1382,67 +1279,14 @@
       ],
       "pgn": "0x1FEDA"
     },
-    "435575558": {
-      "name": "WEATHER_WIND_STATUS",
-      "id": 435575558,
-      "extended": true,
-      "length": 8,
-      "source_address": "0x8E",
-      "description": "Weather Station Wind Status",
-      "pdf_reference": "Sec. 6.33",
-      "signals": [
-        {
-          "name": "wind_speed",
-          "start_bit": 0,
-          "length": 8,
-          "byte_order": "big_endian",
-          "unit": "kph"
-        },
-        {
-          "name": "wind_direction",
-          "start_bit": 8,
-          "length": 16,
-          "byte_order": "big_endian",
-          "scale": 0.0078,
-          "unit": "deg"
-        },
-        {
-          "name": "solar_intensity",
-          "start_bit": 24,
-          "length": 8,
-          "byte_order": "big_endian",
-          "unit": "kLux"
-        },
-        {
-          "name": "rain_intensity",
-          "start_bit": 32,
-          "length": 8,
-          "byte_order": "big_endian",
-          "unit": "%"
-        },
-        {
-          "name": "wind_speed_alarm",
-          "start_bit": 40,
-          "length": 2,
-          "byte_order": "big_endian"
-        },
-        {
-          "name": "rain_alarm",
-          "start_bit": 42,
-          "length": 2,
-          "byte_order": "big_endian"
-        }
-      ],
-      "pgn": "0x1F65B"
-    },
     "436204701": {
-      "name": "CHASSIS_MOBILITY_STATUS_9D",
+      "name": "CHASSIS_MOBILITY_STATUS",
       "id": 436204701,
       "extended": true,
       "length": 8,
       "source_address": "0x9D",
       "description": "Chassis Mobility Status",
-      "pdf_reference": "Sec. 6.11.2",
+      "pdf_reference": "Sec. 6.11.2 (DGN 1FFF4)",
       "signals": [
         {
           "name": "instance",
@@ -1491,7 +1335,8 @@
           "unit": "deg/s"
         }
       ],
-      "pgn": "0x1FFF4"
+      "pgn": "0x1FFF4",
+      "notes": "Wire-confirmed (19FFF49C) in 2026-07-05 live census (nixpi can1)."
     },
     "436180476": {
       "name": "CHARGER_CONFIGURATION_COMMAND_2",
@@ -1517,7 +1362,9 @@
           "scale": 0.5,
           "unit": "%",
           "description": "Maximum charge current as percent",
-          "unavailable_raw_values": [255]
+          "unavailable_raw_values": [
+            255
+          ]
         },
         {
           "name": "charge_rate_limit_percent",
@@ -1527,7 +1374,9 @@
           "scale": 0.5,
           "unit": "%",
           "description": "Charge rate limit as percent of bank size",
-          "unavailable_raw_values": [255]
+          "unavailable_raw_values": [
+            255
+          ]
         },
         {
           "name": "shore_breaker_size",
@@ -1536,7 +1385,9 @@
           "byte_order": "big_endian",
           "unit": "A",
           "description": "Shore breaker size",
-          "unavailable_raw_values": [255]
+          "unavailable_raw_values": [
+            255
+          ]
         },
         {
           "name": "default_battery_temperature",
@@ -1546,7 +1397,9 @@
           "offset": -40,
           "unit": "deg C",
           "description": "Default battery temperature when no battery temperature sensor is available",
-          "unavailable_raw_values": [255]
+          "unavailable_raw_values": [
+            255
+          ]
         },
         {
           "name": "recharge_voltage",
@@ -1556,21 +1409,25 @@
           "scale": 0.05,
           "unit": "Vdc",
           "description": "Voltage below which charger may initiate charging",
-          "unavailable_raw_values": [65535]
+          "unavailable_raw_values": [
+            65535
+          ]
         },
         {
           "name": "reserved",
           "start_bit": 56,
           "length": 8,
           "byte_order": "big_endian",
-          "unavailable_raw_values": [255]
+          "unavailable_raw_values": [
+            255
+          ]
         }
       ],
       "pgn": "0x1FF95"
     },
-    "436132045": {
+    "436132764": {
       "name": "DC_DIMMER_COMMAND_2",
-      "id": 436132045,
+      "id": 436132764,
       "extended": true,
       "length": 8,
       "source_address": "0x9D",
@@ -1637,7 +1494,8 @@
           "byte_order": "big_endian"
         }
       ],
-      "pgn": "0x1FEDB"
+      "pgn": "0x1FEDB",
+      "notes": "id wire-confirmed: the G6 (SA 0x9C) rebroadcasts this at ~2 Hz per output (2026-07-05 live census (nixpi can1))."
     },
     "436189103": {
       "name": "TANK_STATUS",
@@ -1676,7 +1534,9 @@
           "byte_order": "big_endian",
           "unit": "L",
           "description": "Actual liquid volume in liters (0-65530)",
-          "unavailable_raw_values": [65535]
+          "unavailable_raw_values": [
+            65535
+          ]
         },
         {
           "name": "tank_size",
@@ -1685,19 +1545,21 @@
           "byte_order": "big_endian",
           "unit": "L",
           "description": "Total tank capacity in liters (0-65530)",
-          "unavailable_raw_values": [65535]
+          "unavailable_raw_values": [
+            65535
+          ]
         }
       ],
       "pgn": "0x1FFB7"
     },
     "436207221": {
-      "name": "SET_DATE_TIME_COMMAND_75",
+      "name": "SET_DATE_TIME_COMMAND",
       "id": 436207221,
       "extended": true,
       "length": 8,
       "source_address": "0x75",
-      "description": "Set System Date and Time Command",
-      "pdf_reference": "Sec. 6.4.3 (Table 6.4.3)",
+      "description": "Set Date/Time Command",
+      "pdf_reference": "Sec. 6.4.3 (DGN 1FFFE)",
       "signals": [
         {
           "name": "year",
@@ -1733,7 +1595,8 @@
           "byte_order": "big_endian",
           "scale": 1,
           "offset": 0,
-          "unit": "0=Sun\u20266=Sat"
+          "unit": "day",
+          "description": "1 = Sunday ... 7 = Saturday (Table 6.4.2b)"
         },
         {
           "name": "hour",
@@ -1769,19 +1632,21 @@
           "byte_order": "big_endian",
           "scale": 1,
           "offset": 0,
-          "unit": "UTC offset (\u201396\u2026+96 quarter-hours)"
+          "unit": "tz code",
+          "description": "Time zone code per Table 6.4.2b (0 = GMT, 4 = EDT, 5 = EST, ...)"
         }
       ],
-      "pgn": "0x1FFFE"
+      "pgn": "0x1FFFE",
+      "notes": "Wire-confirmed (19FFFE75) in 2026-07-05 live census (nixpi can1)."
     },
     "436207517": {
-      "name": "SET_DATE_TIME_COMMAND_9D",
+      "name": "DATE_TIME_STATUS",
       "id": 436207517,
       "extended": true,
       "length": 8,
       "source_address": "0x9D",
-      "description": "Set System Date and Time Command",
-      "pdf_reference": "Sec. 6.4.3 (Table 6.4.3)",
+      "description": "Date/Time Status",
+      "pdf_reference": "Sec. 6.4.2 (DGN 1FFFF)",
       "signals": [
         {
           "name": "year",
@@ -1817,7 +1682,8 @@
           "byte_order": "big_endian",
           "scale": 1,
           "offset": 0,
-          "unit": "0=Sun\u20266=Sat"
+          "unit": "day",
+          "description": "1 = Sunday ... 7 = Saturday (Table 6.4.2b)"
         },
         {
           "name": "hour",
@@ -1853,10 +1719,12 @@
           "byte_order": "big_endian",
           "scale": 1,
           "offset": 0,
-          "unit": "UTC offset (\u201396\u2026+96 quarter-hours)"
+          "unit": "tz code",
+          "description": "Time zone code per Table 6.4.2b (0 = GMT, 4 = EDT, 5 = EST, ...)"
         }
       ],
-      "pgn": "0x1FFFF"
+      "pgn": "0x1FFFF",
+      "notes": "Wire-confirmed (19FFFF9C from the G6) in 2026-07-05 live census (nixpi can1)."
     },
     "436190877": {
       "name": "AC_LOAD_COMMAND",
@@ -1909,7 +1777,9 @@
           "length": 4,
           "description": "0000 = Highest, 1101 = Lowest, 1110 = Error, 1111 = No data",
           "byte_order": "big_endian",
-          "unavailable_raw_values": [15]
+          "unavailable_raw_values": [
+            15
+          ]
         },
         {
           "name": "command",
@@ -1996,7 +1866,9 @@
           "byte_order": "big_endian",
           "unit": "A",
           "description": "Expected current draw of this load",
-          "unavailable_raw_values": [255]
+          "unavailable_raw_values": [
+            255
+          ]
         },
         {
           "name": "present_current",
@@ -2007,365 +1879,136 @@
           "offset": -1600,
           "unit": "A",
           "description": "Measured current being used by this load (0 A = raw 0x7D00)",
-          "unavailable_raw_values": [65535]
+          "unavailable_raw_values": [
+            65535
+          ]
         }
       ],
       "pgn": "0x1FFBF"
     },
     "419369565": {
-      "name": "AC_LOAD_STATUS_2",
+      "name": "UNKNOWN_18FF125D",
       "id": 419369565,
       "extended": true,
       "length": 8,
       "source_address": "0x9D",
-      "description": "AC Load Status 2",
-      "pdf_reference": "Sec. 6.22.3 (DGN 1FFC0)",
+      "description": "Quarantined: J1939 proprietary-B PGN FF12 from SA 0x5D; not observed in 2026-07-05 live census (nixpi can1). RV-C AC_LOAD_STATUS_2 is DGN 1FEDD (Sec. 6.22.3).",
+      "pdf_reference": "\u2014",
       "signals": [
         {
-          "name": "instance",
+          "name": "byte_0",
           "start_bit": 0,
           "length": 8,
-          "description": "Load instance number (1\u2013250 valid, 0 = invalid)",
           "byte_order": "big_endian"
         },
         {
-          "name": "lock_status",
+          "name": "byte_1",
           "start_bit": 8,
-          "length": 2,
-          "description": "00 = Unlocked, 01 = Locked, 11 = Lock not supported",
+          "length": 8,
           "byte_order": "big_endian"
         },
         {
-          "name": "overcurrent_status",
-          "start_bit": 10,
-          "length": 2,
-          "description": "00 = Normal, 01 = Overcurrent, 11 = Not supported",
-          "byte_order": "big_endian"
-        },
-        {
-          "name": "override_status",
-          "start_bit": 12,
-          "length": 2,
-          "description": "00 = No override, 01 = Override active, 11 = Not supported",
-          "byte_order": "big_endian"
-        },
-        {
-          "name": "enable_status",
-          "start_bit": 14,
-          "length": 2,
-          "description": "00 = Enabled, 01 = Disabled, 11 = Not supported",
-          "byte_order": "big_endian"
-        },
-        {
-          "name": "last_command",
+          "name": "byte_2",
           "start_bit": 16,
           "length": 8,
-          "description": "Most recent command issued to this load (see AC_LOAD_COMMAND)",
           "byte_order": "big_endian"
         },
         {
-          "name": "interlock_status",
+          "name": "byte_3",
           "start_bit": 24,
-          "length": 2,
-          "description": "00 = No interlock active, 01 = Interlock active, 11 = Not supported",
+          "length": 8,
+          "byte_order": "big_endian"
+        },
+        {
+          "name": "byte_4",
+          "start_bit": 32,
+          "length": 8,
+          "byte_order": "big_endian"
+        },
+        {
+          "name": "byte_5",
+          "start_bit": 40,
+          "length": 8,
+          "byte_order": "big_endian"
+        },
+        {
+          "name": "byte_6",
+          "start_bit": 48,
+          "length": 8,
+          "byte_order": "big_endian"
+        },
+        {
+          "name": "byte_7",
+          "start_bit": 56,
+          "length": 8,
           "byte_order": "big_endian"
         }
       ],
       "pgn": "0xFF12"
     },
-    "417922958": {
-      "name": "ACK_GLOBAL_8E",
-      "id": 417922958,
-      "extended": true,
-      "length": 8,
-      "source_address": "0x8E",
-      "description": "Global ACK/NAK Message",
-      "pdf_reference": "Sec. 3.2.4.4a\u2013b",
-      "signals": [
-        {
-          "name": "ack_code",
-          "start_bit": 0,
-          "length": 8,
-          "byte_order": "big_endian"
-        },
-        {
-          "name": "instance",
-          "start_bit": 8,
-          "length": 8,
-          "byte_order": "big_endian"
-        },
-        {
-          "name": "instance_bank",
-          "start_bit": 16,
-          "length": 4,
-          "byte_order": "big_endian"
-        },
-        {
-          "name": "reserved_j1939",
-          "start_bit": 20,
-          "length": 4,
-          "byte_order": "big_endian"
-        },
-        {
-          "name": "reserved_j1939_b",
-          "start_bit": 24,
-          "length": 8,
-          "byte_order": "big_endian"
-        },
-        {
-          "name": "acknowledged_source_addr",
-          "start_bit": 32,
-          "length": 8,
-          "byte_order": "big_endian"
-        },
-        {
-          "name": "dgn_ack_lsb",
-          "start_bit": 40,
-          "length": 8,
-          "byte_order": "big_endian"
-        },
-        {
-          "name": "dgn_ack_isb",
-          "start_bit": 48,
-          "length": 8,
-          "byte_order": "big_endian"
-        },
-        {
-          "name": "dgn_ack_msb",
-          "start_bit": 56,
-          "length": 8,
-          "byte_order": "big_endian"
-        }
-      ],
-      "pgn": "0xE8FF"
-    },
-    "418156565": {
-      "name": "ACK_GLOBAL_95",
-      "id": 418156565,
-      "extended": true,
-      "length": 8,
-      "source_address": "0x95",
-      "description": "Global ACK/NAK Message",
-      "pdf_reference": "Sec. 3.2.4.4a\u2013b",
-      "signals": [
-        {
-          "name": "ack_code",
-          "start_bit": 0,
-          "length": 8,
-          "byte_order": "big_endian"
-        },
-        {
-          "name": "instance",
-          "start_bit": 8,
-          "length": 8,
-          "byte_order": "big_endian"
-        },
-        {
-          "name": "instance_bank",
-          "start_bit": 16,
-          "length": 4,
-          "byte_order": "big_endian"
-        },
-        {
-          "name": "reserved_j1939",
-          "start_bit": 20,
-          "length": 4,
-          "byte_order": "big_endian"
-        },
-        {
-          "name": "reserved_j1939_b",
-          "start_bit": 24,
-          "length": 8,
-          "byte_order": "big_endian"
-        },
-        {
-          "name": "acknowledged_source_addr",
-          "start_bit": 32,
-          "length": 8,
-          "byte_order": "big_endian"
-        },
-        {
-          "name": "dgn_ack_lsb",
-          "start_bit": 40,
-          "length": 8,
-          "byte_order": "little_endian"
-        },
-        {
-          "name": "dgn_ack_isb",
-          "start_bit": 48,
-          "length": 8,
-          "byte_order": "little_endian"
-        },
-        {
-          "name": "dgn_ack_msb",
-          "start_bit": 56,
-          "length": 8,
-          "byte_order": "little_endian"
-        }
-      ],
-      "pgn": "0xEC90"
-    },
-    "495778870": {
-      "name": "DATE_TIME_STATUS",
-      "id": 495778870,
-      "extended": true,
-      "length": 8,
-      "description": "System Date and Time Status",
-      "pdf_reference": "Sec. 6.4.2 (DGN 1FEDAh)",
-      "signals": [
-        {
-          "name": "year",
-          "start_bit": 0,
-          "length": 8,
-          "description": "Year offset from 2000 (e.g. 24 = 2024)",
-          "byte_order": "big_endian"
-        },
-        {
-          "name": "month",
-          "start_bit": 8,
-          "length": 8,
-          "description": "1 = January, 12 = December",
-          "byte_order": "big_endian"
-        },
-        {
-          "name": "day_of_month",
-          "start_bit": 16,
-          "length": 8,
-          "description": "Day of month (1\u201331)",
-          "byte_order": "big_endian"
-        },
-        {
-          "name": "day_of_week",
-          "start_bit": 24,
-          "length": 8,
-          "description": "0 = Sunday, 6 = Saturday",
-          "byte_order": "big_endian"
-        },
-        {
-          "name": "hour",
-          "start_bit": 32,
-          "length": 8,
-          "description": "Hour in 24-hour format (0\u201323)",
-          "byte_order": "big_endian"
-        },
-        {
-          "name": "minute",
-          "start_bit": 40,
-          "length": 8,
-          "description": "Minutes past the hour (0\u201359)",
-          "byte_order": "big_endian"
-        },
-        {
-          "name": "second",
-          "start_bit": 48,
-          "length": 8,
-          "description": "Seconds past the minute (0\u201359)",
-          "byte_order": "big_endian"
-        },
-        {
-          "name": "time_zone",
-          "start_bit": 56,
-          "length": 8,
-          "description": "Time zone offset from UTC in 15-minute increments (e.g. -4 hours = -16)",
-          "byte_order": "big_endian"
-        }
-      ],
-      "pgn": "0x18CFC"
-    },
-    "502480264": {
-      "name": "SET_DATE_TIME_COMMAND",
-      "id": 502480264,
-      "extended": true,
-      "length": 8,
-      "description": "Set System Date and Time Command",
-      "pdf_reference": "Sec. 6.4.3 (DGN 1FEE8)",
-      "signals": [
-        {
-          "name": "year",
-          "start_bit": 0,
-          "length": 8,
-          "description": "Year offset from 2000 (e.g., 24 = 2024)",
-          "byte_order": "big_endian"
-        },
-        {
-          "name": "month",
-          "start_bit": 8,
-          "length": 8,
-          "description": "1 = January, 12 = December",
-          "byte_order": "big_endian"
-        },
-        {
-          "name": "day_of_month",
-          "start_bit": 16,
-          "length": 8,
-          "description": "Day of month (1\u201331)",
-          "byte_order": "big_endian"
-        },
-        {
-          "name": "day_of_week",
-          "start_bit": 24,
-          "length": 8,
-          "description": "0 = Sunday, 6 = Saturday",
-          "byte_order": "big_endian"
-        },
-        {
-          "name": "hour",
-          "start_bit": 32,
-          "length": 8,
-          "description": "Hour in 24-hour format (0\u201323)",
-          "byte_order": "big_endian"
-        },
-        {
-          "name": "minute",
-          "start_bit": 40,
-          "length": 8,
-          "description": "Minutes past the hour (0\u201359)",
-          "byte_order": "big_endian"
-        },
-        {
-          "name": "second",
-          "start_bit": 48,
-          "length": 8,
-          "description": "Seconds past the minute (0\u201359)",
-          "byte_order": "big_endian"
-        },
-        {
-          "name": "time_zone",
-          "start_bit": 56,
-          "length": 8,
-          "description": "Time zone offset from UTC in 15-minute increments (e.g. -4 hours = -16)",
-          "byte_order": "big_endian"
-        }
-      ],
-      "pgn": "0x1F33D"
-    },
     "434292399": {
-      "name": "MFG_SPECIFIC_CLAIM_REQUEST_4F",
+      "name": "UNKNOWN_19E2C6AF",
       "id": 434292399,
       "extended": true,
       "length": 8,
       "source_address": "0x4F",
-      "description": "Manufacturer-Specific Address Claim Request",
-      "pdf_reference": "Sec. 3.3.4",
+      "description": "Quarantined: DGN 1E2C6 is not defined in RV-C 2023-11; not observed in 2026-07-05 live census (nixpi can1).",
+      "pdf_reference": "\u2014",
       "signals": [
         {
-          "name": "manufacturer_code_lsb",
+          "name": "byte_0",
           "start_bit": 0,
-          "length": 3,
+          "length": 8,
           "byte_order": "big_endian"
         },
         {
-          "name": "manufacturer_code_msb",
+          "name": "byte_1",
           "start_bit": 8,
+          "length": 8,
+          "byte_order": "big_endian"
+        },
+        {
+          "name": "byte_2",
+          "start_bit": 16,
+          "length": 8,
+          "byte_order": "big_endian"
+        },
+        {
+          "name": "byte_3",
+          "start_bit": 24,
+          "length": 8,
+          "byte_order": "big_endian"
+        },
+        {
+          "name": "byte_4",
+          "start_bit": 32,
+          "length": 8,
+          "byte_order": "big_endian"
+        },
+        {
+          "name": "byte_5",
+          "start_bit": 40,
+          "length": 8,
+          "byte_order": "big_endian"
+        },
+        {
+          "name": "byte_6",
+          "start_bit": 48,
+          "length": 8,
+          "byte_order": "big_endian"
+        },
+        {
+          "name": "byte_7",
+          "start_bit": 56,
           "length": 8,
           "byte_order": "big_endian"
         }
       ],
       "pgn": "0x1E2C6"
     },
-    "437650493": {
+    "436206846": {
       "name": "DC_SOURCE_STATUS_2",
-      "id": 437650493,
+      "id": 436206846,
       "extended": true,
       "length": 8,
       "source_address": "0x9D",
@@ -2391,8 +2034,13 @@
           "start_bit": 16,
           "length": 16,
           "byte_order": "little_endian",
-          "unit": "\u00b0C",
-          "description": "Temperature of the source (battery, etc.)"
+          "unit": "deg C",
+          "description": "Table 5.3 uint16 temperature",
+          "scale": 0.03125,
+          "offset": -273,
+          "unavailable_raw_values": [
+            65535
+          ]
         },
         {
           "name": "state_of_charge",
@@ -2400,7 +2048,11 @@
           "length": 8,
           "byte_order": "big_endian",
           "unit": "%",
-          "description": "Current state of charge (SOC) of the source"
+          "description": "Table 5.3 percent (0.5 %/bit)",
+          "scale": 0.5,
+          "unavailable_raw_values": [
+            255
+          ]
         },
         {
           "name": "time_remaining",
@@ -2408,41 +2060,48 @@
           "length": 16,
           "byte_order": "little_endian",
           "unit": "min",
-          "description": "Estimated time to empty or full, depending on interpretation"
+          "description": "Estimated time to empty or full, depending on interpretation",
+          "unavailable_raw_values": [
+            65535
+          ]
         },
         {
           "name": "time_remaining_flag",
           "start_bit": 56,
           "length": 2,
-          "description": "00 = Time to Empty, 01 = Time to Full, 11 = Unspecified (default to Time to Empty)",
+          "description": "00b = time to empty, 01b = time to full",
           "byte_order": "big_endian"
         }
       ],
-      "pgn": "0x21604"
+      "pgn": "0x1FFFC",
+      "notes": "Spec-canonical entry; not observed in 2026-07-05 live census (nixpi can1). Placeholder source address 0xFE."
     },
     "436131407": {
-      "name": "MFG_SPECIFIC_CLAIM_REQUEST_4F",
+      "name": "MFG_SPECIFIC_CLAIM_REQUEST",
       "id": 436131407,
       "extended": true,
       "length": 8,
       "source_address": "0x4F",
       "description": "Manufacturer-Specific ADDRESS_CLAIM Request",
-      "pdf_reference": "Sec. 3.3.4 (Tables 3.3.4a & 3.3.4b)",
+      "pdf_reference": "Sec. 3.3.4 (DGN 1FED6)",
       "signals": [
         {
           "name": "manufacturer_code_lsb",
           "start_bit": 0,
-          "length": 3,
+          "length": 8,
+          "description": "Manufacturer code low byte (11-bit code, bytes 0-1)",
           "byte_order": "big_endian"
         },
         {
           "name": "manufacturer_code_msb",
           "start_bit": 8,
-          "length": 8,
+          "length": 3,
+          "description": "Manufacturer code top 3 bits",
           "byte_order": "big_endian"
         }
       ],
-      "pgn": "0x1FED6"
+      "pgn": "0x1FED6",
+      "notes": "Wire-confirmed (19FED64F from the ATS) in 2026-07-05 live census (nixpi can1)."
     },
     "436182173": {
       "name": "THERMOSTAT_AMBIENT_STATUS",
@@ -2469,35 +2128,31 @@
           "offset": -273,
           "unit": "deg C",
           "description": "Current ambient temperature (Table 5.3 uint16 temperature; bytes 1-2, verified on the 2021 Aspire 44R bus 2026-07-04)",
-          "unavailable_raw_values": [65535]
+          "unavailable_raw_values": [
+            65535
+          ]
         }
       ],
       "pgn": "0x1FF9C"
     },
-    "536861658": {
+    "436198142": {
       "name": "GENERATOR_COMMAND",
-      "id": 536861658,
+      "id": 436198142,
       "extended": true,
       "length": 8,
       "description": "Generator Control Command",
-      "pdf_reference": "Sec. 6.18.21 (DGN 1FFDA)",
+      "pdf_reference": "Sec. 6.18.25 (DGN 1FFDA)",
       "signals": [
         {
-          "name": "instance",
+          "name": "command",
           "start_bit": 0,
           "length": 8,
-          "description": "Generator instance number (0 = all)",
-          "byte_order": "big_endian"
-        },
-        {
-          "name": "command",
-          "start_bit": 8,
-          "length": 8,
-          "description": "0 = Stop, 1 = Start, 2 = Prime, 3 = Preheat",
+          "description": "0 = Stop, 1 = Start, 2 = Manual prime (Table 6.18.25b)",
           "byte_order": "big_endian"
         }
       ],
-      "pgn": "0x3FFDB"
+      "pgn": "0x1FFDA",
+      "notes": "Spec-canonical entry; not observed in 2026-07-05 live census (nixpi can1). Placeholder source address 0xFE."
     },
     "436198557": {
       "name": "GENERATOR_STATUS_1",
@@ -2506,7 +2161,7 @@
       "length": 8,
       "source_address": "0x9D",
       "description": "Generator Status 1",
-      "pdf_reference": "Sec. 6.18.23",
+      "pdf_reference": "Sec. 6.18.23 (DGN 1FFDC)",
       "signals": [
         {
           "name": "status",
@@ -2522,172 +2177,235 @@
           "byte_order": "little_endian",
           "scale": 1,
           "unit": "min",
-          "description": "Total generator runtime in minutes"
+          "description": "Minutes logged on genset (uint32, LSB first)"
         },
         {
           "name": "engine_load",
           "start_bit": 40,
           "length": 8,
           "byte_order": "big_endian",
-          "scale": 1,
+          "scale": 0.5,
           "unit": "%",
-          "description": "Current engine load"
+          "description": "Table 5.3 percent (0.5 %/bit)",
+          "unavailable_raw_values": [
+            255
+          ]
         },
         {
           "name": "start_battery_voltage",
           "start_bit": 48,
           "length": 16,
           "byte_order": "little_endian",
-          "scale": 1,
+          "scale": 0.05,
           "unit": "Vdc",
-          "description": "Voltage of the generator's start battery"
+          "description": "Table 5.3 uint16 voltage (0.05 V/bit)",
+          "unavailable_raw_values": [
+            65535
+          ]
         }
       ],
-      "pgn": "0x1FFDC"
+      "pgn": "0x1FFDC",
+      "notes": "Wire-confirmed (19FFDC9C) in 2026-07-05 live census (nixpi can1)."
     },
-    "536861659": {
+    "436198398": {
       "name": "GENERATOR_STATUS_2",
-      "id": 536861659,
+      "id": 436198398,
       "extended": true,
       "length": 8,
       "description": "Generator Status 2",
-      "pdf_reference": "Sec. 6.18.24",
+      "pdf_reference": "Sec. 6.18.24 (DGN 1FFDB)",
       "signals": [
         {
-          "name": "engine_rpm",
+          "name": "temperature_shutdown",
           "start_bit": 0,
+          "length": 2,
+          "description": "01b = temperature shutdown active (genset shall not run)",
+          "byte_order": "big_endian"
+        },
+        {
+          "name": "oil_pressure_shutdown",
+          "start_bit": 2,
+          "length": 2,
+          "description": "01b = oil pressure shutdown active",
+          "byte_order": "big_endian"
+        },
+        {
+          "name": "oil_level_switch",
+          "start_bit": 4,
+          "length": 2,
+          "description": "01b = low oil level detected",
+          "byte_order": "big_endian"
+        },
+        {
+          "name": "caution_light",
+          "start_bit": 6,
+          "length": 2,
+          "description": "01b = caution light on",
+          "byte_order": "big_endian"
+        },
+        {
+          "name": "engine_coolant_temperature",
+          "start_bit": 8,
+          "length": 8,
+          "description": "Table 5.3 uint8 temperature",
+          "byte_order": "big_endian",
+          "scale": 1,
+          "offset": -40,
+          "unit": "deg C",
+          "unavailable_raw_values": [
+            255
+          ]
+        },
+        {
+          "name": "engine_oil_pressure",
+          "start_bit": 16,
+          "length": 8,
+          "description": "Precision 4 kPa",
+          "byte_order": "big_endian",
+          "scale": 4,
+          "unit": "kPa",
+          "unavailable_raw_values": [
+            255
+          ]
+        },
+        {
+          "name": "engine_rpm",
+          "start_bit": 24,
           "length": 16,
+          "description": "Precision 0.125 rpm",
           "byte_order": "little_endian",
           "scale": 0.125,
           "unit": "RPM",
-          "description": "Current engine speed"
-        },
-        {
-          "name": "coolant_temp",
-          "start_bit": 16,
-          "length": 8,
-          "byte_order": "big_endian",
-          "scale": 1,
-          "unit": "\u00b0C",
-          "description": "Coolant temperature"
+          "unavailable_raw_values": [
+            65535
+          ]
         },
         {
           "name": "fuel_rate",
-          "start_bit": 24,
-          "length": 16,
-          "byte_order": "little_endian",
-          "scale": 0.1,
-          "unit": "L/h",
-          "description": "Fuel consumption rate"
-        },
-        {
-          "name": "shutdown_flags",
           "start_bit": 40,
-          "length": 8,
-          "description": "Bitfield: indicates reason for shutdown or faults",
-          "byte_order": "big_endian"
+          "length": 16,
+          "description": "Precision 0.05 L/h",
+          "byte_order": "little_endian",
+          "scale": 0.05,
+          "unit": "L/h",
+          "unavailable_raw_values": [
+            65535
+          ]
         }
       ],
-      "pgn": "0x3FFDB"
+      "pgn": "0x1FFDB",
+      "notes": "Spec-canonical entry; not observed in 2026-07-05 live census (nixpi can1). Placeholder source address 0xFE."
     },
-    "536870895": {
+    "436142078": {
       "name": "GENERATOR_DEMAND_COMMAND",
-      "id": 536870895,
+      "id": 436142078,
       "extended": true,
       "length": 8,
       "description": "Generator Demand Command",
-      "pdf_reference": "Sec. 6.18.18 (DGN 1FEFF)",
+      "pdf_reference": "Sec. 6.35.3 (DGN 1FEFF)",
       "signals": [
         {
-          "name": "instance",
+          "name": "generator_demand",
           "start_bit": 0,
-          "length": 8,
-          "description": "Generator instance (0 = all)",
+          "length": 2,
+          "description": "01b = generator power is demanded",
           "byte_order": "big_endian"
         },
         {
-          "name": "demand",
+          "name": "quiet_time_override",
+          "start_bit": 2,
+          "length": 2,
+          "description": "01b = override quiet time",
+          "byte_order": "big_endian"
+        },
+        {
+          "name": "clear_external_activity_flag",
+          "start_bit": 4,
+          "length": 2,
+          "description": "01b = clear external activity flag",
+          "byte_order": "big_endian"
+        },
+        {
+          "name": "manual_override",
+          "start_bit": 6,
+          "length": 2,
+          "description": "01b = override other demand/criteria",
+          "byte_order": "big_endian"
+        },
+        {
+          "name": "generator_lock",
           "start_bit": 8,
-          "length": 8,
-          "description": "0 = No demand, 1 = Demand (request generator start)",
+          "length": 2,
+          "description": "01b = generator is locked",
+          "byte_order": "big_endian"
+        },
+        {
+          "name": "set_external_activity_flag",
+          "start_bit": 10,
+          "length": 2,
+          "description": "01b = set external activity flag",
           "byte_order": "big_endian"
         }
       ],
-      "pgn": "0x3FFFF"
-    },
-    "494861978": {
-      "name": "FIRMWARE_VERSION",
-      "id": 494861978,
-      "extended": true,
-      "length": 8,
-      "source_address": "0x9A",
-      "description": "Firmware Version",
-      "pdf_reference": "Sec. 6.46.3 (DGN 1FF8A)",
-      "signals": [
-        {
-          "name": "version",
-          "start_bit": 0,
-          "length": 64,
-          "byte_order": "little_endian",
-          "description": "ASCII firmware version string. If shorter than 8 bytes, remaining bytes should be 0xFF."
-        }
-      ],
-      "pgn": "0x17EFE"
+      "pgn": "0x1FEFF",
+      "notes": "Spec-canonical entry; not observed in 2026-07-05 live census (nixpi can1). Placeholder source address 0xFE. Deprecated quiet-time fields (bytes 2-5) omitted."
     },
     "435867388": {
-      "name": "CHASSIS_MOBILITY_STATUS_FC",
+      "name": "UNKNOWN_19FACEFC",
       "id": 435867388,
       "extended": true,
       "length": 8,
       "source_address": "0xFC",
-      "description": "Chassis Mobility Status",
-      "pdf_reference": "Sec. 6.11.2",
+      "description": "Quarantined: DGN 1FACE is not defined in RV-C 2023-11 (proprietary range); heavy live traffic from the G6 (0x9C) and 0xFC in 2026-07-05 live census (nixpi can1). Spec CHASSIS_MOBILITY_STATUS is DGN 1FFF4.",
+      "pdf_reference": "\u2014",
       "signals": [
         {
-          "name": "instance",
+          "name": "byte_0",
           "start_bit": 0,
-          "length": 2,
+          "length": 8,
           "byte_order": "big_endian"
         },
         {
-          "name": "position",
-          "start_bit": 2,
-          "length": 2,
-          "byte_order": "big_endian"
-        },
-        {
-          "name": "movement_in_progress",
-          "start_bit": 4,
-          "length": 2,
-          "byte_order": "big_endian"
-        },
-        {
-          "name": "unsuitable_surface",
-          "start_bit": 6,
-          "length": 2,
-          "byte_order": "big_endian"
-        },
-        {
-          "name": "roll_mode_status",
+          "name": "byte_1",
           "start_bit": 8,
-          "length": 4,
+          "length": 8,
           "byte_order": "big_endian"
         },
         {
-          "name": "rate",
+          "name": "byte_2",
           "start_bit": 16,
-          "length": 16,
-          "byte_order": "little_endian",
-          "scale": 0.1,
-          "unit": "deg/s"
+          "length": 8,
+          "byte_order": "big_endian"
         },
         {
-          "name": "max_rate",
+          "name": "byte_3",
+          "start_bit": 24,
+          "length": 8,
+          "byte_order": "big_endian"
+        },
+        {
+          "name": "byte_4",
           "start_bit": 32,
-          "length": 16,
-          "byte_order": "little_endian",
-          "scale": 0.1,
-          "unit": "deg/s"
+          "length": 8,
+          "byte_order": "big_endian"
+        },
+        {
+          "name": "byte_5",
+          "start_bit": 40,
+          "length": 8,
+          "byte_order": "big_endian"
+        },
+        {
+          "name": "byte_6",
+          "start_bit": 48,
+          "length": 8,
+          "byte_order": "big_endian"
+        },
+        {
+          "name": "byte_7",
+          "start_bit": 56,
+          "length": 8,
+          "byte_order": "big_endian"
         }
       ],
       "pgn": "0x1FACE"
@@ -2737,7 +2455,9 @@
           "scale": 0.5,
           "unit": "%",
           "description": "0 = Automatic fan speed; >0 = manual override (raw 0-200 half-percent, mirrors THERMOSTAT_STATUS_1)",
-          "unavailable_raw_values": [255]
+          "unavailable_raw_values": [
+            255
+          ]
         },
         {
           "name": "setpoint_heat",
@@ -2748,7 +2468,9 @@
           "offset": -273,
           "unit": "deg C",
           "description": "Setpoint for heating (Table 5.3 uint16 temperature, mirrors THERMOSTAT_STATUS_1)",
-          "unavailable_raw_values": [65535]
+          "unavailable_raw_values": [
+            65535
+          ]
         },
         {
           "name": "setpoint_cool",
@@ -2759,39 +2481,68 @@
           "offset": -273,
           "unit": "deg C",
           "description": "Setpoint for cooling (Table 5.3 uint16 temperature, mirrors THERMOSTAT_STATUS_1)",
-          "unavailable_raw_values": [65535]
+          "unavailable_raw_values": [
+            65535
+          ]
         }
       ],
       "pgn": "0x1FEF9"
     },
     "419362589": {
-      "name": "THERMOSTAT_SCHEDULE_COMMAND_2",
+      "name": "UNKNOWN_18FEF71D",
       "id": 419362589,
       "extended": true,
       "length": 8,
       "source_address": "0x9D",
-      "description": "Thermostat Schedule Command 2",
-      "pdf_reference": "Sec. 6.16.10 (DGN 1FEF4)",
+      "description": "Quarantined: PGN FEF7 from SA 0x1D; not observed in 2026-07-05 live census (nixpi can1). RV-C THERMOSTAT_SCHEDULE_COMMAND_2 is DGN 1FEF4 (Sec. 6.16.10).",
+      "pdf_reference": "\u2014",
       "signals": [
         {
-          "name": "instance",
+          "name": "byte_0",
           "start_bit": 0,
           "length": 8,
-          "description": "Thermostat zone instance",
           "byte_order": "big_endian"
         },
         {
-          "name": "schedule_mode_instance",
+          "name": "byte_1",
           "start_bit": 8,
           "length": 8,
-          "description": "Schedule profile index (e.g. 0 = Sleep, 1 = Wake, etc.)",
           "byte_order": "big_endian"
         },
         {
-          "name": "day_bitmap",
+          "name": "byte_2",
           "start_bit": 16,
           "length": 8,
-          "description": "Bitmask of days: 0x01 = Sun, 0x02 = Mon, ..., 0x40 = Sat",
+          "byte_order": "big_endian"
+        },
+        {
+          "name": "byte_3",
+          "start_bit": 24,
+          "length": 8,
+          "byte_order": "big_endian"
+        },
+        {
+          "name": "byte_4",
+          "start_bit": 32,
+          "length": 8,
+          "byte_order": "big_endian"
+        },
+        {
+          "name": "byte_5",
+          "start_bit": 40,
+          "length": 8,
+          "byte_order": "big_endian"
+        },
+        {
+          "name": "byte_6",
+          "start_bit": 48,
+          "length": 8,
+          "byte_order": "big_endian"
+        },
+        {
+          "name": "byte_7",
+          "start_bit": 56,
+          "length": 8,
           "byte_order": "big_endian"
         }
       ],
@@ -2842,7 +2593,9 @@
           "scale": 0.5,
           "unit": "%",
           "description": "0 = Automatic fan speed; >0 = manual override",
-          "unavailable_raw_values": [255]
+          "unavailable_raw_values": [
+            255
+          ]
         },
         {
           "name": "setpoint_heat",
@@ -2853,7 +2606,9 @@
           "offset": -273,
           "unit": "deg C",
           "description": "Setpoint for heating (Table 5.3 uint16 temperature)",
-          "unavailable_raw_values": [65535]
+          "unavailable_raw_values": [
+            65535
+          ]
         },
         {
           "name": "setpoint_cool",
@@ -2864,14 +2619,16 @@
           "offset": -273,
           "unit": "deg C",
           "description": "Setpoint for cooling (Table 5.3 uint16 temperature)",
-          "unavailable_raw_values": [65535]
+          "unavailable_raw_values": [
+            65535
+          ]
         }
       ],
       "pgn": "0x1FFE2"
     },
-    "130810": {
+    "436140798": {
       "name": "THERMOSTAT_STATUS_2",
-      "id": 130810,
+      "id": 436140798,
       "extended": true,
       "length": 8,
       "description": "Thermostat Status 2",
@@ -2906,61 +2663,65 @@
           "byte_order": "big_endian"
         }
       ],
-      "pgn": "0x1FE"
+      "pgn": "0x1FEFA",
+      "notes": "Spec-canonical entry; not observed in 2026-07-05 live census (nixpi can1). Placeholder source address 0xFE."
     },
     "419362207": {
-      "name": "THERMOSTAT_SCHEDULE_COMMAND_1",
+      "name": "UNKNOWN_18FEF59F",
       "id": 419362207,
       "extended": true,
       "length": 8,
       "source_address": "0x9F",
-      "description": "Thermostat Schedule Command 1",
-      "pdf_reference": "Sec. 6.16.9 (DGN 1FEF5)",
+      "description": "Quarantined: PGN FEF5 from SA 0x9F is J1939 Ambient Conditions from the chassis gateway (wire-confirmed in 2026-07-05 live census (nixpi can1)). RV-C THERMOSTAT_SCHEDULE_COMMAND_1 is DGN 1FEF5 (Sec. 6.16.9).",
+      "pdf_reference": "\u2014",
       "signals": [
         {
-          "name": "instance",
+          "name": "byte_0",
           "start_bit": 0,
           "length": 8,
-          "description": "Thermostat zone/instance number",
           "byte_order": "big_endian"
         },
         {
-          "name": "day_of_week",
+          "name": "byte_1",
           "start_bit": 8,
           "length": 8,
-          "description": "0 = Sunday, 1 = Monday, ..., 6 = Saturday",
           "byte_order": "big_endian"
         },
         {
-          "name": "period_index",
+          "name": "byte_2",
           "start_bit": 16,
           "length": 8,
-          "description": "Which scheduled period is being set (e.g. 0 = Wake, 1 = Sleep)",
           "byte_order": "big_endian"
         },
         {
-          "name": "set_point_heat",
+          "name": "byte_3",
           "start_bit": 24,
           "length": 8,
-          "byte_order": "big_endian",
-          "unit": "\u00b0C",
-          "description": "Heat setpoint (\u00b0C \u00d7 1)"
+          "byte_order": "big_endian"
         },
         {
-          "name": "set_point_cool",
+          "name": "byte_4",
           "start_bit": 32,
           "length": 8,
-          "byte_order": "big_endian",
-          "unit": "\u00b0C",
-          "description": "Cool setpoint (\u00b0C \u00d7 1)"
+          "byte_order": "big_endian"
         },
         {
-          "name": "start_time",
+          "name": "byte_5",
           "start_bit": 40,
-          "length": 16,
-          "byte_order": "little_endian",
-          "unit": "min",
-          "description": "Start time in minutes since midnight (0\u20131439)"
+          "length": 8,
+          "byte_order": "big_endian"
+        },
+        {
+          "name": "byte_6",
+          "start_bit": 48,
+          "length": 8,
+          "byte_order": "big_endian"
+        },
+        {
+          "name": "byte_7",
+          "start_bit": 56,
+          "length": 8,
+          "byte_order": "big_endian"
         }
       ],
       "pgn": "0xFEF5"
@@ -2971,7 +2732,7 @@
       "extended": true,
       "length": 8,
       "description": "Generic Configuration Status",
-      "pdf_reference": "Sec. 6.3.2 (DGN 1FECF)",
+      "pdf_reference": "Sec. 6.3.2 (DGN 1FED8)",
       "signals": [
         {
           "name": "manufacturer_code_lsb",
@@ -3037,16 +2798,17 @@
           "byte_order": "big_endian"
         }
       ],
-      "pgn": "0x1FED8"
+      "pgn": "0x1FED8",
+      "notes": "Wire-confirmed from many SAs (19FED89x) in 2026-07-05 live census (nixpi can1)."
     },
     "417922975": {
-      "name": "ACKNOWLEDGMENT_GLOBAL",
+      "name": "ACKNOWLEDGMENT",
       "id": 417922975,
       "extended": true,
       "length": 8,
       "source_address": "0x9F",
-      "description": "Acknowledgment or Negative Acknowledgment (global)",
-      "pdf_reference": "Sec. 3.2.4.4a & 3.2.4.4b (DGN E800h)",
+      "description": "Acknowledgment (ACK/NAK)",
+      "pdf_reference": "Sec. 3.2.4.4 (DGN E800; DGN-low = destination address, FFh = global)",
       "signals": [
         {
           "name": "ack_code",
@@ -3088,10 +2850,11 @@
           "start_bit": 40,
           "length": 24,
           "byte_order": "little_endian",
-          "description": "The DGN (PGN) that triggered this ACK/NAK"
+          "description": "DGN being acknowledged, LSB first (Table 3.2.4.4b)"
         }
       ],
-      "pgn": "0xE8FF"
+      "pgn": "0xE8FF",
+      "notes": "pgn E8FF matches global-destination acknowledgments only; destination-specific acks (E8xx) carry the destination in the PGN low byte. Wire-confirmed in 2026-07-05 live census (nixpi can1)."
     },
     "494861979": {
       "name": "TERMINAL",
@@ -3099,8 +2862,8 @@
       "extended": true,
       "length": 8,
       "source_address": "0x9B",
-      "description": "Terminal (Virtual Terminal Text Message)",
-      "pdf_reference": "Sec. 6.2.3 (DGN 17E00h)",
+      "description": "Virtual Terminal (ASCII, destination-specific)",
+      "pdf_reference": "Sec. 6.2.3 (DGN 17E00 + destination address)",
       "signals": [
         {
           "name": "char_0",
@@ -3159,7 +2922,9 @@
           "byte_order": "big_endian"
         }
       ],
-      "pgn": "0x17EFE"
+      "pgn": "0x17EFE",
+      "priority": "7",
+      "notes": "Wire-confirmed from SAs 0x96-0x9E to destination 0xFE in 2026-07-05 live census (nixpi can1)."
     },
     "436202911": {
       "name": "UNKNOWN_19FFED9F",
@@ -3399,362 +3164,111 @@
       ],
       "pgn": "0x1FBDA"
     },
-    "436175852": {
-      "name": "UNKNOWN_19FACEFC",
-      "id": 436175852,
-      "extended": true,
-      "length": 8,
-      "description": "Undocumented",
-      "pdf_reference": "\u2014",
-      "signals": [
-        {
-          "name": "byte_0",
-          "start_bit": 0,
-          "length": 8,
-          "byte_order": "big_endian"
-        },
-        {
-          "name": "byte_1",
-          "start_bit": 8,
-          "length": 8,
-          "byte_order": "big_endian"
-        },
-        {
-          "name": "byte_2",
-          "start_bit": 16,
-          "length": 8,
-          "byte_order": "big_endian"
-        },
-        {
-          "name": "byte_3",
-          "start_bit": 24,
-          "length": 8,
-          "byte_order": "big_endian"
-        },
-        {
-          "name": "byte_4",
-          "start_bit": 32,
-          "length": 8,
-          "byte_order": "big_endian"
-        },
-        {
-          "name": "byte_5",
-          "start_bit": 40,
-          "length": 8,
-          "byte_order": "big_endian"
-        },
-        {
-          "name": "byte_6",
-          "start_bit": 48,
-          "length": 8,
-          "byte_order": "big_endian"
-        },
-        {
-          "name": "byte_7",
-          "start_bit": 56,
-          "length": 8,
-          "byte_order": "big_endian"
-        }
-      ],
-      "pgn": "0x1FF83"
-    },
-    "436116925": {
-      "name": "UNKNOWN_19FF9C9D",
-      "id": 436116925,
-      "extended": true,
-      "length": 8,
-      "description": "Undocumented",
-      "pdf_reference": "\u2014",
-      "signals": [
-        {
-          "name": "byte_0",
-          "start_bit": 0,
-          "length": 8,
-          "byte_order": "big_endian"
-        },
-        {
-          "name": "byte_1",
-          "start_bit": 8,
-          "length": 8,
-          "byte_order": "big_endian"
-        },
-        {
-          "name": "byte_2",
-          "start_bit": 16,
-          "length": 8,
-          "byte_order": "big_endian"
-        },
-        {
-          "name": "byte_3",
-          "start_bit": 24,
-          "length": 8,
-          "byte_order": "big_endian"
-        },
-        {
-          "name": "byte_4",
-          "start_bit": 32,
-          "length": 8,
-          "byte_order": "big_endian"
-        },
-        {
-          "name": "byte_5",
-          "start_bit": 40,
-          "length": 8,
-          "byte_order": "big_endian"
-        },
-        {
-          "name": "byte_6",
-          "start_bit": 48,
-          "length": 8,
-          "byte_order": "big_endian"
-        },
-        {
-          "name": "byte_7",
-          "start_bit": 56,
-          "length": 8,
-          "byte_order": "big_endian"
-        }
-      ],
-      "pgn": "0x1FE9D"
-    },
-    "436128157": {
-      "name": "UNKNOWN_19FE989D",
-      "id": 436128157,
-      "extended": true,
-      "length": 8,
-      "description": "Undocumented",
-      "pdf_reference": "\u2014",
-      "signals": [
-        {
-          "name": "byte_0",
-          "start_bit": 0,
-          "length": 8,
-          "byte_order": "big_endian"
-        },
-        {
-          "name": "byte_1",
-          "start_bit": 8,
-          "length": 8,
-          "byte_order": "big_endian"
-        },
-        {
-          "name": "byte_2",
-          "start_bit": 16,
-          "length": 8,
-          "byte_order": "big_endian"
-        },
-        {
-          "name": "byte_3",
-          "start_bit": 24,
-          "length": 8,
-          "byte_order": "big_endian"
-        },
-        {
-          "name": "byte_4",
-          "start_bit": 32,
-          "length": 8,
-          "byte_order": "big_endian"
-        },
-        {
-          "name": "byte_5",
-          "start_bit": 40,
-          "length": 8,
-          "byte_order": "big_endian"
-        },
-        {
-          "name": "byte_6",
-          "start_bit": 48,
-          "length": 8,
-          "byte_order": "big_endian"
-        },
-        {
-          "name": "byte_7",
-          "start_bit": 56,
-          "length": 8,
-          "byte_order": "big_endian"
-        }
-      ],
-      "pgn": "0x1FEC9"
-    },
-    "436155613": {
-      "name": "UNKNOWN_19FFDC9D",
-      "id": 436155613,
-      "extended": true,
-      "length": 8,
-      "description": "Undocumented",
-      "pdf_reference": "\u2014",
-      "signals": [
-        {
-          "name": "byte_0",
-          "start_bit": 0,
-          "length": 8,
-          "byte_order": "big_endian"
-        },
-        {
-          "name": "byte_1",
-          "start_bit": 8,
-          "length": 8,
-          "byte_order": "big_endian"
-        },
-        {
-          "name": "byte_2",
-          "start_bit": 16,
-          "length": 8,
-          "byte_order": "big_endian"
-        },
-        {
-          "name": "byte_3",
-          "start_bit": 24,
-          "length": 8,
-          "byte_order": "big_endian"
-        },
-        {
-          "name": "byte_4",
-          "start_bit": 32,
-          "length": 8,
-          "byte_order": "big_endian"
-        },
-        {
-          "name": "byte_5",
-          "start_bit": 40,
-          "length": 8,
-          "byte_order": "big_endian"
-        },
-        {
-          "name": "byte_6",
-          "start_bit": 48,
-          "length": 8,
-          "byte_order": "big_endian"
-        },
-        {
-          "name": "byte_7",
-          "start_bit": 56,
-          "length": 8,
-          "byte_order": "big_endian"
-        }
-      ],
-      "pgn": "0x1FF34"
-    },
-    "419379375": {
-      "name": "UNKNOWN_18FECAAF",
-      "id": 419379375,
-      "extended": true,
-      "length": 8,
-      "description": "Undocumented",
-      "pdf_reference": "\u2014",
-      "signals": [
-        {
-          "name": "byte_0",
-          "start_bit": 0,
-          "length": 8,
-          "byte_order": "big_endian"
-        },
-        {
-          "name": "byte_1",
-          "start_bit": 8,
-          "length": 8,
-          "byte_order": "big_endian"
-        },
-        {
-          "name": "byte_2",
-          "start_bit": 16,
-          "length": 8,
-          "byte_order": "big_endian"
-        },
-        {
-          "name": "byte_3",
-          "start_bit": 24,
-          "length": 8,
-          "byte_order": "big_endian"
-        },
-        {
-          "name": "byte_4",
-          "start_bit": 32,
-          "length": 8,
-          "byte_order": "big_endian"
-        },
-        {
-          "name": "byte_5",
-          "start_bit": 40,
-          "length": 8,
-          "byte_order": "big_endian"
-        },
-        {
-          "name": "byte_6",
-          "start_bit": 48,
-          "length": 8,
-          "byte_order": "big_endian"
-        },
-        {
-          "name": "byte_7",
-          "start_bit": 56,
-          "length": 8,
-          "byte_order": "big_endian"
-        }
-      ],
-      "pgn": "0xFF38"
-    },
     "436128335": {
-      "name": "UNKNOWN_19FECA4F",
+      "name": "DM_RV",
       "id": 436128335,
       "extended": true,
       "length": 8,
-      "description": "Undocumented",
-      "pdf_reference": "\u2014",
+      "description": "Active Diagnostic Message (DM_RV)",
+      "pdf_reference": "Sec. 3.2.5.1 (DGN 1FECA)",
       "signals": [
         {
-          "name": "byte_0",
+          "name": "operating_status",
           "start_bit": 0,
-          "length": 8,
+          "length": 2,
+          "description": "00 = OK, 01 = Not Ready, 10 = Fault, 11 = Reserved",
           "byte_order": "big_endian"
         },
         {
-          "name": "byte_1",
+          "name": "operating_status_detail",
+          "start_bit": 2,
+          "length": 2,
+          "description": "Further status detail",
+          "byte_order": "big_endian"
+        },
+        {
+          "name": "yellow_lamp_status",
+          "start_bit": 4,
+          "length": 2,
+          "description": "Lamp behavior for minor fault",
+          "byte_order": "big_endian"
+        },
+        {
+          "name": "red_lamp_status",
+          "start_bit": 6,
+          "length": 2,
+          "description": "Lamp behavior for major fault",
+          "byte_order": "big_endian"
+        },
+        {
+          "name": "DSA",
           "start_bit": 8,
           "length": 8,
+          "description": "Diagnostic Source Address",
           "byte_order": "big_endian"
         },
         {
-          "name": "byte_2",
+          "name": "SPN_MSB",
           "start_bit": 16,
           "length": 8,
+          "description": "SPN low byte (spec byte 2, 'SPN-MSB')",
           "byte_order": "big_endian"
         },
         {
-          "name": "byte_3",
+          "name": "SPN_ISB",
           "start_bit": 24,
           "length": 8,
+          "description": "SPN middle byte",
           "byte_order": "big_endian"
         },
         {
-          "name": "byte_4",
+          "name": "FMI",
           "start_bit": 32,
-          "length": 8,
+          "length": 5,
+          "description": "Failure Mode Identifier (byte 4 bits 0-4)",
           "byte_order": "big_endian"
         },
         {
-          "name": "byte_5",
+          "name": "SPN_LSB",
+          "start_bit": 37,
+          "length": 3,
+          "description": "SPN top 3 bits (byte 4 bits 5-7, spec 'SPN-LSB')",
+          "byte_order": "big_endian"
+        },
+        {
+          "name": "occurrence_count",
           "start_bit": 40,
-          "length": 8,
+          "length": 7,
+          "description": "7Fh if not available",
           "byte_order": "big_endian"
         },
         {
-          "name": "byte_6",
+          "name": "reserved1",
+          "start_bit": 47,
+          "length": 1,
+          "description": "Always 1",
+          "byte_order": "big_endian"
+        },
+        {
+          "name": "DSA_extension",
           "start_bit": 48,
           "length": 8,
+          "description": "FFh = no DSA extension defined",
           "byte_order": "big_endian"
         },
         {
-          "name": "byte_7",
+          "name": "bank_select",
           "start_bit": 56,
-          "length": 8,
+          "length": 4,
+          "description": "0-13 where bank selection is supported, Fh otherwise",
           "byte_order": "big_endian"
         }
       ],
-      "pgn": "0x1FECA"
+      "pgn": "0x1FECA",
+      "notes": "Wire-confirmed from SA 0x4F (ATS) and 0x9F in 2026-07-05 live census (nixpi can1)."
     },
     "419376757": {
-      "name": "UNKNOWN_1FF2E",
+      "name": "UNKNOWN_18FF2E75",
       "id": 419376757,
       "extended": true,
       "length": 8,
@@ -3813,7 +3327,7 @@
       "pgn": "0xFF2E"
     },
     "430636445": {
-      "name": "UNKNOWN_1AAFD",
+      "name": "UNKNOWN_19AAFD9D",
       "id": 430636445,
       "extended": true,
       "length": 8,
@@ -3872,7 +3386,7 @@
       "pgn": "0x1AAFD"
     },
     "425709213": {
-      "name": "UNKNOWN_15FCE",
+      "name": "UNKNOWN_195FCE9D",
       "id": 425709213,
       "extended": true,
       "length": 8,
@@ -3931,7 +3445,7 @@
       "pgn": "0x15FCE"
     },
     "436132253": {
-      "name": "UNKNOWN_19FED9",
+      "name": "UNKNOWN_19FED99D",
       "id": 436132253,
       "extended": true,
       "length": 8,
@@ -3988,6 +3502,91 @@
         }
       ],
       "pgn": "0x1FED9"
+    },
+    "436141310": {
+      "name": "FLOOR_HEAT_STATUS",
+      "id": 436141310,
+      "extended": true,
+      "length": 8,
+      "description": "Floor Heat Status",
+      "pdf_reference": "Sec. 6.36.2 (DGN 1FEFC)",
+      "notes": "Spec-canonical entry; not observed in 2026-07-05 live census (nixpi can1). Placeholder source address 0xFE.",
+      "signals": [
+        {
+          "name": "instance",
+          "start_bit": 0,
+          "length": 8,
+          "description": "Does not correspond to thermostat instances (zones)",
+          "byte_order": "big_endian"
+        },
+        {
+          "name": "operating_mode",
+          "start_bit": 8,
+          "length": 2,
+          "description": "00b = automatic, 01b = manual",
+          "byte_order": "big_endian"
+        },
+        {
+          "name": "operating_status",
+          "start_bit": 10,
+          "length": 2,
+          "description": "00b = off, 01b = on",
+          "byte_order": "big_endian"
+        },
+        {
+          "name": "heat_element_status",
+          "start_bit": 12,
+          "length": 2,
+          "description": "00b = off, 01b = on",
+          "byte_order": "big_endian"
+        },
+        {
+          "name": "schedule_mode",
+          "start_bit": 14,
+          "length": 2,
+          "description": "00b = disabled, 01b = enabled",
+          "byte_order": "big_endian"
+        },
+        {
+          "name": "measured_temperature",
+          "start_bit": 16,
+          "length": 16,
+          "description": "Table 5.3 uint16 temperature",
+          "byte_order": "little_endian",
+          "scale": 0.03125,
+          "offset": -273,
+          "unit": "deg C",
+          "unavailable_raw_values": [
+            65535
+          ]
+        },
+        {
+          "name": "set_point",
+          "start_bit": 32,
+          "length": 16,
+          "description": "Table 5.3 uint16 temperature",
+          "byte_order": "little_endian",
+          "scale": 0.03125,
+          "offset": -273,
+          "unit": "deg C",
+          "unavailable_raw_values": [
+            65535
+          ]
+        },
+        {
+          "name": "dead_band",
+          "start_bit": 48,
+          "length": 8,
+          "description": "Precision 0.1 deg C, range 0-25",
+          "byte_order": "big_endian",
+          "scale": 0.1,
+          "unit": "deg C",
+          "unavailable_raw_values": [
+            255
+          ]
+        }
+      ],
+      "pgn": "0x1FEFC"
     }
   }
 }
