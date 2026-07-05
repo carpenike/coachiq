@@ -71,10 +71,18 @@ class _FakeEntityManagerService:
 
 
 class _FakeBroadcastService:
+    """Double for WebSocketService's data-client broadcast interface.
+
+    Regression note: an earlier version of this fake exposed a
+    ``broadcast_data`` method that the real WebSocketService never had, so
+    the RX pipeline's entity_update broadcasts silently failed in
+    production while this test stayed green.
+    """
+
     def __init__(self) -> None:
         self.broadcasts: list[dict[str, Any]] = []
 
-    async def broadcast_data(self, data: dict[str, Any]) -> None:
+    async def broadcast_to_data_clients(self, data: dict[str, Any]) -> None:
         self.broadcasts.append(data)
 
 
@@ -100,8 +108,13 @@ async def test_can_entity_updates_use_canonical_entity_and_websocket_keys() -> N
     )
 
     assert entity_manager.updated_payloads
+    # Envelope must match the frontend's entity_update handler
+    # (data -> {entity_id, entity_data}), same as the control paths emit.
     assert websocket_manager.broadcasts == [
-        {"type": "entity_update", "entity_id": "tank_fresh", "data": {"id": "tank_fresh"}}
+        {
+            "type": "entity_update",
+            "data": {"entity_id": "tank_fresh", "entity_data": {"id": "tank_fresh"}},
+        }
     ]
 
 
