@@ -67,8 +67,12 @@ const MODE_DISPLAY = new Map<string, string>([
   ["aux_heat", "Aux Heat"],
 ])
 
-/** Modes offered in the zone mode selector (aux/defrost intentionally omitted). */
-const SELECTABLE_MODES = ["off", "cool", "heat", "auto", "fan_only"]
+/**
+ * Modes offered in the main-zone mode selector — the rooftop unit's exclusive
+ * mode, mirroring the Mira (Off / Cool / Heat Pump / Auto). Aqua-Hot heat is a
+ * separate, independent toggle (see AquaHotToggleRow), not a mode here.
+ */
+const SELECTABLE_MODES = ["off", "cool", "heat", "auto"]
 
 const SETPOINT_MIN_F = 40
 const SETPOINT_MAX_F = 105
@@ -398,11 +402,77 @@ function DisabledTooltip({
   )
 }
 
+/**
+ * Independent Aqua-Hot heat toggle for a main zone (Front/Rear). Drives the
+ * counterpart thermostat instance (climate_front_heat / _rear_heat): mode 2
+ * heat on, mode 0 off. It stacks with any rooftop mode — the Mira treats
+ * Aqua-Hot as its own on/off, not one of the Cool/Heat Pump/Auto choices. When
+ * the loop calls for heat but neither Aqua-Hot source (burner/electric) is on,
+ * it shows the Mira's "No Aqua-Hot Source!" warning.
+ */
+function AquaHotToggleRow({
+  entity,
+  sourceOn,
+  disabled,
+}: Readonly<{ entity: EntitySchema; sourceOn: boolean; disabled: boolean }>) {
+  const control = useControlEntity()
+  const mode = zoneMode(entity)
+  const on = mode === "heat" || mode === "aux_heat"
+  const setOn = (next: boolean) => {
+    control.mutate(
+      {
+        entityId: entity.entity_id,
+        command: { command: "set", parameters: { mode: next ? "heat" : "off" } },
+      },
+      {
+        onSuccess: (result) => reportCommandResult(result, entity.name),
+        onError: (error) => reportCommandError(error, entity.name),
+      }
+    )
+  }
+  return (
+    <div className="space-y-1.5 border-t pt-3">
+      <div className="flex items-center justify-between gap-2">
+        <span className="flex items-center gap-1.5 text-xs text-muted-foreground">
+          <IconFlame
+            className={cn("size-3.5", on ? "text-orange-500" : "text-muted-foreground")}
+            aria-hidden
+          />
+          Aqua-Hot
+        </span>
+        <Switch
+          checked={on}
+          disabled={disabled || control.isPending || mode === "unknown"}
+          onCheckedChange={setOn}
+          aria-label={`Toggle ${entity.name}`}
+        />
+      </div>
+      {on && !sourceOn && (
+        <p className="text-right text-xs font-medium text-amber-600 dark:text-amber-500">
+          No Aqua-Hot Source!
+        </p>
+      )}
+    </div>
+  )
+}
+
+interface IThermostatZoneCardProps {
+  entity: EntitySchema
+  /** Counterpart Aqua-Hot heat zone (Front/Rear only); undefined for Mid. */
+  aquaHot: EntitySchema | undefined
+  /** Any shared Aqua-Hot source (burner/electric) requested on. */
+  aquaHotSourceOn: boolean
+  controlsDisabled: boolean
+  disabledReason: string
+}
+
 function ThermostatZoneCard({
   entity,
+  aquaHot,
+  aquaHotSourceOn,
   controlsDisabled,
   disabledReason,
-}: Readonly<IZoneCardProps>) {
+}: Readonly<IThermostatZoneCardProps>) {
   const { send: sendParameters, isPending } = useSetParameters(entity)
   const isAvailable = entity.available !== false
   const cardDisabled = controlsDisabled || !isAvailable
@@ -422,6 +492,13 @@ function ThermostatZoneCard({
             </div>
             <ZoneModeRow entity={entity} disabled={rowDisabled} onCommand={sendParameters} />
             <ZoneFanRow entity={entity} disabled={rowDisabled} onCommand={sendParameters} />
+            {aquaHot && (
+              <AquaHotToggleRow
+                entity={aquaHot}
+                sourceOn={aquaHotSourceOn}
+                disabled={rowDisabled}
+              />
+            )}
           </div>
         </DisabledTooltip>
       </CardContent>
@@ -754,34 +831,64 @@ function TankSection({ tanks }: Readonly<{ tanks: EntitySchema[] }>) {
 // ===== Page sections =====
 //
 
-interface IZoneSectionProps {
+interface IMainZoneSectionProps {
+  zones: EntitySchema[]
+  /** Resolve a zone's Aqua-Hot counterpart (Front/Rear have one, Mid doesn't). */
+  counterpartFor: (zone: EntitySchema) => EntitySchema | undefined
+  aquaHotSourceOn: boolean
+  controlsDisabled: boolean
+  disabledReason: string
+}
+
+/** Front/Mid/Rear cards: rooftop mode + shared setpoint + Aqua-Hot toggle. */
+function MainZoneSection({
+  zones,
+  counterpartFor,
+  aquaHotSourceOn,
+  controlsDisabled,
+  disabledReason,
+}: Readonly<IMainZoneSectionProps>) {
+  if (zones.length === 0) return null
+  return (
+    <div className="space-y-3">
+      <h2 className="text-sm font-medium text-muted-foreground">Zones</h2>
+      <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
+        {zones.map((entity) => (
+          <ThermostatZoneCard
+            key={entity.entity_id}
+            entity={entity}
+            aquaHot={counterpartFor(entity)}
+            aquaHotSourceOn={aquaHotSourceOn}
+            controlsDisabled={controlsDisabled}
+            disabledReason={disabledReason}
+          />
+        ))}
+      </div>
+    </div>
+  )
+}
+
+interface IHeatLoopSectionProps {
   title: string
   zones: EntitySchema[]
   controlsDisabled: boolean
   disabledReason: string
-  heatOnly: boolean
 }
 
-function ZoneSection({
+/** Bay / Floor Aqua-Hot loops — simple heat on/off + setpoint cards. */
+function HeatLoopSection({
   title,
   zones,
   controlsDisabled,
   disabledReason,
-  heatOnly,
-}: Readonly<IZoneSectionProps>) {
+}: Readonly<IHeatLoopSectionProps>) {
   if (zones.length === 0) return null
-  const CardComponent = heatOnly ? HeatZoneCard : ThermostatZoneCard
   return (
     <div className="space-y-3">
       <h2 className="text-sm font-medium text-muted-foreground">{title}</h2>
-      <div
-        className={cn(
-          "grid grid-cols-1 gap-4 md:grid-cols-2",
-          heatOnly ? "xl:grid-cols-4" : "xl:grid-cols-3"
-        )}
-      >
+      <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
         {zones.map((entity) => (
-          <CardComponent
+          <HeatZoneCard
             key={entity.entity_id}
             entity={entity}
             controlsDisabled={controlsDisabled}
@@ -905,6 +1012,24 @@ export default function ClimatePage() {
   const mainZones = zones.filter((zone) => !zoneIsHeatOnly(zone))
   const heatZones = zones.filter(zoneIsHeatOnly)
 
+  // Front/Rear each own an Aqua-Hot heat counterpart (climate_<zone>_heat) that
+  // folds into their card as the independent Aqua-Hot toggle. The remaining
+  // heat zones (Bay/Floor) have no main zone and stay as their own loop cards.
+  const counterpartFor = (zone: EntitySchema) =>
+    heatZones.find((z) => z.entity_id === `${zone.entity_id}_heat`)
+  const counterpartIds = new Set(
+    mainZones.map((z) => counterpartFor(z)?.entity_id).filter((id): id is string => Boolean(id))
+  )
+  const loopZones = heatZones.filter((z) => !counterpartIds.has(z.entity_id))
+
+  // The coach's one Aqua-Hot serves both Front and Rear loops; a zone in
+  // Aqua-Hot mode has "no source" until its burner or electric element is on.
+  const aquaHotSourceOn = acLoads.some(
+    (e) =>
+      (e.entity_id === "aqua_hot_electric" || e.entity_id === "aqua_hot_burner") &&
+      acLoadRequestedOn(e)
+  )
+
   const controlsDisabled = coach !== "LIVE"
   const disabledReason =
     coach === "OFFLINE"
@@ -938,19 +1063,18 @@ export default function ClimatePage() {
 
       {!isLoading && !error && (
         <>
-          <ZoneSection
-            title="Zones"
+          <MainZoneSection
             zones={mainZones}
+            counterpartFor={counterpartFor}
+            aquaHotSourceOn={aquaHotSourceOn}
             controlsDisabled={controlsDisabled}
             disabledReason={disabledReason}
-            heatOnly={false}
           />
-          <ZoneSection
-            title="Aqua-Hot Heat"
-            zones={heatZones}
+          <HeatLoopSection
+            title="Aqua-Hot Loops"
+            zones={loopZones}
             controlsDisabled={controlsDisabled}
             disabledReason={disabledReason}
-            heatOnly
           />
           <EquipmentSection
             acUnits={acUnits}

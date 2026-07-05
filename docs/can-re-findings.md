@@ -123,6 +123,23 @@ So heat-pump control needs no new code (the "heat" command already sends
 mode 2, the exact frame the Mira emits), and Aqua-Hot heat is the existing
 counterpart-zone cards.
 
+**Mode-selector mechanics confirmed live (2026-07-05, watching inst 0 + 3 on
+Front while cycling the Mira).** The Mira's per-zone selector is really *two*
+independent controls, which is why the UI now folds them into one card:
+- The **rooftop unit** has one **exclusive** mode on the zone's own instance —
+  Off (0) / Cool (1) / Heat Pump (2) / Auto (3). Cool and Heat Pump are
+  mutually exclusive (same compressor).
+- **Aqua-Hot** is an **independent toggle** on the counterpart instance (Front
+  inst 3 / Rear inst 4), mode 2 on / 0 off. It stayed at mode 2 while inst 0
+  was cycled Cool→Heat Pump→Auto — it does *not* follow the rooftop mode. Both
+  share the zone's single setpoint (the G6 keeps the counterpart's heat
+  setpoint synced to the main zone).
+- The captured baseline (Front reading `00 10 …` / `03 02 …`) was the exact
+  "No Aqua-Hot Source!" state from the owner screenshot: rooftop **off**,
+  Aqua-Hot loop calling (inst 3 mode 2) but **neither** burner nor electric
+  element energized. The Mira shows that warning whenever a loop is in Aqua-Hot
+  heat with no source on; CoachIQ reproduces it per zone.
+
 **`1FF9C` ambient instances are SENSOR CHANNELS, not zone instances** —
 discovered when the UI showed the rear temperature on the Mid card
 (2026-07-05). Verified against the Mira display plus a thumb-on-sensor test
