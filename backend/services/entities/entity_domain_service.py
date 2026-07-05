@@ -250,6 +250,31 @@ class EntityDomainService:
         )
         return False, None
 
+    async def _await_command_ack(
+        self,
+        operation_id: str,
+        entity_id: str,
+        command: "SafetyControlCommandV2",
+    ) -> tuple[bool, float | None]:
+        """Dispatch to the right acknowledgment strategy for the device type.
+
+        Lights confirm via ``operating_status``; climate zones and the
+        Aqua-Hot confirm via the raw status fields the command targeted.
+        """
+        device_type = await self._read_device_type(entity_id)
+        if device_type == "climate":
+            return await self._wait_for_climate_acknowledgment(
+                entity_id, command.timeout_seconds, self._expected_climate_raw(command)
+            )
+        if device_type == "water_heater":
+            return await self._wait_for_climate_acknowledgment(
+                entity_id, command.timeout_seconds, self._expected_water_heater_raw(command)
+            )
+        expected_status = self._expected_operating_status(command)
+        return await self._wait_for_acknowledgment(
+            operation_id, entity_id, command.timeout_seconds, expected_status
+        )
+
     async def _read_device_type(self, entity_id: str) -> str | None:
         """Read the entity's device_type from live state (None on error)."""
         try:
@@ -290,6 +315,26 @@ class EntityDomainService:
                 expected["fan_mode"] = (fan_raw, 0)
         if "fan_speed_pct" in params:
             expected["fan_speed"] = (round(float(params["fan_speed_pct"]) * 2), 4)
+        return expected
+
+    @staticmethod
+    def _expected_water_heater_raw(
+        command: "SafetyControlCommandV2",
+    ) -> dict[str, tuple[int, int]]:
+        """Target raw operating_mode for a water heater command.
+
+        An explicit ``mode`` label verifies exactly. ``burner``/``electric``
+        bit toggles resolve against live state inside the entity service, so
+        the exact target isn't computable here — those return no expectation
+        and rely on the 1FFF7 status echo reaching the UI instead.
+        """
+        params = command.parameters or {}
+        expected: dict[str, tuple[int, int]] = {}
+        if "mode" in params:
+            labels = {v: k for k, v in climate_units.WATER_HEATER_MODE_LABELS.items()}
+            mode_raw = labels.get(str(params["mode"]).lower())
+            if mode_raw is not None:
+                expected["operating_mode"] = (mode_raw, 0)
         return expected
 
     @staticmethod
@@ -462,19 +507,8 @@ class EntityDomainService:
                 entity_id, legacy_command, user_context=user_context
             )
 
-            # Step 5: Wait for acknowledgment from physical system. Lights
-            # confirm via operating_status; climate zones confirm via the
-            # thermostat raw fields the command targeted.
-            device_type = await self._read_device_type(entity_id)
-            if device_type == "climate":
-                acknowledged, ack_time = await self._wait_for_climate_acknowledgment(
-                    entity_id, command.timeout_seconds, self._expected_climate_raw(command)
-                )
-            else:
-                expected_status = self._expected_operating_status(command)
-                acknowledged, ack_time = await self._wait_for_acknowledgment(
-                    operation_id, entity_id, command.timeout_seconds, expected_status
-                )
+            # Step 5: Wait for acknowledgment from the physical system.
+            acknowledged, ack_time = await self._await_command_ack(operation_id, entity_id, command)
 
             # Step 6: Update operation result
             operation.acknowledged = acknowledged

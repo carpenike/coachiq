@@ -27,6 +27,7 @@ dgn_pairs:
   "1FEDB": "1FEDA" # Light/lock command -> dimmer status
   "1FFE0": "1FFE1" # A/C command -> A/C status
   "1FEF9": "1FFE2" # Thermostat command -> thermostat status
+  "1FFF6": "1FFF7" # Water heater command -> water heater status (RV-C 6.9.3 ACK)
 
 defaults:
   interface: house # Logical CAN interface; resolved via COACHIQ_CAN__INTERFACE_MAPPINGS
@@ -437,17 +438,64 @@ entities:
     read_only: true
     sources: [{ dgn: 1FFE1, instance: 3 }]
 
-  # The Aqua-Hot hydronic heater (SA 0x9E). Read-only until the
-  # burner/electric command dialect gets a wire test.
+  # The Aqua-Hot hydronic heater (SA 0x9E). Burner/Electric mode control via
+  # WATERHEATER_COMMAND (1FFF6) - the standard-RV-C layout, NOT yet
+  # wire-verified against the Aqua-Hot node (test: toggle electric first,
+  # watch the 1FFF7 operating_mode echo, revert). The G6 does not
+  # re-broadcast this command (only WATERHEATER_COMMAND_2 engine-preheat),
+  # so there is no continuous master to fight.
   aqua_hot:
     name: "Aqua-Hot"
     type: water_heater
     area: exterior.basement
     capabilities: [water_temperature, burner, electric_element]
-    read_only: true
     sources:
       - { dgn: 1FFF7, instance: 1 }
       - { dgn: 1FE99, instance: 1 }
+    command: { dgn: 1FFF6, instances: [1] }
+
+  # ----- Tanks (TANK_STATUS 1FFB7, SA 0xAF; ~1.6/s each) --------------------
+  # RV-C tank instance semantics: 0 = fresh, 1 = black, 2 = grey. Levels are
+  # relative_level / resolution (observed resolution 28 for fresh, 24 for
+  # waste). The backend derives level_pct.
+
+  tank_fresh:
+    name: "Fresh Water"
+    type: tank
+    area: exterior.basement
+    capabilities: [level]
+    read_only: true
+    sources: [{ dgn: 1FFB7, instance: 0 }]
+
+  tank_black:
+    name: "Black Tank"
+    type: tank
+    area: exterior.basement
+    capabilities: [level]
+    read_only: true
+    sources: [{ dgn: 1FFB7, instance: 1 }]
+
+  tank_grey:
+    name: "Grey Tank"
+    type: tank
+    area: exterior.basement
+    capabilities: [level]
+    read_only: true
+    sources: [{ dgn: 1FFB7, instance: 2 }]
+
+  # ----- Ambient sensors ------------------------------------------------------
+  # A non-G6 node (SA 0x75) broadcasts THERMOSTAT_AMBIENT_STATUS instance 0x13.
+  # Inferred OUTDOOR sensor from readings (91F on a July afternoon, 82F at
+  # night, tracking bay-ish); verify against actual outside temperature and
+  # rename if wrong.
+
+  outside_temp:
+    name: "Outside Temperature"
+    type: temperature
+    area: exterior.basement
+    capabilities: [temperature]
+    read_only: true
+    sources: [{ dgn: 1FF9C, instance: 19 }]
 
 # ============================================================================
 # LIGHTING SCENES AND GROUPS

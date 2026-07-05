@@ -145,3 +145,33 @@ def water_heater_state_label(raw: dict[str, Any]) -> str:
     if mode is None:
         return "unknown"
     return WATER_HEATER_MODE_LABELS.get(mode, "unknown")
+
+
+def water_heater_mode_bits(raw: dict[str, Any]) -> tuple[bool, bool]:
+    """(burner_on, electric_on) from the operating_mode bitfield (1|2 = 3)."""
+    mode = _raw_int(raw, "operating_mode") or 0
+    return bool(mode & 1), bool(mode & 2)
+
+
+def derive_tank_fields(raw: dict[str, Any]) -> dict[str, Any]:
+    """Derived fields for TANK_STATUS raw signals: percentage full."""
+    derived: dict[str, Any] = {}
+    level = _raw_int(raw, "relative_level")
+    resolution = _raw_int(raw, "resolution")
+    if level is not None and resolution:
+        if level == 0xFF or resolution == 0xFF:
+            derived["level_pct"] = None
+        else:
+            derived["level_pct"] = max(0, min(100, round(level / resolution * 100)))
+    return derived
+
+
+def tank_state_label(raw: dict[str, Any]) -> str:
+    pct = derive_tank_fields(raw).get("level_pct")
+    return "unknown" if pct is None else f"{pct}%"
+
+
+def temperature_state_label(raw: dict[str, Any]) -> str:
+    ambient = _raw_int(raw, "ambient_temperature")
+    fahrenheit = raw_temp_to_f(ambient) if ambient is not None else None
+    return "unknown" if fahrenheit is None else f"{round(fahrenheit)}°F"
