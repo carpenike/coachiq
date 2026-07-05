@@ -9,10 +9,9 @@
 export { ThemeProvider } from '../hooks/use-theme.tsx';
 export { useTheme } from '../hooks/use-theme.ts';
 
-// WebSocket Context
-export { useWebSocketContext } from './use-websocket-context';
-export { WebSocketContext, type ConnectionMetrics, type WebSocketContextType } from './websocket-context';
-export { WebSocketProvider } from './websocket-provider';
+// Realtime (SSE) Context
+export { useRealtime, RealtimeContext, type IRealtimeContext, type RealtimeHealth } from './realtime-context';
+export { RealtimeProvider } from './realtime-provider';
 
 // Query Provider
 export { QueryProvider } from './query-provider';

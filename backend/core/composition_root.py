@@ -159,6 +159,7 @@ class CompositionServices:
     can_protocol_analyzer: Any = None
     dashboard_service: Any = None
     diagnostic_handler: Any = None
+    event_broker: Any = None
     websocket_manager: Any = None
     analytics_dashboard_service: Any = None
     can_bus_service: Any = None
@@ -244,6 +245,7 @@ class CompositionRoot:
         "command_guardrail_service",
     )
     _A4_SERVICE_ORDER = (
+        "event_broker",
         "can_anomaly_detector",
         "can_bus_recorder",
         "can_interface_service",
@@ -937,6 +939,7 @@ class CompositionRoot:
 
         performance_monitor = self.require_service("performance_monitor")
 
+        await self._construct_event_broker()
         await self._construct_websocket_manager()
 
         if self._should_construct("analytics_dashboard_service"):
@@ -976,7 +979,7 @@ class CompositionRoot:
             self._set_root_constructed_service(
                 "entity_service",
                 EntityService(
-                    websocket_manager=self.require_service("websocket_manager"),
+                    event_broker=self.require_service("event_broker"),
                     entity_state_repository=self.require_service("entity_state_repository"),
                     rvc_config_repository=self.require_service("rvc_config_repository"),
                     diagnostics_repository=self.require_service("diagnostics_repository"),
@@ -990,7 +993,7 @@ class CompositionRoot:
                     config_service=self.require_service("rvc_config_facade"),
                     auth_manager=self.require_service("auth_manager"),
                     entity_service=self.require_service("entity_service"),
-                    websocket_manager=self.require_service("websocket_manager"),
+                    event_broker=self.require_service("event_broker"),
                     entity_manager=self.require_service("entity_manager_service"),
                 ),
             )
@@ -1014,7 +1017,7 @@ class CompositionRoot:
                 settings=victron_settings,
                 entity_manager_service=self.require_service("entity_manager_service"),
                 entity_state_repository=self.get_optional_service("entity_state_repository"),
-                websocket_manager=self.get_optional_service("websocket_manager"),
+                event_broker=self.get_optional_service("event_broker"),
             )
             await victron_service.start()
             self._set_root_constructed_service("victron_service", victron_service)
@@ -1139,6 +1142,7 @@ class CompositionRoot:
             await telemetry_service.startup()
             self._set_root_constructed_service("can_network_telemetry_service", telemetry_service)
 
+        await self._construct_event_broker()
         await self._construct_websocket_manager()
 
         # Back-inject the websocket manager into the per-frame CAN tools so their
@@ -1170,11 +1174,21 @@ class CompositionRoot:
                 device_discovery_service=self.get_optional_service("device_discovery_service"),
                 entity_manager_service=self.get_optional_service("entity_manager_service"),
                 websocket_manager=self.get_optional_service("websocket_manager"),
+                event_broker=self.get_optional_service("event_broker"),
                 entity_state_repository=self.get_optional_service("entity_state_repository"),
                 diagnostics_repository=self.get_optional_service("diagnostics_repository"),
             )
             await can_bus_service.start()
             self._set_root_constructed_service("can_bus_service", can_bus_service)
+
+    async def _construct_event_broker(self) -> None:
+        """Construct the SSE event broker (idempotent; no dependencies)."""
+        from backend.services.system.event_broker import EventBroker
+
+        if self._should_construct("event_broker"):
+            event_broker = EventBroker()
+            await event_broker.start()
+            self._set_root_constructed_service("event_broker", event_broker)
 
     async def _construct_websocket_manager(self) -> None:
         """Construct the websocket manager once its optional CAN tools are available."""

@@ -8,12 +8,14 @@
 
 import { createContext, useContext } from 'react';
 
-export type WebSocketHealth = 'connected' | 'connecting' | 'down';
+import type { RealtimeHealth } from './realtime-context';
+
+export type { RealtimeHealth };
 export type CanbusHealth = 'active' | 'silent';
 export type CoachState = 'LIVE' | 'STALE' | 'OFFLINE';
 
 export interface ICoachConnectionState {
-  websocket: WebSocketHealth;
+  realtime: RealtimeHealth;
   canbus: CanbusHealth;
   coach: CoachState;
   /** Freshest entity last_updated across the cache, if any entities loaded */
@@ -22,7 +24,7 @@ export interface ICoachConnectionState {
   lastDataAt: Date | null;
   /** Human-readable explanation of the current (non-LIVE) state */
   reason: string;
-  /** Invalidate CAN telemetry + reconnect the WebSocket */
+  /** Invalidate CAN telemetry + reconnect the realtime stream */
   retry: () => void;
 }
 

@@ -41,7 +41,7 @@ from backend.models.entity import (
 from backend.models.unmapped import UnknownPGNEntry, UnmappedEntryModel
 from backend.repositories import DiagnosticsRepository, RVCConfigRepository
 from backend.repositories.entity_repository import EntityRuntimeStateRepository
-from backend.websocket.handlers import WebSocketManager
+from backend.services.system.event_broker import EventBroker
 
 logger = logging.getLogger(__name__)
 
@@ -231,7 +231,7 @@ class EntityService:
 
     def __init__(
         self,
-        websocket_manager: WebSocketManager,
+        event_broker: EventBroker,
         entity_state_repository: EntityRuntimeStateRepository,
         rvc_config_repository: RVCConfigRepository,
         diagnostics_repository: DiagnosticsRepository,
@@ -240,12 +240,12 @@ class EntityService:
         Initialize the entity service with repository dependencies.
 
         Args:
-            websocket_manager: WebSocket communication manager
+            event_broker: SSE event broker for realtime state push
             entity_state_repository: Repository for entity state management
             rvc_config_repository: Repository for RVC configuration data
             diagnostics_repository: Repository for runtime diagnostic data
         """
-        self.websocket_manager = websocket_manager
+        self.event_broker = event_broker
         self._entity_state_repo = entity_state_repository
         self._rvc_config_repo = rvc_config_repository
         self._diagnostics_repo = diagnostics_repository
@@ -492,13 +492,10 @@ class EntityService:
 
             logger.info(f"Successfully created entity mapping: {request.entity_id}")
 
-            # Broadcast the new entity via WebSocket
-            broadcast_data = {
-                "type": "entity_created",
-                "entity_id": request.entity_id,
-                "data": entity_data,
-            }
-            await self.websocket_manager.broadcast_to_data_clients(broadcast_data)
+            await self.event_broker.publish(
+                "entity_created",
+                {"entity_id": request.entity_id, "data": entity_data},
+            )
 
             return CreateEntityMappingResponse(
                 status="success",
@@ -835,14 +832,9 @@ class EntityService:
             }
         )
         await self._entity_state_repo.save_entity_state(entity_id, entity)
-        await self.websocket_manager.broadcast_to_data_clients(
-            {
-                "type": "entity_update",
-                "data": {
-                    "entity_id": entity_id,
-                    "entity_data": entity,
-                },
-            }
+        await self.event_broker.publish(
+            "entity_update",
+            {"entity_id": entity_id, "entity_data": entity},
         )
 
         try:
@@ -941,8 +933,9 @@ class EntityService:
             }
         )
         await self._entity_state_repo.save_entity_state(entity_id, entity)
-        await self.websocket_manager.broadcast_to_data_clients(
-            {"type": "entity_update", "data": {"entity_id": entity_id, "entity_data": entity}}
+        await self.event_broker.publish(
+            "entity_update",
+            {"entity_id": entity_id, "entity_data": entity},
         )
 
         try:
@@ -1167,15 +1160,9 @@ class EntityService:
         entity.update(optimistic_payload)
         await self._entity_state_repo.save_entity_state(entity_id, entity)
 
-        # Broadcast update via WebSocket (correct structure)
-        await self.websocket_manager.broadcast_to_data_clients(
-            {
-                "type": "entity_update",
-                "data": {
-                    "entity_id": entity_id,
-                    "entity_data": entity,
-                },
-            }
+        await self.event_broker.publish(
+            "entity_update",
+            {"entity_id": entity_id, "entity_data": entity},
         )
 
         # Create and send CAN message(s). A light may map to several dimmer
@@ -1204,15 +1191,9 @@ class EntityService:
             # This could be added as another dependency if needed
             logger.debug("Successfully sent CAN command")
 
-            # Broadcast the state update via WebSocket (correct structure)
-            await self.websocket_manager.broadcast_to_data_clients(
-                {
-                    "type": "entity_update",
-                    "data": {
-                        "entity_id": entity_id,
-                        "entity_data": entity,
-                    },
-                }
+            await self.event_broker.publish(
+                "entity_update",
+                {"entity_id": entity_id, "entity_data": entity},
             )
 
             return ControlEntityResponse(

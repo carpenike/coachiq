@@ -6,6 +6,7 @@
  */
 
 import type { CANMessage } from "@/api/types"
+import type { WebSocketState } from "@/api/websocket"
 import { AppLayout } from "@/components/app-layout"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { Badge } from "@/components/ui/badge"
@@ -16,7 +17,7 @@ import { Skeleton } from "@/components/ui/skeleton"
 // Table components replaced by VirtualizedTable
 import { fetchEnhancedCANStatistics } from "@/api/endpoints"
 import { VirtualizedTable, type VirtualizedTableColumn } from "@/components/virtualized-table"
-import { useCoachConnection, type WebSocketHealth } from "@/contexts/coach-connection-context"
+import { useCoachConnection } from "@/contexts/coach-connection-context"
 import { useCANMetrics, useCANStatistics } from "@/hooks/useSystem"
 import { useVirtualizedTable } from "@/hooks/useVirtualizedTable"
 import { useCANScanWebSocket } from "@/hooks/useWebSocket"
@@ -426,10 +427,10 @@ function CANBusHealth() {
   )
 }
 
-/** Human-readable label for the websocket lifecycle state shown in the disconnected-state card. */
-function websocketStatusLabel(websocket: WebSocketHealth): string {
-  if (websocket === "connecting") return "still connecting"
-  if (websocket === "down") return "down"
+/** Human-readable label for the sniffer socket state shown in the disconnected-state card. */
+function websocketStatusLabel(state: WebSocketState): string {
+  if (state === "connecting") return "still connecting"
+  if (state === "error") return "down"
   return "not connected"
 }
 
@@ -440,7 +441,7 @@ export default function CANSniffer() {
   const [isPaused, setIsPaused] = useState(false)
   const [maxMessages] = useState(1000)
   const [messages, setMessages] = useState<CANMessage[]>([])
-  const { websocket, reason, retry } = useCoachConnection()
+  const { reason, retry } = useCoachConnection()
 
   // Bound the initial skeleton state: after the grace window, show an
   // explicit connection/empty state instead of skeletons-forever.
@@ -454,7 +455,7 @@ export default function CANSniffer() {
   // The generic `<CANMessage>` opts into a typed callback; payloads are
   // still untrusted JSON at the wire — narrow further if/when the schema
   // is validated server-side.
-  const { isConnected, error: wsError, connect } = useCANScanWebSocket<CANMessage>({
+  const { isConnected, state: wsState, error: wsError, connect } = useCANScanWebSocket<CANMessage>({
     autoConnect: !isPaused,
     onMessage: (message: CANMessage) => {
       if (!isPaused) {
@@ -539,7 +540,7 @@ export default function CANSniffer() {
   // WebSocket is not connected (and the grace window elapsed): show an
   // explicit disconnected state instead of skeletons or an empty table.
   if (!isConnected && !isPaused && !error) {
-    const websocketLabel = websocketStatusLabel(websocket)
+    const websocketLabel = websocketStatusLabel(wsState)
     return (
       <AppLayout>
         <div className="flex-1 space-y-6 p-4 pt-6">

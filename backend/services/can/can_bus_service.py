@@ -80,6 +80,7 @@ class CANBusService(GuardrailParticipant):
         device_discovery_service: Any | None = None,
         entity_manager_service: Any | None = None,
         websocket_manager: Any | None = None,
+        event_broker: Any | None = None,
         entity_state_repository: Any | None = None,
         diagnostics_repository: Any | None = None,
     ):
@@ -146,6 +147,7 @@ class CANBusService(GuardrailParticipant):
         self._device_discovery_service = device_discovery_service
         self._entity_manager_service = entity_manager_service
         self._websocket_manager = websocket_manager
+        self._event_broker = event_broker
         self._entity_state_repository = entity_state_repository
         self._diagnostics_repository = diagnostics_repository
 
@@ -1245,19 +1247,13 @@ class CANBusService(GuardrailParticipant):
                 # EntityManager) see live CAN-derived state.
                 await self._persist_entity_state(entity_id, updated_entity)
 
-                # Broadcast the update via WebSocket. Envelope matches what
-                # the frontend's entity_update handler expects (data ->
-                # {entity_id, entity_data}), same as the control paths emit.
-                websocket_service = self._websocket_manager
-                if websocket_service:
-                    broadcast_data = {
-                        "type": "entity_update",
-                        "data": {
-                            "entity_id": entity_id,
-                            "entity_data": updated_entity.to_dict(),
-                        },
-                    }
-                    await websocket_service.broadcast_to_data_clients(broadcast_data)
+                # Push the update over SSE; payload shape matches the control
+                # paths in EntityService ({entity_id, entity_data}).
+                if self._event_broker:
+                    await self._event_broker.publish(
+                        "entity_update",
+                        {"entity_id": entity_id, "entity_data": updated_entity.to_dict()},
+                    )
 
                 # Check if this completes a pending command (for optimistic UI updates)
                 await self._check_pending_command_completion(entity_id, payload)

@@ -1,8 +1,10 @@
 """
 FastAPI WebSocket routes and endpoints.
 
-This module defines WebSocket routes using dependency injection for service access.
-WebSocket endpoints use the same DI pattern as regular HTTP endpoints.
+WebSockets serve only the page-scoped, high-frequency diagnostic streams
+(logs, CAN sniffer/recorder/analyzer/filter). App-wide realtime state
+(entity updates etc.) rides the SSE stream at GET /api/events instead —
+see backend/api/routers/events.py.
 """
 
 import logging
@@ -28,19 +30,6 @@ def setup_websocket_routes(app: Any) -> None:
     logger.info("WebSocket routes configured")
 
 
-# Helper function removed - using dependency injection instead
-
-
-@router.websocket("/ws")
-async def websocket_endpoint(websocket: WebSocket, ws_service: WebSocketManager) -> None:
-    """
-    WebSocket endpoint for real-time entity data updates.
-
-    Connect to ws://<host>/ws for real-time updates.
-    """
-    await ws_service.handle_data_connection(websocket)
-
-
 @router.websocket("/ws/logs")
 async def websocket_logs_endpoint(websocket: WebSocket, ws_service: WebSocketManager) -> None:
     """
@@ -59,26 +48,6 @@ async def can_sniffer_ws_endpoint(websocket: WebSocket, ws_service: WebSocketMan
     Connect to ws://<host>/ws/can-sniffer to receive raw CAN frames.
     """
     await ws_service.handle_can_sniffer_connection(websocket)
-
-
-@router.websocket("/ws/network-map")
-async def network_map_ws_endpoint(websocket: WebSocket, ws_service: WebSocketManager) -> None:
-    """
-    WebSocket endpoint for network map updates.
-
-    Connect to ws://<host>/ws/network-map to receive network topology updates.
-    """
-    await ws_service.handle_network_map_connection(websocket)
-
-
-@router.websocket("/ws/features")
-async def features_ws_endpoint(websocket: WebSocket, ws_service: WebSocketManager) -> None:
-    """
-    WebSocket endpoint for feature status updates.
-
-    Connect to ws://<host>/ws/features to receive feature status changes.
-    """
-    await ws_service.handle_features_status_connection(websocket)
 
 
 @router.websocket("/ws/can-recorder")
@@ -109,15 +78,3 @@ async def can_filter_ws_endpoint(websocket: WebSocket, ws_service: WebSocketMana
     Connect to ws://<host>/ws/can-filter to receive filter status and captured messages.
     """
     await ws_service.handle_can_filter_connection(websocket)
-
-
-@router.websocket("/ws/security")
-async def security_ws_endpoint(websocket: WebSocket) -> None:
-    """
-    WebSocket endpoint for security monitoring dashboard.
-
-    Connect to ws://<host>/ws/security to receive real-time security events.
-    """
-    # For now, close immediately - SecurityWebSocketHandler needs migration
-    logger.warning("Security WebSocket endpoint not yet migrated to composition root")
-    await websocket.close(code=1011)  # Internal error

@@ -42,7 +42,7 @@ class _DiagnosticsRepositoryFake:
 def _service(states: dict[str, dict]) -> EntityService:
     """Create EntityService with a typed async entity repository fake."""
     return EntityService(
-        websocket_manager=cast("object", None),
+        event_broker=cast("object", None),
         entity_state_repository=cast(
             "EntityRuntimeStateRepository", _EntityStateRepositoryFake(states)
         ),

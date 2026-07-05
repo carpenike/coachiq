@@ -12,7 +12,7 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import { AuthProvider } from "@/contexts/auth-context";
 import { CoachConnectionProvider } from "@/contexts/coach-connection";
 import { QueryProvider } from "@/contexts/query-provider";
-import { WebSocketProvider } from "@/contexts/websocket-provider";
+import { RealtimeProvider } from "@/contexts/realtime-provider";
 import { appRoutes } from "@/lib/routes";
 import LoginPage from "@/pages/login";
 import NotFoundPage from "@/pages/not-found";
@@ -43,7 +43,7 @@ createRoot(document.getElementById("root")!).render(
   <StrictMode>
     <QueryProvider>
       <AuthProvider>
-        <WebSocketProvider enableEntityUpdates enableSystemStatus enableCANScan={false}>
+        <RealtimeProvider>
             <CoachConnectionProvider>
               <ThemeProvider
                 attribute="class"
@@ -92,7 +92,7 @@ createRoot(document.getElementById("root")!).render(
                 </TooltipProvider>
               </ThemeProvider>
             </CoachConnectionProvider>
-          </WebSocketProvider>
+          </RealtimeProvider>
       </AuthProvider>
     </QueryProvider>
   </StrictMode>

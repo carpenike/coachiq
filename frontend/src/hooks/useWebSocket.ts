@@ -1,19 +1,20 @@
 /**
  * Generic WebSocket Hook
  *
- * A reusable React hook for WebSocket connections with automatic reconnection,
- * authentication support, and TypeScript types for different message formats.
- * Designed to work with any WebSocket endpoint including CAN tools endpoints.
+ * A reusable React hook for the page-scoped diagnostic WebSocket streams
+ * (logs, CAN sniffer/recorder/analyzer/filter), with automatic reconnection
+ * and per-endpoint connection sharing.
+ *
+ * App-wide realtime state (entity updates) does NOT go through here — it
+ * rides the SSE stream owned by RealtimeProvider (see @/api/sse).
  */
 
-import { useEffect, useRef, useState, useContext, useCallback, useMemo } from 'react';
+import { useEffect, useRef, useState, useCallback, useMemo } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import type { RVCWebSocketClient, WebSocketConfig, WebSocketHandlers, WebSocketState } from '@/api/websocket';
 import { connectionManager } from '@/api/websocket-connection-manager';
-import { WebSocketContext } from '@/contexts/websocket-context';
 import { env } from '@/api/client';
 import { queryKeys } from '@/lib/query-client';
-import { entitiesQueryKeys } from '@/hooks/useEntities';
 
 /**
  * Generic WebSocket message handler type
@@ -40,9 +41,6 @@ export interface IUseWebSocketOptions<T = unknown> {
 
   /** WebSocket configuration options */
   config?: WebSocketConfig;
-
-  /** Use existing WebSocket context if available */
-  useContext?: boolean;
 
   /** Message subscriptions by type */
   subscriptions?: IMessageSubscription<T>[];
@@ -134,7 +132,6 @@ export function useWebSocket<T = unknown>(options: IUseWebSocketOptions<T>): IUs
     endpoint,
     autoConnect = false,
     config: userConfig,
-    useContext: useWebSocketContext = true,
     subscriptions = [],
     onMessage,
     onOpen,
@@ -152,10 +149,6 @@ export function useWebSocket<T = unknown>(options: IUseWebSocketOptions<T>): IUs
   onMessageRef.current = onMessage;
   const propSubscriptionsRef = useRef(subscriptions);
   propSubscriptionsRef.current = subscriptions;
-
-  // Always call useContext (React hooks must be called unconditionally)
-  const contextValue = useContext(WebSocketContext);
-  const wsContext = useWebSocketContext ? contextValue : null;
 
   // State
   const [state, setState] = useState<WebSocketState>('disconnected');
@@ -341,23 +334,15 @@ export function useWebSocket<T = unknown>(options: IUseWebSocketOptions<T>): IUs
 
   // Connect function
   const connect = useCallback(() => {
-    if (wsContext && useWebSocketContext) {
-      wsContext.connectAll();
-    } else {
-      reconnectAttemptsRef.current = 0; // Reset attempts on manual connect
-      setStatus('connecting');
-      clientRef.current?.connect();
-    }
-  }, [wsContext, useWebSocketContext]);
+    reconnectAttemptsRef.current = 0; // Reset attempts on manual connect
+    setStatus('connecting');
+    clientRef.current?.connect();
+  }, []);
 
   // Disconnect function
   const disconnect = useCallback(() => {
-    if (wsContext && useWebSocketContext) {
-      wsContext.disconnectAll();
-    } else {
-      clientRef.current?.disconnect();
-    }
-  }, [wsContext, useWebSocketContext]);
+    clientRef.current?.disconnect();
+  }, []);
 
   // Send function
   const send = useCallback((message: T) => {
@@ -378,50 +363,17 @@ export function useWebSocket<T = unknown>(options: IUseWebSocketOptions<T>): IUs
     };
   }, []);
 
-  // If using context, merge with context state
-  const isConnected = useWebSocketContext && wsContext
-    ? wsContext.isConnected
-    : state === 'connected';
-
   return {
     client: clientRef.current,
     state,
-    isConnected,
+    isConnected: state === 'connected',
     error,
     connect,
     disconnect,
     send,
     subscribe,
-    metrics: useWebSocketContext && wsContext
-      ? { ...metrics, ...wsContext.metrics }
-      : metrics,
+    metrics,
   };
-}
-
-/**
- * Hook for entity updates via WebSocket
- */
-export function useEntityWebSocket(options?: { autoConnect?: boolean }) {
-  const queryClient = useQueryClient();
-  const queryClientRef = useRef(queryClient);
-
-  return useWebSocket({
-    endpoint: '/ws',
-    autoConnect: options?.autoConnect ?? true,
-    subscriptions: [{
-      type: 'entity_update',
-      handler: (message: unknown) => {
-        const data = (message as Record<string, any>).data as Record<string, any>;
-        // Update the specific entity in the cache
-        queryClientRef.current.setQueryData(
-          entitiesQueryKeys.entity(data.entity_id),
-          data.entity_data
-        );
-        // Invalidate entity lists to trigger re-render
-        void queryClientRef.current.invalidateQueries({ queryKey: entitiesQueryKeys.collections() });
-      }
-    }]
-  });
 }
 
 /**
@@ -465,25 +417,6 @@ export function useCANScanWebSocket<TMessage = unknown>(options?: {
 }
 
 /**
- * Hook for system status updates via WebSocket
- */
-export function useSystemStatusWebSocket(options?: { autoConnect?: boolean }) {
-  const queryClient = useQueryClient();
-  const queryClientRef = useRef(queryClient);
-
-  return useWebSocket({
-    endpoint: '/ws/features',
-    autoConnect: options?.autoConnect ?? true,
-    onMessage: () => {
-      // Update system queries
-      void queryClientRef.current.invalidateQueries({ queryKey: queryKeys.system.health() });
-      void queryClientRef.current.invalidateQueries({ queryKey: queryKeys.system.queueStatus() });
-      void queryClientRef.current.invalidateQueries({ queryKey: queryKeys.can.statistics() });
-    }
-  });
-}
-
-/**
  * Hook for log streaming via WebSocket
  */
 export function useLogWebSocket(options?: {
@@ -521,51 +454,6 @@ export function useLogWebSocket(options?: {
       }
     }
   });
-}
-
-/**
- * Hook for managing all WebSocket connections
- */
-export function useWebSocketManager(options?: {
-  enableEntityUpdates?: boolean;
-  enableSystemStatus?: boolean;
-  enableCANScan?: boolean;
-}) {
-  const {
-    enableEntityUpdates = true,
-    enableSystemStatus = true,
-    enableCANScan = false,
-  } = options || {};
-
-  const entityWS = useEntityWebSocket({ autoConnect: enableEntityUpdates });
-  const systemWS = useSystemStatusWebSocket({ autoConnect: enableSystemStatus });
-  const canWS = useCANScanWebSocket({ autoConnect: enableCANScan });
-
-  const connectAll = () => {
-    if (enableEntityUpdates) entityWS.connect();
-    if (enableSystemStatus) systemWS.connect();
-    if (enableCANScan) canWS.connect();
-  };
-
-  const disconnectAll = () => {
-    entityWS.disconnect();
-    systemWS.disconnect();
-    canWS.disconnect();
-  };
-
-  const isAnyConnected = entityWS.isConnected || systemWS.isConnected || canWS.isConnected;
-  const hasAnyError = entityWS.error || systemWS.error || canWS.error;
-
-  return {
-    entity: entityWS,
-    system: systemWS,
-    can: canWS,
-    connectAll,
-    disconnectAll,
-    isAnyConnected,
-    hasAnyError,
-    isSupported: true,
-  };
 }
 
 // Export specialized hooks from their separate files

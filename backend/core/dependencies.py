@@ -62,10 +62,9 @@ from backend.services.analytics.analytics_dashboard_service import (
 # purely so pyright + IDEs see real return types.
 #
 # NOTE: ``EntityService`` is intentionally NOT typed here -- importing
-# ``backend.services.entities.entity_service`` triggers a circular import via
-# ``backend.websocket.handlers`` -> ``backend.websocket.routes`` ->
-# ``backend.core.dependencies.WebSocketManager``. Tracked separately;
-# fix likely requires making entity_service's websocket import lazy.
+# ``backend.services.entities.entity_service`` at module load pulls in the
+# CAN command helpers and was historically cyclic; left untyped until that
+# import graph is verified acyclic.
 from backend.services.auth.manager import AuthManager as _AuthManager
 from backend.services.auth.mcp_oauth_guard import reject_mcp_token_on_rest
 from backend.services.auth.pin_manager import PINManager as _PINManager
@@ -107,6 +106,7 @@ from backend.services.security.security_config_service import (
 from backend.services.security.security_event_manager import (
     SecurityEventManager as _SecurityEventManager,
 )
+from backend.services.system.event_broker import EventBroker as _EventBroker
 from backend.services.system.websocket_service import WebSocketService as _WebSocketService
 from backend.services.updates.edge_proxy_monitor_service import (
     EdgeProxyMonitorService as _EdgeProxyMonitorService,
@@ -221,6 +221,16 @@ def get_websocket_manager() -> _WebSocketService:
         The WebSocket manager instance
     """
     return root_service_dependency("websocket_manager")()
+
+
+def get_event_broker() -> _EventBroker:
+    """
+    Get the SSE event broker from composition root.
+
+    Returns:
+        The EventBroker instance
+    """
+    return root_service_dependency("event_broker")()
 
 
 def get_entity_service() -> Any:
@@ -505,6 +515,7 @@ def get_predictive_maintenance_service() -> _PredictiveMaintenanceService:
 # Compatibility naming: the public WebSocketManager alias name is historical;
 # the composition root wires the modern WebSocketService implementation.
 WebSocketManager = Annotated[_WebSocketService, Depends(get_websocket_manager)]
+EventBrokerDep = Annotated[_EventBroker, Depends(get_event_broker)]
 EntityService = Annotated[Any, Depends(get_entity_service)]
 RVCConfigFacade = Annotated[_RVCConfigFacade, Depends(get_rvc_config_facade)]
 

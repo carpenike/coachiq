@@ -20,12 +20,12 @@ class FakeEntityManagerService:
         return self._entity_manager
 
 
-class FakeWebSocketManager:
+class FakeEventBroker:
     def __init__(self) -> None:
-        self.broadcasts: list[dict[str, Any]] = []
+        self.published: list[tuple[str, dict[str, Any]]] = []
 
-    async def broadcast_to_data_clients(self, data: dict[str, Any]) -> None:
-        self.broadcasts.append(data)
+    async def publish(self, event: str, data: dict[str, Any]) -> None:
+        self.published.append((event, data))
 
 
 class FakeStateRepository:
@@ -49,17 +49,17 @@ class FakeMqttClient:
 
 
 def make_service() -> tuple[
-    VictronService, FakeEntityManagerService, FakeWebSocketManager, FakeStateRepository
+    VictronService, FakeEntityManagerService, FakeEventBroker, FakeStateRepository
 ]:
     settings = VictronSettings(enabled=True, host="cerbo.test")
     entity_manager_service = FakeEntityManagerService()
-    websocket_manager = FakeWebSocketManager()
+    event_broker = FakeEventBroker()
     state_repository = FakeStateRepository()
     service = VictronService(
         settings=settings,
         entity_manager_service=entity_manager_service,
         entity_state_repository=state_repository,
-        websocket_manager=websocket_manager,
+        event_broker=event_broker,
     )
     # Register catalog entities without opening an MQTT session.
     entity_manager = entity_manager_service.get_entity_manager()
@@ -67,7 +67,7 @@ def make_service() -> tuple[
 
     for entity_def in DEFS_BY_SERVICE_TYPE.values():
         service._register_entity(entity_manager, entity_def, entity_def.key)
-    return service, entity_manager_service, websocket_manager, state_repository
+    return service, entity_manager_service, event_broker, state_repository
 
 
 def vebus_update(path: str, value: Any, **kwargs: Any) -> VictronUpdate:
@@ -100,8 +100,8 @@ class TestEntityRegistration:
 
 
 class TestUpdateFlow:
-    async def test_update_and_flush_reaches_entity_repo_and_websocket(self):
-        service, entity_manager_service, websocket_manager, state_repository = make_service()
+    async def test_update_and_flush_reaches_entity_repo_and_event_broker(self):
+        service, entity_manager_service, event_broker, state_repository = make_service()
 
         await service._handle_update(vebus_update("Ac/ActiveIn/L1/P", 372))
         await service._handle_update(vebus_update("State", 3))
@@ -119,11 +119,11 @@ class TestUpdateFlow:
         assert state.raw["status"] == "bulk"
 
         assert "victron_inverter_charger" in state_repository.saved
-        assert len(websocket_manager.broadcasts) == 1
-        broadcast = websocket_manager.broadcasts[0]
-        assert broadcast["type"] == "entity_update"
-        assert broadcast["data"]["entity_id"] == "victron_inverter_charger"
-        assert broadcast["data"]["entity_data"]["value"]["ac_in_l1_power"] == 372
+        assert len(event_broker.published) == 1
+        event, payload = event_broker.published[0]
+        assert event == "entity_update"
+        assert payload["entity_id"] == "victron_inverter_charger"
+        assert payload["entity_data"]["value"]["ac_in_l1_power"] == 372
 
     async def test_flush_merges_over_previous_values(self):
         service, entity_manager_service, _, _ = make_service()

@@ -1,24 +1,14 @@
 """
 WebSocket package for CoachIQ.
 
-This package exposes the main WebSocket API surface for real-time communication, including
-WebSocket handlers, log handler, entity integration, and route setup utilities.
+Exposes the WebSocket routes for the page-scoped diagnostic streams
+(logs, CAN sniffer/recorder/analyzer/filter). App-wide realtime state
+rides SSE (backend/api/routers/events.py), not a WebSocket.
 """
 
-from backend.websocket.handlers import (
-    WebSocketLogHandler,
-    WebSocketManager,
-    initialize_websocket_manager,
-)
 from backend.websocket.routes import router, setup_websocket_routes
-from backend.websocket.setup import setup_websocket, shutdown_websocket
 
 __all__ = [
-    "WebSocketLogHandler",
-    "WebSocketManager",
-    "initialize_websocket_manager",
     "router",
-    "setup_websocket",
     "setup_websocket_routes",
-    "shutdown_websocket",
 ]

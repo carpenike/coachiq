@@ -76,11 +76,11 @@ class _AuthManager:
         raise InvalidTokenError("invalid token")
 
 
-class _WebSocketManager:
-    """Minimal websocket manager for EntityService construction."""
+class _EventBroker:
+    """Minimal event broker for EntityService construction."""
 
-    async def broadcast_to_data_clients(self, _data: dict[str, Any]) -> None:
-        """No-op broadcast."""
+    async def publish(self, _event: str, _data: dict[str, Any]) -> None:
+        """No-op publish."""
 
 
 class _RVCConfigRepository:
@@ -362,7 +362,7 @@ async def test_composition_root_startup_seeds_entities_for_authenticated_api(
     )
     root.set_constructed_service("rvc_config_repository", _RVCConfigRepository())
     root.set_constructed_service("entity_manager_service", _EntityManagerService())
-    root.set_constructed_service("websocket_manager", _WebSocketManager())
+    root.set_constructed_service("event_broker", _EventBroker())
     root.set_constructed_service("diagnostics_repository", _DiagnosticsRepository())
 
     await root.startup()

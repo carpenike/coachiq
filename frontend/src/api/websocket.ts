@@ -420,66 +420,6 @@ export class RVCWebSocketClient {
 }
 
 //
-// ===== CONVENIENCE FUNCTIONS =====
-//
-
-/**
- * Create a WebSocket client for entity updates
- *
- * @param handlers - Event handlers
- * @param config - Optional configuration
- * @returns WebSocket client instance
- */
-export function createEntityWebSocket(
-  handlers: WebSocketHandlers = {},
-  config: WebSocketConfig = {}
-): RVCWebSocketClient {
-  return new RVCWebSocketClient('/ws', handlers, config);
-}
-
-/**
- * Create a WebSocket client for CAN message scanning
- *
- * @param handlers - Event handlers
- * @param config - Optional configuration
- * @returns WebSocket client instance
- */
-export function createCANScanWebSocket(
-  handlers: WebSocketHandlers = {},
-  config: WebSocketConfig = {}
-): RVCWebSocketClient {
-  return new RVCWebSocketClient('/ws/can-sniffer', handlers, config);
-}
-
-/**
- * Create a WebSocket client for system status updates
- *
- * @param handlers - Event handlers
- * @param config - Optional configuration
- * @returns WebSocket client instance
- */
-export function createSystemStatusWebSocket(
-  handlers: WebSocketHandlers = {},
-  config: WebSocketConfig = {}
-): RVCWebSocketClient {
-  return new RVCWebSocketClient('/ws/features', handlers, config);
-}
-
-/**
- * Create a WebSocket client for log streaming
- *
- * @param handlers - Event handlers
- * @param config - Optional configuration
- * @returns WebSocket client instance
- */
-export function createLogWebSocket(
-  handlers: WebSocketHandlers = {},
-  config: WebSocketConfig = {}
-): RVCWebSocketClient {
-  return new RVCWebSocketClient('/ws/logs', handlers, config);
-}
-
-//
 // ===== UTILITY FUNCTIONS =====
 //
 

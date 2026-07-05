@@ -44,7 +44,6 @@ from backend.services.database.database_manager import DatabaseManager
 # file (pytest only auto-discovers fixtures from ``conftest.py`` files).
 # Tests that rely on ``performance_timer``:
 #   - tests/integrations/test_can_integration.py::test_message_throughput
-#   - tests/websocket/test_handlers.py::test_websocket_message_throughput
 from tests.conftest_performance import performance_timer  # noqa: F401
 
 
