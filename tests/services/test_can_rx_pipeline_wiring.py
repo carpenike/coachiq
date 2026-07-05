@@ -12,10 +12,12 @@ Covers the root-cause fixes for live-data gaps in the RX pipeline:
   29-bit arbitration id (``frame_id_dict``), not ``dgn_dict`` whose keys are
   ``(priority << 18) | pgn`` with an assumed priority 6 and therefore can
   never equal a real arbitration id.
+- Simulation frame ids: ``_simulate_can_messages`` must emit wire-captured
+  29-bit ids so simulated frames round-trip through the RX decode path.
 """
 
 from types import SimpleNamespace
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
@@ -192,6 +194,44 @@ class TestFrameIdDictWiring:
         assert len(rvc_config.frame_id_dict) >= len(rvc_config.dgn_dict)
         for entry in rvc_config.dgn_dict.values():
             assert rvc_config.frame_id_dict[entry["id"]] == entry
+
+
+class TestSimulationFrameIds:
+    """Simulated frames must carry ids the RX decode path can round-trip."""
+
+    ATS_ARBITRATION_ID = 0x0DFFAD4F
+    ATS_PGN = 0x1FFAD
+
+    @pytest.mark.asyncio
+    async def test_simulated_frame_id_decodes_back_to_entry_pgn(self):
+        service = _make_service(None)
+        entry = {"name": "ATS_AC_STATUS_1", "pgn": "0x1FFAD", "length": 8}
+        # Both maps populated: simulation must pick the wire id, not the
+        # synthesized (priority << 18) | pgn dgn_dict key.
+        service.decoder_frame_id_map = {self.ATS_ARBITRATION_ID: entry}
+        service.decoder_map = {(6 << 18) | self.ATS_PGN: entry}
+        service._running = True
+
+        simulated: list[dict] = []
+
+        async def capture(msg: dict) -> None:
+            simulated.append(msg)
+            service._running = False
+
+        service._process_message = capture
+
+        with patch("backend.services.can.can_bus_service.asyncio.sleep", new=AsyncMock()):
+            await service._simulate_can_messages()
+
+        [msg] = simulated
+        arbitration_id = msg["arbitration_id"]
+        assert arbitration_id == self.ATS_ARBITRATION_ID
+
+        # The RX path's PGN extraction must recover the entry's PGN, and the
+        # decoder lookup must land back on the same entry.
+        pgn = (arbitration_id >> 8) & 0x3FFFF
+        assert pgn == int(entry["pgn"], 16)
+        assert service._get_decoder_entry(arbitration_id, pgn) is entry
 
 
 class TestDiagnosticsRepositoryUpserts:

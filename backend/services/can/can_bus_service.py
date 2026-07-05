@@ -1451,8 +1451,11 @@ class CANBusService(GuardrailParticipant):
         # Counter for cycling through different message types
         counter = 0
 
-        # Get a list of available decoders for more realistic simulation
-        available_decoders = list(self.decoder_map.keys()) if self.decoder_map else []
+        # Get a list of available decoders for more realistic simulation.
+        # Must use the wire-captured 29-bit ids: decoder_map (dgn_dict) keys
+        # are (priority << 18) | pgn, so a frame built from one never survives
+        # the RX path's (id >> 8) & 0x3FFFF PGN extraction.
+        available_decoders = list(self.decoder_frame_id_map.keys())
 
         while self._running:
             try:
@@ -1462,7 +1465,7 @@ class CANBusService(GuardrailParticipant):
                 if available_decoders:
                     # Use real decoder entries
                     decoder_key = available_decoders[counter % len(available_decoders)]
-                    entry = self.decoder_map[decoder_key]
+                    entry = self.decoder_frame_id_map[decoder_key]
 
                     arbitration_id = decoder_key
                     entry_length = entry.get("length", 8)
@@ -1506,27 +1509,28 @@ class CANBusService(GuardrailParticipant):
                     )
 
                 else:
-                    # Fallback to hardcoded simulation messages
+                    # Fallback to hardcoded simulation messages: full 29-bit
+                    # ids (priority 6, source 0x80), not bare PGNs.
                     msg_type = counter % 4
 
                     if msg_type == 0:
-                        # Simulate a temperature message (DGN 1FEA5 / 130725)
-                        arbitration_id = 0x1FEA5
+                        # Simulate a temperature message (PGN 1FEA5 / 130725)
+                        arbitration_id = 0x19FEA580
                         # Temperature of 72.5°F (22.5°C)
                         data = bytes([0x02, 0x01, 0x00, 0x00, 0xE1, 0x01, 0x00, 0xFF])
                     elif msg_type == 1:
-                        # Simulate a battery state message (DGN 1FFFD / 131069)
-                        arbitration_id = 0x1FFFD
+                        # Simulate a battery state message (PGN 1FFFD / 131069)
+                        arbitration_id = 0x19FFFD80
                         # Battery at 80% charge
                         data = bytes([0x01, 0x50, 0x00, 0x00, 0x00, 0x00, 0xFF, 0xFF])
                     elif msg_type == LIGHT_STATUS_SIMULATION_TYPE:
-                        # Simulate a light status message (DGN 1FEED / 130797)
-                        arbitration_id = 0x1FEED
+                        # Simulate a light status message (PGN 1FEED / 130797)
+                        arbitration_id = 0x19FEED80
                         # Light is on
                         data = bytes([0x01, 0x01, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF])
                     else:
-                        # Simulate a tank level message (DGN 1FF9D / 130973)
-                        arbitration_id = 0x1FF9D
+                        # Simulate a tank level message (PGN 1FF9D / 130973)
+                        arbitration_id = 0x19FF9D80
                         # Tank at 65% capacity
                         data = bytes([0x01, 0x41, 0x00, 0x00, 0x00, 0xFF, 0xFF, 0xFF])
 
