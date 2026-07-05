@@ -21,6 +21,7 @@ import {
   IconListDetails,
   IconMapPin,
   IconQuestionMark,
+  IconRoute,
   IconSettings,
   IconShield,
   IconStethoscope,
@@ -40,6 +41,7 @@ import ClimatePage from "@/pages/climate"
 import DevicesPage from "@/pages/devices"
 import DiagnosticsPage from "@/pages/diagnostics"
 import Lights from "@/pages/lights"
+import LocationPage from "@/pages/location"
 import NetworkMap from "@/pages/network-map"
 import PowerPage from "@/pages/power"
 import RVCSpec from "@/pages/rvc-spec"
@@ -68,6 +70,7 @@ export const appRoutes: IAppRoute[] = [
   { path: "/lights", title: "Lights", icon: IconBulb, section: "owner", element: <Lights /> },
   { path: "/climate", title: "Climate", icon: IconTemperature, section: "owner", element: <ClimatePage /> },
   { path: "/power", title: "Power", icon: IconBolt, section: "owner", element: <PowerPage /> },
+  { path: "/location", title: "Location", icon: IconRoute, section: "owner", element: <LocationPage /> },
   { path: "/devices", title: "Devices", icon: IconCpu, section: "owner", element: <DevicesPage /> },
   { path: "/diagnostics", title: "Diagnostics", icon: IconStethoscope, section: "owner", element: <DiagnosticsPage /> },
   { path: "/system", title: "System", icon: IconListDetails, section: "owner", element: <SystemPage /> },

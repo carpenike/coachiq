@@ -167,6 +167,8 @@ class CompositionServices:
     entity_service: Any = None
     entity_domain_service: Any = None
     victron_service: Any = None
+    trip_log_repository: Any = None
+    trip_log_service: Any = None
     router_sidecar_service: Any = None
 
 
@@ -208,6 +210,7 @@ class CompositionRoot:
         "security_listener_repository",
         "session_repository",
         "token_service",
+        "trip_log_repository",
     )
     _FACADE_SERVICE_ORDER = (
         "rvc_config_facade",
@@ -257,6 +260,7 @@ class CompositionRoot:
         "entity_service",
         "entity_domain_service",
         "victron_service",
+        "trip_log_service",
     )
     _ROUTER_SIDECAR_SERVICE_ORDER = ("router_sidecar_service",)
 
@@ -520,6 +524,7 @@ class CompositionRoot:
             EntityRuntimeStateRepository,
         )
         from backend.repositories.persistence_repository import PersistenceRepository
+        from backend.repositories.trip_log_repository import TripLogRepository
         from backend.repositories.security_audit_repository import SecurityAuditRepository
         from backend.repositories.security_config_repository import SecurityConfigRepository
         from backend.repositories.security_event_repository import (
@@ -604,6 +609,7 @@ class CompositionRoot:
                 database_manager, performance_monitor
             ),
             "session_repository": lambda: SessionRepository(database_manager, performance_monitor),
+            "trip_log_repository": lambda: TripLogRepository(database_manager, performance_monitor),
             "token_service": lambda: TokenService(
                 jwt_secret=settings.auth.secret_key,
                 jwt_algorithm=settings.auth.jwt_algorithm,
@@ -1010,6 +1016,26 @@ class CompositionRoot:
             )
             await victron_service.start()
             self._set_root_constructed_service("victron_service", victron_service)
+
+        # Optional GPS trip log: same settings-first gating as victron.
+        trip_log_settings = (
+            self.require_service("app_settings").trip_log
+            if "trip_log_service" in self._service_catalog
+            else None
+        )
+        if (
+            trip_log_settings is not None
+            and trip_log_settings.enabled
+            and self._should_construct("trip_log_service")
+        ):
+            from backend.services.trip_log.trip_log_service import TripLogService
+
+            trip_log_service = TripLogService(
+                settings=trip_log_settings,
+                trip_log_repository=self.require_service("trip_log_repository"),
+            )
+            await trip_log_service.start()
+            self._set_root_constructed_service("trip_log_service", trip_log_service)
 
     async def _construct_lower_can_services(self) -> None:  # noqa: C901
         """Construct lower-CAN prerequisites before CANFacade."""
