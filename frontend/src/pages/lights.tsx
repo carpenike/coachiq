@@ -9,6 +9,7 @@
 
 import { IconBulb, IconBulbOff } from "@tabler/icons-react"
 import { formatDistanceToNow } from "date-fns"
+import { useEffect, useState } from "react"
 import { Link } from "react-router-dom"
 
 import type { EntitySchema, OperationResultSchema } from "@/api/types/domains"
@@ -120,6 +121,17 @@ function LightRow({ entity, controlsDisabled, disabledReason }: Readonly<ILightR
   const isAvailable = entity.available !== false
   const dimmable = lightIsDimmable(entity)
   const brightness = lightBrightnessPct(entity)
+  // A Radix Slider given `value` without `onValueChange` pins its thumb — it
+  // can't be dragged, so it reads as "read-only". Track the in-flight drag
+  // locally, commit the CAN command on release, and drop the local value once
+  // the entity's real brightness catches up.
+  const [pendingBrightness, setPendingBrightness] = useState<number | null>(null)
+  useEffect(() => {
+    if (pendingBrightness !== null && brightness === pendingBrightness) {
+      setPendingBrightness(null)
+    }
+  }, [pendingBrightness, brightness])
+  const shownBrightness = pendingBrightness ?? brightness
   const rowDisabled = controlsDisabled || !isAvailable
   const rowReason = !isAvailable
     ? "Light is not responding on the CAN bus"
@@ -174,10 +186,14 @@ function LightRow({ entity, controlsDisabled, disabledReason }: Readonly<ILightR
       </div>
       {dimmable && isOn && (
         <Slider
-          value={[brightness]}
+          value={[shownBrightness]}
           max={100}
           step={5}
-          disabled={rowDisabled || control.isPending}
+          disabled={rowDisabled}
+          onValueChange={(value) => {
+            const level = value[0]
+            if (level !== undefined) setPendingBrightness(level)
+          }}
           onValueCommit={(value) => {
             const level = value[0]
             if (level !== undefined) {

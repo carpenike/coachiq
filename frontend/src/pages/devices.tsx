@@ -149,7 +149,14 @@ function derivedCapabilities(entity: EntitySchema): string[] {
 }
 
 function isControllable(entity: EntitySchema): boolean {
-  return ["light", "switch", "fan", "lock"].includes(entity.device_type)
+  // Only `light` has a working generic on/off/toggle path. The backend's
+  // control_entity dispatches light / climate / ac_load, but climate and
+  // ac_load are parameterized and live on their own pages — the generic
+  // on/off/toggle buttons here only fit a light. switch / fan / lock have no
+  // service-layer handler, so rendering their buttons sent commands the
+  // backend rejects (e.g. the read-only entrance door lock 500'd on press).
+  // Re-add a type here only once control_entity actually dispatches it.
+  return entity.device_type === "light"
 }
 
 //
