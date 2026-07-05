@@ -1315,6 +1315,15 @@ class TimeSyncSettings(BaseSettings):
         ),
         ge=0,
     )
+    send_compass: bool = Field(
+        default=True,
+        description="Synthesize COMPASS_BEARING_STATUS from GPS course while moving",
+    )
+    compass_min_speed_mps: float = Field(
+        default=1.5,
+        description="Minimum speed for GPS course to update the compass bearing",
+        ge=0,
+    )
 
 
 class J1939Settings(BaseSettings):

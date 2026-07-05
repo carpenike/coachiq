@@ -10,6 +10,7 @@ from datetime import UTC, datetime
 from backend.integrations.rvc.time_broadcast import (
     DGN_DATE_TIME_STATUS,
     DGN_GPS_POSITION,
+    encode_compass_bearing,
     encode_date_time,
     encode_gps_position,
     encode_gps_status,
@@ -72,3 +73,15 @@ class TestGpsEncoding:
     def test_time_status_utc(self):
         payload = encode_gps_time_status(datetime(2026, 7, 5, 18, 30, 15, tzinfo=UTC))
         assert payload == bytes([26, 7, 5, 0xFF, 18, 30, 15, 0xFF])
+
+    def test_compass_bearing_south(self):
+        payload = encode_compass_bearing(180.0)
+        assert int.from_bytes(payload[0:2], "little") == 180 * 128
+        assert int.from_bytes(payload[2:4], "little") == 0  # no calibration offset
+        assert payload[4] & 0b11 == 0  # calibrated
+
+    def test_compass_bearing_wraps_and_not_available(self):
+        wrapped = encode_compass_bearing(370.0)
+        assert int.from_bytes(wrapped[0:2], "little") == 10 * 128
+        unavailable = encode_compass_bearing(None)
+        assert unavailable[0:2] == b"\xff\xff"

@@ -29,12 +29,14 @@ from typing import Any, Protocol
 from backend.core.config import TimeSyncSettings
 from backend.core.structured_logging import get_logger
 from backend.integrations.rvc.time_broadcast import (
+    DGN_COMPASS_BEARING_STATUS,
     DGN_DATE_TIME_STATUS,
     DGN_GPS_DATE_TIME_STATUS,
     DGN_GPS_POSITION,
     DGN_GPS_STATUS,
     DGN_GPS_TIME_STATUS,
     DGN_SET_DATE_TIME_COMMAND,
+    encode_compass_bearing,
     encode_date_time,
     encode_gps_position,
     encode_gps_status,
@@ -77,6 +79,9 @@ class TimeSyncService:
         self._task: asyncio.Task | None = None
         self._announced_gps_time = False
         self._last_set_command_at = 0.0
+        # GPS course is only meaningful in motion; the compass bearing holds
+        # its last moving value while parked (like a real compass would).
+        self._held_bearing_deg: float | None = None
         self._tx_count = 0
         self._tx_errors = 0
 
@@ -188,6 +193,21 @@ class TimeSyncService:
             rvc_arbitration_id(DGN_GPS_TIME_STATUS, self._source_address, _PRIORITY_STATUS),
             encode_gps_time_status(now_utc),
         )
+        if self._settings.send_compass:
+            speed = position.get("speed_mps")
+            course = position.get("course_deg")
+            if (
+                speed is not None
+                and course is not None
+                and speed >= self._settings.compass_min_speed_mps
+            ):
+                self._held_bearing_deg = course
+            await self._send(
+                rvc_arbitration_id(
+                    DGN_COMPASS_BEARING_STATUS, self._source_address, _PRIORITY_STATUS
+                ),
+                encode_compass_bearing(self._held_bearing_deg),
+            )
 
     async def _send(self, arbitration_id: int, data: bytes) -> None:
         result = await self._can_facade.send_raw_message(
