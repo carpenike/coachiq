@@ -200,14 +200,17 @@ class VictronService:
         pending.clear()
 
         entity_def = self._def_for_entity(entity_id)
+        state_label = entity_def.state_fn(merged) if entity_def else "unknown"
+        # MQTT values arrive already decoded, so raw mirrors value; the v2
+        # entities API surfaces `raw` as the state dict, and the frontend
+        # reads the derived human label from its `status` key.
+        signals = {**merged, "status": state_label}
         payload = {
             "entity_id": entity_id,
             "timestamp": time.time(),
-            "value": merged,
-            # MQTT values arrive already decoded, so raw mirrors value; the
-            # entities API surfaces `raw` as the state dict.
-            "raw": merged,
-            "state": entity_def.state_fn(merged) if entity_def else "unknown",
+            "value": signals,
+            "raw": signals,
+            "state": state_label,
         }
         updated_entity = entity_manager.update_entity_state(entity_id, payload)
         if updated_entity is None:

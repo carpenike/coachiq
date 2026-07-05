@@ -113,6 +113,10 @@ class TestUpdateFlow:
         assert state.value["ac_in_l1_power"] == 372
         assert state.value["vebus_state"] == 3
         assert state.state == "bulk"
+        # The v2 entities API exposes only the raw dict, so the derived human
+        # label must ride along in both signal dicts as `status`.
+        assert state.value["status"] == "bulk"
+        assert state.raw["status"] == "bulk"
 
         assert "victron_inverter_charger" in state_repository.saved
         assert len(websocket_manager.broadcasts) == 1

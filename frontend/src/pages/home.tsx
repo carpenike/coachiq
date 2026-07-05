@@ -26,7 +26,9 @@ import { Link } from "react-router-dom"
 
 import { fetchActiveDTCs } from "@/api/domains/diagnostics"
 import type { EntitySchema, OperationResultSchema } from "@/api/types/domains"
+import { PowerSection } from "@/components/power-section"
 import { Badge } from "@/components/ui/badge"
+import { POWER_DEVICE_TYPES } from "@/lib/power"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Skeleton } from "@/components/ui/skeleton"
@@ -601,7 +603,12 @@ export default function HomePage() {
   const { data: entityCollection, isLoading, error } = useEntities({ page_size: 100 })
 
   const entities = entityCollection?.entities ?? []
-  const zones = groupEntitiesByZone(entities, config)
+  // Power entities get their own read-only section; keeping them out of the
+  // zone grid also keeps them away from DeviceRow's toggle switch.
+  const zoneEntities = entities.filter(
+    (entity) => !POWER_DEVICE_TYPES.has(entity.device_type)
+  )
+  const zones = groupEntitiesByZone(zoneEntities, config)
 
   const controlsDisabled = coach !== "LIVE"
   const disabledReason =
@@ -615,6 +622,7 @@ export default function HomePage() {
       <ConnectionHero />
       <AlertsStrip />
       <ScenesRow entities={entities} />
+      <PowerSection entities={entities} />
 
       {isLoading && (
         <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
