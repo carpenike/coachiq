@@ -14,7 +14,7 @@ import logging
 import threading
 import time
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 import yaml
 from cachetools import TTLCache
@@ -52,11 +52,20 @@ class RVCSpecLoader:
         self.config_dir = Path(config_dir)
         self.cache_ttl = cache_ttl
 
-        # TTL caches for different configuration types
-        self.dgn_cache = TTLCache(maxsize=max_cache_size, ttl=cache_ttl)
-        self.mapping_cache = TTLCache(maxsize=100, ttl=cache_ttl)
-        self.spec_cache = TTLCache(maxsize=10, ttl=cache_ttl)
-        self.protocol_cache = TTLCache(maxsize=50, ttl=cache_ttl)
+        # TTL caches for different configuration types. cast() because
+        # cachetools' TTLCache constructor leaves its type variables
+        # unsolved, which made pyright's inference (and the CI error-count
+        # baseline) flap whenever the package import graph changed.
+        self.dgn_cache = cast(
+            "TTLCache[str, dict[str, Any]]", TTLCache(maxsize=max_cache_size, ttl=cache_ttl)
+        )
+        self.mapping_cache = cast(
+            "TTLCache[str, dict[str, Any]]", TTLCache(maxsize=100, ttl=cache_ttl)
+        )
+        self.spec_cache = cast("TTLCache[str, dict[str, Any]]", TTLCache(maxsize=10, ttl=cache_ttl))
+        self.protocol_cache = cast(
+            "TTLCache[str, dict[str, Any]]", TTLCache(maxsize=50, ttl=cache_ttl)
+        )
 
         # Thread safety for cache operations
         self._cache_lock = threading.RLock()

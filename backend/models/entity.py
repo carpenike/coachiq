@@ -42,7 +42,7 @@ class ControlCommand(BaseModel):
         ),
     )
     parameters: dict[str, Any] | None = Field(
-        None,
+        default=None,
         description=(
             "Device-type-specific parameters. Climate zones use setpoint_f / "
             "setpoint_heat_f / setpoint_cool_f, mode, fan_mode, fan_speed_pct."
