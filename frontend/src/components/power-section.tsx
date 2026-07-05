@@ -11,9 +11,11 @@
 import {
   IconBattery,
   IconBolt,
+  IconChevronRight,
   IconPlugConnected,
   IconSun,
 } from "@tabler/icons-react"
+import { Link } from "react-router-dom"
 
 import type { EntitySchema } from "@/api/types/domains"
 import { Badge } from "@/components/ui/badge"
@@ -191,7 +193,10 @@ function cardFor(entity: EntitySchema) {
   }
 }
 
-export function PowerSection({ entities }: Readonly<{ entities: EntitySchema[] }>) {
+export function PowerSection({
+  entities,
+  showTitle = true,
+}: Readonly<{ entities: EntitySchema[]; showTitle?: boolean }>) {
   const powerEntities = entities
     .filter((entity) => POWER_DEVICE_TYPES.has(entity.device_type))
     .sort(
@@ -202,7 +207,15 @@ export function PowerSection({ entities }: Readonly<{ entities: EntitySchema[] }
 
   return (
     <div className="space-y-3">
-      <h2 className="text-sm font-medium text-muted-foreground">Power</h2>
+      {showTitle && (
+        <Link
+          to="/power"
+          className="group flex items-center gap-1 text-sm font-medium text-muted-foreground hover:text-foreground"
+        >
+          Power
+          <IconChevronRight className="size-4 transition-transform group-hover:translate-x-0.5" aria-hidden />
+        </Link>
+      )}
       <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
         {powerEntities.map(cardFor)}
       </div>
