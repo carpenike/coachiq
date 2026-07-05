@@ -223,6 +223,16 @@ def load_config_data(
         # Add dgn_hex to the entry for easier lookups
         pgn_entry["dgn_hex"] = pgn_entry["pgn"]
 
+        # Two spec entries claiming the same priority|PGN key silently shadow
+        # each other (last one wins) — that is how the UNKNOWN_* placeholders
+        # masked real DGN decodes. Make the collision loud.
+        if dgn in dgn_dict:
+            logger.warning(
+                "Duplicate DGN key %X in RVC spec: entry '%s' shadows '%s'",
+                dgn,
+                pgn_entry.get("name", pgn_name),
+                dgn_dict[dgn].get("name", "?"),
+            )
         dgn_dict[dgn] = pgn_entry
         pgn_hex_to_name_map[pgn_entry["pgn"]] = pgn_name
         rvc_spec_dgn_pairs[pgn_entry["pgn"]] = {

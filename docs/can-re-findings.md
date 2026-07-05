@@ -122,18 +122,61 @@ the Bay/Floor heat zones (status instances 5/6). A separate node at SA `0x75`
 also broadcasts `1FF9C` instance 0x13 (~82 °F, tracks bay/outdoor-ish —
 unidentified).
 
-## Trust level of config/rvc.json
+## rvc.json spec audit — 2026-07-05
 
-Treat unverified spec entries as **claims, not facts** — parts of the file
-were generated rather than transcribed. Confirmed cases (all fixed):
-THERMOSTAT_AMBIENT_STATUS had a fabricated signal layout, THERMOSTAT_COMMAND_1
-had the wrong PGN (`FEF6` vs real `1FEF9`), and auto-generated `UNKNOWN_*`
-placeholders shadowed real entries because the loader keys the decoder by PGN
-with last-entry-wins (that one blanked every climate temperature and all AC
-status in production). A scan found ~16 more entries whose `pgn` contradicts
-their own pdf_reference (generator commands among them) — tracked as the
-spec-audit follow-up task. Before building on an untested entry, verify it
-against the official RV-C PDF or a live capture.
+Historic trust level: parts of the file were generated rather than
+transcribed, so unverified entries were **claims, not facts** — that is what
+produced the THERMOSTAT_AMBIENT_STATUS fabricated layout, the wrong
+THERMOSTAT_COMMAND_1 PGN, and the `UNKNOWN_*` shadowing that blanked every
+climate temperature in production. The debt is now paid down:
+
+`config/rvc.json` had systematically unreliable, LLM-fabricated entries (the
+root cause of the THERMOSTAT_AMBIENT_STATUS and THERMOSTAT_COMMAND_1 bugs in
+PRs #190/#191). Every entry was audited against the official RV-C 2023-11 spec
+(`resources/rvc-2023-11_chunks.json`) and a 20 s live census on nixpi `can1`.
+Invariants are now pinned by `tests/integrations/rvc/test_rvc_spec_config.py`,
+and the loader warns on duplicate DGN keys instead of silently shadowing.
+
+Key findings, wire-confirmed by the census:
+
+- **Two diagnostic dialects coexist.** J1939 DM1 (PGN `FECA`) heartbeats come
+  from a dozen-plus nodes (SAs `0x8E–0x9F`, `0xAF`, `0xFC`); RV-C DM_RV
+  (DGN `1FECA`) comes from the ATS (`0x4F`) and `0x9F`. The spec file now has
+  separate `J1939_DM1` / `DM_RV` entries and `_process_diagnostic_frame`
+  accepts both PGNs. Both dialects put FMI in byte 4 bits 0–4 and the SPN top
+  bits in 5–7 — the old entry had them swapped, so real fault SPNs decoded
+  wrong (the all-FF "clear" heartbeat masked the bug).
+- **SA `0x9F` is a J1939 chassis gateway.** Its `FECA`/`FEFC`/`FEF5` frames
+  had been dressed up as RV-C `DM_RV`/`FLOOR_HEAT_STATUS`/
+  `THERMOSTAT_SCHEDULE_COMMAND_1`. They are DM1, Dash Display, and Ambient
+  Conditions; now quarantined as `UNKNOWN_18xxxx9F` entries.
+- **`1D7EFExx` (SAs `0x96–0x9E`) is the RV-C Virtual TERMINAL** (DGN
+  `17E00` + destination, Sec. 6.2.3) — the three "PRODUCT_ID /
+  FIRMWARE_VERSION / TERMINAL" entries were all this one PGN. Real RV-C
+  PRODUCT_ID is `FEEB` (Sec. 3.2.8), same DGN and payload as the J1939
+  Component ID the BAM handler already records.
+- **`19FFFF9C` is DATE_TIME_STATUS (`1FFFF`), `19FFFE75` is
+  SET_DATE_TIME_COMMAND (`1FFFE`)** — both were misnamed; the fabricated
+  duplicates at `18CFC`/`1F33D` are gone.
+- **Generator DGNs corrected before start/stop lands:** command `1FFDA`
+  (single command byte: 0 stop / 1 start / 2 prime — the old entry had an
+  invented leading instance byte), status2 `1FFDB` (layout rebuilt from Table
+  6.18.24b), demand command `1FEFF`. GENERATOR_STATUS_1 (`1FFDC`, live from
+  `0x9C`) gained its Table 5.3 scales.
+- **`1FACE`, `1FACF`, `15FCE`, `1AAFD`, `1FED9`, `1FBDA` are not in RV-C
+  2023-11** — proprietary Firefly-range traffic from the G6, quarantined as
+  `UNKNOWN_*`. `WEATHER_WIND_STATUS` (`1F65B`) never existed anywhere and was
+  deleted.
+- Table 5.3 scales added to the 16-bit temperatures in `FLOOR_HEAT_STATUS`
+  (rebuilt at its real DGN `1FEFC`) and `DC_SOURCE_STATUS_2` (real DGN
+  `1FFFC`, was garbage `21604`).
+
+Convention going forward: entries not yet seen on the wire carry a
+`Spec-canonical entry; not observed …` note and a placeholder source address
+`0xFE` in their `id`; quarantined mystery frames are named
+`UNKNOWN_<captured arbitration id>` with raw byte signals. Before building on
+a `not observed` entry, verify it against the official RV-C PDF or a live
+capture.
 
 ## Guardrail
 

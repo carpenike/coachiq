@@ -16,9 +16,11 @@ from backend.services.can.can_bus_service import CANBusService
 
 pytestmark = [pytest.mark.api, pytest.mark.can]
 
-DM_RV_CAN_ID = 0x18FECA9A
+DM1_CAN_ID = 0x18FECA9A  # J1939 DM1 (PGN FECA) from a chassis node
+DM_RV_CAN_ID = 0x19FECA4F  # RV-C DM_RV (DGN 1FECA) from the ATS
 DM_RV_CLEAR_HEARTBEAT = bytes.fromhex("0584FFFFFFFFFFFF")
-DM_RV_ACTIVE_DTC = bytes.fromhex("1000D2042801FFFF")
+# byte 4 = (SPN top 3 bits << 5) | FMI per RV-C Table 3.2.5.1b / J1939 DM1
+DM_RV_ACTIVE_DTC = bytes.fromhex("1000D2040501FFFF")
 DM_RV_ACTIVE_SPN = 1234
 DM_RV_ACTIVE_FMI = 5
 DM_RV_ACTIVE_CODE = (DM_RV_ACTIVE_SPN << 5) | DM_RV_ACTIVE_FMI
@@ -80,9 +82,10 @@ async def test_dm_rv_clear_heartbeat_does_not_create_dtc(
     can_bus_service: CANBusService, diagnostic_handler: DiagnosticHandler
 ) -> None:
     """RECON-003 clean DM_RV sentinel is a clear heartbeat, not a DTC."""
-    await can_bus_service._process_message(
-        {"arbitration_id": DM_RV_CAN_ID, "data": DM_RV_CLEAR_HEARTBEAT, "interface": "can0"}
-    )
+    for can_id in (DM1_CAN_ID, DM_RV_CAN_ID):
+        await can_bus_service._process_message(
+            {"arbitration_id": can_id, "data": DM_RV_CLEAR_HEARTBEAT, "interface": "can0"}
+        )
 
     assert diagnostic_handler.get_active_dtcs() == []
 
@@ -91,12 +94,12 @@ async def test_dm_rv_clear_heartbeat_does_not_create_dtc(
 async def test_mirrored_dm_rv_frames_dedupe_by_source_spn_fmi(
     can_bus_service: CANBusService, diagnostic_handler: DiagnosticHandler
 ) -> None:
-    """Mirrored can0/can1 DM_RV frames update one DTC keyed by source, SPN, and FMI."""
+    """Mirrored can0/can1 DM1 frames update one DTC keyed by source, SPN, and FMI."""
     await can_bus_service._process_message(
-        {"arbitration_id": DM_RV_CAN_ID, "data": DM_RV_ACTIVE_DTC, "interface": "can0"}
+        {"arbitration_id": DM1_CAN_ID, "data": DM_RV_ACTIVE_DTC, "interface": "can0"}
     )
     await can_bus_service._process_message(
-        {"arbitration_id": DM_RV_CAN_ID, "data": DM_RV_ACTIVE_DTC, "interface": "can1"}
+        {"arbitration_id": DM1_CAN_ID, "data": DM_RV_ACTIVE_DTC, "interface": "can1"}
     )
 
     active_dtcs = diagnostic_handler.get_active_dtcs()
@@ -107,6 +110,24 @@ async def test_mirrored_dm_rv_frames_dedupe_by_source_spn_fmi(
     assert active_dtcs[0].metadata["spn"] == DM_RV_ACTIVE_SPN
     assert active_dtcs[0].metadata["fmi"] == DM_RV_ACTIVE_FMI
     assert active_dtcs[0].occurrence_count == 2
+
+
+@pytest.mark.asyncio
+async def test_rvc_dm_rv_frames_ingest_as_rvc_protocol(
+    can_bus_service: CANBusService, diagnostic_handler: DiagnosticHandler
+) -> None:
+    """RV-C DM_RV (DGN 1FECA) ingests alongside J1939 DM1, tagged as RV-C."""
+    await can_bus_service._process_message(
+        {"arbitration_id": DM_RV_CAN_ID, "data": DM_RV_ACTIVE_DTC, "interface": "can0"}
+    )
+
+    active_dtcs = diagnostic_handler.get_active_dtcs()
+    assert len(active_dtcs) == 1
+    assert active_dtcs[0].code == DM_RV_ACTIVE_CODE
+    assert active_dtcs[0].source_address == 0x4F
+    assert active_dtcs[0].protocol == ProtocolType.RVC
+    assert active_dtcs[0].metadata["spn"] == DM_RV_ACTIVE_SPN
+    assert active_dtcs[0].metadata["fmi"] == DM_RV_ACTIVE_FMI
 
 
 def test_v2_faults_report_handler_dtcs(
