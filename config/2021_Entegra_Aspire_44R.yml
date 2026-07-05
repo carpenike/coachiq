@@ -560,15 +560,26 @@ areas:
       remote_unlock: true
       <<: *lock_device
 
-# Thermostat Status 1 (DGN: 1FFE2) - zone setpoints/mode/fan from the G6 (SA 0x9C).
-# Instance -> zone mapping verified live 2026-07-04: pressing + on the Mira's
-# Front/Mid/Rear zones stepped instances 0/1/2 in order, and the G6 accepted a
-# standard THERMOSTAT_COMMAND_1 from CoachIQ (SA 0xF9) for instance 0 with the
-# status echoing the commanded setpoints. Instances 3 and 4 are heat-side
-# counterparts whose heat setpoint tracks zones 0 (front) and 2 (rear)
-# respectively; 5 and 6 are heat-only zones not yet correlated to a Mira
-# control (likely Bay / Floor) - press those on the Mira and diff to identify.
-1FFE2:
+# Thermostat Ambient Status (DGN: 1FF9C) - measured temperatures from the G6.
+#
+# IMPORTANT: 1FF9C instances are the G6's raw SENSOR CHANNELS, NOT the
+# thermostat zone instances used by 1FFE2/1FEF9. Verified live 2026-07-05 by
+# matching readings against the Mira display and warming the Mid wall sensor
+# (channel 5 rose 70.3F -> 77.5F under a thumb; channel 4 never moved):
+#   0 = Front zone air     (joined to climate_front)
+#   1 = Rear zone air      (joined to climate_rear)   <- NOT zone order!
+#   2 = Bay                (81F, matches Mira Bay; unmapped until the bay
+#                           status zone among 1FFE2 5/6 is identified)
+#   3 = disconnected       (broadcasts -88C; unmapped)
+#   4 = Floor              (matches Mira Floor; unmapped until the floor
+#                           status zone among 1FFE2 5/6 is identified)
+#   5 = Mid zone air       (joined to climate_mid)
+#
+# ORDERING: this section MUST come before 1FFE2. The config loader's
+# inst_map keeps the LAST instance seen per entity_id, and the control path
+# uses it to address THERMOSTAT_COMMAND_1 - so 1FFE2 (zone instances) must
+# win. The zone anchors are therefore defined here and aliased below.
+1FF9C:
   0:
     - &climate_front_zone
       entity_id: climate_front
@@ -576,17 +587,34 @@ areas:
       area: interior.living_main
       <<: *climate_zone
   1:
-    - &climate_mid_zone
-      entity_id: climate_mid
-      friendly_name: "Mid Zone"
-      area: interior.living_main
-      <<: *climate_zone
-  2:
     - &climate_rear_zone
       entity_id: climate_rear
       friendly_name: "Rear Zone"
       area: interior.bedroom
       <<: *climate_zone
+  5:
+    - &climate_mid_zone
+      entity_id: climate_mid
+      friendly_name: "Mid Zone"
+      area: interior.living_main
+      <<: *climate_zone
+
+# Thermostat Status 1 (DGN: 1FFE2) - zone setpoints/mode/fan from the G6 (SA 0x9C).
+# Instance -> zone mapping verified live 2026-07-04: pressing + on the Mira's
+# Front/Mid/Rear zones stepped instances 0/1/2 in order, and the G6 accepted a
+# standard THERMOSTAT_COMMAND_1 from CoachIQ (SA 0xF9) for instance 0 with the
+# status echoing the commanded setpoints. Instances 3 and 4 are heat-side
+# counterparts whose heat setpoint tracks zones 0 (front) and 2 (rear)
+# respectively; 5 and 6 are heat-only zones not yet correlated to a Mira
+# control (Bay + Floor in some order) - change the Bay or Floor setpoint on
+# the Mira and diff to identify, then join ambient channels 2/4 to them.
+1FFE2:
+  0:
+    - <<: *climate_front_zone
+  1:
+    - <<: *climate_mid_zone
+  2:
+    - <<: *climate_rear_zone
   3:
     - &climate_front_heat_zone
       entity_id: climate_front_heat
@@ -611,26 +639,6 @@ areas:
       friendly_name: "Heat Zone 6 (Bay/Floor?)"
       area: interior.bedroom
       <<: *climate_zone_heat_only
-
-# Thermostat Ambient Status (DGN: 1FF9C) - per-zone measured temperature.
-# Same instances/entities as 1FFE2; the decoder merges ambient_temperature
-# into each zone's state. Instance 3 (bay) reported an implausible reading
-# (sensor absent?) and instance 6 was not observed broadcasting.
-1FF9C:
-  0:
-    - <<: *climate_front_zone
-  1:
-    - <<: *climate_mid_zone
-  2:
-    - <<: *climate_rear_zone
-  3:
-    - <<: *climate_front_heat_zone
-  4:
-    - <<: *climate_rear_heat_zone
-  5:
-    - <<: *climate_aux_heat_5_zone
-  6:
-    - <<: *climate_aux_heat_6_zone
 
 # Air Conditioner Status (DGN: 1FFE1) - rooftop AC units report from their own
 # source addresses (0x96-0x98, instances 1-3). Read-only; the thermostat zones
