@@ -1837,6 +1837,37 @@ class RouterSidecarSettings(BaseSettings):
         default=75.0, description="Sustained recovery interval before leaving down", gt=0
     )
 
+    nighthawk_base_url: str = Field(
+        default="http://192.168.12.1", description="Nighthawk M6 Pro base URL"
+    )
+    nighthawk_poll_interval_seconds: float = Field(
+        default=5.0, description="Nighthawk model.json poll interval", gt=0
+    )
+    nighthawk_request_timeout_seconds: float = Field(
+        default=5.0, description="Nighthawk HTTP request timeout", gt=0
+    )
+    nighthawk_telemetry_staleness_seconds: float = Field(
+        default=15.0, description="Seconds before Nighthawk telemetry is stale", gt=0
+    )
+    nighthawk_signal_window_seconds: float = Field(
+        default=45.0, description="Rolling signal average window", gt=0
+    )
+    nighthawk_verdict_dwell_seconds: float = Field(
+        default=75.0, description="Sustained 5G verdict interval before publishing", gt=0
+    )
+    nighthawk_rsrp_degraded: float = Field(default=-105.0, description="RSRP degraded threshold")
+    nighthawk_rsrp_recovery: float = Field(default=-100.0, description="RSRP recovery threshold")
+    nighthawk_rsrq_degraded: float = Field(default=-18.0, description="RSRQ degraded threshold")
+    nighthawk_rsrq_recovery: float = Field(default=-15.0, description="RSRQ recovery threshold")
+    nighthawk_sinr_degraded: float = Field(default=5.0, description="SINR degraded threshold")
+    nighthawk_sinr_recovery: float = Field(default=8.0, description="SINR recovery threshold")
+    nighthawk_radio_quality_degraded: float = Field(
+        default=30.0, description="Radio quality degraded threshold"
+    )
+    nighthawk_radio_quality_recovery: float = Field(
+        default=40.0, description="Radio quality recovery threshold"
+    )
+
 
 class Settings(BaseSettings):
     """
