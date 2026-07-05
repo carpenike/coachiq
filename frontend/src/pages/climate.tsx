@@ -104,12 +104,13 @@ function zoneSetpointF(entity: EntitySchema, heatOnly: boolean): number | null {
 }
 
 /**
- * Heat-only zones (Aqua-Hot bay / floor loops) have no compressor or fan.
- * The v1 entity schema exposes no capabilities list (same contract gap the
- * Lights page works around), so this keys off the coach-mapping entity ids.
+ * Heat-only zones (Aqua-Hot heat counterparts / bay / floor loops) have no
+ * compressor or fan. The v1 entity schema exposes no capabilities list (same
+ * contract gap the Lights page works around), so this keys off the
+ * coach-mapping entity ids (climate_front_heat, climate_aux_heat_5, ...).
  */
 function zoneIsHeatOnly(entity: EntitySchema): boolean {
-  return entity.entity_id === "climate_bay" || entity.entity_id.startsWith("climate_floor")
+  return entity.entity_id.includes("_heat")
 }
 
 /** Current fan selection: auto, or manual low/high (the Mira offers Low/High). */
