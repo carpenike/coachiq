@@ -25,6 +25,7 @@ from backend.api.routers import (
     dbc,
     device_discovery,
     docs,
+    events,
     guardrails,
     health,
     location,
@@ -75,6 +76,7 @@ def configure_routers(app: FastAPI) -> None:
     app.include_router(database_management.router)
     app.include_router(dbc.router)
     app.include_router(docs.router)
+    app.include_router(events.router)
     app.include_router(health.router)
     app.include_router(logs.router)
     app.include_router(multi_network.router)

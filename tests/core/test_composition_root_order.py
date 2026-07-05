@@ -36,7 +36,7 @@ def test_root_baked_order_preserves_required_edges() -> None:
         ("token_service", "auth_manager"),
         ("session_service", "auth_manager"),
         ("lockout_service", "auth_manager"),
-        ("websocket_manager", "entity_domain_service"),
+        ("event_broker", "entity_domain_service"),
         ("entity_service", "entity_domain_service"),
         ("entity_manager_service", "entity_domain_service"),
     ]

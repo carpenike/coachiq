@@ -9,7 +9,6 @@ import json
 import logging
 import os
 import time
-from typing import TYPE_CHECKING
 
 try:
     import coloredlogs
@@ -19,9 +18,6 @@ except ImportError:
     HAS_COLOREDLOGS = False
 
 from backend.core.config import LoggingSettings
-
-if TYPE_CHECKING:
-    from backend.websocket.handlers import WebSocketManager
 
 logger = logging.getLogger(__name__)
 
@@ -104,7 +100,6 @@ class JsonFormatter(logging.Formatter):
 
 def configure_logging(
     settings: LoggingSettings | None = None,
-    websocket_manager: "WebSocketManager | None" = None,
 ) -> logging.Logger:
     """
     Configure comprehensive logging for the backend application.
@@ -113,14 +108,14 @@ def configure_logging(
     - Proper log level configuration from environment variables
     - JSON structured logging for production/journald compatibility
     - Coloredlogs integration for development console output (if available)
-    - Optional WebSocket log handler for real-time log streaming
     - Proper handler management to avoid duplicates
+
+    The WebSocket log handler for /ws/logs is attached separately at startup
+    via update_websocket_logging().
 
     Args:
         settings (LoggingSettings | None): Logging configuration settings.
                                          If None, defaults will be used.
-        websocket_manager (WebSocketManager | None): WebSocket manager for log streaming.
-                                                    If provided, adds WebSocket log handler.
 
     Returns:
         logging.Logger: The configured root logger
@@ -196,35 +191,6 @@ def configure_logging(
         console_handler.setFormatter(formatter)
         root_logger.addHandler(console_handler)
         logger.info("Basic console logging configured (coloredlogs not available)")
-
-    # Add WebSocket log handler if websocket_manager is provided
-    if websocket_manager:
-        try:
-            import asyncio
-
-            from backend.services.system.websocket_service import WebSocketLogHandler
-
-            # Get the current event loop or create a new one
-            try:
-                loop = asyncio.get_running_loop()
-            except RuntimeError:
-                loop = asyncio.new_event_loop()
-                asyncio.set_event_loop(loop)
-
-            ws_handler = WebSocketLogHandler(websocket_service, loop)
-            # Always set WebSocket handler to DEBUG to send all logs
-            # Let frontend handle filtering based on client preferences
-            ws_handler.setLevel(logging.DEBUG)
-
-            # Always use JSON formatter for WebSocket logs to ensure consistent
-            # structured data for frontend parsing
-            ws_formatter = JsonFormatter()
-
-            ws_handler.setFormatter(ws_formatter)
-            root_logger.addHandler(ws_handler)
-            logger.info("WebSocket log handler configured for real-time log streaming")
-        except Exception as e:
-            logger.warning(f"Failed to configure WebSocket log handler: {e}")
 
     # Add file logging if configured
     if settings and settings.log_to_file and settings.log_file:
@@ -499,17 +465,16 @@ def create_unified_log_config(
 
 def configure_unified_logging(
     settings: LoggingSettings | None = None,
-    websocket_manager: "WebSocketManager | None" = None,
 ) -> tuple[dict, logging.Logger]:
     """
-    Configure unified logging for both application and Uvicorn with optional WebSocket support.
+    Configure unified logging for both application and Uvicorn.
 
-    This function creates a logging configuration that can be used with uvicorn.run(log_config=...)
-    and also sets up additional WebSocket logging if a websocket_manager is provided.
+    This function creates a logging configuration that can be used with
+    uvicorn.run(log_config=...). The WebSocket log handler for /ws/logs is
+    attached separately at startup via update_websocket_logging().
 
     Args:
         settings (LoggingSettings | None): Logging configuration settings.
-        websocket_manager (WebSocketManager | None): WebSocket manager for log streaming.
 
     Returns:
         tuple[dict, logging.Logger]: The log configuration dict and configured root logger.
@@ -523,32 +488,5 @@ def configure_unified_logging(
     logging.config.dictConfig(log_config)
 
     root_logger = logging.getLogger()
-
-    # Add WebSocket log handler if websocket_manager is provided
-    if websocket_manager:
-        try:
-            import asyncio
-
-            from backend.services.system.websocket_service import WebSocketLogHandler
-
-            # Get the current event loop or create a new one
-            try:
-                loop = asyncio.get_running_loop()
-            except RuntimeError:
-                loop = asyncio.new_event_loop()
-                asyncio.set_event_loop(loop)
-
-            ws_handler = WebSocketLogHandler(websocket_service, loop)
-            # Always set WebSocket handler to DEBUG to send all logs
-            ws_handler.setLevel(logging.DEBUG)
-
-            # Use the same formatter as the console handler
-            if root_logger.handlers and root_logger.handlers[0].formatter:
-                ws_handler.setFormatter(root_logger.handlers[0].formatter)
-
-            root_logger.addHandler(ws_handler)
-            logger.info("WebSocket log handler added to unified logging configuration")
-        except Exception as e:
-            logger.warning(f"Failed to add WebSocket log handler: {e}")
 
     return log_config, root_logger

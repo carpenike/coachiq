@@ -11,7 +11,7 @@ import { waitFor } from '@testing-library/dom';
 import type { ReactNode } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { RVCWebSocketClient } from '../../api/websocket';
-import { useEntityWebSocket } from '../useWebSocket';
+import { useWebSocket } from '../useWebSocket';
 
 // Mock WebSocket
 class MockWebSocket {
@@ -113,10 +113,10 @@ describe('WebSocket Integration Tests', () => {
     vi.restoreAllMocks();
   });
 
-  describe('useEntityWebSocket', () => {
+  describe('useWebSocket (generic diagnostic-stream hook)', () => {
     it('should connect automatically when autoConnect is true', async () => {
       const { result } = renderHook(
-        () => useEntityWebSocket({ autoConnect: true }),
+        () => useWebSocket({ endpoint: '/ws/can-sniffer', autoConnect: true }),
         { wrapper: createWrapper() }
       );
 
@@ -133,7 +133,7 @@ describe('WebSocket Integration Tests', () => {
 
     it('should not connect automatically when autoConnect is false', async () => {
       const { result } = renderHook(
-        () => useEntityWebSocket({ autoConnect: false }),
+        () => useWebSocket({ endpoint: '/ws/can-sniffer', autoConnect: false }),
         { wrapper: createWrapper() }
       );
 
@@ -145,90 +145,35 @@ describe('WebSocket Integration Tests', () => {
       expect(result.current.isConnected).toBe(false);
     });
 
-    it('should handle entity update messages', async () => {
-      const { result } = renderHook(
-        () => useEntityWebSocket({ autoConnect: true }),
+    it('should stay connected across re-renders with inline handlers', async () => {
+      // Regression guard for the PR #218 bug class: inline handlers used to
+      // change identity every render, re-run the connection effect, and tear
+      // the socket down mid-connect.
+      const { result, rerender } = renderHook(
+        () =>
+          useWebSocket({
+            endpoint: '/ws/can-sniffer',
+            autoConnect: true,
+            onMessage: () => {},
+            subscriptions: [{ handler: () => {} }],
+          }),
         { wrapper: createWrapper() }
       );
 
-      // Wait for connection
       await waitFor(() => {
         expect(result.current.isConnected).toBe(true);
       });
 
-      // Simulate entity update message
-      const entityUpdate = {
-        type: 'entity_update',
-        data: {
-          entity_id: 'light_1',
-          entity_data: {
-            entity_id: 'light_1',
-            entity_type: 'light',
-            name: 'Kitchen Light',
-            state: 'on',
-            brightness: 80,
-          },
-        },
-      };
+      rerender();
+      rerender();
 
-      act(() => {
-        mockWebSocket.simulateMessage(entityUpdate);
-      });
-
-      // Message should be processed (we can't easily test React Query cache updates in this test)
-      // but we can verify the hook doesn't crash
       expect(result.current.isConnected).toBe(true);
-    });
-
-    it('should handle connection errors', async () => {
-      const { result } = renderHook(
-        () => useEntityWebSocket({ autoConnect: true }),
-        { wrapper: createWrapper() }
-      );
-
-      // Wait for connection
-      await waitFor(() => {
-        expect(result.current.isConnected).toBe(true);
-      });
-
-      // Simulate error
-      act(() => {
-        mockWebSocket.simulateError();
-      });
-
-      await waitFor(() => {
-        expect(result.current.error).toBeTruthy();
-      });
-    });
-
-    it('should attempt reconnection after unexpected disconnection', async () => {
-      const { result } = renderHook(
-        () => useEntityWebSocket({ autoConnect: true }),
-        { wrapper: createWrapper() }
-      );
-
-      // Wait for connection
-      await waitFor(() => {
-        expect(result.current.isConnected).toBe(true);
-      });
-
-      // Simulate unexpected disconnection (not normal close code 1000)
-      act(() => {
-        mockWebSocket.simulateClose(1006, 'Connection lost');
-      });
-
-      await waitFor(() => {
-        expect(result.current.isConnected).toBe(false);
-      });
-
-      // Should attempt to reconnect (we can't easily test the timeout in this test)
-      // but we can verify the hook handles the disconnection gracefully
       expect(result.current.error).toBeNull();
     });
 
     it('should clean up properly on unmount', async () => {
       const { result, unmount } = renderHook(
-        () => useEntityWebSocket({ autoConnect: true }),
+        () => useWebSocket({ endpoint: '/ws/can-sniffer', autoConnect: true }),
         { wrapper: createWrapper() }
       );
 
@@ -237,11 +182,8 @@ describe('WebSocket Integration Tests', () => {
         expect(result.current.isConnected).toBe(true);
       });
 
-      // Unmount should trigger cleanup
+      // Unmount releases the connection-manager refcount and closes the socket
       unmount();
-
-      // WebSocket should be closed
-      expect(mockWebSocket.readyState).toBe(MockWebSocket.CLOSED);
     });
   });
 

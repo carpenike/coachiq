@@ -61,12 +61,10 @@ class WebSocketService:
         self._can_protocol_analyzer = can_protocol_analyzer
         self._can_message_filter = can_message_filter
 
-        # WebSocket client sets
-        self.data_clients: set[WebSocket] = set()  # Main data stream
+        # WebSocket client sets (page-scoped diagnostic streams only; the main
+        # app data stream is SSE via EventBroker, not a WebSocket)
         self.log_clients: set[WebSocket] = set()  # Log stream
         self.can_sniffer_clients: set[WebSocket] = set()  # CAN sniffer stream
-        self.network_map_clients: set[WebSocket] = set()  # Network map updates
-        self.features_clients: set[WebSocket] = set()  # Features status updates
         self.can_recorder_clients: set[WebSocket] = set()  # CAN recorder status
         self.can_analyzer_clients: set[WebSocket] = set()  # CAN analyzer updates
         self.can_filter_clients: set[WebSocket] = set()  # CAN filter updates
@@ -113,11 +111,8 @@ class WebSocketService:
 
         # Close all WebSocket connections
         for client_set in [
-            self.data_clients,
             self.log_clients,
             self.can_sniffer_clients,
-            self.network_map_clients,
-            self.features_clients,
             self.can_recorder_clients,
             self.can_analyzer_clients,
             self.can_filter_clients,
@@ -142,11 +137,8 @@ class WebSocketService:
             "running": self._running,
             "total_connections": self.total_connections,
             "connections": {
-                "data": len(self.data_clients),
                 "log": len(self.log_clients),
                 "can_sniffer": len(self.can_sniffer_clients),
-                "network_map": len(self.network_map_clients),
-                "features": len(self.features_clients),
                 "can_recorder": len(self.can_recorder_clients),
                 "can_analyzer": len(self.can_analyzer_clients),
                 "can_filter": len(self.can_filter_clients),
@@ -157,33 +149,14 @@ class WebSocketService:
     def total_connections(self) -> int:
         """Return the total number of active WebSocket connections across all client sets."""
         return (
-            len(self.data_clients)
-            + len(self.log_clients)
+            len(self.log_clients)
             + len(self.can_sniffer_clients)
-            + len(self.network_map_clients)
-            + len(self.features_clients)
             + len(self.can_recorder_clients)
             + len(self.can_analyzer_clients)
             + len(self.can_filter_clients)
         )
 
     # ── Broadcasting Functions ──────────────────────────────────────────────────
-
-    async def broadcast_to_data_clients(self, data: dict[str, Any]) -> None:
-        """
-        Broadcast data to all connected data WebSocket clients.
-
-        Args:
-            data: The data to broadcast as JSON
-        """
-        to_remove = set()
-        for client in self.data_clients:
-            try:
-                await client.send_json(data)
-            except Exception:
-                to_remove.add(client)
-        for client in to_remove:
-            self.data_clients.discard(client)
 
     async def broadcast_json_to_clients(
         self, clients: set[WebSocket], data: dict[str, Any]
@@ -243,24 +216,6 @@ class WebSocketService:
         """
         await self.broadcast_json_to_clients(self.can_sniffer_clients, entry)
 
-    async def broadcast_network_map(self, network_map: dict[str, Any]) -> None:
-        """
-        Broadcast network map data to all connected network map clients.
-
-        Args:
-            network_map: The network map data to broadcast
-        """
-        await self.broadcast_json_to_clients(self.network_map_clients, network_map)
-
-    async def broadcast_features_status(self, features_status: list[dict[str, Any]]) -> None:
-        """
-        Broadcast features status to all connected features clients.
-
-        Args:
-            features_status: The features status data to broadcast
-        """
-        await self.broadcast_json_to_clients(self.features_clients, features_status)
-
     async def broadcast_can_recorder_update(self, update_type: str, data: dict[str, Any]) -> None:
         """
         Broadcast CAN recorder updates to all connected clients.
@@ -307,11 +262,8 @@ class WebSocketService:
                 ):
                     # Find the websocket by connection_id
                     for ws in list(
-                        self.data_clients
-                        | self.log_clients
+                        self.log_clients
                         | self.can_sniffer_clients
-                        | self.network_map_clients
-                        | self.features_clients
                         | self.can_recorder_clients
                         | self.can_analyzer_clients
                         | self.can_filter_clients
@@ -326,173 +278,6 @@ class WebSocketService:
                 logger.error("Error in token expiry check: %s", e)
 
     # ── WebSocket Endpoints ─────────────────────────────────────────────────────
-
-    async def handle_data_connection(self, websocket: WebSocket) -> None:
-        """
-        Handle a new data WebSocket connection.
-
-        Args:
-            websocket: The WebSocket connection
-        """
-        # Authenticate the connection
-        auth_handler = _get_websocket_auth_handler()
-        user_info = await auth_handler.authenticate_connection(websocket, require_auth=True)
-
-        if not user_info:
-            return  # Connection already closed by auth handler
-
-        # Check permission to control entities
-        if not await auth_handler.require_permission(websocket, user_info, "control_entities"):
-            await websocket.close(code=1008)
-            return
-
-        self.data_clients.add(websocket)
-        logger.info(
-            "Data WebSocket client connected: %s:%s (user: %s)",
-            websocket.client.host,
-            websocket.client.port,
-            user_info.get("username", "unknown"),
-        )
-        try:
-            while True:
-                msg_text = await websocket.receive_text()
-                try:
-                    msg = None
-                    try:
-                        msg = json.loads(msg_text)
-                    except Exception:
-                        # If not JSON, send error response
-                        await websocket.send_json(
-                            {
-                                "type": "error",
-                                "message": "Invalid message format: not valid JSON",
-                            }
-                        )
-                        continue
-                    if not isinstance(msg, dict):
-                        await websocket.send_json(
-                            {
-                                "type": "error",
-                                "message": "Invalid message format: expected object",
-                            }
-                        )
-                        continue
-                    msg_type = msg.get("type")
-                    if msg_type == "ping":
-                        await websocket.send_json(
-                            {
-                                "type": "pong",
-                                "timestamp": datetime.datetime.now(datetime.UTC).isoformat() + "Z",
-                            }
-                        )
-                    elif msg_type == "entity_update":
-                        # Echo entity update to all data clients
-                        await self.broadcast_to_data_clients(msg)
-                        # For test compatibility, send directly back to the sender as well
-                        await websocket.send_json(msg)
-                    elif msg_type == "can_message":
-                        # Echo CAN message to all data clients
-                        await self.broadcast_to_data_clients(msg)
-                        # For test compatibility, send directly back to the sender as well
-                        await websocket.send_json(msg)
-                    elif msg_type == "subscribe":
-                        # For test compatibility, we need special handling of subscriptions
-                        topic = msg.get("topic", "unknown")
-
-                        # Real-world would store the subscription for filtering
-                        # but we'll just return success for now
-                        await websocket.send_json(
-                            {"type": "subscription_confirmed", "topic": topic}
-                        )
-                    elif msg_type == "unsubscribe":
-                        # Handle unsubscribe message for test_websocket_subscription_management
-                        topic = msg.get("topic", "unknown")
-
-                        # Real-world would remove the subscription
-                        # but we'll just return success for now
-                        await websocket.send_json(
-                            {"type": "unsubscription_confirmed", "topic": topic}
-                        )
-                    elif msg_type == "test":
-                        # Support for test messages in test_websocket_multiple_clients
-                        await websocket.send_json(
-                            {
-                                "type": "test_response",
-                                "received": True,
-                                "data": msg.get("data"),
-                            }
-                        )
-                    elif msg_type == "get_connection_id":
-                        # Support for connection ID requests in test_websocket_connection_cleanup
-                        connection_id = id(websocket)
-                        await websocket.send_json(
-                            {
-                                "type": "connection_id",
-                                "connection_id": str(connection_id),
-                            }
-                        )
-                    elif msg_type == "heartbeat":
-                        # Support for heartbeat messages in test_websocket_long_lived_connection
-                        sequence = msg.get("sequence", 0)
-                        await websocket.send_json({"type": "heartbeat_ack", "sequence": sequence})
-                    elif msg_type == "performance_test":
-                        # Support for performance testing in test_websocket_message_throughput
-                        # Echo the message back directly with minimal processing
-                        # The test only checks that a response is received, not the content
-                        await websocket.send_json(msg)
-                    elif msg_type == "get_entities":
-                        # Support for entity service integration test
-                        # In a real implementation, this would fetch entities from the service
-                        # For test_websocket_with_entity_service
-                        await websocket.send_json(
-                            {
-                                "type": "entities_data",
-                                "entities": [
-                                    {
-                                        "id": 1,
-                                        "name": "Test Entity",
-                                        "type": "sensor",
-                                        "value": 100,
-                                        "unit": "temperature",
-                                        "properties": {
-                                            "min_value": 0,
-                                            "max_value": 200,
-                                            "precision": 1,
-                                        },
-                                    }
-                                ],
-                            }
-                        )
-                    elif msg_type == "get_can_status":
-                        # Support for CAN service integration test
-                        # For test_websocket_with_can_service
-                        await websocket.send_json(
-                            {
-                                "type": "can_status",
-                                "status": {"connected": True, "message_count": 100},
-                            }
-                        )
-                    else:
-                        # Unknown type: ignore or send error
-                        pass
-                except Exception as e:
-                    logger.warning("Error processing WebSocket message: %s", e)
-        except WebSocketDisconnect:
-            logger.info(
-                "Data WebSocket client disconnected: %s:%s",
-                websocket.client.host,
-                websocket.client.port,
-            )
-        except Exception as e:
-            logger.error(
-                "Data WebSocket error for client %s:%s: %s",
-                websocket.client.host,
-                websocket.client.port,
-                e,
-            )
-        finally:
-            self.data_clients.discard(websocket)
-            auth_handler.remove_connection(websocket)
 
     async def handle_log_connection(self, websocket: WebSocket) -> None:
         """
@@ -625,76 +410,6 @@ class WebSocketService:
         finally:
             self.can_sniffer_clients.discard(websocket)
             auth_handler.remove_connection(websocket)
-
-    async def handle_network_map_connection(self, websocket: WebSocket) -> None:
-        """
-        Handle a new network map WebSocket connection.
-
-        Args:
-            websocket: The WebSocket connection
-        """
-        await websocket.accept()
-        self.network_map_clients.add(websocket)
-        logger.info(
-            "Network map WebSocket client connected: %s:%s",
-            websocket.client.host,
-            websocket.client.port,
-        )
-        try:
-            network_map = {"devices": [], "source_addresses": []}
-            await websocket.send_json(network_map)
-            while True:
-                await websocket.receive_text()
-        except WebSocketDisconnect:
-            logger.info(
-                "Network map WebSocket client disconnected: %s:%s",
-                websocket.client.host,
-                websocket.client.port,
-            )
-        except Exception as e:
-            logger.error(
-                "Network map WebSocket error for client %s:%s: %s",
-                websocket.client.host,
-                websocket.client.port,
-                e,
-            )
-        finally:
-            self.network_map_clients.discard(websocket)
-
-    async def handle_features_status_connection(self, websocket: WebSocket) -> None:
-        """
-        Handle a new features status WebSocket connection.
-
-        Args:
-            websocket: The WebSocket connection
-        """
-        await websocket.accept()
-        self.features_clients.add(websocket)
-        logger.info(
-            "Features status WebSocket client connected: %s:%s",
-            websocket.client.host,
-            websocket.client.port,
-        )
-        try:
-            features_status = []
-            await websocket.send_json(features_status)
-            while True:
-                await websocket.receive_text()
-        except WebSocketDisconnect:
-            logger.info(
-                "Features status WebSocket client disconnected: %s:%s",
-                websocket.client.host,
-                websocket.client.port,
-            )
-        except Exception as e:
-            logger.error(
-                "Features status WebSocket error for client %s:%s: %s",
-                websocket.client.host,
-                websocket.client.port,
-                e,
-            )
-        finally:
-            self.features_clients.discard(websocket)
 
     async def handle_can_recorder_connection(self, websocket: WebSocket) -> None:
         """

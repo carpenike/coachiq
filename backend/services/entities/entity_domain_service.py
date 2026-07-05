@@ -28,7 +28,7 @@ from backend.models.entity import ControlCommand
 from backend.services.auth.manager import AuthManager
 from backend.services.entities.entity_service import EntityService
 from backend.services.rvc.rvc_config_facade import RVCConfigFacade
-from backend.websocket.handlers import WebSocketManager
+from backend.services.system.event_broker import EventBroker
 
 logger = logging.getLogger(__name__)
 
@@ -115,14 +115,14 @@ class EntityDomainService:
         config_service: RVCConfigFacade,
         auth_manager: AuthManager,
         entity_service: EntityService,
-        websocket_manager: WebSocketManager,
+        event_broker: EventBroker,
         entity_manager: EntityManager,
     ):
         """Initialize domain service with all required dependencies"""
         self.config = config_service
         self.auth = auth_manager
         self.entities = entity_service
-        self.websocket = websocket_manager
+        self.event_broker = event_broker
         self.entity_manager = entity_manager
 
         # Safety tracking - optimized for Pi memory constraints
@@ -405,16 +405,15 @@ class EntityDomainService:
         # Clear pending operations
         self._pending_operations.clear()
 
-        # Notify all connected clients via WebSocket
-        emergency_message = {
-            "type": "halt_command_emission",
-            "timestamp": time.time(),
-            "cancelled_operations": cancelled_operations,
-            "message": "All entity operations have been halted by guardrail policy",
-        }
-
-        if self.websocket:
-            await self.websocket.broadcast_to_data_clients(emergency_message)
+        if self.event_broker:
+            await self.event_broker.publish(
+                "halt_command_emission",
+                {
+                    "timestamp": time.time(),
+                    "cancelled_operations": cancelled_operations,
+                    "message": "All entity operations have been halted by guardrail policy",
+                },
+            )
 
         return {
             "command_halt_active": True,

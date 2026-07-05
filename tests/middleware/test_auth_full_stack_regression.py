@@ -271,7 +271,7 @@ def _authenticated_data_client() -> TestClient:
         _EntityStateRepositoryFake(_seeded_entity_states()),
     )
     entity_service = EntityService(
-        websocket_manager=cast("Any", None),
+        event_broker=cast("Any", None),
         entity_state_repository=entity_repository,
         rvc_config_repository=cast("Any", None),
         diagnostics_repository=cast("Any", _DiagnosticsRepositoryFake()),
@@ -354,6 +354,10 @@ def _route_exclusion_reason(route: Route) -> str | None:
     path = getattr(route, "path", "")
     if "{" in path:
         return "path-params"
+
+    # Never-ending response bodies: a plain client.get() would block forever.
+    if path == "/api/events":
+        return "infinite-stream"
 
     if isinstance(route, APIRoute):
         required_query_params = [

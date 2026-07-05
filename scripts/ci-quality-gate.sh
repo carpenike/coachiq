@@ -19,7 +19,7 @@ RESET="\033[0m"
 # gate's job is to stop the count from going UP (a ratchet); fixing actual
 # pyright errors lower the count and the script will print a green message
 # nudging you to update the baseline downward.
-EXPECTED_PYRIGHT_ERRORS=1239  # Ratcheted 2026-07-04 after current main sidecar merge (1243 -> 1239).
+EXPECTED_PYRIGHT_ERRORS=1232  # Ratcheted 2026-07-05: WS→SSE rebuild deleted dead websocket modules (1239 -> 1232; local delta -7, verify against CI's printed count).
 EXPECTED_FRONTEND_TS_ERRORS=0  # Ratcheted 2026-05-12 to 0 by PR #110 (DatabaseManagementTab + can-sniffer + useCANScanWebSocket generic). Any new TS error is a hard fail.
 EXPECTED_FRONTEND_ESLINT_ERRORS=268  # Ratcheted 2026-07-03: frontend rebuild deleted the worst legacy pages (553 -> 268).
 

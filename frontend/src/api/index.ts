@@ -44,14 +44,12 @@ export {
 // Export WebSocket functionality
 export {
     RVCWebSocketClient,
-    createEntityWebSocket,
-    createCANScanWebSocket,
-    createSystemStatusWebSocket,
-    createLogWebSocket,
     isWebSocketSupported,
     getWebSocketStateString,
     DEBUG_WS
 } from './websocket';
+
+export { CoachEventStream, type StreamState, type IStreamHandlers } from './sse';
 
 export type {
     WebSocketConfig, WebSocketHandlers, WebSocketState

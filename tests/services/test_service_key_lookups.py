@@ -70,33 +70,33 @@ class _FakeEntityManagerService:
         return self._entity_manager
 
 
-class _FakeBroadcastService:
-    """Double for WebSocketService's data-client broadcast interface.
+class _FakeEventBroker:
+    """Double for EventBroker's publish interface.
 
-    Regression note: an earlier version of this fake exposed a
-    ``broadcast_data`` method that the real WebSocketService never had, so
-    the RX pipeline's entity_update broadcasts silently failed in
-    production while this test stayed green.
+    Regression note: an earlier fake of the realtime channel exposed a
+    method the real service never had, so the RX pipeline's entity_update
+    broadcasts silently failed in production while the test stayed green.
+    Keep this signature identical to EventBroker.publish.
     """
 
     def __init__(self) -> None:
-        self.broadcasts: list[dict[str, Any]] = []
+        self.published: list[tuple[str, dict[str, Any]]] = []
 
-    async def broadcast_to_data_clients(self, data: dict[str, Any]) -> None:
-        self.broadcasts.append(data)
+    async def publish(self, event: str, data: dict[str, Any]) -> None:
+        self.published.append((event, data))
 
 
 @pytest.mark.asyncio
-async def test_can_entity_updates_use_canonical_entity_and_websocket_keys() -> None:
-    """CAN entity updates resolve canonical root service keys."""
+async def test_can_entity_updates_publish_to_event_broker() -> None:
+    """CAN entity updates reach the SSE event broker with the expected payload."""
     entity_manager = _FakeEntityManager()
-    websocket_manager = _FakeBroadcastService()
+    event_broker = _FakeEventBroker()
 
     service = CANBusService(
         can_tracking_repository=SimpleNamespace(_pending_commands=[]),
         system_state_repository=SimpleNamespace(),
         entity_manager_service=_FakeEntityManagerService(entity_manager),
-        websocket_manager=websocket_manager,
+        event_broker=event_broker,
     )
 
     await service._update_entity_from_can_message(
@@ -108,13 +108,10 @@ async def test_can_entity_updates_use_canonical_entity_and_websocket_keys() -> N
     )
 
     assert entity_manager.updated_payloads
-    # Envelope must match the frontend's entity_update handler
-    # (data -> {entity_id, entity_data}), same as the control paths emit.
-    assert websocket_manager.broadcasts == [
-        {
-            "type": "entity_update",
-            "data": {"entity_id": "tank_fresh", "entity_data": {"id": "tank_fresh"}},
-        }
+    # Payload must match the frontend's entity_update handler
+    # ({entity_id, entity_data}), same as the control paths emit.
+    assert event_broker.published == [
+        ("entity_update", {"entity_id": "tank_fresh", "entity_data": {"id": "tank_fresh"}})
     ]
 
 

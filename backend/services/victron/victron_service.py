@@ -42,12 +42,12 @@ class VictronService:
         settings: VictronSettings,
         entity_manager_service: Any,
         entity_state_repository: Any = None,
-        websocket_manager: Any = None,
+        event_broker: Any = None,
     ) -> None:
         self._settings = settings
         self._entity_manager_service = entity_manager_service
         self._entity_state_repository = entity_state_repository
-        self._websocket_manager = websocket_manager
+        self._event_broker = event_broker
 
         self._client = VictronMqttClient(
             host=settings.host,
@@ -231,15 +231,10 @@ class VictronService:
             except Exception as exc:
                 logger.debug("Unable to persist Victron entity %s: %s", entity_id, exc)
 
-        if self._websocket_manager is not None:
-            await self._websocket_manager.broadcast_to_data_clients(
-                {
-                    "type": "entity_update",
-                    "data": {
-                        "entity_id": entity_id,
-                        "entity_data": updated_entity.to_dict(),
-                    },
-                }
+        if self._event_broker is not None:
+            await self._event_broker.publish(
+                "entity_update",
+                {"entity_id": entity_id, "entity_data": updated_entity.to_dict()},
             )
 
     def _def_for_entity(self, entity_id: str) -> VictronEntityDef | None:

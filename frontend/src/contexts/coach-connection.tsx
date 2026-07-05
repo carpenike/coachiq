@@ -3,10 +3,10 @@
  *
  * Single derived connectivity state, computed here and consumed everywhere:
  *
- *   websocket: connected | connecting | down     (WS lifecycle)
- *   canbus:    active | silent                   (real CAN rx telemetry)
+ *   realtime: connected | connecting | down      (SSE stream lifecycle)
+ *   canbus:   active | silent                    (real CAN rx telemetry)
  *   ────────────────────────────────────────────
- *   coach:     LIVE | STALE | OFFLINE
+ *   coach:    LIVE | STALE | OFFLINE
  *
  * No page may render a "healthy/all good" verdict from any other source.
  *
@@ -18,7 +18,7 @@
 import type { QueryClient, UseQueryResult } from '@tanstack/react-query';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import type { ReactNode } from 'react';
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 
 import { apiGet } from '@/api/client';
 import type { EntityCollectionSchema, NetworkSummarySchema } from '@/api/types/domains';
@@ -28,12 +28,11 @@ import {
   type CanbusHealth,
   type CoachState,
   type ICoachConnectionState,
-  type WebSocketHealth,
+  type RealtimeHealth,
 } from '@/contexts/coach-connection-context';
 import { useAuth } from '@/contexts/auth-context';
-import { useWebSocketContext } from '@/contexts/use-websocket-context';
+import { useRealtime } from '@/contexts/realtime-context';
 import { entitiesQueryKeys } from '@/hooks/useEntities';
-import { tokenStorage } from '@/lib/token-storage';
 
 //
 // ===== CONSTANTS =====
@@ -44,27 +43,9 @@ const CAN_ACTIVITY_WINDOW_MS = 120_000;
 /** How often to poll /api/v1/networks/status */
 const NETWORKS_POLL_INTERVAL_MS = 15_000;
 
-interface IWsCloseEventDetail {
-  endpoint: string;
-  code: number;
-  reason: string;
-}
-
 //
 // ===== PURE HELPERS (derivation logic, kept outside the component) =====
 //
-
-/** WebSocket lifecycle health, collapsing auth failure into "down". */
-function deriveWebsocketHealth(
-  authFailed: boolean,
-  isConnected: boolean,
-  hasError: boolean
-): WebSocketHealth {
-  if (authFailed) return 'down';
-  if (isConnected) return 'connected';
-  if (hasError) return 'down';
-  return 'connecting';
-}
 
 interface ICanbusActivity {
   canbus: CanbusHealth;
@@ -103,13 +84,13 @@ function computeCanbusActivity(interfaces: NetworkInterface[], now: number): ICa
 /** Reason shown for the OFFLINE verdict. */
 function offlineReason(authFailed: boolean): string {
   if (authFailed) return 'authentication';
-  return 'WebSocket down and the coach API is unreachable';
+  return 'Realtime stream down and the coach API is unreachable';
 }
 
 /** Reason shown for the STALE verdict when CAN is active but realtime is degraded. */
-function degradedRealtimeReason(authFailed: boolean, websocket: WebSocketHealth): string {
+function degradedRealtimeReason(authFailed: boolean, realtime: RealtimeHealth): string {
   if (authFailed) return 'authentication';
-  if (websocket === 'connecting') return 'Realtime connection is being established';
+  if (realtime === 'connecting') return 'Realtime connection is being established';
   return 'Realtime connection down — updates may lag';
 }
 
@@ -118,24 +99,24 @@ interface ICoachVerdict {
   reason: string;
 }
 
-/** Combine websocket + CAN bus health into the single coach verdict shown app-wide. */
+/** Combine realtime-stream + CAN bus health into the single coach verdict shown app-wide. */
 function deriveCoachVerdict(
-  websocket: WebSocketHealth,
+  realtime: RealtimeHealth,
   canbus: CanbusHealth,
   apiReachable: boolean,
   authFailed: boolean
 ): ICoachVerdict {
-  if (websocket === 'connected' && canbus === 'active') {
+  if (realtime === 'connected' && canbus === 'active') {
     return { coach: 'LIVE', reason: 'Realtime connection up, CAN bus active' };
   }
-  if (websocket === 'down' && !apiReachable) {
+  if (realtime === 'down' && !apiReachable) {
     return { coach: 'OFFLINE', reason: offlineReason(authFailed) };
   }
   if (canbus === 'silent') {
     return { coach: 'STALE', reason: 'No CAN traffic observed — showing last known state' };
   }
   // CAN is active but the realtime channel is degraded.
-  return { coach: 'STALE', reason: degradedRealtimeReason(authFailed, websocket) };
+  return { coach: 'STALE', reason: degradedRealtimeReason(authFailed, realtime) };
 }
 
 /** Best available "last real data" timestamp between two candidate sources. */
@@ -177,38 +158,6 @@ function useActivityTick(intervalMs: number): void {
 }
 
 /**
- * Listen for the app-wide `coachiq:ws-close` event and attempt a token
- * refresh when the close code indicates an auth failure (4401), guarding
- * against overlapping refresh attempts.
- */
-function useAuthCloseListener(
-  onRefreshed: () => void,
-  onRefreshFailed: () => void
-): void {
-  const refreshInFlightRef = useRef(false);
-
-  useEffect(() => {
-    const handleWsClose = (event: Event) => {
-      const detail = (event as CustomEvent<IWsCloseEventDetail | undefined>).detail;
-      if (!detail || detail.code !== 4401) return;
-      if (refreshInFlightRef.current) return;
-
-      refreshInFlightRef.current = true;
-      tokenStorage
-        .attemptTokenRefresh()
-        .then((success) => (success ? onRefreshed() : onRefreshFailed()))
-        .catch(() => onRefreshFailed())
-        .finally(() => {
-          refreshInFlightRef.current = false;
-        });
-    };
-
-    window.addEventListener('coachiq:ws-close', handleWsClose);
-    return () => window.removeEventListener('coachiq:ws-close', handleWsClose);
-  }, [onRefreshed, onRefreshFailed]);
-}
-
-/**
  * Poll /api/v1/networks/status on the shared interval, but only once auth is
  * ready. This provider mounts above the AuthGuard, so an ungated query fires
  * on the login page, 401s, and then sits in an errored/stale state — the coach
@@ -234,39 +183,18 @@ function useNetworksStatusQuery(enabled: boolean): UseQueryResult<NetworkSummary
 
 export function CoachConnectionProvider({ children }: { readonly children: ReactNode }) {
   const queryClient = useQueryClient();
-  const wsContext = useWebSocketContext();
-  const [authFailed, setAuthFailed] = useState(false);
+  const { status: realtime, authFailed, reconnect } = useRealtime();
   // Re-evaluate time-window checks (activity recency) periodically.
   useActivityTick(NETWORKS_POLL_INTERVAL_MS);
 
   // Only poll telemetry once the session is confirmed (or auth is disabled),
-  // matching the WebSocket's auth gating — an unauthenticated poll on the login
-  // page would 401 and leave the coach stuck STALE until a manual Retry.
+  // matching the realtime stream's auth gating — an unauthenticated poll on the
+  // login page would 401 and leave the coach stuck STALE until a manual Retry.
   const { isAuthenticated, authStatus } = useAuth();
   const authReady = authStatus?.mode === 'none' || isAuthenticated;
   const networksQuery = useNetworksStatusQuery(authReady);
 
-  // ===== Auth-close handling (WS close code 4401) =====
-  const connectAll = wsContext.connectAll;
-
-  const handleTokenRefreshed = useCallback(() => {
-    setAuthFailed(false);
-    connectAll();
-  }, [connectAll]);
-
-  const handleTokenRefreshFailed = useCallback(() => {
-    setAuthFailed(true);
-  }, []);
-
-  useAuthCloseListener(handleTokenRefreshed, handleTokenRefreshFailed);
-
   // ===== Derived state =====
-  const websocket: WebSocketHealth = deriveWebsocketHealth(
-    authFailed,
-    wsContext.isConnected,
-    wsContext.hasError
-  );
-
   const { canbus, canLastActivity } = useMemo(
     // The tick state (re-rendered every NETWORKS_POLL_INTERVAL_MS) re-runs
     // this render so the time-window check stays honest even between polls.
@@ -282,7 +210,7 @@ export function CoachConnectionProvider({ children }: { readonly children: React
 
   const apiReachable = networksQuery.isSuccess || (networksQuery.isFetching && !networksQuery.isError);
 
-  const { coach, reason } = deriveCoachVerdict(websocket, canbus, apiReachable, authFailed);
+  const { coach, reason } = deriveCoachVerdict(realtime, canbus, apiReachable, authFailed);
 
   const lastDataAt = useMemo(
     () => pickLastDataAt(entitiesFreshestAt, canLastActivity),
@@ -290,15 +218,14 @@ export function CoachConnectionProvider({ children }: { readonly children: React
   );
 
   const retry = useCallback(() => {
-    setAuthFailed(false);
     void queryClient.invalidateQueries({ queryKey: networksStatusQueryKey });
     void queryClient.invalidateQueries({ queryKey: entitiesQueryKeys.collections() });
-    connectAll();
-  }, [queryClient, connectAll]);
+    reconnect();
+  }, [queryClient, reconnect]);
 
   const value = useMemo<ICoachConnectionState>(
     () => ({
-      websocket,
+      realtime,
       canbus,
       coach,
       entitiesFreshestAt,
@@ -306,7 +233,7 @@ export function CoachConnectionProvider({ children }: { readonly children: React
       reason,
       retry,
     }),
-    [websocket, canbus, coach, entitiesFreshestAt, lastDataAt, reason, retry]
+    [realtime, canbus, coach, entitiesFreshestAt, lastDataAt, reason, retry]
   );
 
   return (
