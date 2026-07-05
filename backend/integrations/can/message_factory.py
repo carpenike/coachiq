@@ -106,38 +106,42 @@ def create_thermostat_can_message(  # noqa: PLR0913 - one arg per THERMOSTAT_COM
     return can.Message(arbitration_id=arbitration_id, data=payload_data, is_extended_id=True)
 
 
-def create_water_heater_can_message(instance: int, operating_mode: int) -> can.Message:
+def create_ac_load_can_message(instance: int, level: int) -> can.Message:
     """
-    Constructs a can.Message for an RV-C WATERHEATER_COMMAND (DGN 0x1FFF6).
+    Constructs a can.Message for an RV-C AC_LOAD_COMMAND (DGN 0x1FFBE).
 
-    Sets the operating mode only (0=off, 1=combustion, 2=electric,
-    3=gas/electric, 4=automatic); the setpoint field carries the RV-C
-    "no change" sentinel (0xFFFF). Layout mirrors WATERHEATER_STATUS per
-    RV-C Sec. 6.9.3 — NOT yet wire-verified against the coach's Aqua-Hot
-    node (see docs/can-re-findings.md before trusting it blindly).
+    Sets the desired level for a generic AC load (byte 2). On the 2021 Aspire
+    44R this drives the Aqua-Hot electric element (instance 0xD4) and burner
+    (instance 0xD2); the level tracks 0-200 (0xC8 = on/100%, 0x00 = off),
+    same half-percent scale as lights. Verified on the wire 2026-07-05: a
+    0xC8/0x00 command from SA 0xF9 was honored and latched (the energy
+    manager may still shed the load; see docs/can-re-findings.md).
 
     Args:
-        instance: Water heater instance (1 on the Aspire 44R; 0 = all).
-        operating_mode: Target mode (burner bit 0x1 | electric bit 0x2).
+        instance: AC load instance (0xD2 burner, 0xD4 electric on this coach).
+        level: Desired level 0-200 (0xC8 = on, 0x00 = off).
 
     Returns:
         A can.Message object ready to be sent.
     """
-    pgn = 0x1FFF6
+    pgn = 0x1FFBE
     prio = 6
     sa = 0xF9  # CoachIQ's source address, same as the other command paths
-    arbitration_id = (prio << 26) | (pgn << 8) | sa  # 0x19FFF6F9
+    arbitration_id = (prio << 26) | (pgn << 8) | sa  # 0x19FFBEF9
 
+    # Mirrors the frame the G6 emits: [instance, 0xFF group, level, priority
+    # byte, 0x00, 0x00, 0x00, 0x00]. Byte 3 = 0xC0 matched the observed
+    # command; the remaining bytes are zero (no delay/duration override).
     payload_data = bytes(
         [
             instance & 0xFF,
-            operating_mode & 0xFF,
-            0xFF,  # setpoint LSB: no change
-            0xFF,  # setpoint MSB: no change
-            0xFF,
-            0xFF,
-            0xFF,
-            0xFF,
+            0xFF,  # group: none
+            level & 0xFF,
+            0xC0,  # priority byte, as observed on the coach
+            0x00,
+            0x00,
+            0x00,
+            0x00,
         ]
     )
 

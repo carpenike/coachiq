@@ -1230,6 +1230,7 @@ class CANBusService(GuardrailParticipant):
                 "water_heater",
                 "tank",
                 "temperature",
+                "ac_load",
             ):
                 self._update_climate_family_state(device_type, payload, merged_raw)
 
@@ -1385,6 +1386,10 @@ class CANBusService(GuardrailParticipant):
             elif device_type == "temperature":
                 merged_raw.update(climate_units.derive_climate_fields(merged_raw))
                 payload["state"] = climate_units.temperature_state_label(merged_raw)
+            elif device_type == "ac_load":
+                merged_raw.update(climate_units.derive_ac_load_fields(merged_raw))
+                state_label, _shed = climate_units.ac_load_state(merged_raw)
+                payload["state"] = state_label
         except Exception as e:
             logger.error("Error shaping %s state: %s", device_type, e)
 

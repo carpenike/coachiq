@@ -15,6 +15,15 @@ RAW_TEMP_UNAVAILABLE = 0xFFFF
 # 8-bit "data not available" sentinel (RV-C Table 5.3), used by tank levels.
 RAW_U8_UNAVAILABLE = 0xFF
 
+# AC_LOAD_STATUS / AC_LOAD_COMMAND operating level (byte 2, half-percent).
+# 0xC8 = 200 = 100% (energized). Verified on the coach 2026-07-05: while the
+# energy manager sheds a requested-on load it reports 0xFD in this byte, and
+# 0xFC ("load delay active") is the transient variant — both mean "requested
+# but not energized" = shed.
+AC_LOAD_LEVEL_ON = 0xC8
+AC_LOAD_LEVEL_OFF = 0x00
+AC_LOAD_SHED_LEVELS = frozenset({0xFC, 0xFD})
+
 # THERMOSTAT_STATUS_1 / THERMOSTAT_COMMAND_1 operating_mode (4-bit)
 OPERATING_MODE_LABELS: dict[int, str] = {
     0: "off",
@@ -149,12 +158,6 @@ def water_heater_state_label(raw: dict[str, Any]) -> str:
     return WATER_HEATER_MODE_LABELS.get(mode, "unknown")
 
 
-def water_heater_mode_bits(raw: dict[str, Any]) -> tuple[bool, bool]:
-    """(burner_on, electric_on) from the operating_mode bitfield (1|2 = 3)."""
-    mode = _raw_int(raw, "operating_mode") or 0
-    return bool(mode & 1), bool(mode & 2)
-
-
 def derive_tank_fields(raw: dict[str, Any]) -> dict[str, Any]:
     """Derived fields for TANK_STATUS raw signals: percentage full."""
     derived: dict[str, Any] = {}
@@ -177,3 +180,25 @@ def temperature_state_label(raw: dict[str, Any]) -> str:
     ambient = _raw_int(raw, "ambient_temperature")
     fahrenheit = raw_temp_to_f(ambient) if ambient is not None else None
     return "unknown" if fahrenheit is None else f"{round(fahrenheit)}°F"
+
+
+def ac_load_state(raw: dict[str, Any]) -> tuple[str, bool]:
+    """Return ``(state_label, shed)`` for an AC_LOAD_STATUS raw signal dict.
+
+    ``operating_status`` is the actual load level: ``on`` (energized),
+    ``off``, or a shed sentinel meaning the load is requested but the energy
+    manager has deferred it. ``shed`` is True only in that last case; the
+    UI shows the requested-on state plus a "Shed" badge, mirroring the Mira.
+    """
+    level = _raw_int(raw, "operating_status")
+    if level is None:
+        return "unknown", False
+    if level in AC_LOAD_SHED_LEVELS:
+        return "shed", True
+    return ("on" if level >= AC_LOAD_LEVEL_ON // 2 else "off"), False
+
+
+def derive_ac_load_fields(raw: dict[str, Any]) -> dict[str, Any]:
+    """Derived UI fields for an AC load: on/off/shed + a shed flag."""
+    state_label, shed = ac_load_state(raw)
+    return {"shed": shed, "requested_on": shed or state_label == "on"}
