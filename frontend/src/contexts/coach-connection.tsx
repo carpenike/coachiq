@@ -30,6 +30,7 @@ import {
   type ICoachConnectionState,
   type WebSocketHealth,
 } from '@/contexts/coach-connection-context';
+import { useAuth } from '@/contexts/auth-context';
 import { useWebSocketContext } from '@/contexts/use-websocket-context';
 import { entitiesQueryKeys } from '@/hooks/useEntities';
 import { tokenStorage } from '@/lib/token-storage';
@@ -207,11 +208,19 @@ function useAuthCloseListener(
   }, [onRefreshed, onRefreshFailed]);
 }
 
-/** Poll /api/v1/networks/status on the shared interval. */
-function useNetworksStatusQuery(): UseQueryResult<NetworkSummarySchema, Error> {
+/**
+ * Poll /api/v1/networks/status on the shared interval, but only once auth is
+ * ready. This provider mounts above the AuthGuard, so an ungated query fires
+ * on the login page, 401s, and then sits in an errored/stale state — the coach
+ * reads STALE ("no CAN traffic since …") until the user hits Retry. Gating on
+ * `enabled` means the first request goes out with a valid token right after
+ * login and lands fresh telemetry on its own.
+ */
+function useNetworksStatusQuery(enabled: boolean): UseQueryResult<NetworkSummarySchema, Error> {
   return useQuery({
     queryKey: networksStatusQueryKey,
     queryFn: () => apiGet<NetworkSummarySchema>('/api/v1/networks/status'),
+    enabled,
     refetchInterval: NETWORKS_POLL_INTERVAL_MS,
     refetchIntervalInBackground: true,
     staleTime: 5_000,
@@ -230,7 +239,12 @@ export function CoachConnectionProvider({ children }: { readonly children: React
   // Re-evaluate time-window checks (activity recency) periodically.
   useActivityTick(NETWORKS_POLL_INTERVAL_MS);
 
-  const networksQuery = useNetworksStatusQuery();
+  // Only poll telemetry once the session is confirmed (or auth is disabled),
+  // matching the WebSocket's auth gating — an unauthenticated poll on the login
+  // page would 401 and leave the coach stuck STALE until a manual Retry.
+  const { isAuthenticated, authStatus } = useAuth();
+  const authReady = authStatus?.mode === 'none' || isAuthenticated;
+  const networksQuery = useNetworksStatusQuery(authReady);
 
   // ===== Auth-close handling (WS close code 4401) =====
   const connectAll = wsContext.connectAll;
