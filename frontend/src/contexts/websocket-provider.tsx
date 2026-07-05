@@ -5,6 +5,7 @@
  * Manages entity updates, system status, and other real-time data streams.
  */
 
+import { useAuth } from '@/contexts/auth-context';
 import { useWebSocketManager } from '@/hooks/useWebSocket';
 import React, { useEffect, useState, useMemo } from 'react';
 import { WebSocketContext, type ConnectionMetrics, type WebSocketContextType } from './websocket-context';
@@ -25,10 +26,19 @@ export function WebSocketProvider({
   enableSystemStatus = true,
   enableCANScan = false
 }: WebSocketProviderProps) {
+  // Don't dial the sockets until auth is settled. The token rides in the WS
+  // URL query param, so connecting before login (or before the user query
+  // confirms the session) sends a missing/stale token, the server rejects it,
+  // and — because the reconnect path only re-dials previously-connected
+  // sockets — it sits down until a manual retry. Auth-disabled coaches
+  // (mode "none") have no token and are ready as soon as status loads.
+  const { isAuthenticated, authStatus } = useAuth();
+  const authReady = authStatus?.mode === 'none' || isAuthenticated;
+
   const webSocketManager = useWebSocketManager({
-    enableEntityUpdates,
-    enableSystemStatus,
-    enableCANScan,
+    enableEntityUpdates: enableEntityUpdates && authReady,
+    enableSystemStatus: enableSystemStatus && authReady,
+    enableCANScan: enableCANScan && authReady,
   });
 
   const [metrics, setMetrics] = useState<ConnectionMetrics>({

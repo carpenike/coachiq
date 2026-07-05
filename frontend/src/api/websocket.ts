@@ -115,12 +115,34 @@ export class RVCWebSocketClient {
     }
 
     this.cleanup();
+    // Mark connecting synchronously so callers (e.g. the autoConnect effect,
+    // which checks `state !== 'connecting'`) don't fire a duplicate dial while
+    // the async token refresh below is in flight.
     this._state = 'connecting';
+    void this.openWithFreshToken();
+  }
 
-    // Get authentication token from token storage
+  /**
+   * Refresh a soon-to-expire access token, then open the socket. The token is
+   * passed as a query param, so a stale one gets the connection rejected on the
+   * first attempt — and the reconnect path only re-dials sockets that were
+   * previously connected, so a rejected first dial would otherwise sit down
+   * until a manual retry. Refreshing here (same gap the scheduled timer misses
+   * after a backgrounded tab) lets the auto-reconnect recover on its own.
+   */
+  private async openWithFreshToken(): Promise<void> {
+    try {
+      if (tokenStorage.needsRefresh() && tokenStorage.isRefreshTokenValid()) {
+        await tokenStorage.attemptTokenRefresh();
+      }
+    } catch {
+      // Dial with whatever token we have; the server will reject if it's dead.
+    }
+
+    // A disconnect() may have raced in while the refresh was awaiting.
+    if (this._state !== 'connecting') return;
+
     const token = tokenStorage.getAccessToken();
-
-    // Build WebSocket URL with token as query parameter
     const baseUrl = `${WS_BASE}${this.endpoint}`;
     const wsUrl = token ? `${baseUrl}?token=${encodeURIComponent(token)}` : baseUrl;
 
