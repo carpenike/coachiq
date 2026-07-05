@@ -31,6 +31,10 @@ from backend.integrations.rvc.config_loader import (
 from backend.integrations.rvc.decoder_core import DecodedValue, DecodeError
 from backend.integrations.rvc.decoder_core import decode_payload as _decode_payload
 from backend.integrations.rvc.decoder_core import get_bits as _get_bits
+from backend.integrations.rvc.mapping_schema import (
+    compile_entity_mapping,
+    is_entity_first_mapping,
+)
 from backend.integrations.rvc.missing_dgns import (
     clear_missing_dgns,
     get_missing_dgns,
@@ -62,6 +66,8 @@ DEVICE_MAPPING_METADATA_SECTIONS: tuple[str, ...] = (
     "dgn_pairs",
     "templates",
     "global_defaults",
+    "defaults",
+    "entities",
     "areas",
     "lighting_scenes",
     "lighting_groups",
@@ -139,19 +145,19 @@ def decode_payload_safe(
 
 
 @functools.cache
-def load_config_data(  # noqa: C901
+def load_config_data(
     rvc_spec_path_override: str | None = None,
     device_mapping_path_override: str | None = None,
 ) -> tuple[
-    dict[int, dict],  # dgn_dict
-    dict,  # spec_meta
-    dict[tuple[str, str], dict],  # mapping_dict
-    dict[tuple[str, str], dict],  # entity_map
+    dict[int, dict[str, Any]],  # dgn_dict
+    dict[str, Any],  # spec_meta
+    dict[tuple[str, str], list[dict[str, Any]]],  # mapping_dict (values are device LISTS)
+    dict[tuple[str, str], dict[str, Any]],  # entity_map
     set[str],  # entity_ids
-    dict[str, dict],  # inst_map
-    dict[str, dict],  # unique_instances
+    dict[str, dict[str, Any]],  # inst_map
+    dict[str, dict[str, dict[str, Any]]],  # unique_instances
     dict[str, str],  # pgn_hex_to_name_map
-    dict,  # dgn_pairs
+    dict[str, Any],  # dgn_pairs
     CoachInfo,  # coach_info
 ]:
     """
@@ -205,9 +211,9 @@ def load_config_data(  # noqa: C901
     device_mapping = load_device_mapping(device_mapping_path)
 
     # Process DGN dictionary
-    dgn_dict = {}
-    pgn_hex_to_name_map = {}
-    rvc_spec_dgn_pairs = {}
+    dgn_dict: dict[int, dict[str, Any]] = {}
+    pgn_hex_to_name_map: dict[str, str] = {}
+    rvc_spec_dgn_pairs: dict[str, dict[str, Any]] = {}
 
     for pgn_name, pgn_entry in rvc_spec["pgns"].items():
         pgn = int(pgn_entry["pgn"], 16)
@@ -237,12 +243,63 @@ def load_config_data(  # noqa: C901
     # Extract coach info from mapping file
     coach_info = extract_coach_info(device_mapping, device_mapping_path)
 
-    # Process mapping dictionary
-    mapping_dict = {}
-    entity_map = {}
-    entity_ids = set()
-    inst_map = {}
-    unique_instances = {}
+    # Process mapping dictionary. Entity-first mappings (top-level
+    # `entities:` key) compile through the validated schema in
+    # mapping_schema.py; legacy DGN-first mappings (coach_mapping.default.yml)
+    # run the original iterator.
+    if is_entity_first_mapping(device_mapping):
+        (
+            mapping_dict,
+            entity_map,
+            entity_ids,
+            inst_map,
+            unique_instances,
+        ) = compile_entity_mapping(device_mapping)
+    else:
+        (
+            mapping_dict,
+            entity_map,
+            entity_ids,
+            inst_map,
+            unique_instances,
+        ) = _compile_legacy_mapping(device_mapping)
+
+    return (
+        dgn_dict,
+        spec_meta,
+        mapping_dict,
+        entity_map,
+        entity_ids,
+        inst_map,
+        unique_instances,
+        pgn_hex_to_name_map,
+        dgn_pairs,
+        coach_info,
+    )
+
+
+def _compile_legacy_mapping(
+    device_mapping: dict[str, Any],
+) -> tuple[
+    dict[tuple[str, str], list[dict[str, Any]]],
+    dict[tuple[str, str], dict[str, Any]],
+    set[str],
+    dict[str, dict[str, Any]],
+    dict[str, dict[str, dict[str, Any]]],
+]:
+    """Compile a legacy DGN-first coach mapping into the runtime lookups.
+
+    Note the known wart this format carries: ``inst_map`` is last-write-wins
+    across DGN sections, so section ORDER in the YAML decides which instance
+    the control path uses. The entity-first schema (mapping_schema.py) fixes
+    this by declaring command targets explicitly; new coach mappings should
+    use it.
+    """
+    mapping_dict: dict[tuple[str, str], list[dict[str, Any]]] = {}
+    entity_map: dict[tuple[str, str], dict[str, Any]] = {}
+    entity_ids: set[str] = set()
+    inst_map: dict[str, dict[str, Any]] = {}
+    unique_instances: dict[str, dict[str, dict[str, Any]]] = {}
 
     for dgn_hex, instance_dict in device_mapping.items():
         if dgn_hex.startswith(("#", "_")):
@@ -284,18 +341,7 @@ def load_config_data(  # noqa: C901
                         inst_entry["command_instances"] = list(command_instances)
                     inst_map[entity_id] = inst_entry
 
-    return (
-        dgn_dict,
-        spec_meta,
-        mapping_dict,
-        entity_map,
-        entity_ids,
-        inst_map,
-        unique_instances,
-        pgn_hex_to_name_map,
-        dgn_pairs,
-        coach_info,
-    )
+    return mapping_dict, entity_map, entity_ids, inst_map, unique_instances
 
 
 @functools.cache

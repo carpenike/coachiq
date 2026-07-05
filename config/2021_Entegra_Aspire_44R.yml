@@ -1,15 +1,15 @@
-# RV-C Device Mapping for 2021 Entegra Aspire 44R
+# RV-C Device Mapping for 2021 Entegra Aspire 44R — entity-first schema.
 #
-# Comprehensive mapping of RV-C Data Group Numbers (DGNs) and Instance IDs
-# to device/entity metadata for the 2021 Entegra Aspire 44R.
+# Each entity declares its RX `sources` (which DGN + instance feed its state;
+# multiple sources merge into one entity) and its TX `command` target
+# explicitly. This replaced the DGN-first format after the climate work
+# showed the two can disagree: THERMOSTAT_AMBIENT_STATUS (1FF9C) instances
+# are the Firefly G6's raw SENSOR CHANNELS, not the thermostat zone numbers
+# used by THERMOSTAT_STATUS_1 (1FFE2) / THERMOSTAT_COMMAND_1 (1FEF9).
 #
-# This redesigned structure separates command/control PGNs from status PGNs,
-# reduces repetition through better templating, and provides hierarchical
-# organization for improved efficiency and maintainability.
-
-# ============================================================================
-# METADATA SECTION
-# ============================================================================
+# Schema + compiler: backend/integrations/rvc/mapping_schema.py (pydantic-
+# validated at load; duplicate source claims fail loudly). Wire evidence for
+# the climate mappings: docs/can-re-findings.md.
 
 coach_info:
   year: "2021"
@@ -17,202 +17,25 @@ coach_info:
   model: Aspire
   trim: 44R
   notes: Luxury diesel pusher, Spartan K2 chassis
-  vin_pattern: "1SSD.*" # VIN prefix pattern for auto-detection
+  vin_pattern: "1SSD.*"
   chassis: "Spartan K2"
   engine: "Caterpillar C13"
   transmission: "Allison 4000MH"
-  # Configuration management metadata
-  config_version: "2.0.0"
-  schema_compatibility: "config_mgmt_v1"
-  last_validated: "2024-12-07"
-  validation_hash: "sha256:..." # For integrity checking
 
-# DGN pairing definitions for command/status relationships
+# Command DGN -> status DGN pairs (ack/echo correlation).
 dgn_pairs:
-  # Command PGN -> Status PGN mappings
-  "1FEDB": "1FEDA" # Light/lock command -> Light/lock status
-  "1FED8": "1FEDA" # Alternative dimmer command -> dimmer status
+  "1FEDB": "1FEDA" # Light/lock command -> dimmer status
   "1FFE0": "1FFE1" # A/C command -> A/C status
-  "1FEF9": "1FFE2" # Thermostat command -> Thermostat status
+  "1FEF9": "1FFE2" # Thermostat command -> thermostat status
 
-# Logical Interface Requirements (physical mapping handled by runtime config)
-interface_requirements:
-  house:
-    description: "House systems CAN bus (lighting, locks, etc.)"
-    recommended_speed: 50000
-    typical_termination: true
-    systems: ["lighting", "locks", "climate", "entertainment"]
-    priority: "high"
-    message_volume: "medium"
-  chassis:
-    description: "Chassis systems CAN bus (engine, transmission, etc.)"
-    recommended_speed: 500000
-    typical_termination: false
-    systems: ["engine", "transmission", "brakes", "suspension"]
-    priority: "critical"
-    message_volume: "high"
-  # Note: Physical interface assignments (can0, can1, etc.) are determined by runtime configuration
-  # Set via environment variables: COACHIQ_CAN__INTERFACE_MAPPINGS="house:can0,chassis:can1"
+defaults:
+  interface: house # Logical CAN interface; resolved via COACHIQ_CAN__INTERFACE_MAPPINGS
+  protocol: rvc
 
 # ============================================================================
-# GLOBAL DEFAULTS AND TEMPLATES
+# AREA DEFINITIONS (zone hierarchy for the UI)
 # ============================================================================
 
-# Global defaults applied to all devices unless overridden
-global_defaults: &global_defaults
-  interface: house # Logical interface - will be resolved to physical interface at runtime
-  group_mask: "0x7C"
-  timeout: 5000
-  retry_count: 3
-  protocol_version: "rvc_2023"
-  config_source: "coach_mapping" # For config management system tracking
-
-# Enhanced device templates with inheritance
-templates:
-  # Base device template
-  base_device: &base_device
-    <<: *global_defaults
-    enabled: true
-    manufacturer: "Entegra"
-    model_year: 2021
-
-  # RV-C specific templates
-  rvc_device: &rvc_device
-    <<: *base_device
-    protocol: "rvc"
-    can_arbitration_id_formula: "(0x18 << 24) | (dgn << 8) | source_address"
-
-  # Firefly-specific templates
-  firefly_device: &firefly_device
-    <<: *base_device
-    protocol: "firefly"
-    secondary_protocols: ["rvc"]  # Firefly extends RV-C
-    can_arbitration_id_formula: "(0x18 << 24) | (dgn << 8) | source_address"
-    protocol_metadata:
-      firefly_version: "2023.1"
-      supports_scenes: true
-      supports_diagnostics: true
-
-  # J1939 specific templates
-  j1939_device: &j1939_device
-    <<: *base_device
-    protocol: "j1939"
-    interface: chassis
-    can_arbitration_id_formula: "(priority << 24) | (pgn << 8) | source_address"
-
-  # Spartan K2 chassis templates
-  spartan_k2_device: &spartan_k2_device
-    <<: *j1939_device
-    protocol: "spartan_k2"
-    secondary_protocols: ["j1939"]
-    protocol_metadata:
-      chassis_type: "spartan_k2"
-      safety_critical: true
-
-  # Light device templates (now protocol-aware)
-  light_base: &light_base
-    device_type: light
-    category: lighting
-    power_type: "12V_DC"
-
-  # RV-C basic lights (fallback/compatibility)
-  rvc_switchable_light: &rvc_switchable_light
-    <<: [*light_base, *rvc_device]
-    capabilities: [on_off]
-    brightness_levels: 2
-
-  rvc_dimmable_light: &rvc_dimmable_light
-    <<: [*light_base, *rvc_device]
-    capabilities: [on_off, brightness]
-    brightness_levels: 255
-    brightness_range: [0, 100]
-
-  # Firefly advanced lights (primary for Entegra)
-  firefly_switchable_light: &firefly_switchable_light
-    <<: [*light_base, *firefly_device]
-    capabilities: [on_off]
-    brightness_levels: 2
-    protocol_metadata:
-      firefly_zone_id: null  # Set per device
-      firefly_component_type: "lighting"
-      firefly_diagnostic_capable: true
-
-  firefly_dimmable_light: &firefly_dimmable_light
-    <<: [*light_base, *firefly_device]
-    capabilities: [on_off, brightness, scenes, fade]
-    brightness_levels: 255
-    brightness_range: [0, 100]
-    fade_support: true
-    protocol_metadata:
-      firefly_zone_id: null  # Set per device
-      firefly_component_type: "lighting"
-      firefly_scene_capable: true
-      firefly_fade_time_ms: 1000
-      firefly_diagnostic_capable: true
-
-  # Lock template
-  lock_device: &lock_device
-    <<: *rvc_device
-    device_type: lock
-    category: security
-    capabilities: [lock_unlock]
-    lock_types: ["electronic"]
-
-  # Climate templates. The G6 broadcasts THERMOSTAT_STATUS_1 (1FFE2) and
-  # THERMOSTAT_AMBIENT_STATUS (1FF9C) for 7 zone instances; commands go out
-  # as THERMOSTAT_COMMAND_1 (1FEF9). Bus survey 2026-07-04.
-  climate_zone: &climate_zone
-    <<: *rvc_device
-    device_type: climate
-    category: climate
-    capabilities: [temperature, setpoint, operating_mode, fan]
-
-  # Heat-only zones (Aqua-Hot bay / floor loops): no compressor, no fan control.
-  climate_zone_heat_only: &climate_zone_heat_only
-    <<: *rvc_device
-    device_type: climate
-    category: climate
-    capabilities: [temperature, setpoint_heat]
-
-  # Read-only HVAC equipment status (rooftop ACs, Aqua-Hot).
-  ac_unit_status: &ac_unit_status
-    <<: *rvc_device
-    device_type: air_conditioner
-    category: climate
-    read_only: true
-    capabilities: [fan_speed, output_level]
-
-  water_heater_status: &water_heater_status
-    <<: *rvc_device
-    device_type: water_heater
-    category: climate
-    read_only: true
-    capabilities: [water_temperature, burner, electric_element]
-
-  # Sensor templates
-  sensor_base: &sensor_base
-    <<: *rvc_device
-    device_type: sensor
-    category: monitoring
-    read_only: true
-
-  temperature_sensor: &temperature_sensor
-    <<: *sensor_base
-    sensor_type: temperature
-    unit: "°F"
-    precision: 0.1
-
-  voltage_sensor: &voltage_sensor
-    <<: *sensor_base
-    sensor_type: voltage
-    unit: "V"
-    precision: 0.01
-
-# ============================================================================
-# AREA DEFINITIONS
-# ============================================================================
-
-# Hierarchical area structure for logical organization
 areas:
   interior:
     display_name: "Interior"
@@ -246,612 +69,385 @@ areas:
         display_name: "Security Lighting"
 
 # ============================================================================
-# STATUS PGNs - For receiving device state information
+# ENTITIES
 # ============================================================================
 
-# DC Dimmer Status 3 (PGN: 1FEDA) - Primary status reception for lights
-1FEDA:
-  # Interior lighting status reception
-  25: &bedroom_ceiling_status
-    - entity_id: bedroom_ceiling_light
-      friendly_name: "Bedroom Ceiling Light"
-      area: interior.bedroom
-      physical_id: "firefly_light_bedroom_ceiling_001"
-      protocol_metadata:
-        firefly_zone_id: 1
-        firefly_scene_groups: ["evening", "night"]
-        firefly_diagnostic_id: "FF_DIAG_BR_CEIL_001"
-      <<: *firefly_dimmable_light
+entities:
+  # ----- Interior lights (Firefly-driven dimmers) --------------------------
+  # Status: DC_DIMMER_STATUS_3 (1FEDA); command: DC_DIMMER_COMMAND_2 (1FEDB),
+  # payload dialect verified on the wire (docs/can-re-findings.md). The
+  # bedroom ceiling light is physically two dimmer channels (25 + 26); the
+  # Mira commands both, so the command fans out.
 
-  27: &bedroom_accent_status
-    - entity_id: bedroom_accent_light
-      friendly_name: "Bedroom Accent Light"
-      area: interior.bedroom
-      physical_id: "firefly_light_bedroom_accent_001"
-      protocol_metadata:
-        firefly_zone_id: 1
-        firefly_scene_groups: ["evening", "accent"]
-        firefly_diagnostic_id: "FF_DIAG_BR_ACC_001"
-      <<: *firefly_dimmable_light
+  bedroom_ceiling_light:
+    name: "Bedroom Ceiling Light"
+    type: light
+    area: interior.bedroom
+    protocol: firefly
+    capabilities: [on_off, brightness]
+    sources: [{ dgn: 1FEDA, instance: 25 }]
+    command: { dgn: 1FEDB, instances: [25, 26] }
 
-  28: &bedroom_vanity_status
-    - entity_id: bedroom_vanity_light
-      friendly_name: "Bedroom Vanity Light"
-      area: interior.bedroom
-      physical_id: "firefly_light_bedroom_vanity_001"
-      protocol_metadata:
-        firefly_zone_id: 1
-        firefly_scene_groups: ["evening", "task"]
-        firefly_diagnostic_id: "FF_DIAG_BR_VAN_001"
-      <<: *firefly_dimmable_light
+  bedroom_accent_light:
+    name: "Bedroom Accent Light"
+    type: light
+    area: interior.bedroom
+    protocol: firefly
+    capabilities: [on_off, brightness]
+    sources: [{ dgn: 1FEDA, instance: 27 }]
+    command: { dgn: 1FEDB, instances: [27] }
 
-  29: &bedroom_reading_status
-    - entity_id: bedroom_reading_light
-      friendly_name: "Bedroom Reading Light"
-      area: interior.bedroom
-      scene_compatible: true
-      physical_id: "firefly_light_bedroom_reading_001"
-      protocol_metadata:
-        firefly_zone_id: 1
-        firefly_scene_groups: ["evening", "reading"]
-        firefly_diagnostic_id: "FF_DIAG_BR_READ_001"
-      <<: *firefly_dimmable_light
+  bedroom_vanity_light:
+    name: "Bedroom Vanity Light"
+    type: light
+    area: interior.bedroom
+    protocol: firefly
+    capabilities: [on_off, brightness]
+    sources: [{ dgn: 1FEDA, instance: 28 }]
+    command: { dgn: 1FEDB, instances: [28] }
 
-  30: &master_bath_ceiling_status
-    - entity_id: master_bath_ceiling_light
-      friendly_name: "Master Bath Ceiling Light"
-      area: interior.bathroom_master
-      moisture_rating: "IP44"
-      physical_id: "firefly_light_master_bath_ceiling_001"
-      protocol_metadata:
-        firefly_zone_id: 2
-        firefly_scene_groups: ["bathroom", "evening"]
-        firefly_diagnostic_id: "FF_DIAG_MB_CEIL_001"
-      <<: *firefly_dimmable_light
+  bedroom_reading_light:
+    name: "Bedroom Reading Light"
+    type: light
+    area: interior.bedroom
+    protocol: firefly
+    capabilities: [on_off, brightness]
+    sources: [{ dgn: 1FEDA, instance: 29 }]
+    command: { dgn: 1FEDB, instances: [29] }
 
-  31: &master_bath_lav_status
-    - entity_id: master_bath_lav_light
-      friendly_name: "Master Bath Lavatory Light"
-      area: interior.bathroom_master
-      moisture_rating: "IP44"
-      physical_id: "firefly_light_master_bath_lav_001"
-      protocol_metadata:
-        firefly_zone_id: 2
-        firefly_scene_groups: ["bathroom", "task"]
-        firefly_diagnostic_id: "FF_DIAG_MB_LAV_001"
-      <<: *firefly_dimmable_light
+  master_bath_ceiling_light:
+    name: "Master Bath Ceiling Light"
+    type: light
+    area: interior.bathroom_master
+    protocol: firefly
+    capabilities: [on_off, brightness]
+    sources: [{ dgn: 1FEDA, instance: 30 }]
+    command: { dgn: 1FEDB, instances: [30] }
 
-  32: &master_bath_accent_status
-    - entity_id: master_bath_accent_light
-      friendly_name: "Master Bath Accent Light"
-      area: interior.bathroom_master
-      moisture_rating: "IP44"
-      physical_id: "firefly_light_master_bath_accent_001"
-      protocol_metadata:
-        firefly_zone_id: 2
-        firefly_scene_groups: ["bathroom", "accent"]
-        firefly_diagnostic_id: "FF_DIAG_MB_ACC_001"
-      <<: *firefly_dimmable_light
+  master_bath_lav_light:
+    name: "Master Bath Lavatory Light"
+    type: light
+    area: interior.bathroom_master
+    protocol: firefly
+    capabilities: [on_off, brightness]
+    sources: [{ dgn: 1FEDA, instance: 31 }]
+    command: { dgn: 1FEDB, instances: [31] }
 
-  33: &mid_bath_ceiling_status
-    - entity_id: mid_bath_ceiling_light
-      friendly_name: "Mid Bath Ceiling Light"
-      area: interior.bathroom_mid
-      moisture_rating: "IP44"
-      physical_id: "firefly_light_mid_bath_ceiling_001"
-      protocol_metadata:
-        firefly_zone_id: 3
-        firefly_scene_groups: ["bathroom", "guest"]
-        firefly_diagnostic_id: "FF_DIAG_MID_CEIL_001"
-      <<: *firefly_dimmable_light
+  master_bath_accent_light:
+    name: "Master Bath Accent Light"
+    type: light
+    area: interior.bathroom_master
+    protocol: firefly
+    capabilities: [on_off, brightness]
+    sources: [{ dgn: 1FEDA, instance: 32 }]
+    command: { dgn: 1FEDB, instances: [32] }
 
-  34: &mid_bath_accent_status
-    - entity_id: mid_bath_accent_light
-      friendly_name: "Mid Bath Accent Light"
-      area: interior.bathroom_mid
-      moisture_rating: "IP44"
-      physical_id: "firefly_light_mid_bath_accent_001"
-      protocol_metadata:
-        firefly_zone_id: 3
-        firefly_scene_groups: ["bathroom", "accent"]
-        firefly_diagnostic_id: "FF_DIAG_MID_ACC_001"
-      <<: *firefly_dimmable_light
+  mid_bath_ceiling_light:
+    name: "Mid Bath Ceiling Light"
+    type: light
+    area: interior.bathroom_mid
+    protocol: firefly
+    capabilities: [on_off, brightness]
+    sources: [{ dgn: 1FEDA, instance: 33 }]
+    command: { dgn: 1FEDB, instances: [33] }
 
-  35: &entrance_ceiling_status
-    - entity_id: entrance_ceiling_light
-      friendly_name: "Entrance Ceiling Light"
-      area: interior.entrance
-      auto_on_entry: true
-      physical_id: "firefly_light_entrance_ceiling_001"
-      protocol_metadata:
-        firefly_zone_id: 4
-        firefly_scene_groups: ["entrance", "security"]
-        firefly_diagnostic_id: "FF_DIAG_ENT_CEIL_001"
-      <<: *firefly_dimmable_light
+  mid_bath_accent_light:
+    name: "Mid Bath Accent Light"
+    type: light
+    area: interior.bathroom_mid
+    protocol: firefly
+    capabilities: [on_off, brightness]
+    sources: [{ dgn: 1FEDA, instance: 34 }]
+    command: { dgn: 1FEDB, instances: [34] }
 
-  37: &main_ceiling_status
-    - entity_id: main_ceiling_light
-      friendly_name: "Main Living Ceiling Light"
-      area: interior.living_main
-      primary_room_light: true
-      physical_id: "firefly_light_main_ceiling_001"
-      protocol_metadata:
-        firefly_zone_id: 5
-        firefly_scene_groups: ["living", "evening", "bright"]
-        firefly_diagnostic_id: "FF_DIAG_MAIN_CEIL_001"
-      <<: *firefly_dimmable_light
+  entrance_ceiling_light:
+    name: "Entrance Ceiling Light"
+    type: light
+    area: interior.entrance
+    protocol: firefly
+    capabilities: [on_off, brightness]
+    sources: [{ dgn: 1FEDA, instance: 35 }]
+    command: { dgn: 1FEDB, instances: [35] }
 
-  38: &bedroom_courtesy_status
-    - entity_id: bedroom_courtesy_light
-      friendly_name: "Bedroom Courtesy Light"
-      area: interior.bedroom
-      night_light: true
-      physical_id: "firefly_light_bedroom_courtesy_001"
-      protocol_metadata:
-        firefly_zone_id: 1
-        firefly_scene_groups: ["night", "courtesy"]
-        firefly_diagnostic_id: "FF_DIAG_BR_COURT_001"
-      <<: *firefly_dimmable_light
+  main_ceiling_light:
+    name: "Main Living Ceiling Light"
+    type: light
+    area: interior.living_main
+    protocol: firefly
+    capabilities: [on_off, brightness]
+    sources: [{ dgn: 1FEDA, instance: 37 }]
+    command: { dgn: 1FEDB, instances: [37] }
 
-  39: &main_ceiling_accent_status
-    - entity_id: main_ceiling_accent_light
-      friendly_name: "Main Ceiling Accent Light"
-      area: interior.living_main
-      accent_lighting: true
-      physical_id: "firefly_light_main_accent_001"
-      protocol_metadata:
-        firefly_zone_id: 5
-        firefly_scene_groups: ["living", "accent", "evening"]
-        firefly_diagnostic_id: "FF_DIAG_MAIN_ACC_001"
-      <<: *firefly_dimmable_light
+  bedroom_courtesy_light:
+    name: "Bedroom Courtesy Light"
+    type: light
+    area: interior.bedroom
+    protocol: firefly
+    capabilities: [on_off, brightness]
+    sources: [{ dgn: 1FEDA, instance: 38 }]
+    command: { dgn: 1FEDB, instances: [38] }
 
-  41: &main_driver_ceiling_status
-    - entity_id: main_driver_side_ceiling_light
-      friendly_name: "Main Driver Side Ceiling Light"
-      area: interior.living_main
-      zone_lighting: true
-      physical_id: "firefly_light_main_driver_001"
-      protocol_metadata:
-        firefly_zone_id: 5
-        firefly_scene_groups: ["living", "zone_driver"]
-        firefly_diagnostic_id: "FF_DIAG_MAIN_DRV_001"
-      <<: *firefly_dimmable_light
+  main_ceiling_accent_light:
+    name: "Main Ceiling Accent Light"
+    type: light
+    area: interior.living_main
+    protocol: firefly
+    capabilities: [on_off, brightness]
+    sources: [{ dgn: 1FEDA, instance: 39 }]
+    command: { dgn: 1FEDB, instances: [39] }
 
-  42: &main_passenger_ceiling_status
-    - entity_id: main_passenger_side_ceiling_light
-      friendly_name: "Main Passenger Side Ceiling Light"
-      area: interior.living_main
-      zone_lighting: true
-      physical_id: "firefly_light_main_passenger_001"
-      protocol_metadata:
-        firefly_zone_id: 5
-        firefly_scene_groups: ["living", "zone_passenger"]
-        firefly_diagnostic_id: "FF_DIAG_MAIN_PASS_001"
-      <<: *firefly_dimmable_light
+  main_driver_side_ceiling_light:
+    name: "Main Driver Side Ceiling Light"
+    type: light
+    area: interior.living_main
+    protocol: firefly
+    capabilities: [on_off, brightness]
+    sources: [{ dgn: 1FEDA, instance: 41 }]
+    command: { dgn: 1FEDB, instances: [41] }
 
-  43: &main_driver_slide_status
-    - entity_id: main_driver_side_slide_light
-      friendly_name: "Main Driver Side Slide Light"
-      area: interior.living_main
-      slide_lighting: true
-      physical_id: "firefly_light_main_slide_001"
-      protocol_metadata:
-        firefly_zone_id: 5
-        firefly_scene_groups: ["living", "slide"]
-        firefly_diagnostic_id: "FF_DIAG_MAIN_SLIDE_001"
-      <<: *firefly_dimmable_light
+  main_passenger_side_ceiling_light:
+    name: "Main Passenger Side Ceiling Light"
+    type: light
+    area: interior.living_main
+    protocol: firefly
+    capabilities: [on_off, brightness]
+    sources: [{ dgn: 1FEDA, instance: 42 }]
+    command: { dgn: 1FEDB, instances: [42] }
 
-  45: &main_dinette_status
-    - entity_id: main_dinette_light
-      friendly_name: "Main Dinette Light"
-      area: interior.living_main
-      task_lighting: true
-      physical_id: "firefly_light_main_dinette_001"
-      protocol_metadata:
-        firefly_zone_id: 5
-        firefly_scene_groups: ["living", "task", "dining"]
-        firefly_diagnostic_id: "FF_DIAG_MAIN_DIN_001"
-      <<: *firefly_dimmable_light
+  main_driver_side_slide_light:
+    name: "Main Driver Side Slide Light"
+    type: light
+    area: interior.living_main
+    protocol: firefly
+    capabilities: [on_off, brightness]
+    sources: [{ dgn: 1FEDA, instance: 43 }]
+    command: { dgn: 1FEDB, instances: [43] }
 
-  46: &main_sink_status
-    - entity_id: main_sink_light
-      friendly_name: "Main Sink Light"
-      area: interior.living_main
-      task_lighting: true
-      physical_id: "firefly_light_main_sink_001"
-      protocol_metadata:
-        firefly_zone_id: 5
-        firefly_scene_groups: ["living", "task", "kitchen"]
-        firefly_diagnostic_id: "FF_DIAG_MAIN_SINK_001"
-      <<: *firefly_dimmable_light
+  main_dinette_light:
+    name: "Main Dinette Light"
+    type: light
+    area: interior.living_main
+    protocol: firefly
+    capabilities: [on_off, brightness]
+    sources: [{ dgn: 1FEDA, instance: 45 }]
+    command: { dgn: 1FEDB, instances: [45] }
 
-  47: &main_midship_status
-    - entity_id: main_midship_light
-      friendly_name: "Main Midship Light"
-      area: interior.living_main
-      physical_id: "firefly_light_main_midship_001"
-      protocol_metadata:
-        firefly_zone_id: 5
-        firefly_scene_groups: ["living", "general"]
-        firefly_diagnostic_id: "FF_DIAG_MAIN_MID_001"
-      <<: *firefly_dimmable_light
+  main_sink_light:
+    name: "Main Sink Light"
+    type: light
+    area: interior.living_main
+    protocol: firefly
+    capabilities: [on_off, brightness]
+    sources: [{ dgn: 1FEDA, instance: 46 }]
+    command: { dgn: 1FEDB, instances: [46] }
 
-  # Exterior lighting status (kept as RV-C for compatibility)
-  51: &awning_driver_status
-    - entity_id: exterior_driver_side_awning_light
-      friendly_name: "Driver Side Awning Light"
-      area: exterior.awning_driver
-      weather_rating: "IP65"
-      physical_id: "rvc_light_awning_driver_001"
-      <<: *rvc_switchable_light
+  main_midship_light:
+    name: "Main Midship Light"
+    type: light
+    area: interior.living_main
+    protocol: firefly
+    capabilities: [on_off, brightness]
+    sources: [{ dgn: 1FEDA, instance: 47 }]
+    command: { dgn: 1FEDB, instances: [47] }
 
-  52: &awning_passenger_status
-    - entity_id: exterior_passenger_side_awning_light
-      friendly_name: "Passenger Side Awning Light"
-      area: exterior.awning_passenger
-      weather_rating: "IP65"
-      physical_id: "rvc_light_awning_passenger_001"
-      <<: *rvc_switchable_light
+  # ----- Exterior lights (plain RV-C switches) ------------------------------
 
-  53: &basement_cargo_status
-    - entity_id: basement_cargo_light
-      friendly_name: "Basement Cargo Light"
-      area: exterior.basement
-      motion_activated: true
-      weather_rating: "IP65"
-      physical_id: "rvc_light_basement_cargo_001"
-      <<: *rvc_switchable_light
+  exterior_driver_side_awning_light:
+    name: "Driver Side Awning Light"
+    type: light
+    area: exterior.awning_driver
+    capabilities: [on_off]
+    sources: [{ dgn: 1FEDA, instance: 51 }]
+    command: { dgn: 1FEDB, instances: [51] }
 
-  54: &under_slide_status
-    - entity_id: exterior_under_slide_light
-      friendly_name: "Under Slide Light"
-      area: exterior.awning_driver
-      automatic_activation: "slide_extension"
-      weather_rating: "IP65"
-      physical_id: "rvc_light_under_slide_001"
-      <<: *rvc_switchable_light
+  exterior_passenger_side_awning_light:
+    name: "Passenger Side Awning Light"
+    type: light
+    area: exterior.awning_passenger
+    capabilities: [on_off]
+    sources: [{ dgn: 1FEDA, instance: 52 }]
+    command: { dgn: 1FEDB, instances: [52] }
 
-  57: &security_driver_status
-    - entity_id: exterior_driver_side_security_light
-      friendly_name: "Driver Side Security Light"
-      area: exterior.security
-      motion_sensor: true
-      security_lighting: true
-      weather_rating: "IP65"
-      physical_id: "rvc_light_security_driver_001"
-      <<: *rvc_switchable_light
+  basement_cargo_light:
+    name: "Basement Cargo Light"
+    type: light
+    area: exterior.basement
+    capabilities: [on_off]
+    sources: [{ dgn: 1FEDA, instance: 53 }]
+    command: { dgn: 1FEDB, instances: [53] }
 
-  58: &security_passenger_status
-    - entity_id: exterior_passenger_side_security_light
-      friendly_name: "Passenger Side Security Light"
-      area: exterior.security
-      motion_sensor: true
-      security_lighting: true
-      weather_rating: "IP65"
-      physical_id: "rvc_light_security_passenger_001"
-      <<: *rvc_switchable_light
+  exterior_under_slide_light:
+    name: "Under Slide Light"
+    type: light
+    area: exterior.awning_driver
+    capabilities: [on_off]
+    sources: [{ dgn: 1FEDA, instance: 54 }]
+    command: { dgn: 1FEDB, instances: [54] }
 
-  59: &motion_light_status
-    - entity_id: exterior_motion_light
-      friendly_name: "Exterior Motion Light"
-      area: exterior.security
-      motion_activated: true
-      auto_timeout: 300 # 5 minutes
-      weather_rating: "IP65"
-      physical_id: "rvc_light_motion_001"
-      <<: *rvc_switchable_light
+  exterior_driver_side_security_light:
+    name: "Driver Side Security Light"
+    type: light
+    area: exterior.security
+    capabilities: [on_off]
+    sources: [{ dgn: 1FEDA, instance: 57 }]
+    command: { dgn: 1FEDB, instances: [57] }
 
-  60: &porch_light_status
-    - entity_id: exterior_porch_light
-      friendly_name: "Exterior Porch Light"
-      area: exterior.awning_driver
-      entrance_lighting: true
-      weather_rating: "IP65"
-      physical_id: "rvc_light_porch_001"
-      <<: *rvc_switchable_light
+  exterior_passenger_side_security_light:
+    name: "Passenger Side Security Light"
+    type: light
+    area: exterior.security
+    capabilities: [on_off]
+    sources: [{ dgn: 1FEDA, instance: 58 }]
+    command: { dgn: 1FEDB, instances: [58] }
 
-  # Lock status
-  default: &entrance_lock_status
-    - entity_id: entrance_door_lock
-      friendly_name: "Entrance Door Lock"
-      area: interior.entrance
-      lock_type: "electronic_deadbolt"
-      keypad_enabled: true
-      remote_unlock: true
-      <<: *lock_device
+  exterior_motion_light:
+    name: "Exterior Motion Light"
+    type: light
+    area: exterior.security
+    capabilities: [on_off]
+    sources: [{ dgn: 1FEDA, instance: 59 }]
+    command: { dgn: 1FEDB, instances: [59] }
 
-# Thermostat Ambient Status (DGN: 1FF9C) - measured temperatures from the G6.
-#
-# IMPORTANT: 1FF9C instances are the G6's raw SENSOR CHANNELS, NOT the
-# thermostat zone instances used by 1FFE2/1FEF9. Verified live 2026-07-05 by
-# matching readings against the Mira display and warming the Mid wall sensor
-# (channel 5 rose 70.3F -> 77.5F under a thumb; channel 4 never moved):
-#   0 = Front zone air     (joined to climate_front)
-#   1 = Rear zone air      (joined to climate_rear)   <- NOT zone order!
-#   2 = Bay                (joined to climate_bay_heat; 81F matched Mira Bay)
-#   3 = disconnected       (broadcasts -88C; unmapped)
-#   4 = Floor              (joined to climate_floor_heat; matched Mira Floor)
-#   5 = Mid zone air       (joined to climate_mid)
-#
-# ORDERING: this section MUST come before 1FFE2. The config loader's
-# inst_map keeps the LAST instance seen per entity_id, and the control path
-# uses it to address THERMOSTAT_COMMAND_1 - so 1FFE2 (zone instances) must
-# win. The zone anchors are therefore defined here and aliased below.
-1FF9C:
-  0:
-    - &climate_front_zone
-      entity_id: climate_front
-      friendly_name: "Front Zone"
-      area: interior.living_main
-      <<: *climate_zone
-  1:
-    - &climate_rear_zone
-      entity_id: climate_rear
-      friendly_name: "Rear Zone"
-      area: interior.bedroom
-      <<: *climate_zone
-  2:
-    - &climate_bay_heat_zone
-      entity_id: climate_bay_heat
-      friendly_name: "Bay Heat (Aqua-Hot)"
-      area: exterior.basement
-      <<: *climate_zone_heat_only
-  4:
-    - &climate_floor_heat_zone
-      entity_id: climate_floor_heat
-      friendly_name: "Floor Heat"
-      area: interior.living_main
-      <<: *climate_zone_heat_only
-  5:
-    - &climate_mid_zone
-      entity_id: climate_mid
-      friendly_name: "Mid Zone"
-      area: interior.living_main
-      <<: *climate_zone
+  exterior_porch_light:
+    name: "Exterior Porch Light"
+    type: light
+    area: exterior.awning_driver
+    capabilities: [on_off]
+    sources: [{ dgn: 1FEDA, instance: 60 }]
+    command: { dgn: 1FEDB, instances: [60] }
 
-# Thermostat Status 1 (DGN: 1FFE2) - zone setpoints/mode/fan from the G6 (SA 0x9C).
-# Instance -> zone mapping verified live 2026-07-04: pressing + on the Mira's
-# Front/Mid/Rear zones stepped instances 0/1/2 in order, and the G6 accepted a
-# standard THERMOSTAT_COMMAND_1 from CoachIQ (SA 0xF9) for instance 0 with the
-# status echoing the commanded setpoints. Instances 3 and 4 are heat-side
-# counterparts whose heat setpoint tracks zones 0 (front) and 2 (rear)
-# respectively. Zones 5 and 6 identified live 2026-07-05: the Mira's Bay
-# setpoint button stepped zone 5 and the Floor button stepped zone 6.
-1FFE2:
-  0:
-    - <<: *climate_front_zone
-  1:
-    - <<: *climate_mid_zone
-  2:
-    - <<: *climate_rear_zone
-  3:
-    - &climate_front_heat_zone
-      entity_id: climate_front_heat
-      friendly_name: "Front Heat (Aqua-Hot)"
-      area: interior.living_main
-      <<: *climate_zone_heat_only
-  4:
-    - &climate_rear_heat_zone
-      entity_id: climate_rear_heat
-      friendly_name: "Rear Heat (Aqua-Hot)"
-      area: interior.bedroom
-      <<: *climate_zone_heat_only
-  5:
-    - <<: *climate_bay_heat_zone
-  6:
-    - <<: *climate_floor_heat_zone
+  # ----- Door lock (status only; control out of scope per ADR-0004) --------
 
-# Air Conditioner Status (DGN: 1FFE1) - rooftop AC units report from their own
-# source addresses (0x96-0x98, instances 1-3). Read-only; the thermostat zones
-# above are the control surface (the G6 re-broadcasts AIR_CONDITIONER_COMMAND
-# at 1 Hz per unit, so commanding units directly would fight the master).
-# A fourth node (SA 0x99) broadcasts instance 0x51 with an odd payload - left
-# unmapped until identified. Unit -> zone pairing is provisional.
-1FFE1:
-  1:
-    - entity_id: ac_unit_1
-      friendly_name: "AC Unit 1 (Front)"
-      area: interior.living_main
-      <<: *ac_unit_status
-  2:
-    - entity_id: ac_unit_2
-      friendly_name: "AC Unit 2 (Mid)"
-      area: interior.living_main
-      <<: *ac_unit_status
-  3:
-    - entity_id: ac_unit_3
-      friendly_name: "AC Unit 3 (Rear)"
-      area: interior.bedroom
-      <<: *ac_unit_status
+  entrance_door_lock:
+    name: "Entrance Door Lock"
+    type: lock
+    area: interior.entrance
+    capabilities: [lock_unlock]
+    read_only: true
+    sources: [{ dgn: 1FEDA, instance: default }]
 
-# Water Heater Status (DGN: 1FFF7) - the Aqua-Hot hydronic heater (SA 0x9E).
-# Observed live: operating_mode 3 (gas/electric), loop temp ~92 C. Read-only
-# for now; burner/electric toggles need a command-dialect wire test first.
-1FFF7:
-  1:
-    - &aqua_hot_status
-      entity_id: aqua_hot
-      friendly_name: "Aqua-Hot"
-      area: exterior.basement
-      <<: *water_heater_status
+  # ----- Climate zones -------------------------------------------------------
+  # Zone instances (1FFE2 status / 1FEF9 command) verified live 2026-07-04/05:
+  # pressing + on each Mira zone stepped instances 0/1/2 (Front/Mid/Rear),
+  # Bay stepped 5, Floor stepped 6; the G6 accepts standard
+  # THERMOSTAT_COMMAND_1 from SA 0xF9 (no Firefly dialect needed).
+  #
+  # Ambient sources (1FF9C) are the G6's raw SENSOR CHANNELS, a different
+  # namespace: 0=Front air, 1=Rear air, 2=Bay, 3=disconnected (-88C),
+  # 4=Floor, 5=Mid air. Verified against the Mira display and a warm-the-
+  # sensor test. This is exactly why sources are declared per-DGN here.
 
-# Water Heater Status 2 (DGN: 1FE99) - electric element level / burner detail;
-# merged into the same aqua_hot entity.
-1FE99:
-  1:
-    - <<: *aqua_hot_status
+  climate_front:
+    name: "Front Zone"
+    type: climate
+    area: interior.living_main
+    capabilities: [temperature, setpoint, operating_mode, fan]
+    sources:
+      - { dgn: 1FFE2, instance: 0 }
+      - { dgn: 1FF9C, instance: 0 }
+    command: { dgn: 1FEF9, instances: [0] }
 
-# ============================================================================
-# COMMAND PGNs - For sending control commands to devices
-# ============================================================================
+  climate_mid:
+    name: "Mid Zone"
+    type: climate
+    area: interior.living_main
+    capabilities: [temperature, setpoint, operating_mode, fan]
+    sources:
+      - { dgn: 1FFE2, instance: 1 }
+      - { dgn: 1FF9C, instance: 5 } # sensor channel 5, NOT zone 1
+    command: { dgn: 1FEF9, instances: [1] }
 
-# DC Dimmer Command (PGN: 1FEDB) - Primary command transmission for lights/locks
-1FEDB:
-  # Interior lighting commands (reference status entities)
-  25:
-    - <<: *bedroom_ceiling_status
-      command_type: "dimmer_control"
-      status_dgn: "1FEDA"
-      # The bedroom ceiling light is physically driven by two dimmer outputs,
-      # instances 25 (0x19) and 26 (0x1A). The Vegatouch Mira button commands
-      # both, so CoachIQ must fan the DC_DIMMER_COMMAND_2 out to each instance.
-      # Verified on the wire (see docs/can-re-findings.md).
-      command_instances: [25, 26]
+  climate_rear:
+    name: "Rear Zone"
+    type: climate
+    area: interior.bedroom
+    capabilities: [temperature, setpoint, operating_mode, fan]
+    sources:
+      - { dgn: 1FFE2, instance: 2 }
+      - { dgn: 1FF9C, instance: 1 } # sensor channel 1, NOT zone 2
+    command: { dgn: 1FEF9, instances: [2] }
 
-  27:
-    - <<: *bedroom_accent_status
-      command_type: "dimmer_control"
-      status_dgn: "1FEDA"
+  # Heat-only zones (Aqua-Hot): no compressor, no fan. Zones 3/4 are the
+  # hydronic heat counterparts whose setpoints track Front/Rear.
 
-  28:
-    - <<: *bedroom_vanity_status
-      command_type: "dimmer_control"
-      status_dgn: "1FEDA"
+  climate_front_heat:
+    name: "Front Heat (Aqua-Hot)"
+    type: climate
+    area: interior.living_main
+    capabilities: [temperature, setpoint_heat]
+    sources: [{ dgn: 1FFE2, instance: 3 }]
+    command: { dgn: 1FEF9, instances: [3] }
 
-  29:
-    - <<: *bedroom_reading_status
-      command_type: "dimmer_control"
-      status_dgn: "1FEDA"
+  climate_rear_heat:
+    name: "Rear Heat (Aqua-Hot)"
+    type: climate
+    area: interior.bedroom
+    capabilities: [temperature, setpoint_heat]
+    sources: [{ dgn: 1FFE2, instance: 4 }]
+    command: { dgn: 1FEF9, instances: [4] }
 
-  30:
-    - <<: *master_bath_ceiling_status
-      command_type: "dimmer_control"
-      status_dgn: "1FEDA"
+  climate_bay_heat:
+    name: "Bay Heat (Aqua-Hot)"
+    type: climate
+    area: exterior.basement
+    capabilities: [temperature, setpoint_heat]
+    sources:
+      - { dgn: 1FFE2, instance: 5 }
+      - { dgn: 1FF9C, instance: 2 } # bay sensor channel
+    command: { dgn: 1FEF9, instances: [5] }
 
-  31:
-    - <<: *master_bath_lav_status
-      command_type: "dimmer_control"
-      status_dgn: "1FEDA"
+  climate_floor_heat:
+    name: "Floor Heat"
+    type: climate
+    area: interior.living_main
+    capabilities: [temperature, setpoint_heat]
+    sources:
+      - { dgn: 1FFE2, instance: 6 }
+      - { dgn: 1FF9C, instance: 4 } # floor sensor channel
+    command: { dgn: 1FEF9, instances: [6] }
 
-  32:
-    - <<: *master_bath_accent_status
-      command_type: "dimmer_control"
-      status_dgn: "1FEDA"
+  # ----- HVAC equipment (read-only status) ----------------------------------
+  # Rooftop ACs report AIR_CONDITIONER_STATUS from their own source addresses
+  # (0x96-0x98). The thermostat zones above are the control surface — the G6
+  # re-broadcasts AIR_CONDITIONER_COMMAND at 1 Hz per unit, so commanding
+  # units directly would fight the master. A fourth node (SA 0x99) broadcasts
+  # instance 0x51 with an odd payload — left unmapped until identified.
 
-  33:
-    - <<: *mid_bath_ceiling_status
-      command_type: "dimmer_control"
-      status_dgn: "1FEDA"
+  ac_unit_1:
+    name: "AC Unit 1 (Front)"
+    type: air_conditioner
+    area: interior.living_main
+    capabilities: [fan_speed, output_level]
+    read_only: true
+    sources: [{ dgn: 1FFE1, instance: 1 }]
 
-  34:
-    - <<: *mid_bath_accent_status
-      command_type: "dimmer_control"
-      status_dgn: "1FEDA"
+  ac_unit_2:
+    name: "AC Unit 2 (Mid)"
+    type: air_conditioner
+    area: interior.living_main
+    capabilities: [fan_speed, output_level]
+    read_only: true
+    sources: [{ dgn: 1FFE1, instance: 2 }]
 
-  35:
-    - <<: *entrance_ceiling_status
-      command_type: "dimmer_control"
-      status_dgn: "1FEDA"
+  ac_unit_3:
+    name: "AC Unit 3 (Rear)"
+    type: air_conditioner
+    area: interior.bedroom
+    capabilities: [fan_speed, output_level]
+    read_only: true
+    sources: [{ dgn: 1FFE1, instance: 3 }]
 
-  37:
-    - <<: *main_ceiling_status
-      command_type: "dimmer_control"
-      status_dgn: "1FEDA"
-
-  38:
-    - <<: *bedroom_courtesy_status
-      command_type: "dimmer_control"
-      status_dgn: "1FEDA"
-
-  39:
-    - <<: *main_ceiling_accent_status
-      command_type: "dimmer_control"
-      status_dgn: "1FEDA"
-
-  41:
-    - <<: *main_driver_ceiling_status
-      command_type: "dimmer_control"
-      status_dgn: "1FEDA"
-
-  42:
-    - <<: *main_passenger_ceiling_status
-      command_type: "dimmer_control"
-      status_dgn: "1FEDA"
-
-  43:
-    - <<: *main_driver_slide_status
-      command_type: "dimmer_control"
-      status_dgn: "1FEDA"
-
-  45:
-    - <<: *main_dinette_status
-      command_type: "dimmer_control"
-      status_dgn: "1FEDA"
-
-  46:
-    - <<: *main_sink_status
-      command_type: "dimmer_control"
-      status_dgn: "1FEDA"
-
-  47:
-    - <<: *main_midship_status
-      command_type: "dimmer_control"
-      status_dgn: "1FEDA"
-
-  # Exterior lighting commands
-  51:
-    - <<: *awning_driver_status
-      command_type: "switch_control"
-      status_dgn: "1FEDA"
-
-  52:
-    - <<: *awning_passenger_status
-      command_type: "switch_control"
-      status_dgn: "1FEDA"
-
-  53:
-    - <<: *basement_cargo_status
-      command_type: "switch_control"
-      status_dgn: "1FEDA"
-
-  54:
-    - <<: *under_slide_status
-      command_type: "switch_control"
-      status_dgn: "1FEDA"
-
-  57:
-    - <<: *security_driver_status
-      command_type: "switch_control"
-      status_dgn: "1FEDA"
-
-  58:
-    - <<: *security_passenger_status
-      command_type: "switch_control"
-      status_dgn: "1FEDA"
-
-  59:
-    - <<: *motion_light_status
-      command_type: "switch_control"
-      status_dgn: "1FEDA"
-
-  60:
-    - <<: *porch_light_status
-      command_type: "switch_control"
-      status_dgn: "1FEDA"
-
-  # Lock commands
-  default:
-    - <<: *entrance_lock_status
-      command_type: "lock_control"
-      status_dgn: "1FEDA"
-
-# ============================================================================
-# ALTERNATIVE COMMAND PGNs
-# ============================================================================
-
-# DC Dimmer Command 2 (PGN: 1FED8) - Alternative command interface
-1FED8:
-  # Map all dimmable lights to alternative command PGN for redundancy
-  default:
-    - entity_id: "alt_dimmer_interface"
-      friendly_name: "Alternative Dimmer Interface"
-      entity_group: "all_dimmable_lights"
-      command_type: "dimmer_control_alt"
-      status_dgn: "1FEDA"
-      device_type: "control_interface"
-      capabilities: ["group_control"]
-      description: "Alternative dimmer command interface for all dimmable lights"
-      <<: *base_device
+  # The Aqua-Hot hydronic heater (SA 0x9E). Read-only until the
+  # burner/electric command dialect gets a wire test.
+  aqua_hot:
+    name: "Aqua-Hot"
+    type: water_heater
+    area: exterior.basement
+    capabilities: [water_temperature, burner, electric_element]
+    read_only: true
+    sources:
+      - { dgn: 1FFF7, instance: 1 }
+      - { dgn: 1FE99, instance: 1 }
 
 # ============================================================================
 # LIGHTING SCENES AND GROUPS
@@ -926,111 +522,3 @@ lighting_groups:
   awning_lights:
     name: "Awning Lights"
     entities: ["*awning*_light"]
-
-# ============================================================================
-# MONITORING AND DIAGNOSTICS (Future Expansion)
-# ============================================================================
-
-# Placeholder for future sensor integration
-# These PGNs would be populated as sensors are identified and mapped
-
-# DC Source Status (PGN: 0x1FFFD) - Battery/DC system monitoring
-# 1FFFD:
-#   default:
-#     - entity_id: house_battery_monitor
-#       friendly_name: "House Battery Monitor"
-#       <<: *voltage_sensor
-
-# Tank Level Status (PGN: 0x1FFB7) - Fluid level monitoring
-# 1FFB7:
-#   default:
-#     - entity_id: fresh_water_tank
-#       friendly_name: "Fresh Water Tank"
-#       <<: *sensor_base
-
-# Temperature Status (PGN: 0x1FFB6) - Temperature monitoring
-# 1FFB6:
-#   default:
-#     - entity_id: interior_temperature
-#       friendly_name: "Interior Temperature"
-#       <<: *temperature_sensor
-
-# ============================================================================
-# VALIDATION AND METADATA
-# ============================================================================
-
-# Enhanced validation rules for config management system integration
-validation_rules:
-  # Pydantic-compatible validation schemas
-  entity_validation:
-    required_fields:
-      ["entity_id", "friendly_name", "device_type", "capabilities"]
-    entity_id_pattern: "^[a-z][a-z0-9_]*[a-z0-9]$"
-    max_instances_per_dgn: 255
-    supported_device_types:
-      [
-        "light",
-        "lock",
-        "sensor",
-        "switch",
-        "dimmer",
-        "climate",
-        "air_conditioner",
-        "water_heater",
-      ]
-
-  # Interface validation
-  interface_validation:
-    allowed_logical_interfaces: ["house", "chassis"]
-    allowed_physical_interfaces: ["can0", "can1", "vcan0", "vcan1"]
-    require_logical_interfaces: true # Enforce logical interface usage
-
-  # Configuration management validation
-  config_validation:
-    require_source_tracking: true
-    allow_runtime_modification: true
-    validate_against_schema: true
-    schema_version: "2.0.0"
-
-  # Data integrity
-  integrity_validation:
-    check_dgn_pairs: true
-    validate_templates: true
-    require_unique_entity_ids: true
-    check_interface_consistency: true
-
-file_metadata:
-  version: "2.0.0"
-  created_date: "2024-01-01"
-  last_modified: "2024-12-07"
-  schema_version: "2.0"
-  config_mgmt_compatibility: "v1" # Config management system version
-  total_devices: 28
-  total_lights: 27
-  total_locks: 1
-  maintainer: "CoachIQ System"
-
-  # Configuration management system metadata
-  persistence_ready: true
-  api_exposed_sections: ["lighting_scenes", "lighting_groups", "areas"]
-  runtime_editable_fields: ["friendly_name", "suggested_area", "groups"]
-  immutable_fields: ["entity_id", "device_type", "dgn_hex", "instance"]
-
-  # Interface mapping metadata
-  uses_logical_interfaces: true
-  logical_interface_count: 2
-  requires_interface_resolution: true
-
-  notes: |
-    Redesigned mapping structure with configuration management system integration:
-    - Separated command and status PGNs for clarity
-    - Reduced repetition through enhanced templating
-    - Added hierarchical area organization
-    - Included comprehensive device metadata
-    - Added lighting scenes and groups
-    - Prepared for future sensor integration
-    - Improved maintainability and extensibility
-    - Integrated with configuration management system
-    - Uses logical CAN interface names for portability
-    - Ready for database persistence and runtime editing
-    - Enhanced validation rules for type safety
