@@ -69,6 +69,32 @@ Once known, implement in `backend/integrations/rvc/encoder.py` behind the
 existing command path, then the acknowledgment matcher in
 `entity_domain_service._wait_for_acknowledgment` starts confirming.
 
+## Climate (heating / cooling) — survey 2026-07-04
+
+A 15 s census while diagnosing nothing in particular (idle bus, July
+afternoon) showed the climate system talks **standard RV-C thermostat DGNs**,
+all broadcast by the G6 (SA `0x9C`):
+
+| DGN | Name | What we saw |
+|---|---|---|
+| `1FFE2` | THERMOSTAT_STATUS_1 | **7 instances (0–6)**, each ~every 5 s. Instances 0–2: mode=Cool, fan on 50%, heat/cool setpoints in lockstep (69.5 / 68.5 / 100.5 °F). Instances 3–6: mode=Off, fan 0 (heat-only zones: bay + floor loops). Setpoints are uint16 LE 1/32 K — the spec JSON's `big_endian` annotation was wrong (decoder ignores it; fixed anyway). |
+| `1FF9C` | THERMOSTAT_AMBIENT_STATUS | Per-zone ambient, bytes 1–2 LE (spec JSON had a fabricated layout — fixed). Observed 78.7 / 101.8 / 86.9 / (−88 = sensor absent) / 72.8 / 74.8 °F for instances 0–5; instance 6 silent. |
+| `1FFE1` | AIR_CONDITIONER_STATUS | Rooftop ACs report from their own SAs `0x96/0x97/0x98` as instances 3/2/1. A fourth node `0x99` broadcasts instance `0x51` with an odd payload — unidentified, left unmapped. |
+| `1FFE0` | AIR_CONDITIONER_COMMAND | Re-broadcast by the G6 at ~1 Hz per unit — same continuous-master pattern as the dimmers, so **command the thermostat, not the AC units**. |
+| `1FFF7`/`1FE99` | WATERHEATER_STATUS(_2) | Aqua-Hot on SA `0x9E`, instance 1: mode 3 (gas/electric), loop temp ~92 °C / 198 °F. |
+
+Control: `THERMOSTAT_COMMAND_1` (DGN `1FEF9`, sent as `0x19FEF9F9`) with the
+payload mirroring the STATUS_1 layout: `[instance, mode|fan<<4|sched<<6,
+fan_speed(0-200), heat_lo, heat_hi, cool_lo, cool_hi, FF]`. The spec JSON had
+the wrong PGN (`FEF6`) and a "tenths of °C" layout — both corrected.
+**Not yet wire-verified** — the ceiling-light experience says the G6 may want
+a particular dialect; verify with a setpoint change and diff the `1FFE2` echo.
+
+Open item: instance → zone naming (Front/Mid/Rear/Bay/Floor×3) is provisional,
+inferred from mode/fan/setpoint patterns. Confirm by changing one setpoint on
+the Mira and diffing captures, or by comparing live temps against the Mira
+climate screen.
+
 ## Guardrail
 
 Per ADR-0004, CoachIQ is API guardrails only; Firefly owns physical safety.

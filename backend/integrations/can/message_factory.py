@@ -53,3 +53,54 @@ def create_light_can_message(pgn: int, instance: int, brightness_can_level: int)
     )
 
     return can.Message(arbitration_id=arbitration_id, data=payload_data, is_extended_id=True)
+
+
+def create_thermostat_can_message(  # noqa: PLR0913 - one arg per THERMOSTAT_COMMAND_1 field
+    instance: int,
+    operating_mode: int,
+    fan_mode: int,
+    schedule_mode: int,
+    fan_speed_raw: int,
+    setpoint_heat_raw: int,
+    setpoint_cool_raw: int,
+) -> can.Message:
+    """
+    Constructs a can.Message for an RV-C THERMOSTAT_COMMAND_1 (DGN 0x1FEF9).
+
+    The payload mirrors the THERMOSTAT_STATUS_1 layout the G6 broadcasts
+    (observed on the coach bus): instance, packed mode byte, fan speed
+    (0-200 half-percent), then heat and cool setpoints as little-endian
+    uint16 in 1/32 K steps.
+
+    Args:
+        instance: Thermostat zone instance (0-6 on the Aspire 44R).
+        operating_mode: 0=off, 1=cool, 2=heat, 3=auto, 4=fan only, 5=aux heat.
+        fan_mode: 0=auto, 1=on.
+        schedule_mode: 0=disabled, 1=enabled.
+        fan_speed_raw: 0-200 (half-percent; 0 = automatic).
+        setpoint_heat_raw: uint16 Table 5.3 temperature (raw = (degC+273)*32).
+        setpoint_cool_raw: uint16 Table 5.3 temperature.
+
+    Returns:
+        A can.Message object ready to be sent.
+    """
+    pgn = 0x1FEF9
+    prio = 6
+    sa = 0xF9  # CoachIQ's source address, same as the light command path
+    arbitration_id = (prio << 26) | (pgn << 8) | sa  # 0x19FEF9F9
+
+    mode_byte = (operating_mode & 0x0F) | ((fan_mode & 0x03) << 4) | ((schedule_mode & 0x03) << 6)
+    payload_data = bytes(
+        [
+            instance & 0xFF,
+            mode_byte,
+            fan_speed_raw & 0xFF,
+            setpoint_heat_raw & 0xFF,
+            (setpoint_heat_raw >> 8) & 0xFF,
+            setpoint_cool_raw & 0xFF,
+            (setpoint_cool_raw >> 8) & 0xFF,
+            0xFF,  # byte7 unused
+        ]
+    )
+
+    return can.Message(arbitration_id=arbitration_id, data=payload_data, is_extended_id=True)

@@ -5,6 +5,8 @@ Pydantic models for entity management and control operations.
 These models handle entity state, control commands, and response validation.
 """
 
+from typing import Any
+
 from pydantic import BaseModel, Field
 
 
@@ -37,6 +39,13 @@ class ControlCommand(BaseModel):
         le=100,
         description=(
             "Brightness percent (0-100). Only used when command is 'set' and state is 'on'."
+        ),
+    )
+    parameters: dict[str, Any] | None = Field(
+        None,
+        description=(
+            "Device-type-specific parameters. Climate zones use setpoint_f / "
+            "setpoint_heat_f / setpoint_cool_f, mode, fan_mode, fan_speed_pct."
         ),
     )
 

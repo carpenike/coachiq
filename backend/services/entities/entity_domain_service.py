@@ -23,6 +23,7 @@ from typing import Any, Dict, List, Optional
 from pydantic import BaseModel, Field
 
 from backend.core.entity_manager import EntityManager
+from backend.integrations.rvc import climate_units
 from backend.models.entity import ControlCommand
 from backend.services.auth.manager import AuthManager
 from backend.services.entities.entity_service import EntityService
@@ -194,7 +195,7 @@ class EntityDomainService:
             raw = (entities.get(entity_id) or {}).get("raw") or {}
             value = raw.get("operating_status")
             return int(value) if value is not None else None
-        except Exception as e:  # noqa: BLE001 - polling must not raise
+        except Exception as e:
             logger.warning("Error reading operating_status for %s: %s", entity_id, e)
             return None
 
@@ -246,6 +247,101 @@ class EntityDomainService:
             entity_id,
             timeout_seconds * 1000,
             expected_status,
+        )
+        return False, None
+
+    async def _read_device_type(self, entity_id: str) -> str | None:
+        """Read the entity's device_type from live state (None on error)."""
+        try:
+            entities = await self.entities.list_entities()
+            return (entities.get(entity_id) or {}).get("device_type")
+        except Exception as e:
+            logger.warning("Error reading device_type for %s: %s", entity_id, e)
+            return None
+
+    @staticmethod
+    def _expected_climate_raw(command: "SafetyControlCommandV2") -> dict[str, tuple[int, int]]:
+        """Target raw thermostat fields for a climate command.
+
+        Maps each commanded parameter to ``field -> (target_raw, tolerance)``.
+        Temperatures tolerate 16 raw steps (0.5 C) for encoder rounding; mode
+        and fan flags must match exactly.
+        """
+        params = command.parameters or {}
+        expected: dict[str, tuple[int, int]] = {}
+        temp_tolerance = 16
+        if "setpoint_f" in params:
+            raw = climate_units.f_to_raw_temp(float(params["setpoint_f"]))
+            expected["setpoint_heat"] = (raw, temp_tolerance)
+            expected["setpoint_cool"] = (raw, temp_tolerance)
+        if "setpoint_heat_f" in params:
+            raw = climate_units.f_to_raw_temp(float(params["setpoint_heat_f"]))
+            expected["setpoint_heat"] = (raw, temp_tolerance)
+        if "setpoint_cool_f" in params:
+            raw = climate_units.f_to_raw_temp(float(params["setpoint_cool_f"]))
+            expected["setpoint_cool"] = (raw, temp_tolerance)
+        if "mode" in params:
+            mode_raw = climate_units.OPERATING_MODE_RAW.get(str(params["mode"]).lower())
+            if mode_raw is not None:
+                expected["operating_mode"] = (mode_raw, 0)
+        if "fan_mode" in params:
+            fan_raw = climate_units.FAN_MODE_RAW.get(str(params["fan_mode"]).lower())
+            if fan_raw is not None:
+                expected["fan_mode"] = (fan_raw, 0)
+        if "fan_speed_pct" in params:
+            expected["fan_speed"] = (round(float(params["fan_speed_pct"]) * 2), 4)
+        return expected
+
+    @staticmethod
+    def _climate_fields_match(raw: dict[str, Any], expected: dict[str, tuple[int, int]]) -> bool:
+        """Whether every expected raw field is within its tolerance."""
+        for field, (target, tolerance) in expected.items():
+            value = raw.get(field)
+            try:
+                if value is None or abs(int(value) - target) > tolerance:
+                    return False
+            except (TypeError, ValueError):
+                return False
+        return True
+
+    async def _wait_for_climate_acknowledgment(
+        self,
+        entity_id: str,
+        timeout_seconds: float,
+        expected: dict[str, tuple[int, int]],
+    ) -> tuple[bool, float | None]:
+        """Wait until the zone's live raw state reflects every commanded field."""
+        if not expected:
+            # Nothing verifiable was commanded; command validation already
+            # rejected empty/unknown parameter sets upstream.
+            return True, None
+
+        start_time = time.time()
+        poll_interval = 0.1
+        while (time.time() - start_time) < timeout_seconds:
+            try:
+                entities = await self.entities.list_entities()
+                raw = (entities.get(entity_id) or {}).get("raw") or {}
+            except Exception as e:
+                logger.warning("Error reading climate state for %s: %s", entity_id, e)
+                raw = {}
+
+            if self._climate_fields_match(raw, expected):
+                ack_ms = (time.time() - start_time) * 1000
+                logger.info(
+                    "Climate zone %s acknowledged (%s) in %.1fms",
+                    entity_id,
+                    {f: t for f, (t, _tol) in expected.items()},
+                    ack_ms,
+                )
+                return True, ack_ms
+            await asyncio.sleep(poll_interval)
+
+        logger.warning(
+            "Climate zone %s acknowledgment timeout after %.0fms (targets %s)",
+            entity_id,
+            timeout_seconds * 1000,
+            expected,
         )
         return False, None
 
@@ -358,6 +454,7 @@ class EntityDomainService:
                 command=command.command,
                 state=("on" if command.state else "off") if command.state is not None else None,
                 brightness=command.brightness,
+                parameters=command.parameters,
             )
 
             # Step 4: Execute command via existing entity service
@@ -365,11 +462,19 @@ class EntityDomainService:
                 entity_id, legacy_command, user_context=user_context
             )
 
-            # Step 5: Wait for acknowledgment from physical system
-            expected_status = self._expected_operating_status(command)
-            acknowledged, ack_time = await self._wait_for_acknowledgment(
-                operation_id, entity_id, command.timeout_seconds, expected_status
-            )
+            # Step 5: Wait for acknowledgment from physical system. Lights
+            # confirm via operating_status; climate zones confirm via the
+            # thermostat raw fields the command targeted.
+            device_type = await self._read_device_type(entity_id)
+            if device_type == "climate":
+                acknowledged, ack_time = await self._wait_for_climate_acknowledgment(
+                    entity_id, command.timeout_seconds, self._expected_climate_raw(command)
+                )
+            else:
+                expected_status = self._expected_operating_status(command)
+                acknowledged, ack_time = await self._wait_for_acknowledgment(
+                    operation_id, entity_id, command.timeout_seconds, expected_status
+                )
 
             # Step 6: Update operation result
             operation.acknowledged = acknowledged
