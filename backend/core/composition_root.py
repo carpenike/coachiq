@@ -526,13 +526,13 @@ class CompositionRoot:
             EntityRuntimeStateRepository,
         )
         from backend.repositories.persistence_repository import PersistenceRepository
-        from backend.repositories.trip_log_repository import TripLogRepository
         from backend.repositories.security_audit_repository import SecurityAuditRepository
         from backend.repositories.security_config_repository import SecurityConfigRepository
         from backend.repositories.security_event_repository import (
             SecurityEventRepository,
             SecurityListenerRepository,
         )
+        from backend.repositories.trip_log_repository import TripLogRepository
         from backend.services.auth.tokens import TokenService
         from backend.services.entities.entity_manager_service import EntityManagerService
 
@@ -1062,7 +1062,7 @@ class CompositionRoot:
             await time_sync_service.start()
             self._set_root_constructed_service("time_sync_service", time_sync_service)
 
-    async def _construct_lower_can_services(self) -> None:  # noqa: C901
+    async def _construct_lower_can_services(self) -> None:  # noqa: C901, PLR0915
         """Construct lower-CAN prerequisites before CANFacade."""
         from backend.integrations.can.anomaly_detector import CANAnomalyDetector
         from backend.integrations.can.can_bus_recorder import CANBusRecorder
@@ -1092,12 +1092,14 @@ class CompositionRoot:
                 if security_audit and hasattr(security_audit, "log_injection"):
                     await security_audit.log_injection(request, result)
 
-            self._set_root_constructed_service(
-                "can_message_injector",
-                CANMessageInjector(
-                    safety_level=SafetyLevel.MODERATE, audit_callback=audit_injection
-                ),
+            can_message_injector = CANMessageInjector(
+                safety_level=SafetyLevel.MODERATE, audit_callback=audit_injection
             )
+            # The injector's safety precondition rejects every send while the
+            # service is not running, and nothing else starts it (CANFacade
+            # .start() is not part of the root startup path).
+            await can_message_injector.start()
+            self._set_root_constructed_service("can_message_injector", can_message_injector)
 
         if self._should_construct("can_message_filter"):
 
