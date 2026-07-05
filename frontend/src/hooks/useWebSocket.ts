@@ -142,6 +142,17 @@ export function useWebSocket<T = unknown>(options: IUseWebSocketOptions<T>): IUs
     onError,
   } = options;
 
+  // Keep the latest message handlers in refs so `memoizedOnMessage` can stay
+  // referentially STABLE. Callers routinely pass an inline `onMessage` or a
+  // fresh `subscriptions` array every render (e.g. useEntityWebSocket), which
+  // would otherwise change the handler identity each render, re-run the
+  // connection-creation effect, and tear the socket down before it finishes
+  // connecting — the coach then never leaves the "connecting" state on load.
+  const onMessageRef = useRef(onMessage);
+  onMessageRef.current = onMessage;
+  const propSubscriptionsRef = useRef(subscriptions);
+  propSubscriptionsRef.current = subscriptions;
+
   // Always call useContext (React hooks must be called unconditionally)
   const contextValue = useContext(WebSocketContext);
   const wsContext = useWebSocketContext ? contextValue : null;
@@ -241,8 +252,8 @@ export function useWebSocket<T = unknown>(options: IUseWebSocketOptions<T>): IUs
       lastMessage: new Date(),
     }));
 
-    // Call generic handler
-    onMessage?.(message as T);
+    // Call generic handler (via ref so this callback stays stable)
+    onMessageRef.current?.(message as T);
 
     // Call subscribed handlers
     subscriptionsRef.current.forEach(sub => {
@@ -255,8 +266,8 @@ export function useWebSocket<T = unknown>(options: IUseWebSocketOptions<T>): IUs
       }
     });
 
-    // Also handle subscriptions from props
-    subscriptions.forEach(sub => {
+    // Also handle subscriptions from props (via ref, for the same reason)
+    propSubscriptionsRef.current.forEach(sub => {
       if (sub.type && typeof message === 'object' && message && 'type' in message) {
         if ((message as unknown as Record<string, unknown>).type === sub.type) {
           sub.handler(message as T);
@@ -265,7 +276,7 @@ export function useWebSocket<T = unknown>(options: IUseWebSocketOptions<T>): IUs
         sub.handler(message as T);
       }
     });
-  }, [onMessage, subscriptions]);
+  }, []);
 
   // Memoize config with exponential backoff settings
   const config = useMemo(() => ({
