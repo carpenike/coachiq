@@ -20,6 +20,7 @@ Everything else (CAN tooling, mapping, spec search) is a technician surface, pre
 |---|---|---|
 | Home | `/` | Connectivity hero, zone grid (devices grouped by coach area from coach config), scenes, active alerts |
 | Lights | `/lights` | Zone-grouped light controls, per-zone all on/off, brightness where dimmable |
+| Climate | `/climate` | Thermostat zone cards (current temp, setpoint stepper, mode, fan), Aqua-Hot heat zones, read-only AC/Aqua-Hot equipment status (BUILT 2026-07) |
 | Devices | `/devices` | All entities table/cards, filter by type/area/protocol (replaces "Multi-Protocol Entities") |
 | Diagnostics | `/diagnostics` | DTCs (real v2 data), per-system health — the ONLY fault-code page |
 | System | `/system` | App/service status + CAN interface telemetry + performance, tabbed (replaces System Status, Health Dashboard, Performance Analytics, Analytics Dashboard) |
@@ -116,9 +117,10 @@ Unmapped Entries; use these names when assigning them in the coach mapping.
 **Climate model (Climate Control screen)** — zones Front/Mid/Rear each with current
 temp, setpoint, and mode (Cool / Heat Pump / Aqua-Hot / Auto) + fan High/Low; plus
 Bay (Aqua-Hot) and Floor (floor heat) zones and global Aqua-Hot Burner / Electric
-toggles. This is the blueprint for a CoachIQ Climate page once thermostat/HVAC DGNs
-are mapped — zone cards with setpoint steppers and mode selection, same pattern as
-the lighting zone cards.
+toggles. **BUILT (2026-07-04/05):** the `/climate` page ships this — all 7 zones
+mapped and wire-verified (instance/sensor-channel map in docs/can-re-findings.md),
+setpoint/mode/fan control via standard THERMOSTAT_COMMAND_1. Still open: Aqua-Hot
+Burner/Electric toggles (RX-only until a command wire test).
 
 **Tanks** — Mira's fault list shows fresh/grey/black tank sensors (currently not
 reporting on the panel either). TANK_STATUS mapping → Home tank-level card.
