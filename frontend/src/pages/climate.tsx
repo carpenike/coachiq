@@ -506,113 +506,167 @@ function AcUnitRow({ entity }: Readonly<{ entity: EntitySchema }>) {
   )
 }
 
+// ----- Load shed -------------------------------------------------------------
+// An energy-managed AC load (Aqua-Hot electric/burner today) is requested on
+// but the coach's energy manager grants it only when the power budget allows.
+// state === "shed" means requested-on-but-deferred; the UI shows the request
+// (switch on) plus a yellow "Shed" badge, mirroring the Vegatouch Mira.
+
+function acLoadState(entity: EntitySchema): string | undefined {
+  const value = entity.state?.["state"]
+  return typeof value === "string" ? value : undefined
+}
+
+function acLoadRequestedOn(entity: EntitySchema): boolean {
+  const state = acLoadState(entity)
+  return state === "on" || state === "shed"
+}
+
+function isShed(entity: EntitySchema): boolean {
+  return entity.state?.["shed"] === true || acLoadState(entity) === "shed"
+}
+
+/** Yellow "Shed" badge, shown on any load the energy manager is deferring. */
+function ShedBadge() {
+  return (
+    <Badge
+      className="bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-200"
+      variant="secondary"
+    >
+      Shed
+    </Badge>
+  )
+}
+
+interface IAcLoadSwitchProps {
+  entity: EntitySchema
+  caption: string
+  disabled: boolean
+  disabledReason: string
+  /** Optional confirm dialog when turning ON (used for the diesel burner). */
+  confirmOn?: { title: string; description: string; action: string }
+}
+
+/** A labeled switch for one energy-managed AC load, with a Shed badge. */
+function AcLoadSwitch({
+  entity,
+  caption,
+  disabled,
+  disabledReason,
+  confirmOn,
+}: Readonly<IAcLoadSwitchProps>) {
+  const control = useControlEntity()
+  const [confirmOpen, setConfirmOpen] = useState(false)
+  const requestedOn = acLoadRequestedOn(entity)
+  const shed = isShed(entity)
+  const isAvailable = entity.available !== false
+  const rowDisabled = disabled || !isAvailable || control.isPending
+  const rowReason = !isAvailable ? `${entity.name} is not responding` : disabledReason
+
+  const send = (targetOn: boolean) => {
+    control.mutate(
+      { entityId: entity.entity_id, command: { command: "set", state: targetOn } },
+      {
+        onSuccess: (result) => reportCommandResult(result, entity.name),
+        onError: (error) => reportCommandError(error, entity.name),
+      }
+    )
+  }
+
+  const control_el = (
+    <span className="flex items-center gap-2">
+      {shed && <ShedBadge />}
+      <span className="flex items-center gap-1.5 text-xs text-muted-foreground">
+        <Switch
+          checked={requestedOn}
+          disabled={rowDisabled}
+          onCheckedChange={() => {
+            // Confirm before lighting the burner; turning off is immediate.
+            const turningOn = !requestedOn
+            if (turningOn && confirmOn) setConfirmOpen(true)
+            else send(turningOn)
+          }}
+          aria-label={caption}
+        />
+        {caption}
+      </span>
+    </span>
+  )
+
+  return (
+    <>
+      {disabled || !isAvailable ? (
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <span>{control_el}</span>
+          </TooltipTrigger>
+          <TooltipContent>{rowReason}</TooltipContent>
+        </Tooltip>
+      ) : (
+        control_el
+      )}
+      {confirmOn && (
+        <Dialog open={confirmOpen} onOpenChange={setConfirmOpen}>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>{confirmOn.title}</DialogTitle>
+              <DialogDescription>{confirmOn.description}</DialogDescription>
+            </DialogHeader>
+            <DialogFooter>
+              <Button variant="outline" onClick={() => setConfirmOpen(false)}>
+                Cancel
+              </Button>
+              <Button
+                onClick={() => {
+                  setConfirmOpen(false)
+                  send(true)
+                }}
+              >
+                {confirmOn.action}
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+      )}
+    </>
+  )
+}
+
 interface IAquaHotRowProps {
   entity: EntitySchema
+  electric: EntitySchema | undefined
+  burner: EntitySchema | undefined
   controlsDisabled: boolean
   disabledReason: string
 }
 
-/** Switch with a text caption; Switch already carries its own aria-label. */
-function CaptionedSwitch({
-  caption,
-  checked,
-  disabled,
-  onCheckedChange,
-  ariaLabel,
-}: Readonly<{
-  caption: string
-  checked: boolean
-  disabled: boolean
-  onCheckedChange: (on: boolean) => void
-  ariaLabel: string
-}>) {
-  return (
-    <span className="flex items-center gap-1.5 text-xs text-muted-foreground">
-      <Switch
-        checked={checked}
-        disabled={disabled}
-        onCheckedChange={onCheckedChange}
-        aria-label={ariaLabel}
-      />
-      {caption}
-    </span>
-  )
-}
-
-function BurnerConfirmDialog({
-  open,
-  onOpenChange,
-  onConfirm,
-}: Readonly<{ open: boolean; onOpenChange: (o: boolean) => void; onConfirm: () => void }>) {
-  return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent>
-        <DialogHeader>
-          <DialogTitle>Light the Aqua-Hot burner?</DialogTitle>
-          <DialogDescription>
-            This ignites the diesel burner. The Aqua-Hot&apos;s own controller manages flame
-            supervision and the high-temperature limit; CoachIQ only requests the mode.
-          </DialogDescription>
-        </DialogHeader>
-        <DialogFooter>
-          <Button variant="outline" onClick={() => onOpenChange(false)}>
-            Cancel
-          </Button>
-          <Button onClick={onConfirm}>Light burner</Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
-  )
-}
-
-function AquaHotRow({ entity, controlsDisabled, disabledReason }: Readonly<IAquaHotRowProps>) {
-  const { send, isPending } = useSetParameters(entity)
+function AquaHotRow({
+  entity,
+  electric,
+  burner,
+  controlsDisabled,
+  disabledReason,
+}: Readonly<IAquaHotRowProps>) {
   const waterF = numberField(entity, "water_temp_f")
+  // operating_mode from WATERHEATER_STATUS = actual firing: bit 0x1 burner,
+  // bit 0x2 electric (00 off / 01 burner / 02 electric / 03 both).
   const modeRaw = numberField(entity, "operating_mode")
-  // operating_mode is a bitfield: burner = 0x1, electric = 0x2. Verified on
-  // the coach (2026-07-05): 00 off, 01 burner, 02 electric, 03 both.
-  const burnerOn = modeRaw !== null && (modeRaw & 1) !== 0
-  const electricOn = modeRaw !== null && (modeRaw & 2) !== 0
-  const isAvailable = entity.available !== false
-  const disabled = controlsDisabled || !isAvailable || isPending || modeRaw === null
-  const rowReason = !isAvailable ? "Aqua-Hot is not responding on the CAN bus" : disabledReason
-  const [confirmBurner, setConfirmBurner] = useState(false)
+  const burnerLit = modeRaw !== null && (modeRaw & 1) !== 0
 
-  let modeLabel = "Off"
-  if (modeRaw === null) modeLabel = "—"
-  else if (burnerOn && electricOn) modeLabel = "Burner + Electric"
-  else if (burnerOn) modeLabel = "Burner"
-  else if (electricOn) modeLabel = "Electric"
-
-  const controls = (
-    <div className="flex items-center gap-4">
-      <CaptionedSwitch
-        caption="Electric"
-        checked={electricOn}
-        disabled={disabled}
-        onCheckedChange={(on) => send({ electric: on }, "electric")}
-        ariaLabel={`${entity.name} electric element`}
-      />
-      <CaptionedSwitch
-        caption="Burner"
-        checked={burnerOn}
-        disabled={disabled}
-        onCheckedChange={(on) => (on ? setConfirmBurner(true) : send({ burner: false }, "burner"))}
-        ariaLabel={`${entity.name} burner`}
-      />
-    </div>
-  )
+  let statusLabel = "Idle"
+  if (modeRaw === null) statusLabel = "—"
+  else if (modeRaw !== 0) statusLabel = "Heating"
 
   return (
     <div className="flex items-center justify-between py-2">
       <div>
         <p className="text-sm font-medium">{entity.name}</p>
         <p className="text-xs text-muted-foreground">
-          {modeLabel} · updated {relativeTime(entity.last_updated)}
+          {statusLabel} · updated {relativeTime(entity.last_updated)}
         </p>
       </div>
-      <div className="flex items-center gap-3">
-        {burnerOn && (
+      <div className="flex items-center gap-4">
+        {burnerLit && (
           <Badge
             className="bg-orange-100 text-orange-800 dark:bg-orange-900 dark:text-orange-200"
             variant="secondary"
@@ -621,26 +675,29 @@ function AquaHotRow({ entity, controlsDisabled, disabledReason }: Readonly<IAqua
           </Badge>
         )}
         <span className="text-sm tabular-nums">{formatTempF(waterF)}</span>
-        {controlsDisabled || !isAvailable ? (
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <div>{controls}</div>
-            </TooltipTrigger>
-            <TooltipContent>{rowReason}</TooltipContent>
-          </Tooltip>
-        ) : (
-          controls
+        {electric && (
+          <AcLoadSwitch
+            entity={electric}
+            caption="Electric"
+            disabled={controlsDisabled}
+            disabledReason={disabledReason}
+          />
+        )}
+        {burner && (
+          <AcLoadSwitch
+            entity={burner}
+            caption="Burner"
+            disabled={controlsDisabled}
+            disabledReason={disabledReason}
+            confirmOn={{
+              title: "Light the Aqua-Hot burner?",
+              description:
+                "This ignites the diesel burner. The Aqua-Hot's own controller manages flame supervision and the high-temperature limit; CoachIQ only requests it.",
+              action: "Light burner",
+            }}
+          />
         )}
       </div>
-
-      <BurnerConfirmDialog
-        open={confirmBurner}
-        onOpenChange={setConfirmBurner}
-        onConfirm={() => {
-          setConfirmBurner(false)
-          send({ burner: true }, "burner")
-        }}
-      />
     </div>
   )
 }
@@ -732,6 +789,7 @@ function ZoneSection({
 interface IEquipmentSectionProps {
   acUnits: EntitySchema[]
   waterHeaters: EntitySchema[]
+  acLoads: EntitySchema[]
   controlsDisabled: boolean
   disabledReason: string
 }
@@ -739,10 +797,12 @@ interface IEquipmentSectionProps {
 function EquipmentSection({
   acUnits,
   waterHeaters,
+  acLoads,
   controlsDisabled,
   disabledReason,
 }: Readonly<IEquipmentSectionProps>) {
   if (acUnits.length === 0 && waterHeaters.length === 0) return null
+  const byId = (id: string) => acLoads.find((e) => e.entity_id === id)
   return (
     <div className="space-y-3">
       <h2 className="text-sm font-medium text-muted-foreground">Equipment</h2>
@@ -755,6 +815,8 @@ function EquipmentSection({
             <AquaHotRow
               key={entity.entity_id}
               entity={entity}
+              electric={byId(`${entity.entity_id}_electric`)}
+              burner={byId(`${entity.entity_id}_burner`)}
               controlsDisabled={controlsDisabled}
               disabledReason={disabledReason}
             />
@@ -826,6 +888,7 @@ export default function ClimatePage() {
   const zonesQuery = useEntities({ device_type: "climate", page_size: 100 })
   const acUnits = useEntitiesByType("air_conditioner")
   const waterHeaters = useEntitiesByType("water_heater")
+  const acLoads = useEntitiesByType("ac_load")
   const tanks = useEntitiesByType("tank")
   const sensors = useEntitiesByType("temperature")
 
@@ -885,6 +948,7 @@ export default function ClimatePage() {
           <EquipmentSection
             acUnits={acUnits}
             waterHeaters={waterHeaters}
+            acLoads={acLoads}
             controlsDisabled={controlsDisabled}
             disabledReason={disabledReason}
           />

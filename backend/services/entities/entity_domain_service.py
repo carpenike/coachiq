@@ -266,9 +266,9 @@ class EntityDomainService:
             return await self._wait_for_climate_acknowledgment(
                 entity_id, command.timeout_seconds, self._expected_climate_raw(command)
             )
-        if device_type == "water_heater":
+        if device_type == "ac_load":
             return await self._wait_for_climate_acknowledgment(
-                entity_id, command.timeout_seconds, self._expected_water_heater_raw(command)
+                entity_id, command.timeout_seconds, self._expected_ac_load_raw(command)
             )
         expected_status = self._expected_operating_status(command)
         return await self._wait_for_acknowledgment(
@@ -318,24 +318,17 @@ class EntityDomainService:
         return expected
 
     @staticmethod
-    def _expected_water_heater_raw(
-        command: "SafetyControlCommandV2",
-    ) -> dict[str, tuple[int, int]]:
-        """Target raw operating_mode for a water heater command.
+    def _expected_ac_load_raw(command: "SafetyControlCommandV2") -> dict[str, tuple[int, int]]:
+        """Target raw AC_LOAD_STATUS operating_status for a load command.
 
-        An explicit ``mode`` label verifies exactly. ``burner``/``electric``
-        bit toggles resolve against live state inside the entity service, so
-        the exact target isn't computable here — those return no expectation
-        and rely on the 1FFF7 status echo reaching the UI instead.
+        OFF is verifiable exactly (the status level goes to 0). ON is only a
+        *request* — the energy manager may shed it (status reports a shed
+        sentinel, not the on level), so an ON command returns no expectation
+        and the AC_LOAD_STATUS echo drives the UI (on vs shed) instead.
         """
-        params = command.parameters or {}
-        expected: dict[str, tuple[int, int]] = {}
-        if "mode" in params:
-            labels = {v: k for k, v in climate_units.WATER_HEATER_MODE_LABELS.items()}
-            mode_raw = labels.get(str(params["mode"]).lower())
-            if mode_raw is not None:
-                expected["operating_mode"] = (mode_raw, 0)
-        return expected
+        if command.command == "set" and command.state is False:
+            return {"operating_status": (climate_units.AC_LOAD_LEVEL_OFF, 0)}
+        return {}
 
     @staticmethod
     def _climate_fields_match(raw: dict[str, Any], expected: dict[str, tuple[int, int]]) -> bool:

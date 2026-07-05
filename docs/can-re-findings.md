@@ -178,7 +178,39 @@ Convention going forward: entries not yet seen on the wire carry a
 a `not observed` entry, verify it against the official RV-C PDF or a live
 capture.
 
+## Aqua-Hot electric/burner = energy-managed AC loads — 2026-07-05
+
+The Aqua-Hot's electric element and diesel burner are **not** controlled by
+`WATERHEATER_COMMAND` (`1FFF6`) — a spec-correct `1FFF6` frame from CoachIQ
+transmitted and was ignored (`operating_mode` stayed put). An idle-vs-toggle
+diff of a Mira press showed they're **generic AC loads** the G6 manages:
+
+- `AC_LOAD_COMMAND` (`1FFBE`) drives them, byte 2 = level (`0xC8` on, `0x00`
+  off). Instances: **`0xD4` (212) = electric element**, **`0xD2` (210) =
+  burner** (confirmed by toggling each on the Mira and watching that
+  instance flip + `WATERHEATER_STATUS.operating_mode` bit 0x2 electric /
+  0x1 burner).
+- Honored from our SA `0xF9` and it **latches** (a single OFF stayed off 10 s
+  untouched). No impersonation, no continuous-master fight for OFF.
+
+**Load shed.** These are *deferrable* loads. Turning one ON is a **request**;
+the energy manager grants it only when the power budget allows and sheds it
+under AC load (the Mira shows "Aqua-Hot Electric: Shed"). Shed is broadcast:
+`AC_LOAD_STATUS` (`1FFBF`) byte 2 (operating level) reads **`0xC8` energized /
+`0x00` off / `0xFD` shed** (`0xFC` = "load delay active", the transient
+variant) — verified against the Mira's shed display. So the UI shows the
+requested state on the toggle plus a "Shed" badge when byte 2 is a shed
+sentinel, exactly like the Mira.
+
+Modeled as a reusable **`ac_load`** device type (control `1FFBE`, status
+`1FFBF` → on/off/shed). The rooftop AC compressors can also be shed (they
+outrank the Aqua-Hot); their shed field is not yet captured because they're
+the high-priority loads *causing* the shedding — a fast-follow when a
+compressor-shed is inducible.
+
 ## Guardrail
 
 Per ADR-0004, CoachIQ is API guardrails only; Firefly owns physical safety.
-Lighting control is in scope; slides and locks are not.
+Lighting and climate control are in scope; slides and locks are not. The
+Aqua-Hot burner is a diesel flame the Aqua-Hot's own controller supervises —
+CoachIQ only requests the load; the UI gates lighting it behind a confirm.
