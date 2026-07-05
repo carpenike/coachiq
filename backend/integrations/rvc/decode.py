@@ -159,11 +159,12 @@ def load_config_data(
     dict[str, str],  # pgn_hex_to_name_map
     dict[str, Any],  # dgn_pairs
     CoachInfo,  # coach_info
+    dict[int, dict[str, Any]],  # frame_id_dict
 ]:
     """
     Load and parse RVC spec and device mapping data.
 
-    DEPRECATED: This function returns a complex 10-element tuple that makes code
+    DEPRECATED: This function returns a complex 11-element tuple that makes code
     difficult to maintain and test. Use load_config_data_v2() instead, which returns
     a structured RVCConfiguration object with proper type hints and convenient
     access methods.
@@ -188,12 +189,14 @@ def load_config_data(
             - pgn_hex_to_name_map: Dictionary mapping DGN hex strings to PGN names
             - dgn_pairs: Dictionary mapping DGNs to useful metadata for faster lookups
             - coach_info: CoachInfo object with detected coach metadata
+            - frame_id_dict: Dictionary mapping wire-captured 29-bit arbitration
+              ids to specification entries
     """
     # Log deprecation warning
     import warnings
 
     warnings.warn(
-        "load_config_data() is deprecated and returns a complex 10-element tuple. "
+        "load_config_data() is deprecated and returns a complex 11-element tuple. "
         "Use load_config_data_v2() instead for a structured RVCConfiguration object.",
         DeprecationWarning,
         stacklevel=2,
@@ -212,6 +215,7 @@ def load_config_data(
 
     # Process DGN dictionary
     dgn_dict: dict[int, dict[str, Any]] = {}
+    frame_id_dict: dict[int, dict[str, Any]] = {}
     pgn_hex_to_name_map: dict[str, str] = {}
     rvc_spec_dgn_pairs: dict[str, dict[str, Any]] = {}
 
@@ -234,6 +238,14 @@ def load_config_data(
                 dgn_dict[dgn].get("name", "?"),
             )
         dgn_dict[dgn] = pgn_entry
+        # Spec entries carry the full wire-captured 29-bit arbitration id.
+        # dgn_dict cannot serve exact-id lookups: its keys are synthesized with
+        # an assumed priority 6 when the entry has no "priority" field (e.g.
+        # the ATS_AC_STATUS_* frames actually broadcast at priority 3), and
+        # entries sharing a PGN would overwrite each other there.
+        frame_id = pgn_entry.get("id")
+        if isinstance(frame_id, int):
+            frame_id_dict[frame_id] = pgn_entry
         pgn_hex_to_name_map[pgn_entry["pgn"]] = pgn_name
         rvc_spec_dgn_pairs[pgn_entry["pgn"]] = {
             "dgn": dgn,
@@ -285,6 +297,7 @@ def load_config_data(
         pgn_hex_to_name_map,
         dgn_pairs,
         coach_info,
+        frame_id_dict,
     )
 
 
@@ -385,6 +398,7 @@ def load_config_data_v2(
         pgn_hex_to_name_map,
         dgn_pairs,
         coach_info,
+        frame_id_dict,
     ) = load_config_data(rvc_spec_path_override, device_mapping_path_override)
 
     # Convert inst_map to use RVCEntityMapping objects
@@ -400,6 +414,7 @@ def load_config_data_v2(
     # Return structured configuration
     return RVCConfiguration(
         dgn_dict=dgn_dict,
+        frame_id_dict=frame_id_dict,
         spec_meta=spec_meta_structured,
         mapping_dict=mapping_dict,
         entity_map=entity_map,
