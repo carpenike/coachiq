@@ -1289,6 +1289,26 @@ class TripLogSettings(BaseSettings):
     )
 
 
+class TimeSyncSettings(BaseSettings):
+    """RV-C time master + GPS broadcast settings.
+
+    Broadcasts DATE_TIME_STATUS (becoming the coach time master by source-
+    address arbitration) and the GPS DGNs, sourced from the Pi's GPS-
+    disciplined clock and gpsd position.
+    """
+
+    model_config = SettingsConfigDict(env_prefix="COACHIQ_TIME_SYNC__", case_sensitive=False)
+
+    enabled: bool = Field(default=False, description="Enable RV-C time/GPS broadcasting")
+    interface: str = Field(default="house", description="Logical CAN interface to transmit on")
+    broadcast_interval_seconds: float = Field(
+        default=1.0, description="DATE_TIME_STATUS / GPS broadcast interval", gt=0
+    )
+    send_gps: bool = Field(
+        default=True, description="Also broadcast GPS_POSITION/GPS_STATUS/GPS_TIME_STATUS"
+    )
+
+
 class J1939Settings(BaseSettings):
     """J1939 protocol configuration settings."""
 
@@ -2004,6 +2024,7 @@ class Settings(BaseSettings):
     firefly: FireflySettings = Field(default_factory=FireflySettings)
     victron: VictronSettings = Field(default_factory=VictronSettings)
     trip_log: TripLogSettings = Field(default_factory=TripLogSettings)
+    time_sync: TimeSyncSettings = Field(default_factory=TimeSyncSettings)
     spartan_k2: SpartanK2Settings = Field(default_factory=SpartanK2Settings)
     multi_network: MultiNetworkSettings = Field(default_factory=MultiNetworkSettings)
     persistence: PersistenceSettings = Field(default_factory=PersistenceSettings)

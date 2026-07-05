@@ -169,6 +169,7 @@ class CompositionServices:
     victron_service: Any = None
     trip_log_repository: Any = None
     trip_log_service: Any = None
+    time_sync_service: Any = None
     router_sidecar_service: Any = None
 
 
@@ -261,6 +262,7 @@ class CompositionRoot:
         "entity_domain_service",
         "victron_service",
         "trip_log_service",
+        "time_sync_service",
     )
     _ROUTER_SIDECAR_SERVICE_ORDER = ("router_sidecar_service",)
 
@@ -1036,6 +1038,29 @@ class CompositionRoot:
             )
             await trip_log_service.start()
             self._set_root_constructed_service("trip_log_service", trip_log_service)
+
+        # Optional RV-C time master / GPS broadcaster: same gating pattern.
+        time_sync_settings = (
+            self.require_service("app_settings").time_sync
+            if "time_sync_service" in self._service_catalog
+            else None
+        )
+        if (
+            time_sync_settings is not None
+            and time_sync_settings.enabled
+            and self._should_construct("time_sync_service")
+        ):
+            from backend.services.time_sync.time_sync_service import TimeSyncService
+
+            app_settings = self.require_service("app_settings")
+            time_sync_service = TimeSyncService(
+                settings=time_sync_settings,
+                can_facade=self.require_service("can_facade"),
+                source_address=int(app_settings.controller_source_addr, 16),
+                position_provider=self.get_optional_service("trip_log_service"),
+            )
+            await time_sync_service.start()
+            self._set_root_constructed_service("time_sync_service", time_sync_service)
 
     async def _construct_lower_can_services(self) -> None:  # noqa: C901
         """Construct lower-CAN prerequisites before CANFacade."""
