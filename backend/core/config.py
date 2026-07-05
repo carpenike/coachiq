@@ -1307,6 +1307,14 @@ class TimeSyncSettings(BaseSettings):
     send_gps: bool = Field(
         default=True, description="Also broadcast GPS_POSITION/GPS_STATUS/GPS_TIME_STATUS"
     )
+    set_command_interval_seconds: float = Field(
+        default=300.0,
+        description=(
+            "Interval for SET_DATE_TIME_COMMAND nudges that force non-spec-"
+            "compliant clocks to correct (0 disables)"
+        ),
+        ge=0,
+    )
 
 
 class J1939Settings(BaseSettings):

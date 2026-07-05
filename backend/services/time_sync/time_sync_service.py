@@ -22,6 +22,7 @@ has decided the clock source is trustworthy, e.g. NTP).
 
 import asyncio
 import contextlib
+import time
 from datetime import datetime
 from typing import Any, Protocol
 
@@ -33,6 +34,7 @@ from backend.integrations.rvc.time_broadcast import (
     DGN_GPS_POSITION,
     DGN_GPS_STATUS,
     DGN_GPS_TIME_STATUS,
+    DGN_SET_DATE_TIME_COMMAND,
     encode_date_time,
     encode_gps_position,
     encode_gps_status,
@@ -47,7 +49,7 @@ logger = get_logger(__name__, "TimeSyncService")
 # GPS_DATE_TIME_STATUS and SET_DATE_TIME use priority 5 per spec; status
 # broadcasts use the default 6.
 _PRIORITY_STATUS = 6
-_PRIORITY_GPS_DATE_TIME = 5
+_PRIORITY_COMMAND = 5
 
 
 class PositionProvider(Protocol):
@@ -74,6 +76,7 @@ class TimeSyncService:
         self._running = False
         self._task: asyncio.Task | None = None
         self._announced_gps_time = False
+        self._last_set_command_at = 0.0
         self._tx_count = 0
         self._tx_errors = 0
 
@@ -139,11 +142,25 @@ class TimeSyncService:
         if not self._announced_gps_time:
             await self._send(
                 rvc_arbitration_id(
-                    DGN_GPS_DATE_TIME_STATUS, self._source_address, _PRIORITY_GPS_DATE_TIME
+                    DGN_GPS_DATE_TIME_STATUS, self._source_address, _PRIORITY_COMMAND
                 ),
                 encode_date_time(now_local, timezone_code()),
             )
             self._announced_gps_time = True
+
+        # Some nodes (the coach's Firefly time master among them) ignore the
+        # spec's follow-the-highest-SA rule for DATE_TIME_STATUS but do obey
+        # SET_DATE_TIME_COMMAND — nudge them periodically so their own
+        # rebroadcasts carry the correct time too.
+        set_interval = self._settings.set_command_interval_seconds
+        if set_interval > 0 and time.time() - self._last_set_command_at >= set_interval:
+            await self._send(
+                rvc_arbitration_id(
+                    DGN_SET_DATE_TIME_COMMAND, self._source_address, _PRIORITY_COMMAND
+                ),
+                encode_date_time(now_local, timezone_code()),
+            )
+            self._last_set_command_at = time.time()
 
         if self._settings.send_gps and has_fix and position is not None:
             await self._send_gps_frames(position, now_utc)
