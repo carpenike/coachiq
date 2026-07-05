@@ -20,7 +20,7 @@ function formatLastData(date: Date | null): string {
 }
 
 export function ConnectionBanner() {
-  const { coach, lastDataAt, retry } = useCoachConnection()
+  const { coach, lastDataAt, reason, retry } = useCoachConnection()
 
   if (coach === "LIVE") return null
 
@@ -45,7 +45,7 @@ export function ConnectionBanner() {
       <span className="flex-1">
         {isOffline
           ? `Can't reach the coach — controls disabled. Last data ${time}.`
-          : `Coach data is stale — no CAN traffic since ${time}. Showing last known state.`}
+          : `${reason} — showing last known state (last data ${time}).`}
       </span>
       <Button
         size="sm"
