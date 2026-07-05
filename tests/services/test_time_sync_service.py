@@ -35,9 +35,11 @@ class FakePositionProvider:
 
 
 def make_service(
-    *, fix: bool | None = True, send_gps: bool = True
+    *, fix: bool | None = True, send_gps: bool = True, set_interval: float = 0.0
 ) -> tuple[TimeSyncService, FakeCanFacade]:
-    settings = TimeSyncSettings(enabled=True, send_gps=send_gps)
+    settings = TimeSyncSettings(
+        enabled=True, send_gps=send_gps, set_command_interval_seconds=set_interval
+    )
     facade = FakeCanFacade()
     provider = FakePositionProvider(fix) if fix is not None else None
     service = TimeSyncService(
@@ -93,6 +95,18 @@ class TestBroadcast:
         sent = dgns(facade)
         assert 0x1FFFF in sent
         assert 0x0FEF3 not in sent
+
+    async def test_set_command_nudge_rate_limited(self):
+        service, facade = make_service(fix=True, set_interval=300.0)
+        await service._broadcast_once()
+        await service._broadcast_once()
+        # One SET on the first broadcast, then suppressed until the interval.
+        assert dgns(facade).count(0x1FFFE) == 1
+
+    async def test_set_command_disabled_at_zero(self):
+        service, facade = make_service(fix=True, set_interval=0.0)
+        await service._broadcast_once()
+        assert 0x1FFFE not in dgns(facade)
 
     async def test_tx_errors_counted(self):
         service, facade = make_service(fix=True)
