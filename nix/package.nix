@@ -72,6 +72,8 @@
       pythonPackages.networkx
       # Knowledge subsystem vector store
       pythonPackages."sqlite-vec"
+      # Victron Cerbo GX (Venus OS) MQTT integration
+      pythonPackages.aiomqtt
     ] ++ pkgs.lib.optionals (pkgs.stdenv.isLinux || pkgs.stdenv.isDarwin) [
       pythonPackages.uvloop   # Uvicorn standard extra (conditional)
     ] ++ pkgs.lib.optionals pkgs.stdenv.isLinux [

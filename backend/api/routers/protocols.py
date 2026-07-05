@@ -109,7 +109,7 @@ async def list_protocols(
     protocols = []
 
     # Get status for each known protocol
-    for protocol_name in ["rvc", "j1939", "firefly"]:
+    for protocol_name in ["rvc", "j1939", "firefly", "victron"]:
         protocol_status = _protocol_runtime_status(
             protocol_manager, composition_root, protocol_name
         )
@@ -136,7 +136,7 @@ async def get_protocol_status(
     composition_root: CompositionRoot,
 ) -> ProtocolRuntimeStatus:
     """Get detailed status for a specific protocol."""
-    if protocol_name not in ["rvc", "j1939", "firefly"]:
+    if protocol_name not in ["rvc", "j1939", "firefly", "victron"]:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"Protocol '{protocol_name}' not found",

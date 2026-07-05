@@ -41,6 +41,7 @@ from backend.api.routers import (
     security_dashboard,
     security_monitoring,
     startup_monitoring,
+    victron,
 )
 
 # Removed deprecated import - will access feature manager directly
@@ -86,6 +87,7 @@ def configure_routers(app: FastAPI) -> None:
     app.include_router(schemas.router)
     app.include_router(guardrails.router)
     app.include_router(pin_auth.router)
+    app.include_router(victron.router)
     app.include_router(security_config.router)
     app.include_router(security_dashboard.router)
 
