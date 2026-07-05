@@ -12,6 +12,8 @@
  * Production: Uses relative paths assuming reverse proxy configuration
  */
 
+import { tokenStorage } from '@/lib/token-storage';
+
 import type { APIError } from './types';
 
 /**
@@ -71,8 +73,32 @@ export const WS_BASE = (() => {
  * Gets authorization header with JWT token
  */
 function getAuthHeader(): Record<string, string> {
-  const token = localStorage.getItem('auth_token');
+  const token = tokenStorage.getAccessToken();
   return token ? { 'Authorization': `Bearer ${token}` } : {};
+}
+
+/**
+ * Refresh a soon-to-expire (or already expired) access token *before* a
+ * request goes out.
+ *
+ * The only other refresh trigger is a `setTimeout` scheduled at login
+ * (token-storage.scheduleTokenRefresh). On a tablet/phone panel that timer is
+ * throttled or skipped while the tab is backgrounded or the device sleeps, so
+ * the access token silently expires and the next request carries a dead token
+ * → 401 → AuthGuard bounces the user to /login. Doing a request-time refresh
+ * closes that gap. Only refresh when we actually hold a valid refresh token;
+ * otherwise fall through and let the request proceed (auth-disabled coaches
+ * have no token data and must not block here).
+ */
+async function ensureFreshAccessToken(): Promise<void> {
+  if (!tokenStorage.needsRefresh()) return;
+  if (!tokenStorage.isRefreshTokenValid()) return;
+  try {
+    await tokenStorage.attemptTokenRefresh();
+  } catch {
+    // Refresh failure is handled by token-storage's callbacks; don't block the
+    // request — it will surface its own 401 if the token really is dead.
+  }
 }
 
 /** Common fetch options for all API requests */
@@ -148,6 +174,8 @@ export async function apiRequest<T>(
   options: RequestInit = {}
 ): Promise<T> {
   const fullUrl = url.startsWith('/') ? url : `${API_BASE}/${url}`;
+
+  await ensureFreshAccessToken();
 
   const response = await fetch(fullUrl, {
     ...defaultOptions,
