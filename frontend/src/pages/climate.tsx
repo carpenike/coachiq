@@ -569,13 +569,20 @@ function AquaHotRow({ entity, controlsDisabled, disabledReason }: Readonly<IAqua
   const { send, isPending } = useSetParameters(entity)
   const waterF = numberField(entity, "water_temp_f")
   const modeRaw = numberField(entity, "operating_mode")
-  // operating_mode is a bitfield: burner = 0x1, electric = 0x2
+  // operating_mode is a bitfield: burner = 0x1, electric = 0x2. Verified on
+  // the coach (2026-07-05): 00 off, 01 burner, 02 electric, 03 both.
   const burnerOn = modeRaw !== null && (modeRaw & 1) !== 0
   const electricOn = modeRaw !== null && (modeRaw & 2) !== 0
   const isAvailable = entity.available !== false
   const disabled = controlsDisabled || !isAvailable || isPending || modeRaw === null
   const rowReason = !isAvailable ? "Aqua-Hot is not responding on the CAN bus" : disabledReason
   const [confirmBurner, setConfirmBurner] = useState(false)
+
+  let modeLabel = "Off"
+  if (modeRaw === null) modeLabel = "—"
+  else if (burnerOn && electricOn) modeLabel = "Burner + Electric"
+  else if (burnerOn) modeLabel = "Burner"
+  else if (electricOn) modeLabel = "Electric"
 
   const controls = (
     <div className="flex items-center gap-4">
@@ -600,7 +607,9 @@ function AquaHotRow({ entity, controlsDisabled, disabledReason }: Readonly<IAqua
     <div className="flex items-center justify-between py-2">
       <div>
         <p className="text-sm font-medium">{entity.name}</p>
-        <p className="text-xs text-muted-foreground">Updated {relativeTime(entity.last_updated)}</p>
+        <p className="text-xs text-muted-foreground">
+          {modeLabel} · updated {relativeTime(entity.last_updated)}
+        </p>
       </div>
       <div className="flex items-center gap-3">
         {burnerOn && (
