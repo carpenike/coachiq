@@ -6,6 +6,7 @@ from unittest.mock import AsyncMock, Mock
 import pytest
 
 from backend.core.guardrail_interfaces import GuardrailStatus
+from backend.integrations.can.message_injector import InjectionResult
 from backend.services.can.can_facade import CANFacade
 
 pytestmark = [pytest.mark.unit, pytest.mark.can]
@@ -21,7 +22,7 @@ def can_facade_dependencies() -> dict[str, Any]:
     bus_service.get_health_status = Mock(return_value={"healthy": True, "status": "ok"})
 
     injector = AsyncMock()
-    injector.inject_message = AsyncMock(return_value={"success": True, "tx_id": "abc"})
+    injector.inject = AsyncMock(return_value=InjectionResult(success=True, messages_sent=1))
     injector.halt_command_emission = AsyncMock()
 
     message_filter = AsyncMock()
@@ -112,11 +113,14 @@ async def test_send_message_resolves_logical_interface_and_delegates_to_injector
     """CANFacade is the only send boundary and delegates through the injector."""
     result = await can_facade.send_message("house", 0x18FEDB00, b"\x01\x02")
 
-    assert result == {"success": True, "tx_id": "abc"}
+    assert result["success"] is True
     can_facade_dependencies["interface_service"].resolve_interface.assert_called_once_with("house")
-    can_facade_dependencies["injector"].inject_message.assert_awaited_once_with(
-        interface="can0", can_id=0x18FEDB00, data=b"\x01\x02"
-    )
+    injector = can_facade_dependencies["injector"]
+    injector.inject.assert_awaited_once()
+    request = injector.inject.call_args.args[0]
+    assert request.interface == "can0"
+    assert request.can_id == 0x18FEDB00
+    assert request.data == b"\x01\x02"
 
 
 async def test_send_raw_message_wraps_success_and_failure(can_facade: CANFacade) -> None:
