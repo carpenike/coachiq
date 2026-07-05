@@ -236,6 +236,8 @@ class CANFacade(GuardrailParticipant):
         self, logical_interface: str, can_id: int, data: bytes
     ) -> dict[str, Any]:
         """Send a CAN message through the proper interface."""
+        from backend.integrations.can.message_injector import InjectionRequest
+
         # Validate safety before sending
         if not await self.validate_command_precondition("send_message"):
             return {"success": False, "error": "Safety interlock active - cannot send message"}
@@ -243,10 +245,23 @@ class CANFacade(GuardrailParticipant):
         # Resolve logical to physical interface
         physical_interface = self._interface_service.resolve_interface(logical_interface)
 
-        # Send through injector service
-        return await self._injector.inject_message(
-            interface=physical_interface, can_id=can_id, data=data
+        # Send through the injector (its API takes an InjectionRequest; it
+        # runs its own safety validation and interlock check).
+        result = await self._injector.inject(
+            InjectionRequest(
+                can_id=can_id,
+                data=data,
+                interface=physical_interface,
+                description="CANFacade.send_message",
+                reason="raw send via facade",
+            )
         )
+        return {
+            "success": result.success,
+            "error": result.error,
+            "messages_sent": result.messages_sent,
+            "warnings": result.warnings,
+        }
 
     async def get_comprehensive_health(self) -> dict[str, Any]:
         """Get comprehensive health status from all services."""

@@ -10,6 +10,7 @@ from unittest.mock import AsyncMock, Mock
 import pytest
 
 from backend.core.guardrail_interfaces import GuardrailStatus
+from backend.integrations.can.message_injector import InjectionResult
 from backend.services.can.can_facade import CANFacade
 
 
@@ -30,7 +31,9 @@ class TestCANFacade:
 
         mock_injector = AsyncMock()
         mock_injector.halt_command_emission = AsyncMock()
-        mock_injector.inject_message = AsyncMock(return_value={"success": True})
+        mock_injector.inject = AsyncMock(
+            return_value=InjectionResult(success=True, messages_sent=1)
+        )
 
         mock_message_filter = AsyncMock()
         mock_message_filter.halt_command_emission = AsyncMock()
@@ -153,7 +156,7 @@ class TestCANFacade:
         assert "Safety interlock active" in result["error"] or "blocked" in result["error"].lower()
 
         # Verify injector was never called
-        mock_dependencies["injector"].inject_message.assert_not_called()
+        mock_dependencies["injector"].inject.assert_not_called()
 
     @pytest.mark.asyncio
     async def test_send_message_proceeds_when_safe(self, can_facade, mock_dependencies):
@@ -163,14 +166,16 @@ class TestCANFacade:
         can_facade._command_halt_active = False
 
         # Configure injector to return success
-        mock_dependencies["injector"].inject_message.return_value = {"success": True}
+        mock_dependencies["injector"].inject.return_value = InjectionResult(
+            success=True, messages_sent=1
+        )
 
         # Send message
         result = await can_facade.send_message("can0", 0x123, b"\x01\x02\x03")
 
         # Verify message was sent successfully
         assert result["success"] is True
-        mock_dependencies["injector"].inject_message.assert_awaited_once()
+        mock_dependencies["injector"].inject.assert_awaited_once()
 
     @pytest.mark.asyncio
     async def test_bus_statistics_summary_uses_real_socketcan_counters(
@@ -247,7 +252,9 @@ class TestCANFacadeIntegration:
         mock_bus_service.halt_command_emission = AsyncMock()
 
         mock_injector = AsyncMock()
-        mock_injector.inject_message = AsyncMock(return_value={"success": True})
+        mock_injector.inject = AsyncMock(
+            return_value=InjectionResult(success=True, messages_sent=1)
+        )
         mock_injector.halt_command_emission = AsyncMock()
 
         mock_message_filter = AsyncMock()
@@ -435,3 +442,64 @@ class TestCANFacadeIntegration:
         # Test basic facade state
         assert facade._guardrail_status == GuardrailStatus.SAFE
         assert facade._command_halt_active is False
+
+
+class TestSendRawMessage:
+    """Regression tests for the facade -> injector send path.
+
+    The injector mock is autospec'd against the real CANMessageInjector so a
+    facade call to a nonexistent injector method fails here instead of in
+    production (seen live 2026-07-05: send_message called inject_message,
+    which does not exist; the first in-app transmitter hit it).
+    """
+
+    @pytest.fixture
+    def send_facade(self):
+        from unittest.mock import create_autospec
+
+        from backend.integrations.can.message_injector import (
+            CANMessageInjector,
+            InjectionResult,
+        )
+
+        injector = create_autospec(CANMessageInjector, instance=True)
+        injector.inject.return_value = InjectionResult(success=True, messages_sent=1)
+        interface_service = Mock()
+        interface_service.resolve_interface = Mock(return_value="can1")
+        performance_monitor = Mock()
+        performance_monitor.monitor_service_method = Mock(return_value=lambda func: func)
+        facade = CANFacade(
+            bus_service=AsyncMock(),
+            injector=injector,
+            message_filter=AsyncMock(),
+            recorder=AsyncMock(),
+            analyzer=AsyncMock(),
+            anomaly_detector=AsyncMock(),
+            interface_service=interface_service,
+            performance_monitor=performance_monitor,
+        )
+        return facade, injector
+
+    @pytest.mark.asyncio
+    async def test_send_raw_message_uses_real_injector_api(self, send_facade):
+        facade, injector = send_facade
+        result = await facade.send_raw_message(
+            arbitration_id=0x19FFFFF9, data=bytes(8), interface="house"
+        )
+        assert result["success"] is True
+        assert result["arbitration_id_hex"] == "0x19FFFFF9"
+        request = injector.inject.call_args.args[0]
+        assert request.can_id == 0x19FFFFF9
+        assert request.interface == "can1"
+
+    @pytest.mark.asyncio
+    async def test_send_raw_message_maps_injector_failure(self, send_facade):
+        from backend.integrations.can.message_injector import InjectionResult
+
+        facade, injector = send_facade
+        injector.inject.return_value = InjectionResult(success=False, error="bus off")
+        result = await facade.send_raw_message(
+            arbitration_id=0x19FFFFF9, data=bytes(8), interface="house"
+        )
+        assert result["success"] is False
+        assert result["error"] == "bus off"
