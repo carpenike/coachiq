@@ -139,7 +139,7 @@
     inherit version;
     src = frontendSrc;
 
-    npmDepsHash = "sha256-/m2Y2A/+BTJVnW/8Fs234DngHNejzBDDZP0FC6otdM4=";
+    npmDepsHash = "sha256-KKZwhEJlSnj9qpHS0/fu9gni+5uFqoqdnc8sA3jq6lw=";
 
     # Handle React 19 peer dependency conflicts
     npmFlags = [ "--legacy-peer-deps" ];
