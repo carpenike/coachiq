@@ -1374,6 +1374,11 @@ class CANBusService(GuardrailParticipant):
             if device_type == "climate":
                 merged_raw.update(climate_units.derive_climate_fields(merged_raw))
                 payload["state"] = climate_units.climate_state_label(merged_raw)
+                # Zones whose compressor is an energy-managed AC load also
+                # carry AC_LOAD_STATUS (operating_status) — surface shed.
+                if "operating_status" in merged_raw:
+                    _label, shed = climate_units.ac_load_state(merged_raw)
+                    merged_raw["shed"] = shed
             elif device_type == "air_conditioner":
                 merged_raw.update(climate_units.derive_ac_fields(merged_raw))
                 payload["state"] = climate_units.ac_state_label(merged_raw)

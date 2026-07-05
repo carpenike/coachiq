@@ -337,25 +337,35 @@ entities:
   # namespace: 0=Front air, 1=Rear air, 2=Bay, 3=disconnected (-88C),
   # 4=Floor, 5=Mid air. Verified against the Mira display and a warm-the-
   # sensor test. This is exactly why sources are declared per-DGN here.
+  #
+  # AC compressor load-shed: Front and Mid zones' compressors are
+  # energy-managed AC loads (AC_LOAD_STATUS 1FFBF) — D5 (213) = Front's
+  # inst1, D0 (208) = Mid's inst2, mapped live 2026-07-05 by disabling each
+  # zone and watching which unit + load dropped. Sourcing 1FFBF here lets
+  # the zone show "Shed" (operating_status 0xFD) like the Mira. Rear's
+  # compressor (inst3) is NOT load-managed — it never appears as a managed
+  # load (bedroom AC, always demanding), so no 1FFBF source.
 
   climate_front:
     name: "Front Zone"
     type: climate
     area: interior.living_main
-    capabilities: [temperature, setpoint, operating_mode, fan]
+    capabilities: [temperature, setpoint, operating_mode, fan, shed]
     sources:
       - { dgn: 1FFE2, instance: 0 }
       - { dgn: 1FF9C, instance: 0 }
+      - { dgn: 1FFBF, instance: 213 } # AC load D5 = Front compressor (shed)
     command: { dgn: 1FEF9, instances: [0] }
 
   climate_mid:
     name: "Mid Zone"
     type: climate
     area: interior.living_main
-    capabilities: [temperature, setpoint, operating_mode, fan]
+    capabilities: [temperature, setpoint, operating_mode, fan, shed]
     sources:
       - { dgn: 1FFE2, instance: 1 }
       - { dgn: 1FF9C, instance: 5 } # sensor channel 5, NOT zone 1
+      - { dgn: 1FFBF, instance: 208 } # AC load D0 = Mid compressor (shed)
     command: { dgn: 1FEF9, instances: [1] }
 
   climate_rear:

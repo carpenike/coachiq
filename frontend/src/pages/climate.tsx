@@ -364,11 +364,15 @@ function ZoneCardHeader({
         </CardTitle>
         <p className="text-xs text-muted-foreground">Updated {relativeTime(entity.last_updated)}</p>
       </div>
-      <div className="text-right">
+      <div className="flex flex-col items-end">
         <p className="text-3xl font-semibold tabular-nums">{formatTempF(currentF)}</p>
-        <p className="text-xs text-muted-foreground">
-          {currentF === null ? "no sensor data" : subtitle}
-        </p>
+        {isShed(entity) ? (
+          <ShedBadge />
+        ) : (
+          <p className="text-xs text-muted-foreground">
+            {currentF === null ? "no sensor data" : subtitle}
+          </p>
+        )}
       </div>
     </CardHeader>
   )
