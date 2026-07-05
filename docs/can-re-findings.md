@@ -203,10 +203,26 @@ requested state on the toggle plus a "Shed" badge when byte 2 is a shed
 sentinel, exactly like the Mira.
 
 Modeled as a reusable **`ac_load`** device type (control `1FFBE`, status
-`1FFBF` → on/off/shed). The rooftop AC compressors can also be shed (they
-outrank the Aqua-Hot); their shed field is not yet captured because they're
-the high-priority loads *causing* the shedding — a fast-follow when a
-compressor-shed is inducible.
+`1FFBF` → on/off/shed).
+
+**The rooftop AC compressors shed the same way** (2026-07-05). Under forced
+demand (all zones commanded to 60 °F + Aqua-Hot loaded) the Front and Mid
+compressors appear as AC loads and one was caught at `FD`. Mapped by
+disabling each zone and watching which AC unit + load dropped (turning a load
+off is immediate; forcing one ON hits the compressors' ~3 min anti-short-cycle
+lockout, so only the disable direction is reliable):
+
+- **Front (zone 0) = AC unit inst1 (SA98) = load `D5` (213)**
+- **Mid (zone 1) = AC unit inst2 (SA97) = load `D0` (208)**
+- **Rear (zone 2) = AC unit inst3 (SA96) = NOT load-managed** — never appears
+  as a managed AC load across any capture (bedroom, ambient ~97 °F, always
+  demanding, never a shed candidate).
+
+The Front/Mid climate zones source `1FFBF` D5/D0 so the zone card shows "Shed"
+(status `0xFD`) exactly like the Mira. Zone → unit mapping is via the AC
+*load*, not a fixed zone↔unit binding; the manager pools compressors, so map
+by the disable test, not by assuming zone N = unit N. (Front & Rear have heat
+pumps, Mid does not — per the owner.)
 
 ## Guardrail
 
