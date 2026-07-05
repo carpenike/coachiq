@@ -115,33 +115,16 @@ export class RVCWebSocketClient {
     }
 
     this.cleanup();
-    // Mark connecting synchronously so callers (e.g. the autoConnect effect,
-    // which checks `state !== 'connecting'`) don't fire a duplicate dial while
-    // the async token refresh below is in flight.
     this._state = 'connecting';
-    void this.openWithFreshToken();
-  }
 
-  /**
-   * Refresh a soon-to-expire access token, then open the socket. The token is
-   * passed as a query param, so a stale one gets the connection rejected on the
-   * first attempt — and the reconnect path only re-dials sockets that were
-   * previously connected, so a rejected first dial would otherwise sit down
-   * until a manual retry. Refreshing here (same gap the scheduled timer misses
-   * after a backgrounded tab) lets the auto-reconnect recover on its own.
-   */
-  private async openWithFreshToken(): Promise<void> {
-    try {
-      if (tokenStorage.needsRefresh() && tokenStorage.isRefreshTokenValid()) {
-        await tokenStorage.attemptTokenRefresh();
-      }
-    } catch {
-      // Dial with whatever token we have; the server will reject if it's dead.
-    }
-
-    // A disconnect() may have raced in while the refresh was awaiting.
-    if (this._state !== 'connecting') return;
-
+    // Open the socket SYNCHRONOUSLY. An earlier version awaited a token refresh
+    // before dialing, which made connect() async — and that opened a race: the
+    // auto-connect effect fires connect() once when auth becomes ready, but if
+    // the async path left the client parked at state==='connecting' without a
+    // live socket, the effect (which guards on state!=='connecting') never
+    // retried, so the coach sat STALE until a manual Retry. A soon-to-expire
+    // access token is not worth that: /ws accepts token-less connections, and a
+    // mid-session expiry is already recovered by the 4401 close handler below.
     const token = tokenStorage.getAccessToken();
     const baseUrl = `${WS_BASE}${this.endpoint}`;
     const wsUrl = token ? `${baseUrl}?token=${encodeURIComponent(token)}` : baseUrl;
