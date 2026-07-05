@@ -1223,6 +1223,33 @@ class MultiNetworkSettings(BaseSettings):
         return []
 
 
+class VictronSettings(BaseSettings):
+    """Victron Cerbo GX (Venus OS) MQTT integration settings."""
+
+    model_config = SettingsConfigDict(env_prefix="COACHIQ_VICTRON__", case_sensitive=False)
+
+    enabled: bool = Field(default=False, description="Enable the Victron MQTT integration")
+    host: str = Field(default="", description="Cerbo GX hostname or IP address")
+    port: int = Field(default=1883, description="MQTT broker port on the Cerbo GX", ge=1, le=65535)
+    username: str | None = Field(default=None, description="MQTT username (usually unset)")
+    password: str | None = Field(default=None, description="MQTT password (usually unset)")
+    portal_id: str | None = Field(
+        default=None,
+        description="VRM portal id; auto-discovered from broker traffic when unset",
+    )
+    keepalive_interval_seconds: float = Field(
+        default=30.0,
+        description="Interval for Venus OS keepalive publishes (broker stops after 60s without)",
+        gt=0,
+        lt=60,
+    )
+    broadcast_interval_seconds: float = Field(
+        default=1.0,
+        description="Minimum interval between entity state broadcasts per entity",
+        gt=0,
+    )
+
+
 class J1939Settings(BaseSettings):
     """J1939 protocol configuration settings."""
 
@@ -1936,6 +1963,7 @@ class Settings(BaseSettings):
     rvc: RVCSettings = Field(default_factory=RVCSettings)
     j1939: J1939Settings = Field(default_factory=J1939Settings)
     firefly: FireflySettings = Field(default_factory=FireflySettings)
+    victron: VictronSettings = Field(default_factory=VictronSettings)
     spartan_k2: SpartanK2Settings = Field(default_factory=SpartanK2Settings)
     multi_network: MultiNetworkSettings = Field(default_factory=MultiNetworkSettings)
     persistence: PersistenceSettings = Field(default_factory=PersistenceSettings)

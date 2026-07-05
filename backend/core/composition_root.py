@@ -166,6 +166,7 @@ class CompositionServices:
     entity_initialization_service: Any = None
     entity_service: Any = None
     entity_domain_service: Any = None
+    victron_service: Any = None
     router_sidecar_service: Any = None
 
 
@@ -255,6 +256,7 @@ class CompositionRoot:
         "entity_initialization_service",
         "entity_service",
         "entity_domain_service",
+        "victron_service",
     )
     _ROUTER_SIDECAR_SERVICE_ORDER = ("router_sidecar_service",)
 
@@ -985,6 +987,30 @@ class CompositionRoot:
                 ),
             )
 
+        # Optional Victron Cerbo GX integration: gate on settings before
+        # _should_construct so a disabled protocol never enters STARTING state.
+        # Partial catalogs (tests) may omit app_settings, so check membership first.
+        victron_settings = (
+            self.require_service("app_settings").victron
+            if "victron_service" in self._service_catalog
+            else None
+        )
+        if (
+            victron_settings is not None
+            and victron_settings.enabled
+            and self._should_construct("victron_service")
+        ):
+            from backend.services.victron.victron_service import VictronService
+
+            victron_service = VictronService(
+                settings=victron_settings,
+                entity_manager_service=self.require_service("entity_manager_service"),
+                entity_state_repository=self.get_optional_service("entity_state_repository"),
+                websocket_manager=self.get_optional_service("websocket_manager"),
+            )
+            await victron_service.start()
+            self._set_root_constructed_service("victron_service", victron_service)
+
     async def _construct_lower_can_services(self) -> None:  # noqa: C901
         """Construct lower-CAN prerequisites before CANFacade."""
         from backend.integrations.can.anomaly_detector import CANAnomalyDetector
@@ -1058,9 +1084,7 @@ class CompositionRoot:
                 can_interface_service=self.require_service("can_interface_service")
             )
             await telemetry_service.startup()
-            self._set_root_constructed_service(
-                "can_network_telemetry_service", telemetry_service
-            )
+            self._set_root_constructed_service("can_network_telemetry_service", telemetry_service)
 
         await self._construct_websocket_manager()
 

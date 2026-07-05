@@ -68,6 +68,8 @@ alembic           = ">=1.13.0"
 grpcio            = ">=1.64.0"
 grpcio-reflection = ">=1.64.0"
 protobuf          = ">=5.0.0"
+# Victron Cerbo GX (Venus OS) MQTT integration
+aiomqtt           = ">=2.0.0,<3.0.0"
 
 # ------------------------------------------------------------------
 # CLI entry-points (was in the deleted [project] section)

@@ -95,6 +95,14 @@ class ProtocolManager:
             name="firefly", enabled=firefly_enabled, description="Firefly RV systems integration"
         )
 
+        # Victron Cerbo GX integration (MQTT over IP, not CAN)
+        victron_enabled = getattr(getattr(settings, "victron", None), "enabled", False)
+        self.protocols["victron"] = ProtocolInfo(
+            name="victron",
+            enabled=victron_enabled,
+            description="Victron Cerbo GX power system integration (MQTT)",
+        )
+
         logger.info(
             f"Protocol manager initialized with protocols: "
             f"{', '.join(p for p, info in self.protocols.items() if info.enabled)}"
