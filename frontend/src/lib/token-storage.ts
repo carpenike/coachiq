@@ -45,7 +45,7 @@ export interface TokenRefreshCallbacks {
 class TokenStorageManager {
   private refreshTimeout: NodeJS.Timeout | null = null
   private refreshCallbacks: TokenRefreshCallbacks = {}
-  private isRefreshing = false
+  private refreshPromise: Promise<boolean> | null = null
   private authEnabled: boolean | null = null
   private refreshRetryCount = 0
 
@@ -177,13 +177,24 @@ class TokenStorageManager {
   }
 
   /**
-   * Attempt to refresh the access token
+   * Attempt to refresh the access token.
+   *
+   * Coalesces concurrent callers onto one in-flight refresh: the request-time
+   * refresh (client.ts), the scheduled timer, the SSE client's 401 handler,
+   * and app boot can all fire together on page load. The old implementation
+   * returned false to whoever lost that race, so their request went out with
+   * the stale token, got a 401, and AuthGuard bounced the user to /login on
+   * nearly every visit. Awaiting the shared promise means every caller
+   * proceeds only once the fresh token is actually stored.
    */
   async attemptTokenRefresh(): Promise<boolean> {
-    if (this.isRefreshing) {
-      return false // Already refreshing
-    }
+    this.refreshPromise ??= this.performTokenRefresh().finally(() => {
+      this.refreshPromise = null
+    })
+    return this.refreshPromise
+  }
 
+  private async performTokenRefresh(): Promise<boolean> {
     // Skip refresh if auth is disabled
     if (this.authEnabled === false) {
       return false
@@ -194,8 +205,6 @@ class TokenStorageManager {
       this.refreshCallbacks.onTokenExpired?.()
       return false
     }
-
-    this.isRefreshing = true
 
     try {
       const response: RefreshTokenResponse = await refreshTokenAPI(tokenData.refreshToken)
@@ -213,11 +222,25 @@ class TokenStorageManager {
         this.authEnabled = false
         return false
       }
+      // Rotation race: the server rotates AND revokes the refresh token on
+      // every use, so if another tab (or PWA window) refreshed first, the
+      // token this call sent is already revoked — a 4xx here does NOT mean
+      // the session is dead. If localStorage now holds a different, live
+      // token pair (stored by the winner), adopt it instead of wiping the
+      // session and forcing a re-login.
+      const storedRefreshToken = this.getRefreshToken()
+      if (
+        storedRefreshToken &&
+        storedRefreshToken !== tokenData.refreshToken &&
+        this.isAccessTokenValid()
+      ) {
+        console.warn('Token refresh superseded by another tab; adopting its tokens')
+        this.refreshRetryCount = 0
+        return true
+      }
       console.error('Token refresh failed:', error)
       this.handleRefreshFailure(error as Error)
       return false
-    } finally {
-      this.isRefreshing = false
     }
   }
 
@@ -243,8 +266,9 @@ class TokenStorageManager {
 
     if (canRetry) {
       this.refreshRetryCount += 1
+      // By the time this fires, the failed attempt's shared promise has been
+      // cleared, so this starts a fresh coalesced refresh.
       setTimeout(() => {
-        this.isRefreshing = false
         void this.attemptTokenRefresh()
       }, REFRESH_RETRY_DELAY_MS)
     } else {
@@ -295,8 +319,6 @@ class TokenStorageManager {
       clearTimeout(this.refreshTimeout)
       this.refreshTimeout = null
     }
-
-    this.isRefreshing = false
   }
 
   /**
@@ -324,8 +346,10 @@ class TokenStorageManager {
       // Check if tokens are still valid
       if (this.isRefreshTokenValid()) {
         if (this.needsRefresh()) {
-          // Immediately refresh if needed
-          void this.attemptTokenRefresh()
+          // Refresh now and make callers (the auth provider's session-restore
+          // gate) wait for it, so AuthGuard can't bounce to /login while the
+          // stored session is still being revived.
+          await this.attemptTokenRefresh()
         } else {
           // Schedule refresh for later
           this.scheduleTokenRefresh(tokenData)

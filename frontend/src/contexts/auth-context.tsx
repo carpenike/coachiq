@@ -32,7 +32,7 @@ import {
 } from '@/lib/token-storage';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import type { ReactNode } from 'react';
-import { createContext, useContext, useEffect, useMemo } from 'react';
+import { createContext, useContext, useEffect, useMemo, useState } from 'react';
 
 interface AuthContextType {
   // Current state
@@ -218,10 +218,17 @@ export function AuthProvider({ children }: AuthProviderProps) {
     mutationFn: getAdminCredentials,
   });
 
+  // Session restore gate: while a stored session may still be revived (token
+  // refresh in flight during initializeTokenStorage), AuthGuard must not
+  // treat "no valid user yet" as unauthenticated and bounce to /login.
+  const [restoringSession, setRestoringSession] = useState(true);
+
   // Initialize token storage and set up refresh callbacks on mount
   useEffect(() => {
-    // Initialize token storage
-    void initializeTokenStorage();
+    // Initialize token storage; this awaits an immediate token refresh when
+    // the stored access token is stale, so clearing the gate afterwards means
+    // the session is either revived or genuinely dead.
+    void initializeTokenStorage().finally(() => setRestoringSession(false));
 
     // Set up refresh callbacks
     setRefreshCallbacks({
@@ -253,7 +260,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
     };
   }, [queryClient]);
 
-  const isLoading = statusLoading || userLoading;
+  const isLoading = statusLoading || userLoading || restoringSession;
 
   const contextValue: AuthContextType = useMemo(() => ({
     // Current state
