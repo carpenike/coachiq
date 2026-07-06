@@ -9,7 +9,7 @@
  *   trend word only — no fabricated accuracy percentages).
  *
  * Empty states distinguish "bus is silent, faults cannot be reported"
- * from "live bus, genuinely no faults" (per docs/frontend-redesign.md).
+ * from "live bus, genuinely no faults" (per docs/archive/2026-07/frontend-redesign.md).
  */
 
 import {

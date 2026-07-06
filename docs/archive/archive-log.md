@@ -2,6 +2,22 @@
 
 This log tracks documentation files that have been archived and the reasons why.
 
+## Archive Date: July 2026
+
+### Reason: Planning artifacts superseded by the shipped state
+
+Archived to `docs/archive/2026-07/` during the July 2026 documentation refresh.
+These are planning/strategy documents whose content either shipped or was
+superseded by the current docs:
+
+- `documentation-strategy.md` - January 2025 docs-cleanup plan; largely executed
+- `documentation-organization.md` - Described a User/Developer Guide split that
+  never matched the current flat `docs/` layout
+- `frontend-redesign.md` - The 2026-07 frontend redesign plan; the pages shipped
+  and its connectivity model predates the SSE realtime migration. Several
+  frontend source comments cite it as the design contract; those now point at
+  the archived path.
+
 ## Archive Date: January 2025
 
 ### Reason: Simplifying documentation for hobby project

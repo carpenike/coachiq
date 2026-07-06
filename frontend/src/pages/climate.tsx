@@ -8,7 +8,7 @@
  * derives *_f fields from the raw RV-C values.
  *
  * Zone instance -> name mapping is provisional (see coach mapping YAML);
- * all numbers rendered are real bus data per docs/frontend-redesign.md.
+ * all numbers rendered are real bus data per docs/archive/2026-07/frontend-redesign.md.
  */
 
 import { IconFlame, IconMinus, IconPlus, IconSnowflake, IconWind } from "@tabler/icons-react"

@@ -2,7 +2,7 @@
  * Account — who you are, how CoachIQ looks, and account security.
  *
  * Merges the former Settings and Profile pages; each had too little real
- * content to justify a nav slot (docs/frontend-redesign.md).
+ * content to justify a nav slot (docs/archive/2026-07/frontend-redesign.md).
  *
  * Deliberately omitted (no real backend support):
  *  - Change password / profile editing: no endpoints exist.
