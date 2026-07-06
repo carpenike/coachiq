@@ -26,7 +26,7 @@ CoachIQ is **not** a direct hardware controller. In a typical RV install
         │  for state / telemetry           │  interlocks (slides,
         │                                  │  brake, leveling, etc.)
         ▼                                  ▼
-   FastAPI + WebSocket UI            (owns the safety case)
+   FastAPI + SSE web UI              (owns the safety case)
 ```
 
 What this means in practice:
@@ -53,7 +53,8 @@ What this means in practice:
   - `backend/repositories/`: Repository pattern for data access; replaces the previous monolithic `AppState`.
   - `backend/api/routers/`: REST API endpoints organized by domain.
   - `backend/api/domains/`: Domain API v1 endpoints (`/api/v1/...`) with bulk operations and caching.
-  - `backend/websocket/`: WebSocket handlers for real-time entity, log, and CAN sniffer streams.
+  - `backend/api/routers/events.py` + `backend/services/system/event_broker.py`: the authenticated Server-Sent Events stream (`GET /api/events`) that delivers real-time entity and system updates.
+  - `backend/websocket/`: WebSocket handlers for page-scoped diagnostic streams (logs, CAN sniffer/recorder/analyzer/filter).
   - `backend/integrations/`: Protocol integrations
     - `backend/integrations/can/`: CAN bus interface management.
     - `backend/integrations/rvc/`: RV-C message decoding (PGN/SPN), Firefly extensions.
@@ -68,7 +69,7 @@ What this means in practice:
   - `config/Caddyfile.example`: Production Caddy reverse-proxy template.
 - **Frontend (`frontend/`):**
   - React 19 SPA built with Vite, TypeScript (strict), Tailwind CSS, and shadcn/ui.
-  - Communicates with the backend via REST (`/api/...` and `/api/v1/...`) and WebSockets.
+  - Communicates with the backend via REST (`/api/...` and `/api/v1/...`) and an authenticated SSE event stream (`/api/events`); WebSockets remain only for log/CAN diagnostic pages.
   - State managed with React Query and React Context.
 - **Deployment:**
   - Nix flake provides dev shells, CLI apps (`nix run .#test|lint|format|ci`), and a NixOS module for production.
@@ -95,9 +96,13 @@ What this means in practice:
 ## Features
 
 - **FastAPI Backend:** Robust and modern API framework.
-- **WebSocket Streaming:** Real-time updates of RV-C data and entity states to connected clients.
+- **Real-Time Event Stream (SSE):** Live entity and system updates over one authenticated Server-Sent Events stream (`GET /api/events`) with gap replay via `Last-Event-ID`.
 - **RV-C Message Decoding:** Translates raw CAN bus messages into human-readable RV-C data.
-- **Entity Management:** Represents RV-C devices and their states as controllable entities.
+- **Entity Management:** Represents RV-C devices and their states as controllable entities (lights, climate zones, tanks, locks, and more).
+- **Climate Control:** Thermostat zones, air conditioners, heat pump, and Aqua-Hot heat sources surfaced as entities with a dedicated Climate page.
+- **Victron Cerbo GX Integration:** Pulls inverter/charger, generator, DC loads, RuuviTag sensors, and GPS from a Victron Cerbo GX over MQTT (`COACHIQ_VICTRON__*` settings), with a Power page for inverter mode and shore-input-limit control.
+- **GPS Trip Log:** Records trips and breadcrumbs from gpsd into SQLite, shown on a Leaflet map on the Location page with GPX export (`COACHIQ_TRIP_LOG__*` settings).
+- **RV-C Time Master:** Optionally broadcasts `DATE_TIME_STATUS`/GPS DGNs from the Pi's GPS-disciplined clock, periodically nudges non-compliant device clocks with `SET_DATE_TIME_COMMAND`, and synthesizes `COMPASS_BEARING_STATUS` from GPS course (`COACHIQ_TIME_SYNC__*` settings).
 - **Web-based UI:** Provides a user-friendly interface for monitoring and interaction.
 - **Documentation Search:** AI-powered semantic search of RV-C specification using FAISS and OpenAI embeddings.
 - **Configuration Driven:** Uses YAML and JSON files for RV-C specifications and device mappings.
@@ -176,8 +181,11 @@ The project includes a feature for semantically searching the RV-C specification
   # Set your OpenAI API key
   export OPENAI_API_KEY="your-api-key-here"
 
-  # Run the setup helper script
-  poetry run python scripts/setup_faiss.py --setup
+  # Chunk the PDF and build the FAISS index
+  poetry run python dev_tools/enhanced_document_processor.py \
+    --pdf resources/rv-c-spec.pdf \
+    --chunking section_overlap \
+    --add-to-index resources/vector_store/
   ```
 
 - **Using the Search Feature:**
@@ -211,7 +219,7 @@ poetry run python dev_tools/enhanced_document_processor.py \
 - The argument is `--chunking`, not `--chunking-method`.
 - The argument is `--add-to-index <path>`, not just a flag or `true/false`.
 
-For more details, see [docs/pdf-processing-guide.md](docs/pdf-processing-guide.md).
+For more details, see the [RV-C Documentation Search Guide](docs/rv-c-documentation-search.md).
 
 ## Development
 
@@ -255,8 +263,11 @@ Key endpoint groups:
 - `/api/entities/` and `/api/v1/entities/`: List and control RV-C entities (lights, locks, climate, etc.). All device-type operations are unified under entity endpoints (no `/api/lights`, `/api/locks`, etc.). Use `/api/v1/...` (Domain API v1) for new development — it supports bulk operations, partial-success responses, and richer schemas.
 - `/api/can/`: CAN interface status and message tools.
 - `/api/auth/`: Authentication, tokens, and PIN/MFA management.
+- `/api/victron/`: Victron Cerbo GX power-system status and controls.
+- `/api/location/`: GPS trip log (trips, breadcrumbs, GPX export).
 - `/api/health`, `/health`: Liveness and readiness probes.
-- `/ws/...`: WebSocket endpoints for real-time entity updates, log streaming, and CAN sniffer feeds.
+- `/api/events`: Authenticated SSE stream for real-time entity and system updates (supports `Last-Event-ID` replay).
+- `/ws/logs`, `/ws/can-sniffer`, `/ws/can-recorder`, `/ws/can-analyzer`, `/ws/can-filter`: WebSocket endpoints for diagnostic streams.
 
 ## Development Tools & Resources
 
@@ -275,7 +286,7 @@ We have enhanced the development environment with several tools to streamline th
   - Use @perplexity for general research and @github for repository exploration
 
 - **Development Environment**: Comprehensive development setup
-  - Structured documentation for both [backend](docs/code-quality-tools.md) and [frontend](docs/frontend-development.md) development
+  - Structured documentation for both [backend](docs/code-quality-tools.md) and [frontend](docs/frontend/development-guide.md) development
   - Clear code style guidelines for Python and TypeScript
 - **Pre-commit and CI/CD**: Quality assurance and automation
   - See [Pre-commit and GitHub Actions](docs/pre-commit-and-actions.md) for configuration details

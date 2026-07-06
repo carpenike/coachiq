@@ -1,43 +1,54 @@
-# React Deployment with Caddy
+# React Deployment
 
-This document describes the deployment setup for the CoachIQ React frontend after the refactoring from a FastAPI-served template-based UI to a standalone React application.
+This document describes the production deployment of the CoachIQ React frontend. The backend serves the built SPA directly; see [ADR-0015](adr/ADR-0015-backend-serves-built-spa.md) for the rationale.
 
-For information on developing the frontend, see [Frontend Development Guide](frontend-development.md).
+For information on developing the frontend, see the [Frontend Development Guide](frontend/development-guide.md).
 
 ## Architecture
 
 The architecture consists of:
 
-1. **FastAPI Backend**: Provides API endpoints at `/api/*` and WebSocket connections at `/ws/*`
-2. **React Frontend**: Standalone SPA served directly by Caddy
-3. **Caddy**: HTTP server that:
-   - Serves the React frontend static files
-   - Reverse proxies API requests to the FastAPI backend
-   - Handles TLS termination and certificate management
+1. **FastAPI Backend**: A single origin serving the REST API (`/api/*`), the SSE realtime stream (`/api/events`), diagnostic WebSocket endpoints (`/ws/*`), OAuth discovery, health probes, metrics, API docs, and the built React SPA
+2. **React Frontend**: Built with Vite (`npm run build`) and served by the backend from `COACHIQ_STATIC_DIR`
+3. **Caddy** (optional edge): A pass-through reverse proxy that forwards every request to the backend and owns TLS termination, proxy headers, compression, logging, and security headers — it does not maintain an API-vs-static route split
 
 ```
-  +--------+                +-------+                +-----------+
-  | Browser | <--HTTPS----> | Caddy | <--HTTP/WS---> | FastAPI   |
-  +--------+                +-------+                +-----------+
-                               |
-                         +----------+
-                         | React    |
-                         | Frontend |
-                         | (static) |
-                         +----------+
+  +---------+                +-------+                 +---------------------+
+  | Browser | <---HTTPS----> | Caddy | <---HTTP/WS---> | FastAPI             |
+  +---------+                +-------+                 |  - API / SSE / WS   |
+                          (pass-through)               |  - built React SPA  |
+                                                       +---------------------+
 ```
+
+## Backend SPA Serving
+
+The backend resolves the SPA dist path from the `COACHIQ_STATIC_DIR` setting (`Settings.static_dir`, see `backend/main.py`):
+
+- If the directory contains an `index.html`, the SPA fallback route is registered last, after all real routers, docs, health probes, and metrics
+- Static files under the dist are served directly
+- Unmatched browser navigations (`GET`/`HEAD` with `Accept: text/html`) outside backend-owned route families return `index.html`, so client-side routes (deep links) work without any proxy configuration
+- Backend-owned route families (`/api`, `/ws`, `/oauth`, `/.well-known`, `/docs`, `/redoc`, `/openapi.json`, `/health`, `/healthz`, `/readyz`, `/startupz`, `/metrics`) are derived from the live route table at startup, not hard-coded
+- If `index.html` is not present, the SPA route is not registered — development and tests keep using the Vite dev server
+
+On NixOS, the module (`nix/module.nix`) defaults `COACHIQ_STATIC_DIR` to the built frontend derivation (`packages.frontend`), so enabling the service yields a self-contained UI. An explicit `services.coachiq.settings.COACHIQ_STATIC_DIR` override is still supported.
 
 ## Caddy Configuration
 
-The Caddy configuration is defined in the NixOS module at `modules/caddy.nix`. Key features:
+An example configuration lives at `config/Caddyfile.example`. Key points:
 
-- Serves the React frontend from `/var/lib/coachiq-web-ui/dist`
-- Proxies all `/api/*` requests to the FastAPI backend
-- Proxies all `/ws/*` WebSocket connections to the backend
-- Uses Cloudflare DNS verification for HTTPS certificates
-- Falls back to serving `index.html` for any non-file paths (for SPA routing)
+- `reverse_proxy localhost:8000` for the whole site — no `file_server`, no per-prefix carve-outs
+- Health-checked upstream (`health_uri /health`)
+- Sets `X-Real-IP`, `X-Forwarded-For`, `X-Forwarded-Proto`, and `X-Request-ID` headers
+- Adds security headers (HSTS, `X-Frame-Options`, etc.), gzip compression, and JSON access logs
+- Redirects HTTP to HTTPS
 
 ## Deployment Process
+
+### NixOS (recommended)
+
+Enable the CoachIQ service; the module builds the frontend and points `COACHIQ_STATIC_DIR` at it automatically.
+
+### Manual
 
 1. Build the React frontend:
 
@@ -47,36 +58,19 @@ The Caddy configuration is defined in the NixOS module at `modules/caddy.nix`. K
    npm run build
    ```
 
-2. Copy the built files to the server:
+2. Deploy `frontend/dist/` to the server and point the backend at it:
 
    ```
-   rsync -avz dist/ nixpi:/var/lib/coachiq-web-ui/dist/
+   COACHIQ_STATIC_DIR=/path/to/frontend/dist
    ```
 
-## Static Files for API Documentation
+3. Run the backend (it serves the SPA and all API traffic on one port):
 
-The FastAPI backend still serves static files for API documentation at the `/static` route. These files are no longer related to the web UI, which is now a standalone React application. The static files are:
+   ```
+   poetry run python run_server.py
+   ```
 
-1. Located in the `src/core_daemon/static/` directory
-2. Automatically created if the directory doesn't exist
-3. Used only for API documentation and Swagger UI customization
-4. Not related to the React frontend
-
-When deploying updates:
-
-1. API documentation static files are included in the Python package
-2. No manual action is needed for these files during deployment
-3. The React frontend is built and deployed separately as described above
-
-## Code Changes from Refactoring
-
-1. Modified `config.py` to only handle static files for API documentation
-2. Removed web UI template-related code from the FastAPI application
-3. Updated `main.py` to mount only the API documentation static files
-4. Created a dedicated `static` directory in `src/core_daemon/` separate from web UI
-5. Removed frontend router imports from the FastAPI application
-
-6. Ensure the Caddy service is running:
+4. (Optional) Put Caddy in front for TLS, using `config/Caddyfile.example` as a starting point, and check it is running:
 
    ```
    systemctl status caddy
@@ -84,7 +78,7 @@ When deploying updates:
 
 ## Development Workflow
 
-During development:
+During development the built SPA is not used; the Vite dev server serves the frontend:
 
 1. Run the FastAPI backend:
 
@@ -99,4 +93,4 @@ During development:
    npm run dev
    ```
 
-The Vite dev server is configured to proxy API requests to the FastAPI backend.
+The Vite dev server (see `frontend/vite.config.ts`) proxies `/api/*` — including the `/api/events` SSE stream — to `http://localhost:8000`, and proxies `/ws/*` for the page-scoped diagnostic WebSocket streams (in practice the diagnostic WebSocket hooks connect directly to `ws://localhost:8000` via `VITE_BACKEND_WS_URL`; see [Frontend Development Setup](frontend/development-setup.md)).

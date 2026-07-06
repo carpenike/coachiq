@@ -17,7 +17,7 @@ or, once it lands, `docs/adr/ADR-0004-coachiq-is-not-the-safety-system.md`.
 backend/
 ├── main.py               # ASGI app construction + service registration
 ├── api/
-│   ├── routers/          # Legacy /api/* endpoints
+│   ├── routers/          # Legacy /api/* endpoints (incl. events.py, the /api/events SSE stream)
 │   ├── domains/          # Domain API v1 (/api/v1/*)
 │   └── router_config.py  # Mounts every router on the app
 ├── core/
@@ -39,7 +39,7 @@ backend/
 ├── middleware/           # Auth, CSRF, structured logging, etc.
 ├── models/               # Pydantic request/response models
 ├── schemas/              # Zod-exportable schemas for the frontend
-├── websocket/            # WebSocket handlers + connection manager
+├── websocket/            # Diagnostic WebSocket routes (logs, CAN tools) + auth handler
 └── alembic/              # SQLite migrations
 ```
 
@@ -51,9 +51,12 @@ flowchart LR
 
     subgraph Backend
         FastAPI --> Routers[Routers /api/* + /api/v1/*]
-        FastAPI --> WS[WebSocket Handlers]
+        FastAPI --> SSE[SSE stream GET /api/events]
+        FastAPI --> WS[Diagnostic WebSockets /ws/*]
 
         Routers -->|Depends| Services[Services]
+        SSE --> Broker[EventBroker]
+        Services -->|publish| Broker
         WS -->|Depends| Services
 
         Services --> Repos[Repositories]
@@ -72,8 +75,8 @@ flowchart LR
     classDef hw fill:#FFEBEE,stroke:#F44336
 
     class Client client
-    class FastAPI,Routers,WS api
-    class Services,CAN logic
+    class FastAPI,Routers,SSE,WS api
+    class Services,CAN,Broker logic
     class Repos,DB,Memory data
     class CANBus hw
 ```
@@ -118,15 +121,20 @@ work in stage planning).
 Two API namespaces coexist:
 
 - **`/api/*`** -- legacy routers under `backend/api/routers/`. Most of
-  these are still active (auth, health, CAN tools, schemas, etc.).
-  A few endpoints under this namespace have been retired in favor of
-  v2 (notably `/api/entities` and `/api/missing-dgns`, both removed
-  during the 2026-05 refactor).
+  these are still active (auth, health, CAN tools, schemas, victron,
+  location, etc.), and the realtime SSE endpoint (`/api/events`) also
+  lives here. Legacy endpoints are retired endpoint-by-endpoint once a
+  domain replacement covers them (notably `/api/entities` and
+  `/api/missing-dgns`, both removed during the 2026-05 refactor); see
+  [ADR-0003](../adr/ADR-0003-api-v2-only-no-legacy.md).
 
-- **`/api/v1/*`** -- domain API under `backend/api/domains/`. Mounted
-  unconditionally by `register_all_domain_routers` in
-  `backend/api/domains/__init__.py`. There are no feature flags around
-  v2 routes; they are always on.
+- **`/api/v1/*`** -- domain API under `backend/api/domains/` (auth,
+  diagnostics, entities, networks, system). Mounted unconditionally by
+  `register_all_domain_routers` in `backend/api/domains/__init__.py`.
+  There are no feature flags around domain routes; they are always on.
+  The public naming settled on `/api/v1` per
+  [ADR-0011](../adr/ADR-0011-public-api-v1-naming.md) (the earlier
+  v2 prefix was an internal migration label).
 
 The legacy `/api/entities` -> `/api/v1/entities` transition is documented
 in PR #126's docstring (and tested by
@@ -147,18 +155,36 @@ in PR #126's docstring (and tested by
 
 ## Real-time updates
 
-The WebSocket layer (`backend/websocket/`) broadcasts entity-state
-updates to connected clients. Connections are managed by the
-`WebSocketManager` service (registered with the
-`EnhancedServiceRegistry` like everything else); routers in
-`backend/websocket/routes.py` mount the WS endpoints on the FastAPI
-app.
+App-wide realtime state rides one authenticated Server-Sent Events
+stream: `GET /api/events` (`backend/api/routers/events.py`). The
+endpoint sits behind the standard `AuthenticationMiddleware`
+(`Authorization: Bearer` header — it is *not* an excluded path), sends
+a `retry: 3000` reconnect hint, heartbeats every 15 s with an SSE
+comment, and replays missed events when a reconnecting client sends
+`Last-Event-ID`.
+
+Behind it sits the `EventBroker`
+(`backend/services/system/event_broker.py`): an in-process fan-out hub
+with monotonic event ids, a 1000-event replay ring buffer, and bounded
+per-client queues that drop the oldest event rather than stall the CAN
+RX path. It is wired in the composition root
+(`backend/core/composition_root.py`) and injected via `EventBrokerDep`
+(`backend/core/dependencies.py`). Producers are `EntityService`,
+`EntityDomainService`, `VictronService`, and `CANBusService`.
 
 When a CAN message decodes into an entity-state change:
+
 1. The decoder writes the new state into `EntityStateRepository`.
-2. `EntityService` (or whichever service owns the change) calls
-   `WebSocketManager.broadcast_entity_change(...)`.
-3. Connected clients see the update in <100ms typical.
+2. The owning service publishes an `entity_update` event
+   (`{entity_id, entity_data}`) to the `EventBroker`.
+3. Connected SSE clients see the update in <100ms typical; commands
+   flow the other way over plain REST.
+
+WebSockets remain only for page-scoped diagnostic streams
+(`backend/websocket/routes.py`): `/ws/logs`, `/ws/can-sniffer`,
+`/ws/can-recorder`, `/ws/can-analyzer`, and `/ws/can-filter`. The old
+`/ws` entity-data socket (and `/ws/network-map`, `/ws/features`,
+`/ws/security`) were removed when the SSE stream landed.
 
 ## See also
 

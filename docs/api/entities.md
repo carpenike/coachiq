@@ -4,9 +4,13 @@
     This documentation describes the **Domain API v1** which is now the primary API.
     Legacy `/api/entities` endpoints have been removed. Please use `/api/v1/entities` for all entity operations.
 
-Entities represent the devices and systems in your RV, such as lights, tanks, and temperature sensors. The Entity API v1 provides enhanced safety-critical controls and bulk operations.
+Entities represent the devices and systems in your RV, such as lights, tanks, and temperature sensors. The Entity API v1 is the unified surface for **all** entity types — there are no per-device routes (no `/api/lights`); filter by `device_type` instead. It provides guardrail-validated controls and bulk operations. The router lives at `backend/api/domains/entities.py` and is mounted at `/api/v1/entities`.
 
-## Entity Model (v2)
+Real-time entity state changes are pushed over the SSE stream at
+`GET /api/events` (`entity_update` / `entity_created` events) — see the
+[Realtime API Reference](websocket.md).
+
+## Entity Model (v1)
 
 Each entity in the v1 API has the following structure:
 
@@ -40,7 +44,7 @@ Each entity in the v1 API has the following structure:
 GET /api/v1/entities
 ```
 
-Returns entities with enhanced pagination, filtering, and safety-critical metadata.
+Returns entities with pagination and filtering.
 
 ### Query Parameters
 
@@ -48,10 +52,9 @@ Returns entities with enhanced pagination, filtering, and safety-critical metada
 | ----------- | ------- | ---------------------------------------------------------------- |
 | device_type | string  | Optional. Filter by device type (e.g., "light")                  |
 | area        | string  | Optional. Filter by area (e.g., "living_room")                   |
+| protocol    | string  | Optional. Filter by protocol (e.g., "rvc")                       |
 | page        | integer | Optional. Page number for pagination (default: 1)                |
-| page_size   | integer | Optional. Number of items per page (default: 100, max: 1000)     |
-| sort_by     | string  | Optional. Sort field (entity_id, name, last_updated)             |
-| sort_order  | string  | Optional. Sort order (asc, desc) (default: asc)                  |
+| page_size   | integer | Optional. Number of items per page (default: 50, max: 100)       |
 
 ### Example
 
@@ -71,7 +74,7 @@ GET /api/v1/entities?area=bedroom&page=1&page_size=50
 
 ```json
 {
-  "items": [
+  "entities": [
     {
       "entity_id": "light_1",
       "name": "Living Room Light",
@@ -99,10 +102,15 @@ GET /api/v1/entities?area=bedroom&page=1&page_size=50
       "available": true
     }
   ],
-  "total": 2,
+  "total_count": 2,
   "page": 1,
-  "page_size": 100,
-  "total_pages": 1
+  "page_size": 50,
+  "has_next": false,
+  "filters_applied": {
+    "device_type": "light",
+    "area": null,
+    "protocol": null
+  }
 }
 ```
 
@@ -144,7 +152,7 @@ Returns a specific entity by ID with enhanced metadata.
 POST /api/v1/entities/{entity_id}/control
 ```
 
-Controls an entity with safety-critical command/acknowledgment patterns.
+Controls an entity with guardrail-validated command/acknowledgment patterns.
 
 ### Path Parameters
 
@@ -219,31 +227,29 @@ Decrease brightness by 10%:
 
 ### Response
 
+The response is an operation result with acknowledgment tracking:
+
 ```json
 {
+  "operation_id": "op-4f2a1c",
   "entity_id": "light_1",
-  "success": true,
-  "command": {
-    "command": "set",
-    "state": true,
-    "brightness": 75
-  },
-  "acknowledgment": {
-    "timestamp": "2023-05-18T15:30:46Z",
-    "source": "rvc",
-    "confirmed": true
-  },
-  "new_state": {
-    "operating_status": 75,
-    "state": "on"
-  }
+  "status": "success",
+  "acknowledged": true,
+  "acknowledgment_time_ms": 42.0,
+  "error_message": null,
+  "error_code": null,
+  "execution_time_ms": 55.3,
+  "safety_validation": {}
 }
 ```
+
+`status` is one of `success`, `failed`, `timeout`, `unauthorized`, or
+`safety_abort`.
 
 ## Bulk Control Entities
 
 ```
-POST /api/v1/entities/bulk/control
+POST /api/v1/entities/bulk-control
 ```
 
 Control multiple entities in a single operation with partial success handling.
@@ -257,10 +263,8 @@ Control multiple entities in a single operation with partial success handling.
     "command": "set",
     "state": false
   },
-  "options": {
-    "continue_on_error": true,
-    "timeout": 5.0
-  }
+  "ignore_errors": true,
+  "timeout_seconds": 5.0
 }
 ```
 
@@ -268,33 +272,34 @@ Control multiple entities in a single operation with partial success handling.
 
 ```json
 {
-  "success": true,
-  "total": 3,
-  "succeeded": 2,
-  "failed": 1,
+  "operation_id": "bulk-9d31ab",
+  "total_count": 3,
+  "success_count": 2,
+  "failed_count": 1,
+  "timeout_count": 0,
+  "safety_abort_count": 0,
   "results": [
     {
       "entity_id": "light_1",
-      "success": true,
-      "acknowledgment": {
-        "timestamp": "2023-05-18T15:30:46Z",
-        "confirmed": true
-      }
+      "operation_id": "op-1",
+      "status": "success",
+      "acknowledged": true
     },
     {
       "entity_id": "light_2",
-      "success": true,
-      "acknowledgment": {
-        "timestamp": "2023-05-18T15:30:46Z",
-        "confirmed": true
-      }
+      "operation_id": "op-2",
+      "status": "success",
+      "acknowledged": true
     },
     {
       "entity_id": "light_3",
-      "success": false,
-      "error": "Entity not available"
+      "operation_id": "op-3",
+      "status": "failed",
+      "error_message": "Entity not available"
     }
-  ]
+  ],
+  "total_execution_time_ms": 120.5,
+  "safety_summary": {}
 }
 ```
 
@@ -316,11 +321,55 @@ GET /api/v1/entities/protocol-summary
 
 Returns a summary of entities grouped by protocol with statistics.
 
+### Get Entity History
+
+```
+GET /api/v1/entities/{entity_id}/history?limit=100&since=<unix-timestamp>
+```
+
+Returns the entity's state-change history.
+
+### Coach Configuration
+
+```
+GET /api/v1/entities/config/coach
+```
+
+Returns coach mapping metadata: areas hierarchy, lighting scenes, and lighting groups.
+
+### Guardrail / Command Halt (Admin)
+
+```
+GET  /api/v1/entities/guardrail-status
+POST /api/v1/entities/command-halt
+POST /api/v1/entities/command-halt/clear
+POST /api/v1/entities/reconcile-state
+```
+
+Guardrail status, emergency halt of all entity command emission (admin only),
+clearing the halt (admin only), and reconciling application state with the
+RV-C bus. A halt is broadcast to clients as a `halt_command_emission` SSE
+event.
+
+### Entity Mappings
+
+```
+POST /api/v1/entities/mappings
+```
+
+Creates a new entity mapping from an unmapped DGN/instance pair (broadcast to
+clients as an `entity_created` SSE event).
+
 ### Debug Endpoints
 
 ```
-GET /api/v1/entities/debug/pending-commands
-GET /api/v1/entities/debug/state-sync
+GET /api/v1/entities/health
+GET /api/v1/entities/schemas
+GET /api/v1/entities/debug/system-info
+GET /api/v1/entities/debug/unmapped
+GET /api/v1/entities/debug/unknown-pgns
+GET /api/v1/entities/debug/missing-dgns
 ```
 
-Provides debug information for pending commands and state synchronization (requires debug mode).
+Provide health/schema information and debug views of unmapped entries, unknown
+PGNs, and missing DGNs.

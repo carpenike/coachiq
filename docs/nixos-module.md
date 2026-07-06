@@ -1,213 +1,182 @@
-# NixOS Module Configuration for rvc2api
+# NixOS Module Reference
 
-This document provides detailed configuration options for the `rvc2api` NixOS module, which allows you to manage the rvc2api service as part of your NixOS system configuration.
+This document is the option reference for the CoachIQ NixOS module
+(`nixosModules.default` in the flake, defined in `nix/module.nix`). The module runs
+CoachIQ as a hardened systemd service configured under `services.coachiq`.
+
+The module uses a hybrid options pattern (see
+[ADR-0009](adr/ADR-0009-nix-module-hybrid-options.md)): only load-bearing deployment
+knobs are first-class typed options; every other non-secret setting passes through the
+freeform `settings` attrset as `COACHIQ_*` environment variables, validated at runtime
+by the backend's Pydantic schema in `backend/core/config.py`.
 
 ## Basic Usage
 
-To use the `rvc2api` module in your NixOS configuration:
-
 ```nix
-# In your configuration.nix or flake.nix
+# In your flake-based NixOS configuration
 {
   imports = [
-    # Other imports...
-    inputs.rvc2api.nixosModules.rvc2api
+    inputs.coachiq.nixosModules.default
   ];
 
-  # Enable the service
-  rvc2api = {
+  services.coachiq = {
     enable = true;
     settings = {
-      # Configuration options here
+      COACHIQ_CAN__INTERFACES = "can0,can1";
     };
   };
 }
 ```
 
-## Configuration Options
+## First-Class Options
 
-### Main Options
+| Option | Type | Default | Description |
+| ------ | ---- | ------- | ----------- |
+| `enable` | boolean | `false` | Enable the CoachIQ RV-C network server |
+| `package` | package | `self.packages.<system>.coachiq` | The CoachIQ package to run |
+| `host` | string | `"127.0.0.1"` | Interface to bind. The default assumes a reverse proxy on the same host; use `"0.0.0.0"` only on controlled networks |
+| `port` | port | `8000` | TCP port to bind on `host` |
+| `dataDir` | string | `"/var/lib/coachiq"` | Base directory for persistent data (maps to `COACHIQ_PERSISTENCE__DATA_DIR`; persistence is mandatory) |
+| `environmentFile` | null or path | `null` | Optional root-readable systemd `EnvironmentFile` carrying secrets |
+| `openFirewall` | boolean | `false` | Open `port` in the host firewall (default false: expected topology is a local reverse proxy) |
+| `logLevel` | enum `DEBUG`/`INFO`/`WARNING`/`ERROR`/`CRITICAL` | `"INFO"` | CoachIQ logging level |
+| `tlsTerminationIsExternal` | boolean | `false` | Set when Caddy or another trusted reverse proxy terminates TLS (sets `COACHIQ_SECURITY__TLS_TERMINATION_IS_EXTERNAL=true`) |
 
-| Option    | Type    | Default                          | Description                |
-| --------- | ------- | -------------------------------- | -------------------------- |
-| `enable`  | boolean | `false`                          | Enable the rvc2api service |
-| `package` | package | `self.packages.<system>.rvc2api` | The rvc2api package to use |
+### RouterOS Sidecar Options
 
-### Server Configuration
+The plain-HTTP RouterOS sidecar listener is intended only for the RV LAN and is not
+mounted under the main authenticated CoachIQ API.
 
-These settings control the API server.
+| Option | Type | Default | Description |
+| ------ | ---- | ------- | ----------- |
+| `routerSidecar.enable` | boolean | `false` | Enable the RouterOS sidecar listener |
+| `routerSidecar.host` | string | `"0.0.0.0"` | Sidecar bind host. Use only on controlled LANs |
+| `routerSidecar.port` | port | `8100` | Sidecar TCP port |
+| `routerSidecar.openFirewall` | boolean | `false` | Open the sidecar port, restricted to `lanInterfaces` |
+| `routerSidecar.lanInterfaces` | list of strings | `[ ]` | Firewall interfaces on which to open the sidecar port (e.g. `[ "br-lan" "wlan0" ]`). Required when `routerSidecar.openFirewall` is set, so the port stays LAN-only |
 
-| Option              | Type   | Default     | Description                                           |
-| ------------------- | ------ | ----------- | ----------------------------------------------------- |
-| `settings.host`     | string | `"0.0.0.0"` | Host IP to bind the API server to                     |
-| `settings.port`     | int    | `8000`      | Port to run the API server on                         |
-| `settings.logLevel` | string | `"INFO"`    | Logging level (DEBUG, INFO, WARNING, ERROR, CRITICAL) |
+## Freeform `settings`
 
-### Controller Configuration
+| Option | Type | Default |
+| ------ | ---- | ------- |
+| `settings` | attrset of string/int/bool | `{ }` |
 
-| Option                          | Type   | Default  | Description                      |
-| ------------------------------- | ------ | -------- | -------------------------------- |
-| `settings.controllerSourceAddr` | string | `"0xF9"` | Controller source address in hex |
+`settings` holds non-secret `COACHIQ_*` environment variables passed verbatim to the
+service. Keys must be full environment variable names (the module asserts the
+`COACHIQ_` prefix) using the current Pydantic field names from
+`backend/core/config.py`.
 
-### Pushover Integration
+Encoding rules:
 
-Pushover is used for sending notifications from the service.
+- **Booleans and integers** may use native Nix values (`true`, `8000`)
+- **Floats** must be quoted strings (`"0.25"`) — the option type intentionally accepts
+  only string/int/bool
+- **Lists and dicts** should be JSON strings (`builtins.toJSON [...]`) unless the
+  specific Pydantic field parser is known to accept comma-separated strings (e.g.
+  `COACHIQ_CAN__INTERFACES = "can0,can1"`)
 
-| Option                       | Type           | Default | Description                        |
-| ---------------------------- | -------------- | ------- | ---------------------------------- |
-| `settings.pushover.enable`   | boolean        | `false` | Enable Pushover integration        |
-| `settings.pushover.apiToken` | string         | `""`    | Pushover API token                 |
-| `settings.pushover.userKey`  | string         | `""`    | Pushover user key                  |
-| `settings.pushover.device`   | null or string | `null`  | Optional Pushover device name      |
-| `settings.pushover.priority` | null or int    | `null`  | Optional Pushover message priority |
+Notes:
 
-### UptimeRobot Integration
-
-UptimeRobot is used for monitoring service health.
-
-| Option                        | Type    | Default | Description                    |
-| ----------------------------- | ------- | ------- | ------------------------------ |
-| `settings.uptimerobot.enable` | boolean | `false` | Enable UptimeRobot integration |
-| `settings.uptimerobot.apiKey` | string  | `""`    | UptimeRobot API key            |
-
-### CAN Bus Configuration
-
-These settings control how the service interacts with the RV's CAN bus.
-
-| Option                     | Type            | Default       | Description                       |
-| -------------------------- | --------------- | ------------- | --------------------------------- |
-| `settings.canbus.channels` | list of strings | `[ "can0" ]`  | SocketCAN interfaces to listen on |
-| `settings.canbus.bustype`  | string          | `"socketcan"` | Python-CAN bus type               |
-| `settings.canbus.bitrate`  | int             | `500000`      | CAN bus bitrate                   |
-
-### RV-C Spec and Device Mapping
-
-These settings allow customizing the RV-C specification and device mapping files.
-
-| Option                       | Type           | Default | Description                                 |
-| ---------------------------- | -------------- | ------- | ------------------------------------------- |
-| `settings.rvcSpecPath`       | null or string | `null`  | Override path to `rvc.json` (RVC spec file) |
-| `settings.deviceMappingPath` | null or string | `null`  | Override path to device mapping file        |
-| `settings.modelSelector`     | null or string | `null`  | Model selector for device mapping file      |
-| `settings.userCoachInfoPath` | null or string | `null`  | Path to user coach info YAML file           |
-
-### GitHub Integration
-
-| Option                      | Type           | Default | Description                                                 |
-| --------------------------- | -------------- | ------- | ----------------------------------------------------------- |
-| `settings.githubUpdateRepo` | null or string | `null`  | GitHub repository to check for updates (format: owner/repo) |
+- Values in `settings` end up in the world-readable Nix store. **Never put secrets
+  here** — the module rejects `COACHIQ_SECURITY__SECRET_KEY`,
+  `COACHIQ_AUTH__SECRET_KEY`, and their `_FILE` variants at eval time; supply those
+  through `environmentFile` instead.
+- The first-class options win over `settings`: `COACHIQ_SERVER__HOST`,
+  `COACHIQ_SERVER__PORT`, `COACHIQ_PERSISTENCE__DATA_DIR`, `COACHIQ_LOGGING__LEVEL`,
+  `COACHIQ_SECURITY__TLS_TERMINATION_IS_EXTERNAL`, `COACHIQ_ROUTER_SIDECAR__ENABLED`,
+  `COACHIQ_ROUTER_SIDECAR__HOST`, `COACHIQ_ROUTER_SIDECAR__PORT`, and
+  `COACHIQ_ENVIRONMENT` (always `production`) are set from the typed options and
+  override any same-named `settings` keys.
+- `COACHIQ_STATIC_DIR` defaults to the flake's prebuilt frontend package unless you
+  override it in `settings`.
 
 ## Example Configurations
 
 ### Basic Configuration
 
 ```nix
-rvc2api = {
+services.coachiq = {
   enable = true;
-  settings.canbus.channels = [ "can0" "can1" ];
+  settings.COACHIQ_CAN__INTERFACES = "can0,can1";
 };
 ```
 
 ### Complete Configuration
 
 ```nix
-rvc2api = {
+services.coachiq = {
   enable = true;
 
-  # Use a specific package version
-  package = pkgs.rvc2api;
+  # Bind behind a local Caddy reverse proxy that terminates TLS
+  host = "127.0.0.1";
+  port = 8000;
+  tlsTerminationIsExternal = true;
+  logLevel = "INFO";
+
+  dataDir = "/var/lib/coachiq";
+
+  # Secrets from sops-nix/agenix: a file with lines like
+  #   COACHIQ_SECURITY__SECRET_KEY=...
+  #   COACHIQ_AUTH__SECRET_KEY=...
+  environmentFile = config.age.secrets.coachiq-env.path;
+
+  # RouterOS sidecar on the RV LAN only
+  routerSidecar = {
+    enable = true;
+    openFirewall = true;
+    lanInterfaces = [ "br-lan" ];
+  };
 
   settings = {
-    # Server configuration
-    host = "0.0.0.0";
-    port = 8000;
-    logLevel = "INFO";  # Or "DEBUG" for more verbose output
-
-    # Controller configuration
-    controllerSourceAddr = "0xF9";
-
-    # Pushover notifications
-    pushover = {
-      enable = true;
-      apiToken = "your-api-token";
-      userKey = "your-user-key";
-      device = "mydevice";
-      priority = 1;
+    # CAN topology
+    COACHIQ_CAN__INTERFACES = "can0,can1";
+    COACHIQ_CAN__INTERFACE_MAPPINGS = builtins.toJSON {
+      house = "can0";
+      chassis = "can1";
     };
 
-    # UptimeRobot monitoring
-    uptimerobot = {
-      enable = true;
-      apiKey = "your-api-key";
-    };
+    # Coach mapping selection
+    COACHIQ_RVC__COACH_MODEL = "2021_Entegra_Aspire_44R";
 
-    # CAN bus settings
-    canbus = {
-      channels = [ "can0" "vcan0" ];
-      bustype = "socketcan";
-      bitrate = 500000;
-    };
+    # Victron Cerbo GX power system over MQTT
+    COACHIQ_VICTRON__ENABLED = true;
+    COACHIQ_VICTRON__HOST = "192.168.1.20";
 
-    # Use a specific RV model's mapping file
-    modelSelector = "2021_Entegra_Aspire_44R";
+    # GPS trip log (breadcrumbs from gpsd, /location page, GPX export)
+    COACHIQ_TRIP_LOG__ENABLED = true;
+    COACHIQ_TRIP_LOG__RETENTION_DAYS = 365;
 
-    # Or specify custom mapping paths
-    # rvcSpecPath = "/path/to/custom/rvc.json";
-    # deviceMappingPath = "/path/to/custom/coach_mapping.default.yml";
-
-    # User coach information
-    userCoachInfoPath = "/path/to/coach_info.yml";
-
-    # GitHub update checker
-    githubUpdateRepo = "carpenike/rvc2api";
+    # RV-C time master: broadcast DATE_TIME_STATUS + GPS DGNs
+    COACHIQ_TIME_SYNC__ENABLED = true;
+    COACHIQ_TIME_SYNC__SET_COMMAND_INTERVAL_SECONDS = "300.0";  # float: quoted
   };
 };
 ```
 
-## Environment Variables
+## What the Module Sets Up
 
-The NixOS module automatically sets up these environment variables for the systemd service:
+When enabled, the module:
 
-| Environment Variable           | Derived From                                                   |
-| ------------------------------ | -------------------------------------------------------------- |
-| `ENABLE_PUSHOVER`              | `settings.pushover.enable`                                     |
-| `PUSHOVER_API_TOKEN`           | `settings.pushover.apiToken`                                   |
-| `PUSHOVER_USER_KEY`            | `settings.pushover.userKey`                                    |
-| `PUSHOVER_DEVICE`              | `settings.pushover.device`                                     |
-| `PUSHOVER_PRIORITY`            | `settings.pushover.priority`                                   |
-| `ENABLE_UPTIMEROBOT`           | `settings.uptimerobot.enable`                                  |
-| `UPTIMEROBOT_API_KEY`          | `settings.uptimerobot.apiKey`                                  |
-| `CAN_CHANNELS`                 | `settings.canbus.channels` (comma-separated)                   |
-| `CAN_BUSTYPE`                  | `settings.canbus.bustype`                                      |
-| `CAN_BITRATE`                  | `settings.canbus.bitrate`                                      |
-| `RVC2API_HOST`                 | `settings.host`                                                |
-| `RVC2API_PORT`                 | `settings.port`                                                |
-| `LOG_LEVEL`                    | `settings.logLevel`                                            |
-| `CONTROLLER_SOURCE_ADDR`       | `settings.controllerSourceAddr`                                |
-| `GITHUB_UPDATE_REPO`           | `settings.githubUpdateRepo`                                    |
-| `CAN_MODEL_SELECTOR`           | `settings.modelSelector`                                       |
-| `RVC_SPEC_PATH`                | `settings.rvcSpecPath`                                         |
-| `RVC_COACH_MAPPING_PATH`       | Complex logic based on `deviceMappingPath` and `modelSelector` |
-| `RVC2API_USER_COACH_INFO_PATH` | `settings.userCoachInfoPath`                                   |
+- Creates the `coachiq` system user/group (with `dialout` supplementary group for CAN
+  device access) and the `dataDir` subdirectory layout (`databases/`, `backups/`,
+  `config/`, `themes/`, `dashboards/`, `logs/`, `reference/`) via systemd tmpfiles
+- Copies bundled reference data (RV-C spec, coach mappings) into
+  `<dataDir>/reference` when `dataDir` is the default `/var/lib/coachiq`
+- Runs `coachiq-validate-config` before start (fail-fast on invalid configuration),
+  starts `coachiq-daemon`, and runs a post-start health check
+- Applies systemd hardening (`NoNewPrivileges`, `PrivateTmp`, `ProtectSystem=strict`,
+  `ProtectHome`, restricted `ReadWritePaths`)
+- Opens firewall ports only as configured by `openFirewall` and
+  `routerSidecar.openFirewall`/`routerSidecar.lanInterfaces`
 
 ## Advanced Configuration
 
-For advanced use cases, you might want to override the package to use a custom version:
+To use a custom package build:
 
 ```nix
-rvc2api = {
+services.coachiq = {
   enable = true;
-  package = pkgs.callPackage ./path/to/custom-rvc2api.nix {};
-  # ...other settings
-};
-```
-
-Or use inputs from a flake for package references:
-
-```nix
-rvc2api = {
-  enable = true;
-  package = inputs.rvc2api.packages.${pkgs.system}.rvc2api;
+  package = inputs.coachiq.packages.${pkgs.system}.coachiq;
   # ...other settings
 };
 ```

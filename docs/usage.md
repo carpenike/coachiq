@@ -4,11 +4,23 @@
 
 Once installed, access CoachIQ from any device on your RV's network:
 
-- **URL**: `http://raspberrypi.local:8080` or `http://[PI-IP-ADDRESS]:8080`
-- **No login required** for local network access
+- **URL**: `http://raspberrypi.local:8000` or `http://[PI-IP-ADDRESS]:8000`
+- **Authentication is optional** — disabled by default; single-user, multi-user (JWT + PIN), and PocketID OIDC login modes can be enabled via `COACHIQ_AUTH__*` settings
 - Works on phones, tablets, laptops
 
 ## Main Interface
+
+### Pages
+
+The sidebar groups the UI into:
+
+- **Home** - System overview with quick controls and a power summary
+- **Lights** - All lights with toggle and brightness controls
+- **Climate** - Thermostat zones, AC units, heat pump, and Aqua-Hot heat sources
+- **Power** - Victron inverter/charger status, generator, DC loads, shore-input-limit control (requires the Victron Cerbo GX integration)
+- **Location** - GPS trip log with a breadcrumb map and GPX export (requires the trip-log integration)
+- **Devices / Diagnostics / System** - Device inventory, fault codes, and system health
+- **Advanced** - CAN sniffer, CAN tools, network map, unknown PGNs, unmapped entries, device mapping, and an RV-C spec browser
 
 ### Dashboard
 
@@ -75,8 +87,8 @@ The entities page is where you'll spend most time:
    - Turn all on/off
    - Set all to specific level
 
-### WebSocket Real-Time Updates
-- No need to refresh
+### Real-Time Updates
+- No need to refresh — the UI subscribes to a live event stream (Server-Sent Events)
 - Device states update automatically
 - See changes made from RV physical controls
 

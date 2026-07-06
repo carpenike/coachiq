@@ -1,5 +1,14 @@
 # Frontend Health Monitoring Implementation Summary
 
+> **Historical note (2026-07):** This document describes an implementation that
+> has since been reworked. The files it references — `src/contexts/health-context.tsx`,
+> `src/pages/health-dashboard.tsx`, `src/hooks/useHealthStatus.ts`, and
+> `src/components/system-status-banner.tsx` — no longer exist, and there is no
+> `/health` page. Health status now lives in `useHealthStatus()` in
+> `src/hooks/useSystem.ts`, `useSystemHealth()` in `src/hooks/useDiagnostics.ts`,
+> and the coach connection verdict (LIVE/STALE/OFFLINE) in
+> `src/contexts/coach-connection.tsx`. Treat the file list below as historical.
+
 ## Overview
 
 We have successfully implemented a comprehensive health monitoring system for the CoachIQ frontend, based on the plan outlined in `FRONTEND_HEALTH_MONITORING_PLAN.md`. The implementation leverages the new backend health endpoints (Phase 3 complete) to provide real-time system health visibility.

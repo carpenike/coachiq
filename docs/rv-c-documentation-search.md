@@ -8,7 +8,7 @@ The CoachIQ project includes a semantic search feature that allows users to quer
 
 1. FAISS vector database for efficient similarity search
 2. OpenAI embeddings for converting text to vectors
-3. [Mixed chunking strategies](mixed-chunking-strategies.md) to support multiple document formats
+3. [Mixed chunking strategies](archive/2025-01/mixed-chunking-strategies.md) to support multiple document formats
 4. FastAPI endpoints for accessing the search functionality
 
 ## Setup Instructions
@@ -43,16 +43,15 @@ set -x OPENAI_API_KEY "your-openai-api-key"
 
 You can obtain an API key from [https://platform.openai.com/api-keys](https://platform.openai.com/api-keys)
 
-### 3. Using the Helper Script (Recommended)
+### 3. Building the Index (Recommended)
 
-The easiest way to set up the documentation search is to use our helper script:
+Use the document processor to chunk the PDF and build the FAISS index in one step:
 
 ```bash
-# Check the current setup status
-poetry run python scripts/setup_faiss.py
-
-# Run the complete setup process
-poetry run python scripts/setup_faiss.py --setup
+poetry run python dev_tools/enhanced_document_processor.py \
+  --pdf resources/rv-c-spec.pdf \
+  --chunking section_overlap \
+  --add-to-index resources/vector_store/
 ```
 
 ### 4. Manual Setup (Alternative)
@@ -150,7 +149,7 @@ You can now mix different document types in the search index:
 2. **Generate embeddings** for these chunks
 3. **Add to the existing index** with source and chunking metadata
 
-For a complete step-by-step guide on processing new PDF files and adding them to the FAISS index, refer to the [PDF Processing Guide](pdf-processing-guide.md).
+For a complete step-by-step guide on processing new PDF files and adding them to the FAISS index, refer to the [PDF Processing Guide](archive/2025-01/pdf-processing-guide.md).
 
 Example code:
 
@@ -231,10 +230,10 @@ If you encounter issues with the documentation search:
 
 ### Diagnostic Steps
 
-1. Run the status check to identify issues:
+1. Check the search service status to identify issues:
 
    ```bash
-   poetry run python scripts/setup_faiss.py --check
+   curl "http://localhost:8000/api/docs/status"
    ```
 
 2. Verify file paths:
@@ -267,7 +266,10 @@ If the above steps don't resolve your issue:
    ```bash
    rm resources/rvc_spec_chunks_with_overlap.json
    rm -rf resources/vector_store/rvc_spec_index
-   poetry run python scripts/setup_faiss.py --setup
+   poetry run python dev_tools/enhanced_document_processor.py \
+     --pdf resources/rv-c-spec.pdf \
+     --chunking section_overlap \
+     --add-to-index resources/vector_store/
    ```
 
 2. Check for Python package issues:
