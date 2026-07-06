@@ -1,6 +1,6 @@
-# Enhanced Development Environment for rvc2api
+# Enhanced Development Environment for CoachIQ
 
-This update introduces several improvements to the development environment for the rvc2api project:
+This update introduces several improvements to the development environment for the CoachIQ project:
 
 ## 1. VS Code Tasks Integration
 

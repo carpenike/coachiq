@@ -19,9 +19,9 @@ CoachIQ is an RV-C / J1939 CANbus network-management system for recreational
 vehicles. It runs on a small Linux box (a Raspberry Pi in the reference
 install) inside the coach, decodes the RV-C messages on the bus into
 addressable **entities** (lights, locks, tanks, climate, etc.), exposes their
-state and control over a **FastAPI** REST + WebSocket API, and serves a
-**React** SPA for monitoring and control. The repo is historically named
-`rvc2api`; the product is CoachIQ.
+state and control over a **FastAPI** REST API with a real-time **SSE** event
+stream, and serves a **React** SPA for monitoring and control. The repo is
+historically named `rvc2api`; the product is CoachIQ.
 
 **The single most important framing — read ADR-0004.** CoachIQ is **not** a
 vehicle safety system. In the reference install (a 2021 Entegra Aspire 44R) it
@@ -45,9 +45,10 @@ chooses whether to act on them. Consequences for how you write code and specs:
 **Deployment shape:** Python 3.12 backend run under Poetry; React SPA built
 with Vite and served by the **FastAPI backend** from `COACHIQ_STATIC_DIR` when
 the built `index.html` is present. **Caddy** terminates TLS and acts as a
-single pass-through reverse proxy to FastAPI for the SPA, REST API,
-WebSockets, OAuth discovery, docs, health probes, and metrics. Reproducible
-builds and an optional NixOS module are provided via the Nix flake.
+single pass-through reverse proxy to FastAPI for the SPA, REST API, the SSE
+event stream, diagnostic WebSockets, OAuth discovery, docs, health probes, and
+metrics. Reproducible builds and an optional NixOS module are provided via the
+Nix flake.
 
 ---
 
@@ -69,23 +70,36 @@ One repo, two halves. A single feature commonly spans both.
   modules.
 - **`backend/services/`** — domain + management services (see §3). Services are
   grouped by package: `auth/`, `analytics/`, `can/`, `database/`, `discovery/`,
-  `entities/`, `knowledge/`, `logging/`, `maintenance/`, `notifications/`,
-  `persistence/`, `protocols/`, `rvc/`, `safety/`, `security/`, `system/`, and
-  `updates/`. The root package intentionally keeps no eager re-exports.
+  `entities/`, `guardrails/`, `knowledge/`, `logging/`, `maintenance/`,
+  `notifications/`, `persistence/`, `protocols/`, `rvc/`, `safety/`,
+  `security/`, `system/` (incl. `event_broker.py`, the SSE data plane),
+  `time_sync/` (RV-C time master / GPS broadcast / compass synthesis),
+  `trip_log/` (GPS trip + breadcrumb recording), `updates/`, and `victron/`
+  (Cerbo GX MQTT). The root package intentionally keeps no eager re-exports.
 - **`backend/repositories/`** — repository pattern for data access. Replaces the
   old monolithic `AppState` (removed in the ServiceRegistry refactor).
 - **`backend/integrations/`** — protocol integrations, each self-registering
-  with the feature system: `can/`, `rvc/` (incl. Firefly extensions),
-  `j1939/` (incl. Spartan K2 chassis extensions), `diagnostics/`,
-  `notifications/`, `analytics/`, `analytics_dashboard/`, `device_discovery/`,
-  `auth/`, `ip/`, `bluetooth/`.
+  with the feature system: `can/`, `rvc/` (incl. Firefly extensions and
+  `time_broadcast.py` DGN encoders), `j1939/` (incl. Spartan K2 chassis
+  extensions), `diagnostics/`, `notifications/`, `analytics/`,
+  `analytics_dashboard/`, `device_discovery/`, `auth/`, `ip/`, `bluetooth/`,
+  `victron/` (Cerbo GX MQTT catalog/client), and `router_sidecar/` (gpsd,
+  Starlink, Nighthawk modem sidecar that feeds GPS/connectivity data).
 - **`backend/api/routers/`** — legacy `/api/*` REST endpoints (being retired,
   ADR-0003).
-- **`backend/api/domains/`** — **Domain API v1** (`/api/v1/*`): `entities.py`,
-  `diagnostics.py`, `networks.py`, `system.py`. This is the primary development
-  path.
-- **`backend/websocket/`** — WebSocket handlers/routes (entity updates, logs,
-  CAN sniffer, network map, features, recorder/analyzer/filter).
+- **`backend/api/domains/`** — **Domain API v1** (`/api/v1/*`): `auth.py`,
+  `entities.py`, `diagnostics.py`, `networks.py`, `system.py`. This is the
+  primary development path.
+- **Realtime data plane (SSE):** `backend/api/routers/events.py` exposes the
+  single authenticated `GET /api/events` SSE stream (15 s heartbeat,
+  `Last-Event-ID` gap replay); `backend/services/system/event_broker.py` is the
+  `EventBroker` (monotonic ids, 1000-event replay ring, bounded per-client
+  queues). Entity, Victron, and CAN-health services publish typed events to it.
+- **`backend/websocket/`** — WebSocket handlers/routes for page-scoped
+  diagnostic streams only: `/ws/logs`, `/ws/can-sniffer`, `/ws/can-recorder`,
+  `/ws/can-analyzer`, `/ws/can-filter`. The old `/ws` entity data socket (and
+  `/ws/network-map`, `/ws/features`, `/ws/security`) was replaced by the SSE
+  stream.
 - **`backend/middleware/`** — auth, CSRF, structured logging, rate-limiting,
   validation.
 - **`backend/models/`** (SQLAlchemy ORM), **`backend/schemas/`** (Pydantic
@@ -95,17 +109,22 @@ One repo, two halves. A single feature commonly spans both.
 
 - **React 19 + Vite 6 + TypeScript (strict) + Tailwind 4 + shadcn/ui.**
 - **Server state via React Query**; client state via React Context (auth,
-  websocket, health, theme). No Redux.
+  realtime/SSE, coach-connection, theme). No Redux.
 - `src/` is organized by `pages/`, `components/` (with `ui/` for shadcn),
   `hooks/`, `contexts/`, `api/`, `types/`. OpenAPI-strong frontend REST
-  types are generated into `src/api/generated/openapi-types.ts`; WebSocket
-  envelopes, runtime validators, legacy-shaped UI adapters, and analytics
-  responses remain manual where they are not direct OpenAPI REST contracts.
+  types are generated into `src/api/generated/openapi-types.ts`; SSE event
+  envelopes (`src/api/sse.ts`), diagnostic-WebSocket envelopes, runtime
+  validators, legacy-shaped UI adapters, and analytics responses remain manual
+  where they are not direct OpenAPI REST contracts.
   Entity control/bulk-control uses the generated HOF-021 safety result schemas;
   `frontend/src/hooks/useEntities.ts` is only a legacy-shape adapter for current
   UI callers, not a v1/v2 fallback switch.
-- Talks to the backend over REST (`/api/v1/*`) + WebSocket (`/ws*`). Vite dev
-  server proxies both to the backend.
+- Talks to the backend over REST (`/api/v1/*` and legacy `/api/*`) + the SSE
+  stream (`/api/events`, consumed by `CoachEventStream` in `src/api/sse.ts` via
+  fetch + ReadableStream because `EventSource` cannot send an `Authorization`
+  header; `RealtimeProvider` feeds events into the React Query cache).
+  WebSockets (`/ws/*`) remain only for log/CAN diagnostic pages. Vite dev
+  server proxies all of it to the backend.
 
 ### Supporting trees
 
@@ -206,6 +225,26 @@ and is not the runtime DI service. Do not reintroduce a shared
 **HTTP error envelope (ADR-0005).** Error responses carry both FastAPI's
 `detail` field and a custom `error.{code, message}` shape for backward compat.
 Don't "clean this up" to one or the other.
+
+**One SSE data plane.** Real-time app state flows through a single
+authenticated SSE stream: services publish typed events to the `EventBroker`
+(`backend/services/system/event_broker.py`, composition-root wired, obtained
+via `EventBrokerDep`), and clients consume `GET /api/events`
+(`backend/api/routers/events.py`). Do not add new WebSocket endpoints for app
+state or reintroduce a `/ws` data socket — the surviving `/ws/*` routes are
+page-scoped diagnostics (logs, CAN sniffer/recorder/analyzer/filter) only.
+The stream authenticates via the standard `Authorization` header (it is not in
+the auth-middleware exclusion list), supports `Last-Event-ID` gap replay from
+the broker's ring buffer, and heartbeats every 15 s.
+
+**Optional hardware/off-bus subsystems are settings-gated.** Three service
+clusters are disabled by default and enabled per-coach via env settings:
+`victron/` (Cerbo GX over MQTT, `COACHIQ_VICTRON__*` — inverter/charger,
+generator, DC loads, RuuviTag sensors, GPS), `trip_log/` (gpsd-fed GPS trip +
+breadcrumb log, `COACHIQ_TRIP_LOG__*`), and `time_sync/` (RV-C time master:
+`DATE_TIME_STATUS`/GPS DGN broadcast, periodic `SET_DATE_TIME_COMMAND` nudge,
+synthesized `COMPASS_BEARING_STATUS`, `COACHIQ_TIME_SYNC__*`). GPS position
+comes from the `router_sidecar` integration's gpsd client.
 
 ---
 
@@ -335,7 +374,7 @@ bandit, ESLint-staged). `dev_start.sh` sets up a virtual-CAN dev environment.
   REST types with `cd frontend && npm run gen:api`; verify freshness with
   `npm run check:api-types`. `frontend/src/api/types/domains.ts` aliases the
   generated components for strong v2 schemas and explicitly keeps manual types
-  for WebSocket envelopes, Zod/runtime validation helpers, legacy-shaped UI
+  for SSE/diagnostic-WebSocket envelopes, Zod/runtime validation helpers, legacy-shaped UI
   adapters, and analytics responses. Entity control and bulk-control result
   types are generated from the HOF-021 safety response models; do not recreate a
   silent fallback bridge for them. If you change a v2 payload, regenerate/export

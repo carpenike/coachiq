@@ -1,6 +1,6 @@
 # Project Overview
 
-The CoachIQ project provides a modern API and WebSocket service for RV-C (Recreational Vehicle Controller Area Network) systems, allowing you to monitor and control various devices in your RV.
+The CoachIQ project provides a modern REST API with a real-time Server-Sent Events (SSE) stream for RV-C (Recreational Vehicle Controller Area Network) systems, allowing you to monitor and control various devices in your RV.
 
 ## System Architecture
 
@@ -13,19 +13,20 @@ graph TD
 
     subgraph "Frontend Layer"
         WebUI --> REST[REST API Client]
-        WebUI --> WS[WebSocket Client]
+        WebUI --> SSE[SSE Client - CoachEventStream]
         MobileApp --> REST
-        MobileApp --> WS
+        MobileApp --> SSE
     end
 
     subgraph "API Layer"
         REST --> FastAPI[FastAPI Server]
-        WS --> WSServer[WebSocket Server]
+        SSE --> Events[SSE Stream GET /api/events]
+        Events --> Broker[EventBroker]
         FastAPI -->|Depends| Services[Services]
-        WSServer -->|Depends| Services
     end
 
     subgraph "Business Logic"
+        Services -->|publish| Broker
         Services --> Repos[Repositories]
         Services --> Decoder[RV-C Decoder]
         Services --> CANFacade[CAN Facade]
@@ -46,8 +47,8 @@ graph TD
     classDef device fill:#ffccbc,stroke:#e64a19,color:#212121;
 
     class User user;
-    class WebUI,MobileApp,REST,WS frontend;
-    class FastAPI,WSServer,Services api;
+    class WebUI,MobileApp,REST,SSE frontend;
+    class FastAPI,Events,Broker,Services api;
     class Repos,Decoder,CANFacade,SQL logic;
     class CANInterface,RVCBus,Firefly device;
 ```
@@ -64,10 +65,11 @@ graph TD
 
 The backend is built with Python and FastAPI:
 
-- **FastAPI Application**: Provides RESTful API and WebSocket endpoints
+- **FastAPI Application**: Provides the RESTful API, the SSE realtime stream, and diagnostic WebSocket endpoints
 - **RV-C Decoder**: Translates CAN messages to/from human-readable formats
-- **State Management**: Maintains entity states and histories
-- **WebSocket Server**: Provides real-time updates to clients
+- **State Management**: Maintains entity states and histories via the repository layer
+- **EventBroker**: In-process fan-out hub behind `GET /api/events`; services publish state changes, connected SSE clients receive them (with `Last-Event-ID` gap replay from a bounded ring buffer)
+- **Diagnostic WebSockets**: Page-scoped streams for logs and CAN tooling (`/ws/logs`, `/ws/can-*`)
 
 ### Frontend Components
 
@@ -76,7 +78,7 @@ The frontend is built with React, TypeScript, and Vite:
 - **React Application**: Single-page application with modern UI
 - **TypeScript**: Provides type safety and better developer experience
 - **API Client**: Communicates with the backend API
-- **WebSocket Client**: Receives real-time updates
+- **CoachEventStream / RealtimeProvider**: Owns the single SSE connection; entity events land in the TanStack Query cache
 
 ## Directory Structure
 
@@ -85,13 +87,13 @@ The project follows a monorepo structure:
 ```text
 coachiq/
 ├── backend/              # Python backend application
-│   ├── api/              # FastAPI routers (legacy + domain v2)
+│   ├── api/              # FastAPI routers (legacy /api/* + domain v1 at /api/v1/*)
 │   ├── core/             # Config, ServiceRegistry, dependencies
 │   ├── services/         # Business logic services
 │   ├── repositories/     # Repository pattern data access
 │   ├── integrations/     # CAN, RV-C, J1939, Firefly, Spartan K2
 │   ├── middleware/       # Auth, CSRF, structured logging
-│   ├── websocket/        # WebSocket handlers
+│   ├── websocket/        # Diagnostic WebSocket routes (logs, CAN tools)
 │   ├── models/           # Pydantic request/response models
 │   ├── schemas/          # Zod-exportable schemas for the frontend
 │   └── alembic/          # SQLite migrations
@@ -103,7 +105,7 @@ coachiq/
 ## Key Features
 
 - **Entity Management**: Monitor and control RV entities like lights, tanks, thermostats
-- **Real-time Updates**: WebSocket for instant updates on entity state changes
+- **Real-time Updates**: Authenticated SSE stream (`GET /api/events`) for instant updates on entity state changes; WebSockets remain only for diagnostic streams (logs, CAN tools)
 - **Unified API**: Consistent endpoint structure for all entity types
 - **Type Safety**: Strong typing in both backend and frontend
 - **Interactive Documentation**: Auto-generated API docs via OpenAPI/Swagger
@@ -129,18 +131,18 @@ The system can be deployed in various ways:
 
 ## API Design Decision
 
-All light-related API operations are consolidated under `/api/entities` endpoints (e.g., `/api/entities?device_type=light`). The legacy `/api/lights` endpoint is not used. This ensures a unified, type-safe, and extensible API surface for all entity types.
+All light-related API operations are consolidated under the Domain API v1 `/api/v1/entities` endpoints (e.g., `/api/v1/entities?device_type=light`). There is no per-device `/api/lights` route, and the legacy unversioned `/api/entities` router has been retired (see ADR-0003 and ADR-0011). This ensures a unified, type-safe, and extensible API surface for all entity types.
 
 ### Entity Control Command Structure
 
-When controlling entities via the `/api/entities/{id}/control` endpoint, the request body must use the standardized command format:
+When controlling entities via the `/api/v1/entities/{entity_id}/control` endpoint, the request body must use the standardized command format:
 
 ```json
 // Turn light on
-{ "command": "set", "state": "on" }
+{ "command": "set", "state": true }
 
 // Set light brightness
-{ "command": "set", "state": "on", "brightness": 75 }
+{ "command": "set", "state": true, "brightness": 75 }
 
 // Toggle light state
 { "command": "toggle" }

@@ -8,21 +8,56 @@ docs_dir: docs
 site_dir: site
 
 nav:
-  - Home: README.md
+  - Home: index.md
   - Setup: setup.md
   - Usage: usage.md
+  - Configuration:
+    - Overview: configuration.md
+    - Reference Guide: configuration-guide.md
+  - Deployment:
+    - NixOS Integration: nixos-integration.md
+    - NixOS Module Reference: nixos-module.md
+    - Frontend Deployment: react-deployment.md
   - Troubleshooting: troubleshooting.md
+  - Architecture:
+    - Overview: architecture/overview.md
+    - Backend: architecture/backend.md
+    - Frontend: architecture/frontend.md
+    - Repository Pattern: architecture/repository-pattern.md
+    - Configuration Loading: architecture/configuration-loading.md
   - Architecture Decisions:
     - Overview: adr/README.md
     - "ADR-0001 — FastAPI Depends over a DI framework": adr/ADR-0001-fastapi-depends-over-di-framework.md
     - "ADR-0002 — Single CANFacade entry point": adr/ADR-0002-can-facade-pattern.md
     - "ADR-0003 — API v1 only, no legacy parallel-maintenance": adr/ADR-0003-api-v2-only-no-legacy.md
     - "ADR-0004 — CoachIQ is API guardrails, not the safety system": adr/ADR-0004-coachiq-is-not-the-safety-system.md
+    - "ADR-0005 — HTTP error response envelope": adr/ADR-0005-http-error-response-envelope.md
+    - "ADR-0006 — Typed dependency injection": adr/ADR-0006-typed-dependency-injection.md
+    - "ADR-0007 — Auth service namespace": adr/ADR-0007-auth-service-namespace.md
+    - "ADR-0008 — RVC config facade naming": adr/ADR-0008-rvc-config-facade-naming.md
+    - "ADR-0009 — Nix module hybrid options": adr/ADR-0009-nix-module-hybrid-options.md
+    - "ADR-0010 — Pre-1.0 no backward compatibility": adr/ADR-0010-pre-1.0-no-backward-compat.md
+    - "ADR-0011 — Public API v1 naming": adr/ADR-0011-public-api-v1-naming.md
+    - "ADR-0012 — Knowledge & Maintenance boundary": adr/ADR-0012-knowledge-maintenance-subsystem-boundary.md
+    - "ADR-0013 — PocketID OIDC + MCP OAuth AS": adr/ADR-0013-auth-oidc-mcp-as-architecture.md
+    - "ADR-0014 — Composition root constructor injection": adr/ADR-0014-composition-root-constructor-injection.md
+    - "ADR-0015 — Backend serves the built SPA": adr/ADR-0015-backend-serves-built-spa.md
   - Safety:
     - Overview: safety.md
     - Emergency Procedures: safety/can-facade-emergency-procedures.md
     - FMEA Analysis: safety/can-facade-fmea.md
-  - API: api/reference.md
+  - API:
+    - Reference: api/reference.md
+    - Overview: api/overview.md
+    - Domain API v1: api/domain-api-v1.md
+    - Entities: api/entities.md
+    - Realtime (SSE & WebSockets): api/websocket.md
+    - Frontend Integration: api/frontend-integration.md
+  - Development:
+    - Environments: development-environments.md
+    - Code Quality Tools: code-quality-tools.md
+    - Pre-commit & GitHub Actions: pre-commit-and-actions.md
+    - RV-C Documentation Search: rv-c-documentation-search.md
   - Frontend:
     - Overview: frontend/README.md
     - Development Setup: frontend/development-setup.md

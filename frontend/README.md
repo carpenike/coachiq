@@ -4,20 +4,25 @@ Modern React frontend for the CoachIQ system built with Vite, TypeScript, and Sh
 
 ## Tech Stack
 
-- **React 18** - Modern React with concurrent features
-- **TypeScript** - Type-safe development
-- **Vite** - Fast build tool and dev server
-- **Shadcn/UI** - Modern, accessible component library
+- **React 19** - Modern React with concurrent features
+- **TypeScript 5.8** - Type-safe development
+- **Vite 6** - Fast build tool and dev server
+- **Shadcn/UI** - Modern, accessible component library (Radix UI primitives)
 - **TailwindCSS v4** - Utility-first CSS framework
-- **React Query** - Data fetching and state management
-- **React Router** - Client-side routing
+- **TanStack Query (React Query v5)** - Data fetching and state management
+- **React Router v6** - Client-side routing
+- **Server-Sent Events (SSE)** - Realtime entity updates over `/api/events` (see `src/api/sse.ts`); WebSockets remain only for page-scoped diagnostic streams
+- **Leaflet / react-leaflet** - Location page breadcrumb map
+- **Recharts** - Charts and visualizations
+- **react-window** - Virtualized tables and lists
+- **react-hook-form + zod** - Forms and validation
 
 ## Development
 
 ### Prerequisites
 
-- Node.js 18+
-- npm or yarn
+- Node.js 22 (the Nix dev shell provides `nodejs_22`)
+- npm
 
 ### Setup
 
@@ -49,20 +54,25 @@ npm run lint
 - `npm run lint` - Run ESLint
 - `npm run lint:fix` - Fix ESLint errors
 - `npm run typecheck` - Run TypeScript checks
+- `npm run gen:api` - Regenerate API types from the backend OpenAPI schema
+- `npm run check:api-types` - Verify generated API types are up to date
 
 ## Project Structure
 
 ```
 src/
-├── api/              # API clients and types
+├── api/              # API clients (REST client, SSE stream, domain APIs, generated types)
+├── assets/           # Static assets imported by components
 ├── components/       # Reusable components
 │   ├── ui/          # Shadcn/UI components
 │   └── ...
+├── contexts/        # Global providers (auth, realtime, coach connection, query, theme)
 ├── hooks/           # Custom React hooks
-├── lib/             # Utility libraries
+├── lib/             # Utility libraries (incl. route registry in routes.tsx)
 ├── pages/           # Page components
 ├── test/            # Test setup and utilities
-└── types/           # TypeScript type definitions
+├── types/           # TypeScript type definitions
+└── utils/           # Miscellaneous helpers
 ```
 
 ## Component Guidelines
@@ -136,37 +146,3 @@ describe("MyComponent", () => {
 2. Write tests for new components
 3. Ensure accessibility compliance
 4. Run linting and type checking before committing
-   ...tseslint.configs.stylisticTypeChecked,
-   ],
-   languageOptions: {
-   // other options...
-   parserOptions: {
-   project: ['./tsconfig.node.json', './tsconfig.app.json'],
-   tsconfigRootDir: import.meta.dirname,
-   },
-   },
-   })
-
-````
-
-You can also install [eslint-plugin-react-x](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-x) and [eslint-plugin-react-dom](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-dom) for React-specific lint rules:
-
-```js
-// eslint.config.js
-import reactX from 'eslint-plugin-react-x'
-import reactDom from 'eslint-plugin-react-dom'
-
-export default tseslint.config({
-  plugins: {
-    // Add the react-x and react-dom plugins
-    'react-x': reactX,
-    'react-dom': reactDom,
-  },
-  rules: {
-    // other rules...
-    // Enable its recommended typescript rules
-    ...reactX.configs['recommended-typescript'].rules,
-    ...reactDom.configs.recommended.rules,
-  },
-})
-````

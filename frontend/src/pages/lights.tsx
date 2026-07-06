@@ -4,7 +4,7 @@
  * Zone-grouped light controls: per-zone on-count summary and all-on/all-off,
  * per-light switch + brightness (when dimmable), master all-on/all-off.
  * All counts are computed from real entity state — no fabricated numbers.
- * Toast feedback per the command feedback contract in docs/frontend-redesign.md.
+ * Toast feedback per the command feedback contract in docs/archive/2026-07/frontend-redesign.md.
  */
 
 import { IconBulb, IconBulbOff } from "@tabler/icons-react"

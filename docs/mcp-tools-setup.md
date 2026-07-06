@@ -1,6 +1,6 @@
-# MCP Tools Setup and Management for rvc2api
+# MCP Tools Setup and Management for CoachIQ
 
-This guide explains how to set up and manage [Model Context Protocol (MCP)](https://modelcontextprotocol.io/) tools for the rvc2api project. These tools provide context-aware AI assistance through GitHub Copilot Chat.
+This guide explains how to set up and manage [Model Context Protocol (MCP)](https://modelcontextprotocol.io/) tools for the CoachIQ project. These tools provide context-aware AI assistance through GitHub Copilot Chat.
 
 ## Available MCP Tools
 
@@ -76,13 +76,13 @@ The project includes VS Code tasks for managing MCP tools:
 
 ```
 # Search for issues
-@github issues:rvc2api+websocket+reconnection
+@github issues:coachiq+websocket+reconnection
 
 # Find pull requests
-@github pr:rvc2api+react+frontend
+@github pr:coachiq+react+frontend
 
 # Get repository statistics
-@github repo:rvc2api stats
+@github repo:coachiq stats
 ```
 
 ## Best Practices

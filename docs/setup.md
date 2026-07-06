@@ -27,6 +27,10 @@
 
 ## Software Installation
 
+> **NixOS users:** skip the manual steps below and use the flake's NixOS module
+> instead — see the [NixOS Integration Guide](nixos-integration.md) and
+> [NixOS Module Reference](nixos-module.md).
+
 ### 1. Raspberry Pi OS Setup
 
 ```bash
@@ -70,7 +74,7 @@ curl -sSL https://install.python-poetry.org | python3 -
 
 ```bash
 # Clone repository
-git clone https://github.com/yourusername/coachiq.git
+git clone https://github.com/carpenike/coachiq.git
 cd coachiq
 
 # Install backend dependencies
@@ -108,7 +112,7 @@ nano .env
 # Key settings:
 COACHIQ_CAN__INTERFACES=can0
 COACHIQ_SERVER__HOST=0.0.0.0
-COACHIQ_SERVER__PORT=8080
+COACHIQ_SERVER__PORT=8000
 ```
 
 ### 7. Test CAN Connection
@@ -170,7 +174,7 @@ WantedBy=multi-user.target
 
 ## Verification
 
-1. Access web UI at `http://raspberrypi.local:8080`
+1. Access web UI at `http://raspberrypi.local:8000`
 2. Check for connected devices in the Entities page
 3. Try controlling a light or other simple device
 4. Monitor logs: `journalctl -u coachiq -f`

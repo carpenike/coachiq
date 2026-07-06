@@ -1,6 +1,6 @@
-# Development Environment Setup for rvc2api
+# Development Environment Setup for CoachIQ
 
-This document outlines multiple approaches for setting up development environments for the rvc2api project.
+This document outlines multiple approaches for setting up development environments for the CoachIQ project.
 
 ## Option 1: Using Nix Development Shell (Recommended)
 
@@ -20,14 +20,16 @@ The project includes a Nix flake that provides a fully configured development en
 
 2. This provides:
 
-   - Python with all project dependencies
+   - Python 3.12 with all project dependencies
    - Node.js for the frontend
    - Poetry for Python package management
-   - All necessary development tools
+   - All necessary development tools (ruff, pyright, pytest, can-utils on Linux)
 
 3. Start developing:
-   - Backend: `poetry run python run_server.py`
+   - Backend: `poetry run python run_server.py` (or `./dev_start.sh`, which exports development defaults such as a virtual CAN bus before starting the server)
    - Frontend: `cd frontend && npm run dev`
+
+There is also a CI-oriented shell with virtual CAN (vcan) setup: `nix develop .#ci`.
 
 ### Benefits
 
@@ -36,13 +38,7 @@ The project includes a Nix flake that provides a fully configured development en
 - Works on any system where Nix is installed
 - No global pollution of your system
 
-## Option 2: Using poetry2nix
-
-The project includes experimental support for [poetry2nix](https://github.com/nix-community/poetry2nix), which offers more integrated management of Python dependencies within the Nix ecosystem.
-
-See [Poetry2Nix Integration](poetry2nix-integration.md) for setup instructions.
-
-## Option 3: Using Poetry Directly
+## Option 2: Using Poetry Directly
 
 If you don't want to use Nix, you can use Poetry directly to manage the Python environment.
 
@@ -99,36 +95,41 @@ To use these features:
 
 ## Environment Variables
 
-The application uses the following environment variables which you may need to set for development:
+All configuration uses `COACHIQ_`-prefixed environment variables (nested settings use
+a double underscore, e.g. `COACHIQ_SERVER__HOST`). The `dev_start.sh` script exports a
+working set of development defaults; the variables you are most likely to set by hand
+are listed below. See [Configuration Management](configuration.md) for the full
+structure.
 
 ### Basic Configuration
 
-- `LOG_LEVEL`: Logging level (default: "INFO")
-- `RVC2API_TITLE`: API title (default: "rvc2api")
-- `RVC2API_SERVER_DESCRIPTION`: API description (default: "RV-C to API Bridge")
-- `RVC2API_ROOT_PATH`: Root path for API URLs (default: "")
+- `COACHIQ_ENVIRONMENT`: Application environment (default: `development`)
+- `COACHIQ_LOGGING__LEVEL`: Logging level (default: `INFO`)
+- `COACHIQ_SERVER__HOST` / `COACHIQ_SERVER__PORT`: Bind address (default: `127.0.0.1:8000`)
+- `COACHIQ_SERVER__RELOAD`: Enable auto-reload during development
+- `COACHIQ_SERVER__ROOT_PATH`: Root path for API URLs (default: `""`)
 
 ### CAN Bus Configuration
 
-- `CAN_CHANNELS`: Comma-separated list of CAN interfaces (default: "can0,can1")
-- `CAN_BUSTYPE`: CAN bus type (default: "socketcan")
-- `CAN_BITRATE`: CAN bus bitrate (default: "500000")
-
-### Integrations
-
-- `ENABLE_PUSHOVER`: Enable Pushover notifications (default: "0")
-- `PUSHOVER_API_TOKEN`: Pushover API token
-- `PUSHOVER_USER_KEY`: Pushover user key
-- `PUSHOVER_DEVICE`: Pushover device name (optional)
-- `PUSHOVER_PRIORITY`: Pushover message priority (optional)
-- `ENABLE_UPTIMEROBOT`: Enable UptimeRobot integration (default: "0")
-- `UPTIMEROBOT_API_KEY`: UptimeRobot API key
+- `COACHIQ_CAN__INTERFACES`: Comma-separated list of CAN interfaces (default: `can0`; `dev_start.sh` uses `virtual0`)
+- `COACHIQ_CAN__BUSTYPE`: python-can bus type (default: `socketcan`; use `virtual` for hardware-free development)
+- `COACHIQ_CAN__BITRATE`: CAN bus bitrate (default: `500000`)
+- `COACHIQ_CAN__INTERFACE_MAPPINGS`: Logical-to-physical mapping, e.g. `'{"house": "can0", "chassis": "can1"}'`
 
 ### File Paths
 
-- `RVC_SPEC_PATH`: Override path to RV-C specification file
-- `RVC_COACH_MAPPING_PATH`: Override path to device mapping file
-- `RVC2API_USER_COACH_INFO_PATH`: Path to user coach info YAML file
+- `COACHIQ_RVC__SPEC_PATH`: Override path to the RV-C specification file (`rvc.json`)
+- `COACHIQ_RVC__COACH_MAPPING_PATH`: Override path to the coach mapping file
+- `COACHIQ_RVC__COACH_MODEL`: Select a bundled coach mapping by model (e.g. `2021_Entegra_Aspire_44R`)
+- `COACHIQ_PERSISTENCE__DATA_DIR`: Persistent data directory (`dev_start.sh` uses `backend/data`)
+
+### Integrations
+
+- `COACHIQ_NOTIFICATIONS__ENABLED`: Enable the notification system (default: `false`)
+- `COACHIQ_NOTIFICATIONS__PUSHOVER__ENABLED`: Enable Pushover notifications
+- `COACHIQ_NOTIFICATIONS__PUSHOVER__USER_KEY` / `COACHIQ_NOTIFICATIONS__PUSHOVER__TOKEN`: Pushover credentials
+- `COACHIQ_NOTIFICATIONS__PUSHOVER__DEVICE`: Pushover device name (optional)
+- `COACHIQ_FEATURES__ENABLE_UPTIMEROBOT`: Enable UptimeRobot integration
 
 ## Model Context Protocol Tools
 

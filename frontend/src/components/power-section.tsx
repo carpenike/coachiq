@@ -5,7 +5,7 @@
  * telemetry, not switches: they must never render the generic DeviceRow
  * toggle, which would send a bare `toggle` command at the inverter. All
  * numbers come straight from the entity state dict; anything missing shows
- * as "—" (no fabricated values, per docs/frontend-redesign.md).
+ * as "—" (no fabricated values, per docs/archive/2026-07/frontend-redesign.md).
  */
 
 import {

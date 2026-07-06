@@ -7,7 +7,7 @@
  *  3. Can I change it right now?                              (controls w/ feedback)
  *
  * No fabricated numbers. Every control gives toast feedback per the
- * command feedback contract in docs/frontend-redesign.md.
+ * command feedback contract in docs/archive/2026-07/frontend-redesign.md.
  */
 
 import {

@@ -106,7 +106,9 @@ async def search_documentation(
                 status_code=503,
                 detail=(
                     f"Vector search service is not available: {error_detail}. "
-                    "Run 'python scripts/setup_faiss.py --setup' to configure the search feature."
+                    "Build the index with 'poetry run python "
+                    "dev_tools/enhanced_document_processor.py --pdf resources/rv-c-spec.pdf "
+                    "--add-to-index resources/vector_store/' to configure the search feature."
                 ),
             )
 

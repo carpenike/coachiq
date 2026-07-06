@@ -1,17 +1,28 @@
 # React Folder Structure - Reorganization Summary
 
+> **Historical note (2026-07):** This document describes a past migration. The
+> WebSocket context files it references (`websocket-context.ts`,
+> `websocket-provider.tsx`, `use-websocket-context.ts`) no longer exist — the
+> WebSocket data plane was replaced by the SSE-based `RealtimeProvider`
+> (`realtime-provider.tsx` / `realtime-context.ts`) in commit `3bebabb`. The
+> current global contexts in `src/contexts/` are auth (`auth-context.tsx`),
+> realtime (`realtime-provider.tsx` + `realtime-context.ts`), coach connection
+> (`coach-connection.tsx` + `coach-connection-context.ts`), query
+> (`query-provider.tsx`), and theme (`theme-context.ts`). The
+> centralized-vs-co-located principles below still apply.
+
 Based on 2024/2025 React best practices research, here's how your project contexts have been reorganized:
 
-## ✅ Final Context Organization
+## ✅ Final Context Organization (at the time of this migration)
 
 ### Centralized Global Contexts (`src/contexts/`)
 
-These contexts are used throughout the application:
+These contexts were used throughout the application:
 
 - `theme-context.ts` - Theme state (dark/light mode)
-- `websocket-context.ts` - Global WebSocket connection state
-- `websocket-provider.tsx` - WebSocket provider component
-- `use-websocket-context.ts` - Custom hook for WebSocket context
+- `websocket-context.ts` - Global WebSocket connection state (since replaced by `realtime-context.ts`)
+- `websocket-provider.tsx` - WebSocket provider component (since replaced by `realtime-provider.tsx`)
+- `use-websocket-context.ts` - Custom hook for WebSocket context (since replaced by `useRealtime`)
 - `query-provider.tsx` - React Query provider
 - `index.ts` - Centralized exports for clean imports
 

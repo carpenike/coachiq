@@ -1,32 +1,42 @@
-# Using rvc2api in NixOS Configurations
+# Using CoachIQ in NixOS Configurations
 
-This document explains how to include and configure rvc2api in other NixOS systems and flakes.
+This document explains how to include and configure CoachIQ in other NixOS systems and
+flakes.
 
 ## Overview
 
-rvc2api is packaged as a Nix flake with:
+CoachIQ is packaged as a Nix flake with:
 
-- A standalone Python package
-- A NixOS module for system integration
-- Configuration options for customization
+- A Python package (`packages.<system>.coachiq`) and a prebuilt frontend
+  (`packages.<system>.frontend`)
+- A NixOS module (`nixosModules.default`) that runs CoachIQ as a hardened systemd
+  service under `services.coachiq`
+- An overlay (`overlays.default`) exposing `pkgs.coachiq`
+- Development shells (`devShells.default`, `devShells.ci`)
+
+The module follows a hybrid options pattern (see
+[ADR-0009](adr/ADR-0009-nix-module-hybrid-options.md)): a small set of first-class
+typed options for load-bearing deployment knobs, plus a freeform `settings` attrset
+that passes `COACHIQ_*` environment variables straight through to the backend's
+Pydantic settings.
 
 ## Basic Usage
 
-### Including rvc2api in Your Flake
+### Including CoachIQ in Your Flake
 
-Add rvc2api to your flake inputs:
+Add CoachIQ to your flake inputs:
 
 ```nix
 {
   inputs = {
-    nixpkgs.url = "github:nixos/nixpkgs/nixos-unstable";
+    nixpkgs.url = "github:NixOS/nixpkgs/nixos-25.11";
 
-    # Add rvc2api as a dependency
-    rvc2api.url = "github:carpenike/rvc2api";
-    rvc2api.inputs.nixpkgs.follows = "nixpkgs"; # Optional: Use your nixpkgs
+    # Add CoachIQ as a dependency
+    coachiq.url = "github:carpenike/coachiq";
+    coachiq.inputs.nixpkgs.follows = "nixpkgs"; # Optional: use your nixpkgs
   };
 
-  outputs = { self, nixpkgs, rvc2api, ... }: {
+  outputs = { self, nixpkgs, coachiq, ... }: {
     # Your outputs...
   };
 }
@@ -34,11 +44,11 @@ Add rvc2api to your flake inputs:
 
 ### As a Package
 
-To simply include rvc2api as a package:
+To simply include CoachIQ as a package:
 
 ```nix
 environment.systemPackages = [
-  inputs.rvc2api.packages.${system}.rvc2api
+  inputs.coachiq.packages.${system}.coachiq
 ];
 ```
 
@@ -49,86 +59,67 @@ For a complete integration with configuration options:
 ```nix
 {
   imports = [
-    inputs.rvc2api.nixosModules.rvc2api
+    inputs.coachiq.nixosModules.default
   ];
 
-  rvc2api = {
+  services.coachiq = {
     enable = true;
+
+    # First-class options (see docs/nixos-module.md for the full list)
+    # host = "127.0.0.1";              # default
+    # port = 8000;                     # default
+    # dataDir = "/var/lib/coachiq";    # default
+    # logLevel = "INFO";               # default
+    # tlsTerminationIsExternal = true; # when behind a TLS-terminating proxy
+
+    # Everything else goes through the freeform settings passthrough as
+    # COACHIQ_* environment variables:
     settings = {
-      # See detailed configuration options in docs/nixos-module.md
-      canbus.channels = [ "can0" ];
+      COACHIQ_CAN__INTERFACES = "can0,can1";
+      COACHIQ_CAN__INTERFACE_MAPPINGS = builtins.toJSON {
+        house = "can0";
+        chassis = "can1";
+      };
     };
+
+    # Secrets (JWT/session keys) belong in a root-readable environment file,
+    # never in settings or the Nix store:
+    # environmentFile = config.age.secrets.coachiq-env.path;
   };
 }
 ```
 
-For complete configuration options, see the [NixOS Module Documentation](nixos-module.md).
-];
-
-# Enable the service
-
-rvc2api.enable = true;
-
-# Configure options
-
-rvc2api.settings = {
-pushover = {
-enable = true;
-apiToken = "your-pushover-api-token";
-userKey = "your-pushover-user-key";
-};
-};
-}
-
-````
-
-## Configuration Options
-
-rvc2api provides the following configuration options:
-
-### Basic Options
-
-```nix
-rvc2api = {
-  enable = true;        # Enable the rvc2api module
-  package = pkgs.rvc2api;  # Optional: override the package
-};
-````
-
-### Pushover Notifications
-
-```nix
-rvc2api.settings.pushover = {
-  enable = true;        # Enable Pushover integration
-  apiToken = "token";   # Your Pushover API token
-  userKey = "key";      # Your Pushover user key
-};
-```
+For complete configuration options, see the
+[NixOS Module Documentation](nixos-module.md).
 
 ## Development Usage
 
-To develop against rvc2api:
+To develop against CoachIQ:
 
 ```bash
 # Enter the development shell
-nix develop github:carpenike/rvc2api
+nix develop github:carpenike/coachiq
 
-# Or specify a specific attribute
-nix develop github:carpenike/rvc2api#ci  # For CI environment
+# Or use the CI shell (includes vcan setup)
+nix develop github:carpenike/coachiq#ci
 ```
+
+The flake also exposes CLI apps runnable with `nix run`, e.g. `nix run .#test`,
+`nix run .#lint`, `nix run .#format`, and `nix run .#ci`.
 
 ## Architecture Support
 
-rvc2api supports the following architectures:
+CoachIQ supports the following architectures:
 
 - x86_64-linux
-- aarch64-linux (Raspberry Pi 4, etc.)
+- aarch64-linux (Raspberry Pi 4/5, etc.)
 
 ## Version Management
 
-rvc2api follows semantic versioning with releases managed via GitHub's release-please automation.
-You can pin to specific tags in your flake for stability:
+The canonical version lives in the root-level `VERSION` file and is managed via
+GitHub's release-please automation. You can pin to a specific tag or commit in your
+flake for stability:
 
 ```nix
-rvc2api.url = "github:carpenike/rvc2api/v1.0.0";
+coachiq.url = "github:carpenike/coachiq/v1.0.0";
 ```

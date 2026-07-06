@@ -92,6 +92,42 @@ retirements follow the HOF-016 plan.
 
 ## Build Log
 
+### Docs — Codebase Review and Documentation Refresh
+
+- [shipped] same commit as this entry · 2026-07-06
+- [component] docs
+- [handoff] none — direct docs pass, not a basic-memory HOF
+
+**What changed.** Comprehensive documentation refresh against the current
+codebase. README, PROJECT_CONTEXT, docs/index, usage, setup, troubleshooting,
+and the architecture/API/frontend doc sets now describe the SSE realtime data
+plane (`GET /api/events` + `EventBroker`, commit `3bebabb`) instead of the
+removed `/ws` entity socket; the surviving `/ws/*` routes are documented as
+diagnostic-only. Previously undocumented subsystems gained coverage and config
+reference entries: Victron Cerbo GX (`COACHIQ_VICTRON__*`), GPS trip log
+(`COACHIQ_TRIP_LOG__*`), and RV-C time master / GPS broadcast / compass
+synthesis (`COACHIQ_TIME_SYNC__*`). `docs/configuration.md`,
+`docs/nixos-integration.md`, `docs/nixos-module.md`, and
+`docs/development-environments.md` were rewritten off the pre-rename
+`rvc2api`/`RVC2API_` naming onto the real `services.coachiq` module options and
+`COACHIQ_*` settings. Broken references were fixed (`scripts/setup_faiss.py`
+does not exist — replaced with the `dev_tools/enhanced_document_processor.py`
+flow, including the stale hint string in `backend/api/routers/docs.py`;
+`docs/pdf-processing-guide.md` and `docs/frontend-development.md` links
+repointed). CONTRIBUTING now cites Ruff/Pyright instead of Black/Flake8, the
+default port is consistently 8000, and mkdocs nav gained ADR-0005–0015 plus
+Configuration/Deployment/Architecture/API/Development sections.
+
+**Why.** The docs described the system as of early July but drifted hard after
+the SSE refactor and the Victron/trip-log/time-sync feature wave; several
+user-facing pages still predated the rvc2api→CoachIQ rename entirely.
+
+**Files.** `README.md`, `PROJECT_CONTEXT.md`, `CONTRIBUTING.md`, `mkdocs.yml`,
+`backend/api/routers/docs.py`, `docs/**` (index, setup, usage, troubleshooting,
+configuration*, nixos-*, development-environments, react-deployment,
+rv-c-documentation-search, architecture/*, api/*, frontend/*),
+`frontend/README.md`.
+
 ### HOF-045 — CAN Anomaly Rate Baseline Calibration
 
 - [shipped] same commit as this entry · 2026-06-29

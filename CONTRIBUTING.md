@@ -72,14 +72,23 @@ Please keep interactions respectful and professional. By contributing, you agree
 
 ### Code Style
 
-- Follow the style guide in COPILOT-INSTRUCTIONS.md
-- Use Black for formatting: `poetry run black src tests`
-- Check linting with Flake8: `poetry run flake8`
+- Follow the architecture and style guidance in `PROJECT_CONTEXT.md` and the
+  ADRs under `docs/adr/` (see also `.github/instructions/` for the modular
+  style rules)
+- Format with Ruff: `poetry run ruff format backend`
+- Lint with Ruff: `poetry run ruff check .`
+- Type-check with Pyright: `poetry run pyright backend`
+- Frontend (from `frontend/`): `npm run lint && npm run typecheck`
 
 ### Testing
 
 - Write tests for all new features and bug fixes
-- Maintain or improve code coverage
+- Backend: `poetry run pytest` (markers include `unit`, `integration`, `api`,
+  `can`, `safety`, `websocket`, `rvc`, `auth`, `smoke`)
+- Frontend: `cd frontend && npm test`
+- Reproducible CI suite via Nix: `nix run .#ci`
+- Maintain or improve code coverage — guardrail modules have enforced floors
+  (`poetry run python scripts/check_module_coverage.py`)
 - Test both success and failure cases
 
 ### Documentation

@@ -60,13 +60,13 @@ cat /boot/config.txt | grep -E "spi|can"
 
 3. **Check firewall**
    ```bash
-   # Allow port 8080
-   sudo ufw allow 8080
+   # Allow port 8000
+   sudo ufw allow 8000
    ```
 
 #### Page loads but no devices shown
 - Wait 30-60 seconds - devices announce periodically
-- Check WebSocket connection in browser console (F12)
+- Check the event stream in browser dev tools (F12 → Network → `/api/events`)
 - Verify CAN messages are being received (see above)
 
 ### Device Control Issues
@@ -159,14 +159,20 @@ candump can0 | grep "1FE"
 candump -l can0
 ```
 
-#### Check WebSocket
-Open browser console (F12):
-```javascript
-// Check connection status
-console.log(ws.readyState);
+#### Check the real-time event stream
+Open browser dev tools (F12):
 
-// Monitor messages
-ws.onmessage = (e) => console.log(e.data);
+1. Go to the **Network** tab and filter for `events`
+2. The `GET /api/events` request should stay open (`text/event-stream`) and
+   show a steady flow of events, with a heartbeat comment every ~15 seconds
+3. If it keeps reconnecting, check the response status — a 401 means the
+   auth token is missing or expired
+
+You can also watch it from a terminal (add an `Authorization: Bearer <token>`
+header if authentication is enabled):
+
+```bash
+curl -N http://localhost:8000/api/events
 ```
 
 ## Error Messages
@@ -181,10 +187,11 @@ ws.onmessage = (e) => console.log(e.data);
 - Interface down: bring up with ifconfig
 - Wrong interface name in config
 
-### "WebSocket connection failed"
+### Event stream won't connect / UI shows STALE
 - Backend not running
-- Firewall blocking port 8080
-- Wrong URL in frontend config
+- Firewall blocking port 8000
+- Authentication token missing or expired (log in again)
+- Reverse proxy buffering the SSE response (disable buffering for `/api/events`)
 
 ## Getting Help
 
