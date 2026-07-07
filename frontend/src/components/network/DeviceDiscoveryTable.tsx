@@ -30,6 +30,8 @@ import { useMutation, useQueryClient } from "@tanstack/react-query"
 
 interface DeviceTableEntry {
   address: string
+  name: string
+  notes: string | null
   protocol: string
   deviceType: string
   status: "online" | "offline" | "warning" | "error"
@@ -156,6 +158,8 @@ export function DeviceDiscoveryTable({
 
         entries.push({
           address: hexAddress,
+          name: device.friendly_name || `Unknown (${hexAddress})`,
+          notes: device.notes ?? null,
           protocol: device.protocol || protocol,
           deviceType: device.device_type || "Unknown",
           status,
@@ -180,6 +184,7 @@ export function DeviceDiscoveryTable({
       const term = searchTerm.toLowerCase()
       filtered = filtered.filter(entry =>
         entry.address.toLowerCase().includes(term) ||
+        entry.name.toLowerCase().includes(term) ||
         entry.protocol.toLowerCase().includes(term) ||
         entry.deviceType.toLowerCase().includes(term)
       )
@@ -237,8 +242,9 @@ export function DeviceDiscoveryTable({
   // Export device list as CSV
   const handleExport = () => {
     const csvContent = [
-      ["Address", "Protocol", "Device Type", "Status", "Last Seen", "Response Time"].join(","),
+      ["Device", "Address", "Protocol", "Device Type", "Status", "Last Seen", "Response Time"].join(","),
       ...filteredAndSortedEntries.map(entry => [
+        entry.name,
         entry.address,
         entry.protocol,
         entry.deviceType,
@@ -389,6 +395,12 @@ export function DeviceDiscoveryTable({
                 <TableRow>
                   <TableHead
                     className="cursor-pointer hover:bg-muted/50"
+                    onClick={() => handleSort("name")}
+                  >
+                    Device {sortField === "name" && (sortDirection === "asc" ? "↑" : "↓")}
+                  </TableHead>
+                  <TableHead
+                    className="cursor-pointer hover:bg-muted/50"
                     onClick={() => handleSort("address")}
                   >
                     Address {sortField === "address" && (sortDirection === "asc" ? "↑" : "↓")}
@@ -429,6 +441,9 @@ export function DeviceDiscoveryTable({
               <TableBody>
                 {filteredAndSortedEntries.map((entry) => (
                   <TableRow key={entry.address}>
+                    <TableCell className="font-medium" title={entry.notes ?? undefined}>
+                      {entry.name}
+                    </TableCell>
                     <TableCell className="font-mono text-sm">{entry.address}</TableCell>
                     <TableCell>
                       <Badge variant="outline" className="capitalize">

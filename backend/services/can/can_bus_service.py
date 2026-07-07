@@ -698,6 +698,16 @@ class CANBusService(GuardrailParticipant):
             except Exception as e:
                 logger.debug("Failed to send to protocol analyzer: %s", e)
 
+            # Feed passive device discovery so the network topology reflects
+            # every source address seen on the bus, not just actively polled
+            # or J1939-identified devices.
+            try:
+                discovery_service = self._device_discovery_service
+                if discovery_service:
+                    discovery_service.process_can_message(message)
+            except Exception as e:
+                logger.debug("Failed to send to device discovery: %s", e)
+
             # Send to message filter if available (same running-flag gate as
             # the analyzer above).
             try:

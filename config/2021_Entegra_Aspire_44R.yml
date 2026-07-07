@@ -29,6 +29,64 @@ dgn_pairs:
   "1FEF9": "1FFE2" # Thermostat command -> thermostat status
   "1FFBE": "1FFBF" # AC load command -> AC load status (Aqua-Hot electric/burner)
 
+# RV-C node directory: friendly names per source address, shown on the
+# Network Map page. Identified from a live house-bus DGN census (2026-07-07):
+# each entry notes the characteristic DGNs that pinned it down.
+nodes:
+  "0x4F":
+    name: "Transfer Switch (ATS)"
+    device_type: ats
+    notes: "Broadcasts ATS_AC_STATUS_1-4; reads Quattro output as 'shore' (Victron sits upstream)"
+  "0x75":
+    name: "Aspire Head Unit"
+    device_type: infotainment
+    notes: "Dash infotainment: GPS/compass/time source + steering-wheel media over RV-C. Clock wedged Oct 2025-Jul 2026; fixed by power cycle."
+  "0x8E":
+    name: "Lighting Module A"
+    device_type: dimmer
+    notes: "DC_DIMMER_STATUS_3 broadcaster (Firefly output module)"
+  "0x8F":
+    name: "Lighting Module B"
+    device_type: dimmer
+    notes: "DC_DIMMER_STATUS_3 broadcaster (Firefly output module, busiest)"
+  "0x94":
+    name: "Firefly Module (0x94)"
+    notes: "DM_RV heartbeat only in census; function TBD"
+  "0x95":
+    name: "Switch Panel"
+    device_type: switch_panel
+    notes: "Sends DC_DIMMER_COMMAND_2 - a physical control panel"
+  "0x96":
+    name: "A/C Zone Controller 1"
+    device_type: air_conditioner
+    notes: "AIR_CONDITIONER_STATUS broadcaster"
+  "0x97":
+    name: "A/C Zone Controller 2"
+    device_type: air_conditioner
+    notes: "AIR_CONDITIONER_STATUS broadcaster"
+  "0x98":
+    name: "A/C Zone Controller 3"
+    device_type: air_conditioner
+    notes: "AIR_CONDITIONER_STATUS broadcaster"
+  "0x99":
+    name: "A/C Zone Controller 4"
+    device_type: air_conditioner
+    notes: "AIR_CONDITIONER_STATUS broadcaster"
+  "0x9A":
+    name: "Firefly Module (0x9A)"
+    notes: "DM_RV heartbeat only in census; function TBD"
+  "0x9B":
+    name: "Firefly Module (0x9B)"
+    notes: "DM_RV heartbeat only in census; function TBD"
+  "0x9C":
+    name: "Firefly System Controller"
+    device_type: multiplex_controller
+    notes: "Vegatouch/G12 master: coach time master, Aqua-Hot commands, bulk of house traffic"
+  "0xF9":
+    name: "CoachIQ (nixpi)"
+    device_type: gateway
+    notes: "This system: time master, GPS/compass broadcast, entity gateway"
+
 defaults:
   interface: house # Logical CAN interface; resolved via COACHIQ_CAN__INTERFACE_MAPPINGS
   protocol: rvc
