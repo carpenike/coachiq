@@ -34,6 +34,8 @@ class DeviceInfo:
 
     source_address: int
     protocol: str
+    friendly_name: str | None = None
+    notes: str | None = None
     device_type: str | None = None
     manufacturer: str | None = None
     product_id: str | None = None
@@ -98,6 +100,18 @@ class DeviceDiscoveryService:
         self.active_polls: dict[str, PollRequest] = {}
         self.poll_schedules: dict[str, dict[str, Any]] = {}
         self.discovery_active = False
+
+        # Our own transmit source address (frames from it are not "devices").
+        try:
+            self._own_source_address = int(
+                getattr(self.config, "controller_source_addr", "0xF9"), 16
+            )
+        except (TypeError, ValueError):
+            self._own_source_address = 0xF9
+
+        # Coach-specific node directory: friendly names for source addresses,
+        # from the coach mapping's optional top-level `nodes:` section.
+        self._node_directory = self._load_node_directory()
 
         # Configuration from feature flags
         self.enable_device_polling = getattr(self.config, "device_discovery", {}).get(
@@ -175,6 +189,46 @@ class DeviceDiscoveryService:
             f"DeviceDiscoveryService initialized with polling_interval={self.polling_interval}s"
         )
 
+    def _load_node_directory(self) -> dict[int, dict[str, Any]]:
+        """Load friendly node names from the coach mapping's `nodes:` section.
+
+        Keys are source addresses ("0x75" or decimal); values carry
+        `name`/`device_type`/`notes`. Missing file or section is fine.
+        """
+        try:
+            import yaml
+
+            from backend.integrations.rvc.config_loader import get_default_paths
+
+            _, mapping_path = get_default_paths()
+            with open(mapping_path, encoding="utf-8") as handle:
+                mapping = yaml.safe_load(handle) or {}
+            raw_nodes = mapping.get("nodes") or {}
+            directory: dict[int, dict[str, Any]] = {}
+            for key, value in raw_nodes.items():
+                try:
+                    address = int(str(key), 0)
+                except (TypeError, ValueError):
+                    logger.warning("Ignoring unparseable node address %r in coach mapping", key)
+                    continue
+                directory[address] = value if isinstance(value, dict) else {"name": str(value)}
+            if directory:
+                logger.info("Loaded %d coach node names from %s", len(directory), mapping_path)
+            return directory
+        except Exception as e:
+            logger.warning("Could not load coach node directory: %s", e)
+            return {}
+
+    def _apply_node_directory(self, device: DeviceInfo) -> None:
+        """Stamp coach-directory metadata onto a device entry."""
+        entry = self._node_directory.get(device.source_address)
+        if not entry:
+            return
+        device.friendly_name = entry.get("name") or device.friendly_name
+        device.notes = entry.get("notes") or device.notes
+        if entry.get("device_type"):
+            device.device_type = entry["device_type"]
+
     def record_component_identification(
         self,
         source_address: int,
@@ -186,6 +240,7 @@ class DeviceDiscoveryService:
         device = self.topology.devices.get(source_address)
         if device is None:
             device = DeviceInfo(source_address=source_address, protocol="j1939", first_seen=now)
+            self._apply_node_directory(device)
             self.topology.devices[source_address] = device
         elif device.protocol == "unknown":
             device.protocol = "j1939"
@@ -1201,6 +1256,8 @@ class DeviceDiscoveryService:
             protocol_groups[device.protocol].append(
                 {
                     "source_address": device.source_address,
+                    "friendly_name": device.friendly_name,
+                    "notes": device.notes,
                     "device_type": device.device_type,
                     "manufacturer": device.manufacturer,
                     "product_id": device.product_id,
@@ -1413,12 +1470,14 @@ class DeviceDiscoveryService:
             message: Received CAN message
         """
         try:
-            # Extract source address and PGN from CAN ID
+            # Extract source address and DGN from the 29-bit CAN ID. RV-C
+            # DGNs are 17 bits — the previous 16-bit mask truncated them, so
+            # the device-type inference below could never match.
             source_address = message.arbitration_id & 0xFF
-            pgn = (message.arbitration_id >> 8) & 0xFFFF
+            pgn = (message.arbitration_id >> 8) & 0x3FFFF
 
             # Skip messages from our own source address
-            if source_address == 0xE0:
+            if source_address == self._own_source_address:
                 return
 
             # Check if this is a response to one of our polls
@@ -1500,11 +1559,13 @@ class DeviceDiscoveryService:
         if source_address not in self.topology.devices:
             # Use detected protocol or default to 'unknown'
             protocol = detected_protocol or "unknown"
-            self.topology.devices[source_address] = DeviceInfo(
+            new_device = DeviceInfo(
                 source_address=source_address,
                 protocol=protocol,
                 first_seen=now,
             )
+            self._apply_node_directory(new_device)
+            self.topology.devices[source_address] = new_device
         else:
             # Update protocol if we have better detection
             device = self.topology.devices[source_address]

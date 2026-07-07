@@ -1205,6 +1205,8 @@ export interface PerformanceAnalyticsStats {
 export interface DeviceInfo {
   source_address: number;
   protocol: string;
+  friendly_name?: string | null;
+  notes?: string | null;
   device_type?: string;
   status: "discovered" | "online" | "offline" | "error";
   last_seen: number;
