@@ -1,0 +1,54 @@
+name: Notify nix-config
+
+# "Tier 3" push-to-deploy: on every push to main, tell the homelab config repo
+# (carpenike/nix-config) to bump *this* repo's flake input to the new rev. That
+# repo's update-flake-input.yml then opens a gated, auto-merged PR, and the
+# homelab hosts pick it up on their next autoUpgrade run — collapsing the wait
+# from "next weekly flake-lock job" to "a few minutes".
+#
+# nix-config validates the input name against an allowlist, and its PR is gated
+# on `nix flake check` + the nix-build matrix, so a broken commit here never
+# auto-merges there.
+#
+# Requires two repo (or org) secrets, the same GitHub App nix-config already
+# uses for its automation:
+#   CARPENIKE_APP_ID          — the app's ID
+#   CARPENIKE_APP_PRIVATE_KEY — the app's private key
+# The app must be installed on carpenike/nix-config with Contents: write
+# (needed to create a repository_dispatch event).
+#
+# NOTE: this repo is carpenike/coachiq (formerly rvc2api) → `coachiq` input.
+
+on:
+  push:
+    branches: [main]
+
+concurrency:
+  # A newer push supersedes an in-flight notify.
+  group: notify-nix-config
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  dispatch:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Generate token for nix-config
+        uses: actions/create-github-app-token@v3
+        id: app-token
+        with:
+          client-id: ${{ secrets.CARPENIKE_APP_ID }}
+          private-key: ${{ secrets.CARPENIKE_APP_PRIVATE_KEY }}
+          owner: carpenike
+          repositories: nix-config
+
+      - name: Dispatch flake-input-updated
+        uses: peter-evans/repository-dispatch@v3
+        with:
+          token: ${{ steps.app-token.outputs.token }}
+          repository: carpenike/nix-config
+          event-type: flake-input-updated
+          # Must match the flake input attribute name in nix-config/flake.nix.
+          client-payload: '{"input": "coachiq"}'
