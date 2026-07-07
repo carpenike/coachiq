@@ -47,6 +47,12 @@ class InputCurrentLimitRequest(BaseModel):
     amps: float = Field(..., description="Input current limit in amps", ge=0)
 
 
+class GeneratorManualRequest(BaseModel):
+    """Request a manual generator start or stop."""
+
+    run: bool = Field(..., description="True starts the generator, False stops it")
+
+
 def _require_victron_service(service: Any) -> Any:
     if service is None:
         raise HTTPException(
@@ -92,6 +98,32 @@ async def set_inverter_mode(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(exc)
         ) from exc
     logger.info("Victron inverter mode set: %s", result)
+    return {"success": True, **result}
+
+
+@router.post(
+    "/generator/manual",
+    summary="Manual generator start/stop",
+    description=(
+        "Request a manual generator run via the Cerbo's genset controller "
+        "(equivalent to VRM's manual start; the Cerbo performs the crank/stop "
+        "sequence and its own stop conditions still apply)"
+    ),
+    dependencies=[Depends(get_admin_user)],
+)
+async def set_generator_manual(
+    request: GeneratorManualRequest,
+    victron_service: Annotated[Any, Depends(get_optional_victron_service)],
+) -> dict[str, Any]:
+    """Command a manual generator start or stop over MQTT."""
+    service = _require_victron_service(victron_service)
+    try:
+        result = await service.set_generator_manual(request.run)
+    except RuntimeError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(exc)
+        ) from exc
+    logger.info("Victron generator manual request: %s", result)
     return {"success": True, **result}
 
 

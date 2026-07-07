@@ -15,6 +15,7 @@ import { useState } from "react"
 import type { EntitySchema } from "@/api/types/domains"
 import {
   fetchVictronStatus,
+  setGeneratorManual,
   setInputCurrentLimit,
   setInverterMode,
   type InverterMode,
@@ -291,12 +292,115 @@ function ShoreLimitCard({ inverter, controlsDisabled }: Readonly<IControlsProps>
   )
 }
 
+const GENERATOR_RUNNING_STATES = new Set(["running", "warm_up"])
+
+function generatorConfirmLabel(pending: boolean, confirming: "start" | "stop" | null): string {
+  if (pending) return "Sending…"
+  return confirming === "start" ? "Start Generator" : "Stop Generator"
+}
+
+function GeneratorControlCard({
+  generator,
+  controlsDisabled,
+}: Readonly<{ generator: EntitySchema | undefined; controlsDisabled: boolean }>) {
+  const queryClient = useQueryClient()
+  const [confirming, setConfirming] = useState<"start" | "stop" | null>(null)
+
+  const state = generator?.state ?? {}
+  const statusLabel = typeof state.status === "string" ? state.status.replace(/_/g, " ") : "unknown"
+  const isRunning = GENERATOR_RUNNING_STATES.has(String(state.status))
+
+  const mutation = useMutation({
+    mutationFn: (run: boolean) => setGeneratorManual(run),
+    onSuccess: (result) => {
+      toast({
+        title: result.manual_start
+          ? "Generator start requested"
+          : "Generator stop requested",
+        description: "The Cerbo's genset controller is handling the sequence.",
+      })
+      void queryClient.invalidateQueries({ queryKey: entitiesQueryKeys.all })
+    },
+    onError: (error: Error) => {
+      toast({
+        variant: "destructive",
+        title: "Generator command failed",
+        description: error.message,
+      })
+    },
+    onSettled: () => setConfirming(null),
+  })
+
+  return (
+    <Card>
+      <CardHeader className="pb-2">
+        <CardTitle className="flex items-center justify-between text-base">
+          Generator
+          <Badge variant="secondary" className="capitalize">
+            {statusLabel}
+          </Badge>
+        </CardTitle>
+      </CardHeader>
+      <CardContent className="space-y-3">
+        <p className="text-xs text-muted-foreground">
+          Manual run via the Cerbo&apos;s genset controller — its own stop conditions
+          (autostart rules, quiet hours) still apply.
+        </p>
+        <div className="grid grid-cols-2 gap-2">
+          <Button
+            disabled={controlsDisabled || mutation.isPending || isRunning}
+            onClick={() => setConfirming("start")}
+          >
+            Start
+          </Button>
+          <Button
+            variant="outline"
+            disabled={controlsDisabled || mutation.isPending || !isRunning}
+            onClick={() => setConfirming("stop")}
+          >
+            Stop
+          </Button>
+        </div>
+      </CardContent>
+
+      <Dialog open={confirming !== null} onOpenChange={(open) => !open && setConfirming(null)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <IconAlertTriangle className="size-5 text-amber-500" aria-hidden />
+              {confirming === "start" ? "Start the generator?" : "Stop the generator?"}
+            </DialogTitle>
+            <DialogDescription>
+              {confirming === "start"
+                ? "The generator will crank and start producing AC power. Make sure nothing is blocking the exhaust and the coach is clear to run it."
+                : "The generator will shut down. AC loads fall back to shore power or the inverter."}
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setConfirming(null)}>
+              Cancel
+            </Button>
+            <Button
+              variant={confirming === "start" ? "default" : "destructive"}
+              disabled={mutation.isPending}
+              onClick={() => mutation.mutate(confirming === "start")}
+            >
+              {generatorConfirmLabel(mutation.isPending, confirming)}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </Card>
+  )
+}
+
 export default function PowerPage() {
   const { data: victronStatus } = useVictronStatus()
   const { data: entityCollection } = useEntities({ page_size: 100 })
 
   const entities = entityCollection?.entities ?? []
   const inverter = entities.find((entity) => entity.device_type === "inverter_charger")
+  const generator = entities.find((entity) => entity.device_type === "generator")
 
   // Victron commands travel over the Cerbo's MQTT link (IP), independent of
   // the RV-C CAN bus — so gate on that link, not on coach CAN liveness.
@@ -315,9 +419,10 @@ export default function PowerPage() {
             Controls are disabled — the Cerbo GX is not reachable.
           </p>
         )}
-        <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+        <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
           <InverterModeCard inverter={inverter} controlsDisabled={controlsDisabled} />
           <ShoreLimitCard inverter={inverter} controlsDisabled={controlsDisabled} />
+          <GeneratorControlCard generator={generator} controlsDisabled={controlsDisabled} />
         </div>
       </div>
     </div>

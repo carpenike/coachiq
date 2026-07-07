@@ -246,7 +246,7 @@ class TestControlPath:
     async def test_set_inverter_mode_without_discovered_vebus(self):
         service, _, _, _ = make_service()
         service._client = FakeMqttClient()
-        with pytest.raises(RuntimeError, match="No VE.Bus device"):
+        with pytest.raises(RuntimeError, match="No Victron vebus device"):
             await service.set_inverter_mode("on")
 
     async def test_current_limit_validated_against_broker_range(self):
@@ -268,6 +268,33 @@ class TestControlPath:
         await service._handle_update(vebus_update("State", 3))
         with pytest.raises(ValueError, match="outside adjustable range"):
             await service.set_input_current_limit(150.0)
+
+
+class TestGeneratorControl:
+    async def test_manual_start_and_stop_write_manualstart(self):
+        service, _, _, _ = make_service()
+        service._client = FakeMqttClient()
+        await service._handle_update(
+            VictronUpdate(
+                portal_id=PORTAL,
+                service_type="generator",
+                instance="0",
+                path="State",
+                value=0,
+            )
+        )
+        assert await service.set_generator_manual(True) == {"manual_start": True}
+        assert await service.set_generator_manual(False) == {"manual_start": False}
+        assert service._client.writes == [
+            ("generator", "0", "ManualStart", 1),
+            ("generator", "0", "ManualStart", 0),
+        ]
+
+    async def test_manual_start_without_discovered_generator(self):
+        service, _, _, _ = make_service()
+        service._client = FakeMqttClient()
+        with pytest.raises(RuntimeError, match="No Victron generator device"):
+            await service.set_generator_manual(True)
 
 
 class TestHealth:
