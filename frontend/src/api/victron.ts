@@ -42,3 +42,9 @@ export async function setInputCurrentLimit(
 ): Promise<{ success: boolean; input_current_limit: number }> {
   return apiPost('/api/victron/inverter/input-current-limit', { amps });
 }
+
+export async function setGeneratorManual(
+  run: boolean
+): Promise<{ success: boolean; manual_start: boolean }> {
+  return apiPost('/api/victron/generator/manual', { run });
+}

@@ -281,11 +281,25 @@ class VictronService:
         await self._client.write_value("vebus", instance, "Ac/ActiveIn/CurrentLimit", float(amps))
         return {"input_current_limit": float(amps)}
 
+    async def set_generator_manual(self, run: bool) -> dict[str, Any]:
+        """Request a manual generator start (True) or stop (False).
+
+        Writes the Cerbo's dbus-generator /ManualStart — the same control the
+        VRM 'manual start' button uses. The Cerbo's genset logic performs the
+        actual crank/stop sequence and its own stop conditions still apply.
+        """
+        instance = self._instance_for("generator")
+        await self._client.write_value("generator", instance, "ManualStart", 1 if run else 0)
+        return {"manual_start": run}
+
     def _vebus_instance(self) -> str:
-        for service_type, instance in self._instance_bindings:
-            if service_type == "vebus":
+        return self._instance_for("vebus")
+
+    def _instance_for(self, service_type: str) -> str:
+        for bound_type, instance in self._instance_bindings:
+            if bound_type == service_type:
                 return instance
-        msg = "No VE.Bus device discovered yet; cannot send Victron command"
+        msg = f"No Victron {service_type} device discovered yet; cannot send command"
         raise RuntimeError(msg)
 
     # ------------------------------------------------------------------
