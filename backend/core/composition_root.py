@@ -1038,6 +1038,7 @@ class CompositionRoot:
             trip_log_service = TripLogService(
                 settings=trip_log_settings,
                 trip_log_repository=self.require_service("trip_log_repository"),
+                event_broker=self.get_optional_service("event_broker"),
             )
             await trip_log_service.start()
             self._set_root_constructed_service("trip_log_service", trip_log_service)

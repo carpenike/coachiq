@@ -55,6 +55,10 @@ export function RealtimeProvider({ children }: { readonly children: React.ReactN
         applyEntityUpdate(client, data as IEntityUpdatePayload)
       } else if (event === 'entity_created' || event === 'halt_command_emission') {
         void client.invalidateQueries({ queryKey: entitiesQueryKeys.collections() })
+      } else if (event === 'location_update') {
+        // Payload matches GET /api/location, so it drops straight into the
+        // query the location page already reads.
+        client.setQueryData(['location', 'current'], data)
       }
     },
     onStateChange: (state) => {

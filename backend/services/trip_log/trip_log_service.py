@@ -28,6 +28,7 @@ from backend.core.config import TripLogSettings
 from backend.core.structured_logging import get_logger
 from backend.integrations.router_sidecar.gpsd import GpsdClient, GpsdTpv
 from backend.integrations.router_sidecar.location import haversine_distance_m
+from backend.services.trip_log.geocoding import ReverseGeocoder
 
 logger = get_logger(__name__, "TripLogService")
 
@@ -37,19 +38,43 @@ _RECONNECT_DELAY_SECONDS = 5.0
 _MAX_RECONNECT_DELAY_SECONDS = 60.0
 _PRUNE_INTERVAL_SECONDS = 24 * 3600.0
 
+# SSE position publishing: heartbeat while parked, movement-gated while
+# driving so the broker isn't fed a 1 Hz firehose.
+_PUBLISH_HEARTBEAT_SECONDS = 30.0
+_PUBLISH_MIN_INTERVAL_SECONDS = 2.0
+_PUBLISH_MIN_MOVE_M = 10.0
+
+# Nominatim usage policy: at most one request per second.
+_GEOCODE_PACING_SECONDS = 1.1
+_GEOCODE_BACKFILL_LIMIT = 20
+
 
 class TripLogService:
     """Background recorder of GPS breadcrumbs segmented into trips."""
 
-    def __init__(self, settings: TripLogSettings, trip_log_repository: Any) -> None:
+    def __init__(
+        self,
+        settings: TripLogSettings,
+        trip_log_repository: Any,
+        event_broker: Any = None,
+    ) -> None:
         self._settings = settings
         self._repository = trip_log_repository
+        self._event_broker = event_broker
         self._client = GpsdClient(settings.gpsd_host, settings.gpsd_port)
+        self._geocoder = ReverseGeocoder(settings.geocode_url)
 
         self._running = False
         self._task: asyncio.Task | None = None
         self._prune_task: asyncio.Task | None = None
+        self._geocode_backfill_task: asyncio.Task | None = None
+        self._geocode_tasks: set[asyncio.Task] = set()
         self._connected = False
+
+        # SSE publish throttle state
+        self._last_published_at = 0.0
+        self._last_published_pos: tuple[float, float] | None = None
+        self._last_published_trip_id: int | None = None
 
         # Sampling state
         self._active_trip_id: int | None = None
@@ -79,6 +104,8 @@ class TripLogService:
         self._task = asyncio.create_task(self._watch_loop())
         if self._settings.retention_days > 0:
             self._prune_task = asyncio.create_task(self._prune_loop())
+        if self._settings.geocode_enabled:
+            self._geocode_backfill_task = asyncio.create_task(self._geocode_backfill())
         logger.info("Trip Log Service started")
 
     async def stop(self) -> None:
@@ -86,13 +113,17 @@ class TripLogService:
         if not self._running:
             return
         self._running = False
-        for task in (self._task, self._prune_task):
+        tasks = [self._task, self._prune_task, self._geocode_backfill_task]
+        tasks.extend(self._geocode_tasks)
+        for task in tasks:
             if task:
                 task.cancel()
                 with contextlib.suppress(asyncio.CancelledError):
                     await task
         self._task = None
         self._prune_task = None
+        self._geocode_backfill_task = None
+        self._geocode_tasks.clear()
         logger.info("Trip Log Service stopped")
 
     # ------------------------------------------------------------------
@@ -134,6 +165,14 @@ class TripLogService:
         self._last_fix = tpv
         self._last_fix_at = now
 
+        try:
+            await self._track_movement(tpv, now)
+        finally:
+            await self._maybe_publish_position(tpv, now)
+
+    async def _track_movement(self, tpv: GpsdTpv, now: float) -> None:
+        if tpv.lat is None or tpv.lon is None:  # narrowed by caller; keeps pyright honest
+            return
         speed = tpv.speed or 0.0
         moving_by_speed = speed >= self._settings.stationary_speed_mps
         distance_from_last = (
@@ -227,8 +266,103 @@ class TripLogService:
                 longitude=self._last_recorded[1],
             )
             logger.info("Trip ended", trip_id=trip_id)
+            if self._settings.geocode_enabled:
+                self._spawn_geocode(trip_id)
         self._active_trip_id = None
         self._active_trip_distance_m = 0.0
+
+    # ------------------------------------------------------------------
+    # SSE position publishing
+    # ------------------------------------------------------------------
+
+    async def _maybe_publish_position(self, tpv: GpsdTpv, now: float) -> None:
+        """Push the current position to SSE subscribers, throttled.
+
+        Publishes immediately on trip start/end, on a slow heartbeat while
+        parked, and per ~10 m of movement (min 2 s apart) while driving.
+        """
+        if self._event_broker is None:
+            return
+        trip_changed = self._active_trip_id != self._last_published_trip_id
+        elapsed = now - self._last_published_at
+        moved = (
+            haversine_distance_m(
+                self._last_published_pos[0], self._last_published_pos[1], tpv.lat, tpv.lon
+            )
+            if self._last_published_pos is not None and tpv.lat is not None
+            else None
+        )
+        due = (
+            trip_changed
+            or elapsed >= _PUBLISH_HEARTBEAT_SECONDS
+            or (
+                elapsed >= _PUBLISH_MIN_INTERVAL_SECONDS
+                and (moved is None or moved >= _PUBLISH_MIN_MOVE_M)
+            )
+        )
+        if not due:
+            return
+        try:
+            await self._event_broker.publish("location_update", self.get_current_position())
+        except Exception:
+            logger.exception("Error publishing location update")
+            return
+        self._last_published_at = now
+        self._last_published_trip_id = self._active_trip_id
+        if tpv.lat is not None and tpv.lon is not None:
+            self._last_published_pos = (tpv.lat, tpv.lon)
+
+    # ------------------------------------------------------------------
+    # Reverse geocoding
+    # ------------------------------------------------------------------
+
+    def _spawn_geocode(self, trip_id: int) -> None:
+        """Geocode a finished trip in the background (offline-tolerant)."""
+        task = asyncio.create_task(self._geocode_trip_by_id(trip_id))
+        self._geocode_tasks.add(task)
+        task.add_done_callback(self._geocode_tasks.discard)
+
+    async def _geocode_trip_by_id(self, trip_id: int) -> None:
+        try:
+            trip = await self._repository.get_trip(trip_id)
+            if trip is not None:
+                await self._geocode_trip(trip)
+        except Exception:
+            logger.exception("Error geocoding trip %s", trip_id)
+
+    async def _geocode_trip(self, trip: dict[str, Any]) -> bool:
+        """Fill missing place names for one trip; True if anything resolved."""
+        start_place = None
+        end_place = None
+        if trip.get("start_place") is None:
+            start_place = await self._geocoder.reverse(
+                trip["start_latitude"], trip["start_longitude"]
+            )
+            await asyncio.sleep(_GEOCODE_PACING_SECONDS)
+        if trip.get("end_place") is None and trip.get("end_latitude") is not None:
+            end_place = await self._geocoder.reverse(trip["end_latitude"], trip["end_longitude"])
+            await asyncio.sleep(_GEOCODE_PACING_SECONDS)
+        if start_place is None and end_place is None:
+            return False
+        await self._repository.set_trip_places(trip["id"], start_place, end_place)
+        return True
+
+    async def _geocode_backfill(self) -> None:
+        """Name recent trips that predate geocoding (or ended while offline)."""
+        try:
+            trips = await self._repository.get_trips_missing_places(_GEOCODE_BACKFILL_LIMIT)
+            named = 0
+            for trip in trips:
+                if not await self._geocode_trip(trip):
+                    # Offline (or the geocoder is refusing) — try again next start.
+                    break
+                named += 1
+            if named:
+                logger.info("Geocoded %d trips", named)
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            logger.exception("Error in geocode backfill")
 
     async def _resume_or_close_dangling_trip(self) -> None:
         """After a restart, resume a recent active trip or close a stale one."""

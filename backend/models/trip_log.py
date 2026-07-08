@@ -6,7 +6,7 @@ stretch of movement bounded by stationary gaps). Tables are created by the
 startup ``Base.metadata.create_all`` pass like the analytics tables.
 """
 
-from sqlalchemy import Float, Index, Integer
+from sqlalchemy import Float, Index, Integer, String
 from sqlalchemy.orm import Mapped, mapped_column
 
 from backend.models.database import Base, TimestampMixin
@@ -33,6 +33,12 @@ class GpsTrip(Base, TimestampMixin):
     )
     max_speed_mps: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
     point_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    start_place: Mapped[str | None] = mapped_column(
+        String, nullable=True, comment="Reverse-geocoded start locality"
+    )
+    end_place: Mapped[str | None] = mapped_column(
+        String, nullable=True, comment="Reverse-geocoded end locality"
+    )
 
 
 class GpsBreadcrumb(Base, TimestampMixin):
