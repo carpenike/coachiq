@@ -74,6 +74,25 @@ async def get_trip_points(
     return {"trip": trip, "points": points}
 
 
+@router.delete("/trips/{trip_id}", summary="Delete a recorded trip")
+async def delete_trip(
+    trip_id: int,
+    trip_log_repository: Annotated[Any, Depends(get_optional_trip_log_repository)],
+) -> dict[str, Any]:
+    """Remove a trip and its breadcrumbs (e.g. a noise trip or a private one)."""
+    repository = _require(trip_log_repository, "Trip log")
+    trip = await repository.get_trip(trip_id)
+    if trip is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Trip not found")
+    if trip["ended_at"] is None:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Trip is still recording; it can be deleted once it ends",
+        )
+    await repository.delete_trip(trip_id)
+    return {"deleted": trip_id}
+
+
 @router.get(
     "/trips/{trip_id}/gpx",
     summary="Export one trip as GPX",

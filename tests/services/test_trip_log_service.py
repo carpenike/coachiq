@@ -23,6 +23,7 @@ class FakeTripLogRepository:
             "ended_at": None,
             "start_latitude": latitude,
             "start_longitude": longitude,
+            "distance_m": 0.0,
         }
         return trip_id
 
@@ -33,6 +34,23 @@ class FakeTripLogRepository:
 
     async def add_point(self, **kwargs: Any) -> None:
         self.points.append(kwargs)
+        self.trips[kwargs["trip_id"]]["distance_m"] += kwargs.get("leg_distance_m", 0.0)
+
+    async def delete_trip(self, trip_id: int) -> bool:
+        existed = trip_id in self.trips
+        self.trips.pop(trip_id, None)
+        self.points = [point for point in self.points if point["trip_id"] != trip_id]
+        return existed
+
+    async def delete_short_trips(self, min_distance_m: float) -> int:
+        doomed = [
+            trip_id
+            for trip_id, trip in self.trips.items()
+            if trip["ended_at"] is not None and trip["distance_m"] < min_distance_m
+        ]
+        for trip_id in doomed:
+            await self.delete_trip(trip_id)
+        return len(doomed)
 
     async def get_active_trip(self) -> dict[str, Any] | None:
         for trip in reversed(self.trips.values()):  # type: ignore[call-overload]
@@ -52,14 +70,19 @@ class FakeTripLogRepository:
 
 
 def make_service(**overrides: Any) -> tuple[TripLogService, FakeTripLogRepository]:
-    settings = TripLogSettings(
-        enabled=True,
-        min_distance_m=50.0,
-        min_interval_seconds=0.0,  # let distance drive the tests
-        stationary_speed_mps=1.0,
-        trip_gap_minutes=20.0,
-        **overrides,
-    )
+    kwargs: dict[str, Any] = {
+        "enabled": True,
+        "min_distance_m": 50.0,
+        "min_interval_seconds": 0.0,  # let distance drive the tests
+        "stationary_speed_mps": 1.0,
+        "trip_gap_minutes": 20.0,
+        # Immediate start / keep-everything defaults so lifecycle tests can
+        # drive trips with single fixes; the guard tests override these.
+        "start_confirm_seconds": 0.0,
+        "min_trip_distance_m": 0.0,
+    }
+    kwargs.update(overrides)
+    settings = TripLogSettings(**kwargs)
     repository = FakeTripLogRepository()
     return TripLogService(settings, repository), repository
 
@@ -140,6 +163,69 @@ class TestTripLifecycle:
         await service._resume_or_close_dangling_trip()
         assert service._active_trip_id is None
         assert repository.trips[trip_id]["ended_at"] is not None
+
+
+class TestNoiseGuards:
+    """The debounced start and short-trip discard that keep GPS noise out."""
+
+    async def test_single_speed_blip_does_not_start_trip(self):
+        service, repository = make_service(start_confirm_seconds=10.0)
+        await service._handle_fix(fix(LAT, LON, speed=0.0))  # parked reference
+        await service._handle_fix(fix(LAT, LON, speed=2.0))  # phantom-speed blip
+        await service._handle_fix(fix(LAT, LON, speed=0.0))  # still again
+        await service._handle_fix(fix(LAT, LON, speed=1.5))  # another blip
+        assert repository.trips == {}
+        assert repository.points == []
+
+    async def test_sustained_movement_starts_trip_after_confirm_window(self):
+        service, repository = make_service(start_confirm_seconds=10.0)
+        await service._handle_fix(fix(LAT, LON, speed=5.0))
+        assert repository.trips == {}  # pending, not yet confirmed
+
+        # Movement persists past the confirm window.
+        service._pending_start_at = time.time() - 11.0
+        await service._handle_fix(fix(LAT + 0.0002, LON, speed=5.0))
+        assert len(repository.trips) == 1
+        assert len(repository.points) == 1
+
+    async def test_short_trip_discarded_when_it_ends(self):
+        service, repository = make_service(min_trip_distance_m=100.0)
+        await service._handle_fix(fix(LAT, LON, speed=5.0))  # opens a trip
+        trip_id = service._active_trip_id
+        assert trip_id is not None
+
+        # Goes still past the gap without ever covering 100 m.
+        service._last_movement_at = time.time() - 21 * 60
+        await service._handle_fix(fix(LAT, LON, speed=0.0))
+        assert service._active_trip_id is None
+        assert trip_id not in repository.trips
+        assert repository.points == []
+
+    async def test_real_trip_survives_the_short_trip_guard(self):
+        service, repository = make_service(min_trip_distance_m=100.0)
+        await service._handle_fix(fix(LAT, LON, speed=5.0))
+        trip_id = service._active_trip_id
+        # Two ~111 m legs -> ~222 m total.
+        await service._handle_fix(fix(LAT + 0.001, LON, speed=15.0))
+        await service._handle_fix(fix(LAT + 0.002, LON, speed=15.0))
+
+        service._last_movement_at = time.time() - 21 * 60
+        await service._handle_fix(fix(LAT + 0.002, LON, speed=0.0))
+        assert repository.trips[trip_id]["ended_at"] is not None
+
+    async def test_stale_short_dangling_trip_deleted_on_restart(self):
+        service, repository = make_service(min_trip_distance_m=100.0)
+        trip_id = await repository.start_trip(time.time() - 7200, LAT, LON)
+        await repository.add_point(
+            trip_id=trip_id,
+            timestamp=time.time() - 7000,
+            latitude=LAT,
+            longitude=LON,
+            leg_distance_m=0.0,
+        )
+        await service._resume_or_close_dangling_trip()
+        assert service._active_trip_id is None
+        assert trip_id not in repository.trips
 
 
 class TestReadSide:

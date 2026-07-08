@@ -8,8 +8,12 @@ firehose:
 - a breadcrumb is recorded only after moving ``min_distance_m`` from the
   last recorded point (and at most every ``min_interval_seconds``),
 - nothing is recorded while parked,
+- a trip starts only after movement persists for ``start_confirm_seconds``
+  (single-fix GPS speed jitter while parked never opens a trip),
 - movement after ``trip_gap_minutes`` of stillness starts a new trip; the
-  trip closes (with distance/max-speed stats) when the RV goes still again.
+  trip closes (with distance/max-speed stats) when the RV goes still again,
+- trips that end having covered less than ``min_trip_distance_m`` are
+  discarded rather than stored.
 
 The gpsd connection reconnects with backoff, so GPS or gpsd restarts only
 pause recording.
@@ -49,6 +53,8 @@ class TripLogService:
 
         # Sampling state
         self._active_trip_id: int | None = None
+        self._active_trip_distance_m = 0.0
+        self._pending_start_at: float | None = None
         self._last_recorded: tuple[float, float] | None = None  # (lat, lon)
         self._last_recorded_at = 0.0
         self._last_movement_at = 0.0
@@ -64,6 +70,10 @@ class TripLogService:
             gpsd=f"{self._settings.gpsd_host}:{self._settings.gpsd_port}",
         )
         await self._repository.ensure_tables()
+        if self._settings.min_trip_distance_m > 0:
+            removed = await self._repository.delete_short_trips(self._settings.min_trip_distance_m)
+            if removed:
+                logger.info("Removed %d short noise trips from the log", removed)
         await self._resume_or_close_dangling_trip()
         self._running = True
         self._task = asyncio.create_task(self._watch_loop())
@@ -139,12 +149,21 @@ class TripLogService:
             self._last_movement_at = now
 
         if self._active_trip_id is None:
-            if moving:
+            if not moving:
+                self._pending_start_at = None
+                if self._last_recorded is None:
+                    # Parked: just remember where we are so the first movement
+                    # has a reference point.
+                    self._last_recorded = (tpv.lat, tpv.lon)
+                return
+            # Movement must persist before a trip opens: a single fix with
+            # phantom speed (GPS jitter while parked) would otherwise create
+            # a zero-distance trip.
+            if self._pending_start_at is None:
+                self._pending_start_at = now
+            if now - self._pending_start_at >= self._settings.start_confirm_seconds:
+                self._pending_start_at = None
                 await self._start_trip(tpv, now)
-            elif self._last_recorded is None:
-                # Parked: just remember where we are so the first movement
-                # has a reference point.
-                self._last_recorded = (tpv.lat, tpv.lon)
             return
 
         # Active trip: close it after a long stationary gap...
@@ -165,6 +184,7 @@ class TripLogService:
         if tpv.lat is None or tpv.lon is None:  # narrowed by caller; keeps pyright honest
             return
         self._active_trip_id = await self._repository.start_trip(now, tpv.lat, tpv.lon)
+        self._active_trip_distance_m = 0.0
         self._last_movement_at = now
         logger.info("Trip started", trip_id=self._active_trip_id, lat=tpv.lat, lon=tpv.lon)
         await self._record_point(tpv, now, 0.0)
@@ -182,6 +202,7 @@ class TripLogService:
             course_deg=tpv.track,
             altitude_m=tpv.alt,
         )
+        self._active_trip_distance_m += leg_distance_m
         self._last_recorded = (tpv.lat, tpv.lon)
         self._last_recorded_at = now
 
@@ -190,40 +211,60 @@ class TripLogService:
         if trip_id is None or self._last_recorded is None:
             self._active_trip_id = None
             return
-        await self._repository.end_trip(
-            trip_id,
-            ended_at=self._last_movement_at,
-            latitude=self._last_recorded[0],
-            longitude=self._last_recorded[1],
-        )
-        logger.info("Trip ended", trip_id=trip_id)
+        if self._active_trip_distance_m < self._settings.min_trip_distance_m:
+            # The RV never really went anywhere — GPS noise opened the trip.
+            await self._repository.delete_trip(trip_id)
+            logger.info(
+                "Discarded short trip",
+                trip_id=trip_id,
+                distance_m=round(self._active_trip_distance_m, 1),
+            )
+        else:
+            await self._repository.end_trip(
+                trip_id,
+                ended_at=self._last_movement_at,
+                latitude=self._last_recorded[0],
+                longitude=self._last_recorded[1],
+            )
+            logger.info("Trip ended", trip_id=trip_id)
         self._active_trip_id = None
+        self._active_trip_distance_m = 0.0
 
     async def _resume_or_close_dangling_trip(self) -> None:
         """After a restart, resume a recent active trip or close a stale one."""
         trip = await self._repository.get_active_trip()
         if trip is None:
             return
+        distance_m = trip.get("distance_m") or 0.0
+        too_short = distance_m < self._settings.min_trip_distance_m
         last_point = await self._repository.get_latest_point(trip["id"])
         gap_seconds = self._settings.trip_gap_minutes * 60
         if last_point is None:
-            await self._repository.end_trip(
-                trip["id"],
-                ended_at=trip["started_at"],
-                latitude=trip["start_latitude"],
-                longitude=trip["start_longitude"],
-            )
+            if too_short:
+                await self._repository.delete_trip(trip["id"])
+            else:
+                await self._repository.end_trip(
+                    trip["id"],
+                    ended_at=trip["started_at"],
+                    latitude=trip["start_latitude"],
+                    longitude=trip["start_longitude"],
+                )
             return
         if time.time() - last_point["timestamp"] > gap_seconds:
-            await self._repository.end_trip(
-                trip["id"],
-                ended_at=last_point["timestamp"],
-                latitude=last_point["latitude"],
-                longitude=last_point["longitude"],
-            )
-            logger.info("Closed stale trip %s from before restart", trip["id"])
+            if too_short:
+                await self._repository.delete_trip(trip["id"])
+                logger.info("Discarded stale short trip %s from before restart", trip["id"])
+            else:
+                await self._repository.end_trip(
+                    trip["id"],
+                    ended_at=last_point["timestamp"],
+                    latitude=last_point["latitude"],
+                    longitude=last_point["longitude"],
+                )
+                logger.info("Closed stale trip %s from before restart", trip["id"])
         else:
             self._active_trip_id = trip["id"]
+            self._active_trip_distance_m = distance_m
             self._last_recorded = (last_point["latitude"], last_point["longitude"])
             self._last_recorded_at = last_point["timestamp"]
             self._last_movement_at = last_point["timestamp"]

@@ -1297,6 +1297,22 @@ class TripLogSettings(BaseSettings):
         description="Below this speed the RV is considered stationary",
         ge=0,
     )
+    start_confirm_seconds: float = Field(
+        default=10.0,
+        description=(
+            "Movement must persist this long before a trip starts; "
+            "filters single-fix GPS speed jitter (0 starts immediately)"
+        ),
+        ge=0,
+    )
+    min_trip_distance_m: float = Field(
+        default=100.0,
+        description=(
+            "Trips that end with less than this distance are discarded "
+            "as GPS noise (0 keeps every trip)"
+        ),
+        ge=0,
+    )
     trip_gap_minutes: float = Field(
         default=20.0,
         description="Stationary time that closes the current trip",

@@ -2,7 +2,7 @@
  * Location API client (/api/location) — current GPS position and trip log.
  */
 
-import { apiGet } from './client';
+import { apiDelete, apiGet, apiGetBlob } from './client';
 
 export interface ICurrentLocation {
   connected: boolean;
@@ -53,6 +53,19 @@ export async function fetchTripPoints(
   return apiGet(`/api/location/trips/${tripId}/points`);
 }
 
-export function tripGpxUrl(tripId: number): string {
-  return `/api/location/trips/${tripId}/gpx`;
+/** Fetch a trip's GPX (with auth headers) and hand it to the browser as a download. */
+export async function downloadTripGpx(tripId: number): Promise<void> {
+  const { blob, filename } = await apiGetBlob(`/api/location/trips/${tripId}/gpx`);
+  const objectUrl = URL.createObjectURL(blob);
+  const anchor = document.createElement('a');
+  anchor.href = objectUrl;
+  anchor.download = filename ?? `coachiq-trip-${tripId}.gpx`;
+  document.body.appendChild(anchor);
+  anchor.click();
+  anchor.remove();
+  URL.revokeObjectURL(objectUrl);
+}
+
+export async function deleteTrip(tripId: number): Promise<void> {
+  await apiDelete(`/api/location/trips/${tripId}`);
 }

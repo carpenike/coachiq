@@ -198,6 +198,36 @@ export async function apiGet<T>(url: string): Promise<T> {
 }
 
 /**
+ * Fetches a binary/file endpoint with auth headers and returns the Blob.
+ *
+ * File downloads can't use a plain `<a href>` because the API authenticates
+ * with a Bearer header (not a cookie), so the browser's own navigation
+ * request would arrive unauthenticated and 401.
+ */
+export async function apiGetBlob(
+  url: string
+): Promise<{ blob: Blob; filename: string | null }> {
+  const fullUrl = url.startsWith('/') ? url : `${API_BASE}/${url}`;
+
+  await ensureFreshAccessToken();
+
+  const response = await fetch(fullUrl, { headers: getAuthHeader() });
+  if (!response.ok) {
+    let errorMessage = `API Error: ${response.status}`;
+    try {
+      errorMessage = ((await response.json()) as APIError).detail || errorMessage;
+    } catch {
+      // Non-JSON error body; keep the default message.
+    }
+    throw new APIClientError(errorMessage, response.status);
+  }
+
+  const disposition = response.headers.get('content-disposition');
+  const filenameMatch = disposition?.match(/filename="?([^";]+)"?/i);
+  return { blob: await response.blob(), filename: filenameMatch?.[1] ?? null };
+}
+
+/**
  * Creates a POST request
  */
 export async function apiPost<T>(url: string, data?: unknown): Promise<T> {
