@@ -66,7 +66,6 @@ class ReverseGeocoder:
                 )
                 response.raise_for_status()
                 return _short_place(response.json())
-        except (httpx.HTTPError, ValueError) as exc:
-            # Offline or rate-limited: normal on the road, not an error.
+        except Exception as exc:  # offline or rate-limited: normal on the road
             logger.debug("Reverse geocode failed (%s); will retry later", exc)
             return None
