@@ -49,10 +49,10 @@ export default defineConfig({
     hmr: false,
     // Limit the number of concurrent requests to prevent browser resource exhaustion
     middlewareMode: false,
-    // Enable caching for better performance
-    headers: {
-      'Cache-Control': 'max-age=31536000',
-    },
+    // No custom Cache-Control here: source modules (/src/*) are unhashed, so a
+    // long max-age makes browsers serve stale code across dev-server restarts.
+    // Vite's defaults already cache correctly (etag for sources, immutable for
+    // hashed /node_modules/.vite/deps); production headers come from the proxy.
     // Proxy API requests to the backend server (WebSockets connect directly)
     proxy: {
       // Proxy REST API requests
