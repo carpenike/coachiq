@@ -1,14 +1,18 @@
 """
 Logging configuration module for the coachiq backend.
 
-This module provides comprehensive logging configuration that matches the functionality
-of the old core_daemon system, including coloredlogs integration and WebSocket log handler support.
+Provides the unified dictConfig used by both the application and uvicorn
+(``create_unified_log_config`` / ``configure_unified_logging``), an idempotent
+early-startup configurator (``setup_early_logging``), a JSON formatter for
+journald/log-aggregation environments, and the hook that attaches the
+WebSocket log handler for live log streaming (``update_websocket_logging``).
 """
 
 import json
 import logging
 import os
-import time
+from datetime import UTC, datetime
+from pathlib import Path
 
 try:
     import coloredlogs
@@ -18,8 +22,38 @@ except ImportError:
     HAS_COLOREDLOGS = False
 
 from backend.core.config import LoggingSettings
+from backend.core.sensitive_data_filter import SensitiveDataLogFilter
 
 logger = logging.getLogger(__name__)
+
+
+def _get_environment() -> str:
+    """Return the deployment environment name in lowercase.
+
+    Reads ``COACHIQ_ENVIRONMENT`` first (set by the production systemd unit),
+    falling back to ``ENVIRONMENT``, then ``"development"``.
+    """
+    return (os.getenv("COACHIQ_ENVIRONMENT") or os.getenv("ENVIRONMENT") or "development").lower()
+
+
+def _should_use_json(settings: LoggingSettings | None = None) -> bool:
+    """Decide whether JSON log output should be used.
+
+    An explicit ``settings.json_format`` wins; otherwise JSON is auto-detected
+    from ``LOG_FORMAT=json`` or a production/staging environment.
+
+    Args:
+        settings: Optional logging settings carrying an explicit override.
+
+    Returns:
+        True if JSON log output should be used.
+    """
+    if settings is not None and settings.json_format is not None:
+        return settings.json_format
+    return os.getenv("LOG_FORMAT", "").lower() == "json" or _get_environment() in (
+        "production",
+        "staging",
+    )
 
 
 class JsonFormatter(logging.Formatter):
@@ -52,7 +86,7 @@ class JsonFormatter(logging.Formatter):
         """
         # Create base log entry with standard fields
         log_entry = {
-            "timestamp": time.strftime("%Y-%m-%dT%H:%M:%S.%fZ", time.gmtime(record.created)),
+            "timestamp": datetime.fromtimestamp(record.created, tz=UTC).isoformat(),
             "level": record.levelname,
             "message": record.getMessage(),
             "logger": record.name,
@@ -98,137 +132,6 @@ class JsonFormatter(logging.Formatter):
         return json.dumps(log_entry, default=str)
 
 
-def configure_logging(
-    settings: LoggingSettings | None = None,
-) -> logging.Logger:
-    """
-    Configure comprehensive logging for the backend application.
-
-    This function sets up logging similar to the old core_daemon system with:
-    - Proper log level configuration from environment variables
-    - JSON structured logging for production/journald compatibility
-    - Coloredlogs integration for development console output (if available)
-    - Proper handler management to avoid duplicates
-
-    The WebSocket log handler for /ws/logs is attached separately at startup
-    via update_websocket_logging().
-
-    Args:
-        settings (LoggingSettings | None): Logging configuration settings.
-                                         If None, defaults will be used.
-
-    Returns:
-        logging.Logger: The configured root logger
-    """
-    root_logger = logging.getLogger()
-
-    # Get configuration from environment or settings
-    if settings:
-        log_level_str = settings.level
-        log_format = settings.format
-        use_json_format = getattr(settings, "json_format", False)
-    else:
-        log_level_str = os.getenv("LOG_LEVEL", "INFO").upper()
-        log_format = "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
-        # Use JSON format in production environments
-        use_json_format = os.getenv("LOG_FORMAT", "").lower() == "json" or os.getenv(
-            "ENVIRONMENT", "development"
-        ).lower() in ("production", "staging")
-
-    # Convert log level string to integer
-    log_level_int = getattr(logging, log_level_str, None)
-    if not isinstance(log_level_int, int):
-        logger.warning(f"Invalid LOG_LEVEL '{log_level_str}'. Defaulting to INFO.")
-        log_level_int = logging.INFO
-
-    # Set the root logger's level to DEBUG to allow all messages through
-    # Individual handlers will filter based on their own levels
-    root_logger.setLevel(logging.DEBUG)
-
-    # Remove any existing handlers to prevent duplicates
-    # Important: iterate over a copy of the list for safe removal
-    for handler in list(root_logger.handlers):
-        root_logger.removeHandler(handler)
-
-    # Configure console logging
-    if use_json_format:
-        # Use JSON formatter for production/journald compatibility
-        console_handler = logging.StreamHandler()
-        console_handler.setLevel(log_level_int)
-        json_formatter = JsonFormatter()
-        console_handler.setFormatter(json_formatter)
-        root_logger.addHandler(console_handler)
-        logger.info("JSON structured logging configured for production/journald compatibility")
-    elif HAS_COLOREDLOGS:
-        # Use coloredlogs for enhanced console output in development
-        coloredlogs.install(
-            level=log_level_int,
-            fmt=log_format,
-            datefmt="%Y-%m-%d %H:%M:%S",  # Consistent date format without milliseconds
-            logger=root_logger,
-            reconfigure=True,
-            field_styles={
-                "asctime": {"color": "cyan"},  # Subtle color for timestamp
-                "name": {"color": "blue"},
-                "levelname": {"bold": True},  # Bold levelname, inherits level color
-                # "message": {"color": "white"},  # Default terminal color for messages
-            },
-            level_styles={
-                "debug": {"color": "green"},  # Green for debug (less severe)
-                "info": {"color": "white"},  # Default/neutral for info
-                "warning": {"color": "yellow"},
-                "error": {"color": "red"},
-                "critical": {"color": "red", "bold": True},
-            },
-        )
-        logger.info("Coloredlogs configured for enhanced console output")
-    else:
-        # Fallback to basic console handler
-        console_handler = logging.StreamHandler()
-        console_handler.setLevel(log_level_int)
-        # Use consistent date format without milliseconds
-        formatter = logging.Formatter(log_format, datefmt="%Y-%m-%d %H:%M:%S")
-        console_handler.setFormatter(formatter)
-        root_logger.addHandler(console_handler)
-        logger.info("Basic console logging configured (coloredlogs not available)")
-
-    # Add file logging if configured
-    if settings and settings.log_to_file and settings.log_file:
-        try:
-            # Ensure log directory exists
-            settings.log_file.parent.mkdir(parents=True, exist_ok=True)
-
-            file_handler = logging.FileHandler(settings.log_file)
-            file_handler.setLevel(log_level_int)
-
-            # Use JSON formatter for file logs if configured
-            file_formatter = (
-                JsonFormatter()
-                if use_json_format
-                else logging.Formatter(log_format, datefmt="%Y-%m-%d %H:%M:%S")
-            )
-
-            file_handler.setFormatter(file_formatter)
-            root_logger.addHandler(file_handler)
-            logger.info(f"File logging configured: {settings.log_file}")
-        except Exception as e:
-            logger.warning(f"Failed to configure file logging: {e}")
-
-    logger.info(f"Logging configured with level: {log_level_str}")
-
-    # Ensure at least one handler is attached to the root logger
-    if not root_logger.handlers:
-        fallback_handler = logging.StreamHandler()
-        fallback_handler.setLevel(log_level_int)
-        fallback_handler.setFormatter(logging.Formatter(log_format, datefmt="%Y-%m-%d %H:%M:%S"))
-        root_logger.addHandler(fallback_handler)
-        logger.warning(
-            "No log handlers were attached after configuration; added fallback StreamHandler."
-        )
-
-    return root_logger
-
-
 def setup_early_logging() -> None:
     """
     Set up basic logging early in the application startup process.
@@ -237,15 +140,21 @@ def setup_early_logging() -> None:
     application configuration is loaded. It's useful for logging during
     the initial startup phase. It applies coloredlogs if available for
     consistent colored output from the very beginning.
+
+    Idempotent: if the root logger already has handlers (e.g. uvicorn already
+    applied the unified dictConfig before backend.main was imported), this
+    function returns immediately without reconfiguring.
     """
-    log_level_str = os.getenv("LOG_LEVEL", "INFO").upper()
+    if logging.getLogger().handlers:
+        return
+
+    log_level_str = (
+        os.getenv("COACHIQ_LOGGING__LEVEL") or os.getenv("LOG_LEVEL") or "INFO"
+    ).upper()
     log_level_int = getattr(logging, log_level_str, logging.INFO)
 
     # Check if we should use JSON format (production/staging environment)
-    use_json_format = os.getenv("ENVIRONMENT", "development").lower() in (
-        "production",
-        "staging",
-    )
+    use_json_format = _get_environment() in ("production", "staging")
 
     if use_json_format:
         # Use basic configuration with JSON-like format for production
@@ -323,17 +232,19 @@ def update_websocket_logging(websocket_service) -> None:
 
             ws_handler = WebSocketLogHandler(websocket_service, loop)
             # Always set WebSocket handler to DEBUG to send all logs
-            # Let frontend handle filtering based on client preferences
+            # (the root logger is configured at DEBUG; the console handler
+            # filters at the configured level). Let the frontend handle
+            # filtering based on client preferences.
             ws_handler.setLevel(logging.DEBUG)
 
-            # Use the same formatter as existing handlers if available
-            if root_logger.handlers and root_logger.handlers[0].formatter:
-                ws_handler.setFormatter(root_logger.handlers[0].formatter)
-            else:
-                formatter = logging.Formatter(
-                    "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
-                )
-                ws_handler.setFormatter(formatter)
+            # Always use a plain formatter: copying the console formatter would
+            # stream coloredlogs' ANSI escape codes to WebSocket clients in dev.
+            ws_handler.setFormatter(
+                logging.Formatter("%(asctime)s - %(name)s - %(levelname)s - %(message)s")
+            )
+
+            # Redact secrets before they leave the process over the WebSocket.
+            ws_handler.addFilter(SensitiveDataLogFilter())
 
             root_logger.addHandler(ws_handler)
             logger.info("WebSocket log handler added to existing logging configuration")
@@ -347,9 +258,12 @@ def create_unified_log_config(
     """
     Create a unified logging configuration dictionary for both application and Uvicorn loggers.
 
-    This function generates a logging configuration that applies the custom JsonFormatter
-    to all loggers (root, uvicorn, uvicorn.error, uvicorn.access) ensuring consistent
-    formatting across both application logs and Uvicorn service logs.
+    This function generates a logging configuration that applies consistent
+    formatting to all loggers (root, uvicorn, uvicorn.error, uvicorn.access).
+    The root logger is set to DEBUG while the console/file handlers carry the
+    configured level, so the WebSocket log handler (attached later at DEBUG via
+    update_websocket_logging) receives debug records while console output stays
+    filtered at the configured level.
 
     Args:
         settings (LoggingSettings | None): Logging configuration settings.
@@ -360,15 +274,9 @@ def create_unified_log_config(
               and uvicorn's log_config parameter.
     """
     # Get configuration from environment or settings
-    if settings:
-        log_level_str = settings.level
-        use_json_format = getattr(settings, "json_format", False)
-    else:
-        log_level_str = os.getenv("LOG_LEVEL", "INFO").upper()
-        # Use JSON format in production environments
-        use_json_format = os.getenv("LOG_FORMAT", "").lower() == "json" or os.getenv(
-            "ENVIRONMENT", "development"
-        ).lower() in ("production", "staging")
+    log_level_str = settings.level if settings else os.getenv("LOG_LEVEL", "INFO").upper()
+
+    use_json_format = _should_use_json(settings)
 
     # Convert log level string to integer
     log_level_int = getattr(logging, log_level_str, None)
@@ -380,24 +288,35 @@ def create_unified_log_config(
     log_config = {
         "version": 1,
         "disable_existing_loggers": False,
-        "formatters": {},
+        "formatters": {
+            # Plain formatter, always available (used for file output in
+            # non-JSON mode so ANSI codes never end up in files).
+            "standard": {
+                "format": "%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+                "datefmt": "%Y-%m-%d %H:%M:%S",  # Consistent date format without milliseconds
+            },
+        },
+        "filters": {
+            "redact_sensitive": {
+                "()": "backend.core.sensitive_data_filter.SensitiveDataLogFilter",
+            },
+        },
         "handlers": {},
         "loggers": {},
     }
 
+    use_colored = (
+        not use_json_format and HAS_COLOREDLOGS and (settings is None or settings.colorize)
+    )
+
     if use_json_format:
         # Use JsonFormatter for all logs
         log_config["formatters"]["json"] = {
-            "()": "backend.core.logging_config_new.JsonFormatter",
+            "()": "backend.core.logging_config.JsonFormatter",
             "service_name": "coachiq",
         }
-
-        log_config["handlers"]["console"] = {
-            "class": "logging.StreamHandler",
-            "formatter": "json",
-            "stream": "ext://sys.stdout",
-        }
-    elif HAS_COLOREDLOGS:
+        console_formatter = "json"
+    elif use_colored:
         # For development with coloredlogs, use ColoredFormatter directly
         # to ensure consistent styling across all loggers including uvicorn
         log_config["formatters"]["colored"] = {
@@ -418,43 +337,63 @@ def create_unified_log_config(
                 # "message": {"color": "white"},  # Default terminal color for messages
             },
         }
-
-        log_config["handlers"]["console"] = {
-            "class": "logging.StreamHandler",
-            "formatter": "colored",
-            "stream": "ext://sys.stdout",
-        }
+        console_formatter = "colored"
     else:
-        # Fallback to basic console handler
-        log_config["formatters"]["standard"] = {
-            "format": "%(asctime)s - %(name)s - %(levelname)s - %(message)s",
-            "datefmt": "%Y-%m-%d %H:%M:%S",  # Consistent date format without milliseconds
-        }
+        # Fallback to the plain formatter
+        console_formatter = "standard"
 
-        log_config["handlers"]["console"] = {
-            "class": "logging.StreamHandler",
-            "formatter": "standard",
-            "stream": "ext://sys.stdout",
-        }
+    # Console output is filtered at the configured level; the root logger stays
+    # at DEBUG so handlers attached later (WebSocket streaming) can see debug records.
+    log_config["handlers"]["console"] = {
+        "class": "logging.StreamHandler",
+        "formatter": console_formatter,
+        "stream": "ext://sys.stdout",
+        "level": log_level_str,
+        "filters": ["redact_sensitive"],
+    }
 
-    # Configure all loggers to use the same formatter
+    handler_names = ["console"]
+
+    # Optional rotating file handler (honors settings.log_to_file).
+    log_file = settings.log_file or settings.file if settings else None
+    if settings and settings.log_to_file and log_file:
+        try:
+            log_path = Path(log_file)
+            log_path.parent.mkdir(parents=True, exist_ok=True)
+            log_config["handlers"]["file"] = {
+                "class": "logging.handlers.RotatingFileHandler",
+                "filename": str(log_path),
+                "maxBytes": settings.max_bytes,
+                "backupCount": settings.backup_count,
+                "encoding": "utf-8",
+                "level": log_level_str,
+                # Never the colored formatter: no ANSI codes in files.
+                "formatter": "json" if use_json_format else "standard",
+                "filters": ["redact_sensitive"],
+            }
+            handler_names.append("file")
+        except Exception as e:
+            logger.warning("Failed to configure file logging for %s: %s", log_file, e)
+
+    # Configure all loggers to use the same handlers. The root logger is DEBUG
+    # (handlers filter per-level); uvicorn loggers stay at the configured level.
     log_config["loggers"] = {
         "": {  # Root logger
-            "handlers": ["console"],
-            "level": log_level_str,
+            "handlers": list(handler_names),
+            "level": "DEBUG",
         },
         "uvicorn": {
-            "handlers": ["console"],
+            "handlers": list(handler_names),
             "level": log_level_str,
             "propagate": False,
         },
         "uvicorn.error": {
-            "handlers": ["console"],
+            "handlers": list(handler_names),
             "level": log_level_str,
             "propagate": False,
         },
         "uvicorn.access": {
-            "handlers": ["console"],
+            "handlers": list(handler_names),
             "level": log_level_str,
             "propagate": False,
         },

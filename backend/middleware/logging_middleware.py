@@ -191,7 +191,7 @@ class LoggingMiddleware(BaseHTTPMiddleware):
 
         finally:
             # Audit log for security-sensitive endpoints
-            if any(path in request.url.path for path in ["/auth", "/login", "/api/auth"]):
+            if request.url.path.startswith(("/auth", "/login", "/api/auth")):
                 logger.audit(
                     event_type="api_access",
                     message=f"{request.method} {request.url.path}",
