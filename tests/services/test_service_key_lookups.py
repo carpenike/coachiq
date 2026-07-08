@@ -137,19 +137,19 @@ class _FakeFilter:
             "handle_can_recorder_connection",
             "can_bus_recorder",
             _FakeRecorder(),
-            "status",
+            "recorder_status",
         ),
         (
             "handle_can_analyzer_connection",
             "can_protocol_analyzer",
             _FakeAnalyzer(),
-            "statistics",
+            "analyzer_statistics",
         ),
         (
             "handle_can_filter_connection",
             "can_message_filter",
             _FakeFilter(),
-            "status",
+            "filter_status",
         ),
     ],
 )
