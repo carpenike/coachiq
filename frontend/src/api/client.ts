@@ -175,9 +175,9 @@ export async function apiRequest<T>(
 ): Promise<T> {
   const fullUrl = url.startsWith('/') ? url : `${API_BASE}/${url}`;
 
-  await ensureFreshAccessToken();
-
-  const response = await fetch(fullUrl, {
+  // Build the request each time so a retry picks up the freshly-refreshed token
+  // via getAuthHeader() rather than reusing the dead one.
+  const buildInit = (): RequestInit => ({
     ...defaultOptions,
     ...options,
     headers: {
@@ -187,7 +187,41 @@ export async function apiRequest<T>(
     },
   });
 
+  await ensureFreshAccessToken();
+
+  const response = await fetch(fullUrl, buildInit());
+
+  // A 401 means the access token was already dead when the request left: the
+  // proactive refresh above only fires inside the pre-expiry buffer, and a
+  // backgrounded tablet/phone can wake with an expired token (its refresh timer
+  // was throttled while asleep). Refresh once and retry before surfacing the
+  // failure, so a transient expiry doesn't blank the query and strand the UI on
+  // stale/empty data. Mirrors the SSE client's 401 handling.
+  //
+  // Auth endpoints are excluded: /api/auth/refresh is how we refresh, so
+  // retrying it here would re-enter attemptTokenRefresh and deadlock on its own
+  // coalesced in-flight promise.
+  if (
+    response.status === 401 &&
+    !isAuthEndpoint(url) &&
+    tokenStorage.isRefreshTokenValid()
+  ) {
+    const refreshed = await tokenStorage.attemptTokenRefresh().catch(() => false);
+    if (refreshed) {
+      return handleApiResponse<T>(await fetch(fullUrl, buildInit()));
+    }
+  }
+
   return handleApiResponse<T>(response);
+}
+
+/**
+ * Token-management endpoints must not trigger the request-time 401 refresh:
+ * they either manage the token lifecycle themselves or would recurse into the
+ * in-flight refresh they are part of.
+ */
+function isAuthEndpoint(url: string): boolean {
+  return url.includes('/api/auth/');
 }
 
 /**
