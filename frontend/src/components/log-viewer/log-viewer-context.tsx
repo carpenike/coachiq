@@ -63,13 +63,19 @@ const DEFAULT_CONFIG: Required<LogViewerConfig> = {
 };
 
 // SSE stream lifecycle → the log viewer's connection status
-const STREAM_CONNECTION_STATUS: Record<StreamState, "connecting" | "connected" | "disconnected" | "error"> = {
-  connecting: "connecting",
-  open: "connected",
-  down: "error",
-  "auth-failed": "error",
-  closed: "disconnected",
-};
+function toConnectionStatus(state: StreamState): "connecting" | "connected" | "disconnected" | "error" {
+  switch (state) {
+    case "connecting":
+      return "connecting";
+    case "open":
+      return "connected";
+    case "down":
+    case "auth-failed":
+      return "error";
+    case "closed":
+      return "disconnected";
+  }
+}
 
 export function LogViewerProvider({
   apiEndpoint,
@@ -146,7 +152,7 @@ export function LogViewerProvider({
   }, []);
 
   // Derive connection status from the SSE stream lifecycle
-  const connectionStatus = STREAM_CONNECTION_STATUS[streamState];
+  const connectionStatus = toConnectionStatus(streamState);
 
   // Fetch historical logs
   const fetchInitialLogs = useCallback(async () => {
