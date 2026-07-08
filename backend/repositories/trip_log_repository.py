@@ -161,6 +161,36 @@ class TripLogRepository(MonitoredRepository):
             trip = result.scalar_one_or_none()
             return _trip_to_dict(trip) if trip else None
 
+    @MonitoredRepository._monitored_operation("delete_trip")  # noqa: SLF001 - repo-standard decorator (see analytics_repository)
+    async def delete_trip(self, trip_id: int) -> bool:
+        """Delete one trip and its breadcrumbs; True if the trip existed."""
+        async with self._db_manager.get_session() as session:
+            await session.execute(delete(GpsBreadcrumb).where(GpsBreadcrumb.trip_id == trip_id))
+            result = await session.execute(delete(GpsTrip).where(GpsTrip.id == trip_id))
+            await session.commit()
+            return bool(result.rowcount)
+
+    @MonitoredRepository._monitored_operation("delete_short_trips")  # noqa: SLF001 - repo-standard decorator (see analytics_repository)
+    async def delete_short_trips(self, min_distance_m: float) -> int:
+        """Delete closed trips (and their breadcrumbs) shorter than the minimum.
+
+        Cleans up noise trips recorded before the short-trip discard guard
+        existed; active trips are never touched.
+        """
+        async with self._db_manager.get_session() as session:
+            result = await session.execute(
+                select(GpsTrip.id).where(
+                    GpsTrip.ended_at.is_not(None), GpsTrip.distance_m < min_distance_m
+                )
+            )
+            trip_ids = list(result.scalars())
+            if not trip_ids:
+                return 0
+            await session.execute(delete(GpsBreadcrumb).where(GpsBreadcrumb.trip_id.in_(trip_ids)))
+            await session.execute(delete(GpsTrip).where(GpsTrip.id.in_(trip_ids)))
+            await session.commit()
+            return len(trip_ids)
+
     @MonitoredRepository._monitored_operation("prune_older_than")  # noqa: SLF001 - repo-standard decorator (see analytics_repository)
     async def prune_older_than(self, cutoff_timestamp: float) -> int:
         """Delete breadcrumbs (and fully-pruned trips) older than the cutoff."""
