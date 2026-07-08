@@ -10,7 +10,7 @@ interface LogDrawerProps {
   asChild?: boolean;
 }
 
-export function LogDrawer({ apiEndpoint, trigger = "View Logs", initialFilters, asChild = false }: LogDrawerProps) {
+export function LogDrawer({ apiEndpoint, trigger = "View Logs", initialFilters, asChild = false }: Readonly<LogDrawerProps>) {
   const drawerId = useId();
   const drawerDescId = `${drawerId}-description`;
 

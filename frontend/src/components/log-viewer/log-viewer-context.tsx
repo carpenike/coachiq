@@ -62,6 +62,15 @@ const DEFAULT_CONFIG: Required<LogViewerConfig> = {
   retentionTimeMs: 300000,  // 5 minutes retention for old logs
 };
 
+// SSE stream lifecycle → the log viewer's connection status
+const STREAM_CONNECTION_STATUS: Record<StreamState, "connecting" | "connected" | "disconnected" | "error"> = {
+  connecting: "connecting",
+  open: "connected",
+  down: "error",
+  "auth-failed": "error",
+  closed: "disconnected",
+};
+
 export function LogViewerProvider({
   apiEndpoint,
   initialFilters,
@@ -92,8 +101,8 @@ export function LogViewerProvider({
   // seeing the latest pause flag and buffer cap.
   const isPausedRef = useRef(isPaused);
   isPausedRef.current = isPaused;
-  const maxBufferSizeRef = useRef(config.maxBufferSize);
-  maxBufferSizeRef.current = config.maxBufferSize;
+  const maxBufferSizeRef = useRef(config.maxBufferSize ?? DEFAULT_CONFIG.maxBufferSize);
+  maxBufferSizeRef.current = config.maxBufferSize ?? DEFAULT_CONFIG.maxBufferSize;
 
   // Each `logs` event carries a JSON array of entries (the first one on
   // connect is a backfill batch of up to 100 recent entries).
@@ -137,11 +146,7 @@ export function LogViewerProvider({
   }, []);
 
   // Derive connection status from the SSE stream lifecycle
-  const connectionStatus: "connecting" | "connected" | "disconnected" | "error" =
-    streamState === "open" ? "connected" :
-    streamState === "connecting" ? "connecting" :
-    streamState === "down" || streamState === "auth-failed" ? "error" :
-    "disconnected";
+  const connectionStatus = STREAM_CONNECTION_STATUS[streamState];
 
   // Fetch historical logs
   const fetchInitialLogs = useCallback(async () => {

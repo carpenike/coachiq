@@ -238,8 +238,7 @@ class LoggingSettings(BaseSettings):
     journald_unit: str | None = Field(
         default="coachiq",
         description=(
-            "Systemd unit whose journal is queried for log history; "
-            "None queries the full journal."
+            "Systemd unit whose journal is queried for log history; None queries the full journal."
         ),
     )
 
