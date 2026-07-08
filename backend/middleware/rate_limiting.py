@@ -311,16 +311,11 @@ def conditional_auth_rate_limit():
         # Get the auth manager
         auth_manager = get_auth_manager()
 
-        # Only apply rate limiting if authentication is not disabled
+        # Only apply rate limiting if authentication is not disabled.
+        # check_auth_rate_limit is synchronous; awaiting its None return used
+        # to raise TypeError and 500 every login attempt when auth was enabled.
         if auth_manager.auth_mode != AuthMode.NONE:
-            # Get the limiter and apply the rate limit
-            limiter = get_auth_limiter()
-            limit_str = create_auth_rate_limit()
-            # Apply the limit directly
-            limit_func = limiter.limit(limit_str)
-            # The limiter.limit returns a decorator, we need to call it with the endpoint function
-            # Since we're in a dependency, we just need to check the rate limit
-            await check_auth_rate_limit(request)
+            check_auth_rate_limit(request)
 
     return check_and_apply_limit
 

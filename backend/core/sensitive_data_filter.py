@@ -5,6 +5,7 @@ Provides utilities to filter out sensitive information from audit logs
 to prevent exposure of passwords, tokens, and other confidential data.
 """
 
+import logging
 import re
 from typing import Any, Dict, List, Set, Union
 
@@ -270,6 +271,72 @@ class SensitiveDataFilter:
             "args": filtered_args,
             "kwargs": filtered_kwargs,
         }
+
+
+class SensitiveDataLogFilter(logging.Filter):
+    """Conservative ``logging.Filter`` that redacts high-confidence secrets from log records.
+
+    This filter is intentionally much narrower than :class:`SensitiveDataFilter`.
+    That class masks every email and IP address it sees, which is appropriate for
+    audit payloads but would destroy the debugging value of operational logs --
+    and this filter runs on *every* log line. Only high-confidence secret shapes
+    are redacted here:
+
+    1. JWT tokens (header segment kept, payload/signature replaced with ``.***``)
+    2. Credit-card-like numbers (masked except the last four digits)
+    3. Explicit ``key=value`` / ``key: value`` leaks whose key matches one of
+       :attr:`SensitiveDataFilter.SENSITIVE_PATTERNS` (the alternation is built
+       from that list so the two stay in sync)
+
+    The filter never raises and never drops records: on any redaction failure the
+    record passes through unmodified.
+    """
+
+    # JWT tokens: keep the header segment, replace the rest.
+    JWT_RE = re.compile(r"eyJ[a-zA-Z0-9_-]+\.[a-zA-Z0-9_-]+\.[a-zA-Z0-9_-]+")
+
+    # Credit-card-like numbers: mask all but the last four digits.
+    CARD_RE = re.compile(r"\b\d{4}[\s-]?\d{4}[\s-]?\d{4}[\s-]?\d{4}\b")
+
+    # key=value / key: value leaks for known sensitive key names.
+    KV_RE = re.compile(
+        r"(?i)\b("
+        + "|".join(SensitiveDataFilter.SENSITIVE_PATTERNS)
+        + r")\b([\"']?\s*[=:]\s*[\"']?)([^\s\"',;]+)"
+    )
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        """Redact sensitive data in-place on the record; always allow the record through.
+
+        Args:
+            record: The log record to inspect.
+
+        Returns:
+            Always True (records are redacted, never suppressed).
+        """
+        try:
+            msg = record.getMessage()
+            redacted = self._redact(msg)
+            if redacted != msg:
+                record.msg = redacted
+                record.args = None
+        except Exception:  # redaction must never break logging
+            return True
+        return True
+
+    @classmethod
+    def _redact(cls, msg: str) -> str:
+        """Apply the conservative redaction patterns to a message string."""
+        msg = cls.JWT_RE.sub(lambda m: f"{m.group(0).split('.')[0]}.***", msg)
+        msg = cls.CARD_RE.sub(lambda m: f"****-****-****-{m.group(0)[-4:]}", msg)
+        return cls.KV_RE.sub(cls._mask_kv_value, msg)
+
+    @staticmethod
+    def _mask_kv_value(match: re.Match) -> str:
+        """Mask the value group of a key/value match, skipping already-masked values."""
+        if match.group(3) == "***":
+            return match.group(0)
+        return f"{match.group(1)}{match.group(2)}***"
 
 
 # Global instance for convenience

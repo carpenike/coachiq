@@ -34,7 +34,7 @@ export {
 
 // WebSocket hooks (page-scoped diagnostic streams; app realtime is SSE via RealtimeProvider)
 export {
-  useCANScanWebSocket, useLogWebSocket,
+  useCANScanWebSocket,
   // Generic WebSocket hook and CAN tool variants
   useWebSocket, useCANRecorderWebSocket, useCANAnalyzerWebSocket, useCANFilterWebSocket,
   // Types

@@ -267,7 +267,8 @@ Key endpoint groups:
 - `/api/location/`: GPS trip log (trips, breadcrumbs, GPX export).
 - `/api/health`, `/health`: Liveness and readiness probes.
 - `/api/events`: Authenticated SSE stream for real-time entity and system updates (supports `Last-Event-ID` replay).
-- `/ws/logs`, `/ws/can-sniffer`, `/ws/can-recorder`, `/ws/can-analyzer`, `/ws/can-filter`: WebSocket endpoints for diagnostic streams.
+- `/api/logs/stream`: Admin-only SSE stream of live server logs; `/api/logs/history` serves historical logs (journald or in-memory).
+- `/ws/can-sniffer`, `/ws/can-recorder`, `/ws/can-analyzer`, `/ws/can-filter`: WebSocket endpoints for CAN diagnostic streams.
 
 ## Development Tools & Resources
 

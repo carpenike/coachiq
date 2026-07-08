@@ -98,7 +98,14 @@ class ServerSettings(BaseSettings):
     port: int = Field(default=8000, description="Server port", ge=1, le=65535)
     reload: bool = Field(default=False, description="Enable auto-reload in development")
     workers: int = Field(default=1, description="Number of worker processes", ge=1, le=32)
-    access_log: bool = Field(default=True, description="Enable access logging")
+    access_log: bool = Field(
+        default=False,
+        description=(
+            "Enable uvicorn's access logging. Off by default because request logging is "
+            "handled by the application's LoggingMiddleware; enabling both produces "
+            "duplicate lines and health-probe noise in journald."
+        ),
+    )
     debug: bool = Field(default=False, description="Enable server debug mode")
     root_path: str = Field(default="", description="Root path for the application")
     public_origin: str = Field(
@@ -219,8 +226,21 @@ class LoggingSettings(BaseSettings):
     log_to_file: bool = Field(default=False, description="Enable logging to file")
     log_file: Path | None = Field(default=None, description="Log file path (alias for file)")
     colorize: bool = Field(default=True, description="Enable colored logging output")
+    json_format: bool | None = Field(
+        default=None,
+        description=(
+            "Force JSON log output. When unset, JSON is used automatically in "
+            "production/staging environments."
+        ),
+    )
     max_bytes: int = Field(default=10485760, description="Maximum log file size in bytes")
     backup_count: int = Field(default=5, description="Number of backup log files")
+    journald_unit: str | None = Field(
+        default="coachiq",
+        description=(
+            "Systemd unit whose journal is queried for log history; None queries the full journal."
+        ),
+    )
 
     @field_validator("level", mode="before")
     @classmethod

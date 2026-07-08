@@ -175,10 +175,10 @@ writes entity events straight into the TanStack Query cache
 and `halt_command_emission`). Components observe stream health via the
 `useRealtime()` hook.
 
-WebSockets remain only for page-scoped diagnostic streams (`/ws/logs`,
-`/ws/can-sniffer`, `/ws/can-recorder`, `/ws/can-analyzer`, `/ws/can-filter`)
-used by the log viewer and CAN tooling pages — see the
-[Realtime API Reference](websocket.md).
+WebSockets remain only for page-scoped CAN diagnostic streams
+(`/ws/can-sniffer`, `/ws/can-recorder`, `/ws/can-analyzer`, `/ws/can-filter`)
+used by the CAN tooling pages; the log viewer uses the admin-only SSE stream
+at `GET /api/logs/stream` — see the [Realtime API Reference](websocket.md).
 
 ## Error Handling
 

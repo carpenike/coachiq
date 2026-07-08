@@ -95,11 +95,12 @@ One repo, two halves. A single feature commonly spans both.
   `Last-Event-ID` gap replay); `backend/services/system/event_broker.py` is the
   `EventBroker` (monotonic ids, 1000-event replay ring, bounded per-client
   queues). Entity, Victron, and CAN-health services publish typed events to it.
-- **`backend/websocket/`** — WebSocket handlers/routes for page-scoped
-  diagnostic streams only: `/ws/logs`, `/ws/can-sniffer`, `/ws/can-recorder`,
-  `/ws/can-analyzer`, `/ws/can-filter`. The old `/ws` entity data socket (and
+- **`backend/websocket/`** — WebSocket handlers/routes for page-scoped CAN
+  diagnostic streams only: `/ws/can-sniffer`, `/ws/can-recorder`,
+  `/ws/can-analyzer`, `/ws/can-filter`. Live logs are SSE at
+  `GET /api/logs/stream`. The old `/ws` entity data socket (and `/ws/logs`,
   `/ws/network-map`, `/ws/features`, `/ws/security`) was replaced by the SSE
-  stream.
+  streams.
 - **`backend/middleware/`** — auth, CSRF, structured logging, rate-limiting,
   validation.
 - **`backend/models/`** (SQLAlchemy ORM), **`backend/schemas/`** (Pydantic

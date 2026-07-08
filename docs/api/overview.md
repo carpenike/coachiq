@@ -121,8 +121,10 @@ tooling streams:
 
 - `GET /api/events` - SSE stream of `entity_update`, `entity_created`, and
   `halt_command_emission` events (bearer auth, `Last-Event-ID` gap replay)
-- `WS /ws/logs`, `/ws/can-sniffer`, `/ws/can-recorder`, `/ws/can-analyzer`,
-  `/ws/can-filter` - Diagnostic streams for the log viewer and CAN tools
+- `GET /api/logs/stream` - Admin-only SSE stream of live server logs (log
+  viewer); `GET /api/logs/history` serves historical logs
+- `WS /ws/can-sniffer`, `/ws/can-recorder`, `/ws/can-analyzer`,
+  `/ws/can-filter` - Diagnostic streams for the CAN tools
 
 See the [Realtime API Reference](websocket.md) for details. The old `/api/ws`
 entity-data WebSocket has been removed.

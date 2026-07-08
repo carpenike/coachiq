@@ -248,7 +248,7 @@ in
         User = "coachiq";
         Group = "coachiq";
         WorkingDirectory = cfg.dataDir;
-        SupplementaryGroups = [ "dialout" ];
+        SupplementaryGroups = [ "dialout" "systemd-journal" ];
 
         NoNewPrivileges = true;
         PrivateTmp = true;

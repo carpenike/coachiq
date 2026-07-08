@@ -126,6 +126,10 @@ export default defineConfig({
     target: 'es2015',
     minify: 'esbuild', // Faster than terser, uses less memory
     rollupOptions: {
+      // Cap concurrent file reads: the @tabler/icons-react ESM index pulls in
+      // thousands of modules and unbounded parallel opens can exhaust the fd
+      // limit (EMFILE) on constrained systems (Raspberry Pi, sandboxes).
+      maxParallelFileOps: 64,
       output: {
         manualChunks: {
           // Separate vendor libraries for better caching

@@ -428,9 +428,8 @@ ban-relative-imports = "all"
 "typings/fastapi/params.pyi" = [ "N802", "A003"]
 "typings/**/*.py" = [ "TID252", "A003", "A001", "N801", "N802", "N803", "N806"]
 "typings/**/*.pyi" = [ "TID252", "A003", "A001", "N801", "N802", "N803", "N806"]
-# Main entry point - allow print statements for startup messages
-"backend/main.py" = [ "T201" ]
-"run_server.py" = [ "T201" ]
+# CLI entry point - allow print statements for --config output
+"backend/cli.py" = [ "T201" ]
 # Development tools - more lenient rules
 "dev_tools/**/*.py" = [ "T201", "T203", "S101", "PLR0913"]
 "scripts/**/*.py" = [ "T201", "T203", "S101", "PLR0913"]

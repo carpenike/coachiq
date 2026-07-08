@@ -356,7 +356,7 @@ def _route_exclusion_reason(route: Route) -> str | None:
         return "path-params"
 
     # Never-ending response bodies: a plain client.get() would block forever.
-    if path == "/api/events":
+    if path in ("/api/events", "/api/logs/stream"):
         return "infinite-stream"
 
     if isinstance(route, APIRoute):

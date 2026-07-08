@@ -1,5 +1,6 @@
-import { useLogWebSocket } from "@/hooks/useWebSocket";
+import { CoachEventStream, type StreamState } from "@/api/sse";
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { mapStreamEntry } from "./log-stream";
 import { LogViewerContext } from "./useLogViewer";
 
 export interface LogEntry {
@@ -47,7 +48,6 @@ export interface LogViewerContextType {
 }
 
 interface LogViewerProviderProps {
-  websocketUrl: string;
   apiEndpoint: string;
   initialFilters?: LogFilters;
   config?: LogViewerConfig;
@@ -62,8 +62,22 @@ const DEFAULT_CONFIG: Required<LogViewerConfig> = {
   retentionTimeMs: 300000,  // 5 minutes retention for old logs
 };
 
+// SSE stream lifecycle → the log viewer's connection status
+function toConnectionStatus(state: StreamState): "connecting" | "connected" | "disconnected" | "error" {
+  switch (state) {
+    case "connecting":
+      return "connecting";
+    case "open":
+      return "connected";
+    case "down":
+    case "auth-failed":
+      return "error";
+    case "closed":
+      return "disconnected";
+  }
+}
+
 export function LogViewerProvider({
-  websocketUrl: _websocketUrl, // We ignore this prop and use the standardized hook
   apiEndpoint,
   initialFilters,
   config = DEFAULT_CONFIG,
@@ -83,48 +97,62 @@ export function LogViewerProvider({
   const historyUnavailableRef = useRef(historyUnavailable);
   historyUnavailableRef.current = historyUnavailable;
 
-  // WebSocket log handler
-  const onLog = useCallback((message: unknown) => {
-    if (isPaused) return;
+  // Live log stream: SSE (GET `${apiEndpoint}/stream`) over the same
+  // fetch-based client the app's /api/events channel uses (auth + reconnect
+  // handled by CoachEventStream).
+  const [streamState, setStreamState] = useState<StreamState>("closed");
+  const streamRef = useRef<CoachEventStream | null>(null);
+
+  // Refs keep the stream's event handler referentially stable while still
+  // seeing the latest pause flag and buffer cap.
+  const isPausedRef = useRef(isPaused);
+  isPausedRef.current = isPaused;
+  const maxBufferSizeRef = useRef(config.maxBufferSize ?? DEFAULT_CONFIG.maxBufferSize);
+  maxBufferSizeRef.current = config.maxBufferSize ?? DEFAULT_CONFIG.maxBufferSize;
+
+  // Each `logs` event carries a JSON array of entries (the first one on
+  // connect is a backfill batch of up to 100 recent entries).
+  const handleStreamEvent = useCallback((event: string, data: unknown) => {
+    if (event !== "logs") return;
+    if (isPausedRef.current) return;
     setLoading(false);
-    try {
-      const logData = typeof message === "string" ? JSON.parse(message) : message;
+    if (!Array.isArray(data) || data.length === 0) return;
 
-      const log: LogEntry = {
-        timestamp: logData.timestamp || new Date().toISOString(),
-        level: logData.level || "INFO",
-        message: logData.message || "",
-        logger: logData.logger,
-        service_name: logData.service,
-        pid: logData.thread,
-        extra: { ...logData },
-      };
+    const incoming = data.map(mapStreamEntry);
+    // The live buffer is newest-first; batches arrive oldest-first, so
+    // reverse before prepending (timestamp check keeps this defensive).
+    const firstTs = incoming[0]?.timestamp ?? "";
+    const lastTs = incoming[incoming.length - 1]?.timestamp ?? "";
+    if (firstTs <= lastTs) incoming.reverse();
 
-      setLogs((prev) => {
-        const updatedLogs = [log, ...prev];
-        return updatedLogs.slice(0, config.maxBufferSize);
-      });
-    } catch (err) {
-      console.error("Failed to parse WebSocket log message:", err);
-    }
-  }, [isPaused, config.maxBufferSize]);
+    setLogs((prev) => {
+      const updatedLogs = [...incoming, ...prev];
+      return updatedLogs.slice(0, maxBufferSizeRef.current);
+    });
+  }, []);
 
-  // Use the standardized WebSocket hook for log streaming
-  const {
-    isConnected,
-    error: wsError,
-    connect: connectWs,
-    disconnect: disconnectWs,
-  } = useLogWebSocket({
-    autoConnect: mode === "live",
-    onLog,
-  });
+  const connectStream = useCallback(() => {
+    streamRef.current ??= new CoachEventStream(
+      { onEvent: handleStreamEvent, onStateChange: setStreamState },
+      `${apiEndpoint}/stream`
+    );
+    streamRef.current.start();
+  }, [apiEndpoint, handleStreamEvent]);
 
-  // Derive connection status from WebSocket state
-  const connectionStatus: "connecting" | "connected" | "disconnected" | "error" =
-    wsError ? "error" :
-    isConnected ? "connected" :
-    mode === "live" ? "connecting" : "disconnected";
+  const disconnectStream = useCallback(() => {
+    streamRef.current?.stop();
+  }, []);
+
+  // Tear the stream down on unmount.
+  useEffect(() => {
+    return () => {
+      streamRef.current?.stop();
+      streamRef.current = null;
+    };
+  }, []);
+
+  // Derive connection status from the SSE stream lifecycle
+  const connectionStatus = toConnectionStatus(streamState);
 
   // Fetch historical logs
   const fetchInitialLogs = useCallback(async () => {
@@ -187,13 +215,13 @@ export function LogViewerProvider({
       setHasMore(true);
       setError(null);
       setHistoryUnavailable(false);
-      connectWs();
+      connectStream();
     } else {
-      disconnectWs();
+      disconnectStream();
       void fetchInitialLogs();
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [mode, connectWs, disconnectWs]);
+  }, [mode, connectStream, disconnectStream]);
 
   // Filtering logic with useMemo (no setFilteredLogs or useEffect loop)
   const filteredLogs = useMemo(() => {
@@ -312,8 +340,13 @@ export function LogViewerProvider({
   }, []);
 
   const reconnect = useCallback(() => {
-    connectWs();
-  }, [connectWs]);
+    // Drop any existing connection and redial immediately.
+    if (streamRef.current) {
+      streamRef.current.restart();
+    } else {
+      connectStream();
+    }
+  }, [connectStream]);
 
   const contextValue = useMemo(() => ({
     logs: filteredLogs,

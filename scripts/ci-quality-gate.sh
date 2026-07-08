@@ -19,9 +19,9 @@ RESET="\033[0m"
 # gate's job is to stop the count from going UP (a ratchet); fixing actual
 # pyright errors lower the count and the script will print a green message
 # nudging you to update the baseline downward.
-EXPECTED_PYRIGHT_ERRORS=1232  # Ratcheted 2026-07-05: WS→SSE rebuild deleted dead websocket modules (1239 -> 1232; local delta -7, verify against CI's printed count).
+EXPECTED_PYRIGHT_ERRORS=1207  # Ratcheted 2026-07-08: startup/logging overhaul + WS-logs removal (1232 -> 1207; local delta -25, verify against CI's printed count).
 EXPECTED_FRONTEND_TS_ERRORS=0  # Ratcheted 2026-05-12 to 0 by PR #110 (DatabaseManagementTab + can-sniffer + useCANScanWebSocket generic). Any new TS error is a hard fail.
-EXPECTED_FRONTEND_ESLINT_ERRORS=264  # Ratcheted 2026-07-05: WS->SSE rebuild deleted legacy websocket hooks/contexts (268 -> 264).
+EXPECTED_FRONTEND_ESLINT_ERRORS=260  # Ratcheted 2026-07-08: log-viewer SSE migration lint fixes (264 -> 260).
 
 # Determine target branch (for GitHub Actions or local testing)
 if [ -n "${GITHUB_BASE_REF:-}" ]; then

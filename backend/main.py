@@ -6,12 +6,10 @@ This module provides a simplified FastAPI application setup with proper
 initialization order to avoid metrics collisions and circular imports.
 """
 
-import argparse
 import json
 import logging
 import os
 import platform
-import signal
 import time
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
@@ -20,7 +18,6 @@ from pathlib import Path
 from typing import Any, cast
 from urllib.parse import unquote
 
-import uvicorn
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import FileResponse, JSONResponse, Response
 from prometheus_client import CONTENT_TYPE_LATEST, generate_latest
@@ -31,7 +28,7 @@ from backend.api.router_config import configure_routers
 from backend.core.composition_root import CompositionRoot
 from backend.core.config import Settings, get_settings, is_real_secret, resolve_project_path
 from backend.core.http_navigation import accepts_html, route_family
-from backend.core.logging_config import configure_unified_logging, setup_early_logging
+from backend.core.logging_config import setup_early_logging
 from backend.core.metrics import initialize_backend_metrics
 from backend.core.security_config_validator import validate_security_config
 from backend.core.security_hardening import configure_security_hardening
@@ -223,17 +220,15 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         rvc_config_provider = composition_root.services.rvc_config
         security_event_manager = composition_root.services.security_event_manager
 
-        # Validate security configuration
+        # Validate security configuration - fail fast in production
         if not settings.is_development():
             logger.info("Validating security configuration for production mode")
             if not validate_security_config(settings):
-                logger.error("Security configuration validation failed - see errors above")
-                # In production, we should fail fast on security misconfigurations
-                # For now, just log the error and continue
-
-        device_discovery_service = composition_root.services.device_discovery_service
-        persistence_service = composition_root.services.persistence_service
-        database_manager = composition_root.services.database_manager
+                msg = (
+                    "Security configuration validation failed - refusing to start "
+                    "in production mode. See errors above."
+                )
+                raise RuntimeError(msg)
 
         logger.info("CompositionRoot startup completed successfully")
         logger.info(f"RVC Config Summary: {rvc_config_provider.get_configuration_summary()}")
@@ -257,35 +252,12 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
             msg = "Required services (websocket, entity_manager) failed to initialize"
             raise RuntimeError(msg)
 
-        # Update logging configuration to include WebSocket handler now that manager is available
-        from backend.core.logging_config import update_websocket_logging
+        # Attach the SSE log-stream handler (ring buffer + /api/logs/stream fan-out)
+        # now that the event loop is running.
+        from backend.services.logging.log_stream import setup_log_streaming
 
-        update_websocket_logging(websocket_manager)
-        logger.info("WebSocket logging integration completed")
-
-        # Services are now managed by composition root - no need for manual initialization
-        # TODO(Phase 3): These services need to be updated for constructor injection
-        # For now, they're getting dependencies via service locator pattern internally
-        docs_service = None  # DocsService() - needs docs_repository, performance_monitor
-        vector_service = None  # VectorService() - needs vector_repository, performance_monitor
-        can_interface_service = None  # CANInterfaceService() - needs performance_monitor
-        # Get database_manager from composition root
-        database_manager = composition_root.services.database_manager
-        # TODO: Migrate these services to composition root
-        # For now, create with None until properly migrated
-        predictive_maintenance_service = (
-            None  # PredictiveMaintenanceService - needs maintenance_repository, performance_monitor
-        )
-        # analytics_dashboard_service now registered in composition root
-
-        # Get security services from composition root (already initialized)
-        security_config_service = composition_root.services.security_config_service
-        pin_manager = composition_root.services.pin_manager
-        security_audit_service = composition_root.services.security_audit_service
-
-        logger.info("Security services retrieved from composition root")
-
-        logger.info("Backend services initialized")
+        setup_log_streaming()
+        logger.info("SSE log streaming integration completed")
 
         # Authentication middleware will be configured dynamically via the middleware itself
 
@@ -337,13 +309,8 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
                 await router_sidecar_server.stop()
             logger.info("Using CompositionRoot for orchestrated shutdown")
             await composition_root.shutdown()
-        except Exception as e:
-            logger.error(f"Error during composition root shutdown: {e}")
-            logger.info("Using legacy shutdown (composition root not available)")
-
-            # Feature manager removed - all services managed by composition root
-
-            # CoreServices removed - individual services shutdown by composition root
+        except Exception:
+            logger.exception("Error during composition root shutdown")
         finally:
             # Allow this process to boot another app instance (TestClient
             # enters/exits the lifespan once per test).
@@ -417,7 +384,17 @@ def create_app() -> FastAPI:
     # This should be one of the first middleware to capture all requests
     app.add_middleware(
         LoggingMiddleware,
-        exclude_paths=["/healthz", "/api/healthz", "/metrics", "/readyz", "/startupz"],
+        exclude_paths=[
+            "/healthz",
+            "/api/healthz",
+            "/metrics",
+            "/readyz",
+            "/startupz",
+            # Long-lived SSE streams: excluded so a client disconnect doesn't
+            # log a bogus multi-hour "slow request" warning.
+            "/api/events",
+            "/api/logs/stream",
+        ],
         log_request_body=False,  # Set to True with caution - can log sensitive data
         log_response_body=False,  # Set to True with caution - can be large
         slow_request_threshold_ms=1000,
@@ -1111,94 +1088,17 @@ configure_spa_fallback(app)
 
 def main():
     """
-    Main entry point for running the backend as a script.
+    Entry point kept for ``python -m backend.main`` compatibility.
 
-    This function is used when the backend is run via the project scripts
-    defined in pyproject.toml.
+    Referenced by deployment/health-probes.txt. Delegates to the canonical
+    server entry point in ``backend.cli``.
     """
-    import os
+    # Imported inside the function: backend.cli imports uvicorn, which loads
+    # "backend.main:app" by string only at runtime, so a top-level import here
+    # would be wasteful and circular-ish.
+    from backend.cli import main as cli_main
 
-    # Set up signal handlers for graceful shutdown
-    def signal_handler(signum, frame):
-        logger.info(f"Received signal {signum}, initiating graceful shutdown...")
-        raise KeyboardInterrupt
-
-    signal.signal(signal.SIGTERM, signal_handler)
-    signal.signal(signal.SIGINT, signal_handler)
-
-    # Get settings to use as CLI defaults
-    settings = get_settings()
-
-    parser = argparse.ArgumentParser(description="Start the coachiq backend server.")
-    parser.add_argument(
-        "--host",
-        type=str,
-        default=settings.server.host,
-        help=f"Host to bind the server (default: {settings.server.host})",
-    )
-    parser.add_argument(
-        "--port",
-        type=int,
-        default=settings.server.port,
-        help=f"Port to bind the server (default: {settings.server.port})",
-    )
-    parser.add_argument(
-        "--reload",
-        action="store_true",
-        default=os.getenv("COACHIQ_RELOAD", "false").lower() == "true",
-        help="Enable auto-reload (development only, or COACHIQ_RELOAD=true)",
-    )
-    parser.add_argument(
-        "--log-level",
-        type=str,
-        default=settings.logging.level.lower(),
-        help=f"Uvicorn log level (default: {settings.logging.level.lower()})",
-    )
-    args = parser.parse_args()
-
-    # Set up early logging before anything else
-    setup_early_logging()
-
-    # Get settings to potentially configure more comprehensive logging
-    settings = get_settings()
-
-    # Configure unified logging for standalone script execution
-    log_config, root_logger = configure_unified_logging(settings.logging)
-
-    logger.info("Starting coachiq backend server in standalone mode")
-
-    # Get SSL configuration if available
-    ssl_config = settings.get_uvicorn_ssl_config()
-
-    # Build uvicorn run arguments
-    uvicorn_args = {
-        "app": "backend.main:app",
-        "host": args.host,
-        "port": args.port,
-        "reload": args.reload,
-        "log_level": args.log_level,
-        "log_config": log_config,
-    }
-
-    # Add reload directories to prevent PermissionError on protected directories
-    if args.reload:
-        # Use absolute path to backend directory to handle cases where working directory is /
-        import os
-
-        backend_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-        uvicorn_args["reload_dirs"] = [os.path.join(backend_dir, "backend")]
-
-    # Add SSL configuration if available
-    uvicorn_args.update(ssl_config)
-
-    # Log SSL status
-    if ssl_config:
-        logger.info("SSL/TLS enabled - server will run on HTTPS")
-    else:
-        logger.info("SSL/TLS not configured - server will run on HTTP")
-
-    # Run the application using the top-level uvicorn import with unified log config
-    uvicorn.run(**uvicorn_args)
+    cli_main()
 
 
 if __name__ == "__main__":

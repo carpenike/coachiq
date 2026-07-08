@@ -69,7 +69,7 @@ The backend is built with Python and FastAPI:
 - **RV-C Decoder**: Translates CAN messages to/from human-readable formats
 - **State Management**: Maintains entity states and histories via the repository layer
 - **EventBroker**: In-process fan-out hub behind `GET /api/events`; services publish state changes, connected SSE clients receive them (with `Last-Event-ID` gap replay from a bounded ring buffer)
-- **Diagnostic WebSockets**: Page-scoped streams for logs and CAN tooling (`/ws/logs`, `/ws/can-*`)
+- **Diagnostic WebSockets**: Page-scoped streams for CAN tooling (`/ws/can-*`); live logs ride SSE at `GET /api/logs/stream`
 
 ### Frontend Components
 

@@ -5,7 +5,6 @@ import { VirtualizedLogList } from "./VirtualizedLogList";
 
 export interface LogViewerProps {
   variant: "drawer" | "full-page";
-  websocketUrl: string;
   apiEndpoint: string;
   initialFilters?: Record<string, unknown>;
   useVirtualization?: boolean;
@@ -14,14 +13,12 @@ export interface LogViewerProps {
 export function LogViewer({
   // variant is not used yet, so prefix with _ to avoid lint error
   variant: _variant,
-  websocketUrl,
   apiEndpoint,
   initialFilters,
   useVirtualization = false,
 }: LogViewerProps) {
   return (
     <LogViewerProvider
-      websocketUrl={websocketUrl}
       apiEndpoint={apiEndpoint}
       {...(initialFilters && { initialFilters })}
     >

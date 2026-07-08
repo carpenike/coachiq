@@ -282,8 +282,8 @@ async def get_feature_status() -> dict[str, Any]:
 
 
 # Note: WebSocket endpoints have been moved to backend.websocket.routes
-# The endpoints /ws, /ws/logs, /ws/can-sniffer, /ws/features, and /ws/status
-# are now handled by the proper WebSocket manager with feature integration
+# (CAN diagnostic streams such as /ws/can-sniffer). Live logs are SSE at
+# /api/logs/stream; app-wide realtime data is SSE at /api/events.
 
 
 # Enhanced Configuration Management Endpoints
