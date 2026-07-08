@@ -4,8 +4,14 @@
 
 # See https://pre-commit.com for full documentation
 
+# Use whatever python3 the developer has rather than hard-requiring python3.12.
+# The interpreter only bootstraps the hook envs; ruff/pyright/bandit lint for
+# 3.12 semantics via their own config (ruff target-version = "py312"), so results
+# are identical regardless of the running interpreter. Pinning an exact 3.12
+# meant commits outside `nix develop` (where 3.12 isn't on PATH) silently failed
+# to run hooks and forced --no-verify.
 default_language_version:
-  python: python3.12
+  python: python3
 
 repos:
   # ===== ALWAYS BLOCKING (Fast, Critical) =====
