@@ -15,13 +15,9 @@ import React, { useEffect, useMemo, useRef, useState } from 'react'
 
 import { CoachEventStream, type StreamState } from '@/api/sse'
 import { useAuth } from '@/contexts/auth-context'
+import { applyEntityUpdate, type IEntityUpdatePayload } from './realtime-cache'
 import { RealtimeContext, type IRealtimeContext, type RealtimeHealth } from './realtime-context'
 import { entitiesQueryKeys } from '@/hooks/useEntities'
-
-interface IEntityUpdatePayload {
-  entity_id: string
-  entity_data: Record<string, unknown>
-}
 
 function toRealtimeHealth(state: StreamState): RealtimeHealth {
   switch (state) {
@@ -56,9 +52,7 @@ export function RealtimeProvider({ children }: { readonly children: React.ReactN
     onEvent: (event, data) => {
       const client = queryClientRef.current
       if (event === 'entity_update') {
-        const payload = data as IEntityUpdatePayload
-        client.setQueryData(entitiesQueryKeys.entity(payload.entity_id), payload.entity_data)
-        void client.invalidateQueries({ queryKey: entitiesQueryKeys.collections() })
+        applyEntityUpdate(client, data as IEntityUpdatePayload)
       } else if (event === 'entity_created' || event === 'halt_command_emission') {
         void client.invalidateQueries({ queryKey: entitiesQueryKeys.collections() })
       }
