@@ -3,9 +3,10 @@ Logging configuration module for the coachiq backend.
 
 Provides the unified dictConfig used by both the application and uvicorn
 (``create_unified_log_config`` / ``configure_unified_logging``), an idempotent
-early-startup configurator (``setup_early_logging``), a JSON formatter for
-journald/log-aggregation environments, and the hook that attaches the
-WebSocket log handler for live log streaming (``update_websocket_logging``).
+early-startup configurator (``setup_early_logging``), and a JSON formatter for
+journald/log-aggregation environments. The handler for live log streaming over
+SSE is attached separately at startup (see
+``backend.services.logging.log_stream.setup_log_streaming``).
 """
 
 import json
@@ -22,7 +23,6 @@ except ImportError:
     HAS_COLOREDLOGS = False
 
 from backend.core.config import LoggingSettings
-from backend.core.sensitive_data_filter import SensitiveDataLogFilter
 
 logger = logging.getLogger(__name__)
 
@@ -198,60 +198,6 @@ def setup_early_logging() -> None:
         logger.info(f"Early basic logging configured with level: {log_level_str}")
 
 
-def update_websocket_logging(websocket_service) -> None:
-    """
-    Add or update WebSocket logging to an already configured logger.
-
-    This function is useful when the WebSocket manager becomes available
-    after the initial logging configuration.
-
-    Args:
-        websocket_service: WebSocket service for log streaming
-    """
-    root_logger = logging.getLogger()
-
-    # Check if WebSocket handler already exists
-    from backend.services.system.websocket_service import WebSocketLogHandler
-
-    has_ws_handler = any(
-        isinstance(handler, WebSocketLogHandler) for handler in root_logger.handlers
-    )
-
-    if not has_ws_handler:
-        try:
-            import asyncio
-
-            from backend.services.system.websocket_service import WebSocketLogHandler
-
-            # Get the current event loop
-            try:
-                loop = asyncio.get_running_loop()
-            except RuntimeError:
-                logger.warning("No event loop available for WebSocket logging")
-                return
-
-            ws_handler = WebSocketLogHandler(websocket_service, loop)
-            # Always set WebSocket handler to DEBUG to send all logs
-            # (the root logger is configured at DEBUG; the console handler
-            # filters at the configured level). Let the frontend handle
-            # filtering based on client preferences.
-            ws_handler.setLevel(logging.DEBUG)
-
-            # Always use a plain formatter: copying the console formatter would
-            # stream coloredlogs' ANSI escape codes to WebSocket clients in dev.
-            ws_handler.setFormatter(
-                logging.Formatter("%(asctime)s - %(name)s - %(levelname)s - %(message)s")
-            )
-
-            # Redact secrets before they leave the process over the WebSocket.
-            ws_handler.addFilter(SensitiveDataLogFilter())
-
-            root_logger.addHandler(ws_handler)
-            logger.info("WebSocket log handler added to existing logging configuration")
-        except Exception as e:
-            logger.warning(f"Failed to add WebSocket log handler: {e}")
-
-
 def create_unified_log_config(
     settings: LoggingSettings | None = None,
 ) -> dict:
@@ -261,9 +207,9 @@ def create_unified_log_config(
     This function generates a logging configuration that applies consistent
     formatting to all loggers (root, uvicorn, uvicorn.error, uvicorn.access).
     The root logger is set to DEBUG while the console/file handlers carry the
-    configured level, so the WebSocket log handler (attached later at DEBUG via
-    update_websocket_logging) receives debug records while console output stays
-    filtered at the configured level.
+    configured level, so the SSE log-stream handler (attached later at DEBUG
+    via backend.services.logging.log_stream.setup_log_streaming) receives debug
+    records while console output stays filtered at the configured level.
 
     Args:
         settings (LoggingSettings | None): Logging configuration settings.
@@ -409,8 +355,9 @@ def configure_unified_logging(
     Configure unified logging for both application and Uvicorn.
 
     This function creates a logging configuration that can be used with
-    uvicorn.run(log_config=...). The WebSocket log handler for /ws/logs is
-    attached separately at startup via update_websocket_logging().
+    uvicorn.run(log_config=...). The SSE log-stream handler for
+    /api/logs/stream is attached separately at startup via
+    backend.services.logging.log_stream.setup_log_streaming().
 
     Args:
         settings (LoggingSettings | None): Logging configuration settings.

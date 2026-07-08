@@ -2,11 +2,12 @@
  * Generic WebSocket Hook
  *
  * A reusable React hook for the page-scoped diagnostic WebSocket streams
- * (logs, CAN sniffer/recorder/analyzer/filter), with automatic reconnection
+ * (CAN sniffer/recorder/analyzer/filter), with automatic reconnection
  * and per-endpoint connection sharing.
  *
  * App-wide realtime state (entity updates) does NOT go through here — it
- * rides the SSE stream owned by RealtimeProvider (see @/api/sse).
+ * rides the SSE stream owned by RealtimeProvider (see @/api/sse). Log
+ * streaming is also SSE now (GET /api/logs/stream, see the log-viewer).
  */
 
 import { useEffect, useRef, useState, useCallback, useMemo } from 'react';
@@ -414,46 +415,6 @@ export function useCANScanWebSocket<TMessage = unknown>(options?: {
     clearMessageCount,
     subscribe
   };
-}
-
-/**
- * Hook for log streaming via WebSocket
- */
-export function useLogWebSocket(options?: {
-  autoConnect?: boolean;
-  onLog?: (log: unknown) => void;
-}) {
-  return useWebSocket({
-    endpoint: '/ws/logs',
-    autoConnect: options?.autoConnect ?? false,
-    onMessage: (message) => {
-      // Accept log messages with or without a type field
-      if (
-        message && typeof message === 'object' &&
-        'timestamp' in message && 'level' in message && 'message' in message
-      ) {
-        options?.onLog?.(message);
-      } else if (typeof message === 'string') {
-        // Try to parse as JSON, fallback to raw string
-        try {
-          const parsed = JSON.parse(message);
-          if (
-            parsed && typeof parsed === 'object' &&
-            'timestamp' in parsed && 'level' in parsed && 'message' in parsed
-          ) {
-            options?.onLog?.(parsed);
-            return;
-          }
-        } catch {
-          // Not JSON, pass as raw string
-        }
-        options?.onLog?.(message);
-      } else {
-        // Fallback: pass any message
-        options?.onLog?.(message);
-      }
-    }
-  });
 }
 
 // Export specialized hooks from their separate files

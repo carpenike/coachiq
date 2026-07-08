@@ -180,11 +180,12 @@ When a CAN message decodes into an entity-state change:
 3. Connected SSE clients see the update in <100ms typical; commands
    flow the other way over plain REST.
 
-WebSockets remain only for page-scoped diagnostic streams
-(`backend/websocket/routes.py`): `/ws/logs`, `/ws/can-sniffer`,
-`/ws/can-recorder`, `/ws/can-analyzer`, and `/ws/can-filter`. The old
-`/ws` entity-data socket (and `/ws/network-map`, `/ws/features`,
-`/ws/security`) were removed when the SSE stream landed.
+WebSockets remain only for page-scoped CAN diagnostic streams
+(`backend/websocket/routes.py`): `/ws/can-sniffer`, `/ws/can-recorder`,
+`/ws/can-analyzer`, and `/ws/can-filter`. Live logs stream over SSE at
+`GET /api/logs/stream` (admin-only). The old `/ws` entity-data socket
+(and `/ws/logs`, `/ws/network-map`, `/ws/features`, `/ws/security`)
+were removed when the SSE streams landed.
 
 ## See also
 

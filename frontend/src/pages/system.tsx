@@ -7,8 +7,10 @@
  *  - Status:  GET /api/v1/system/services + /api/v1/system/components/health
  *             + /api/v1/system/info + /api/v1/system/status (version/env)
  *  - CAN Bus: GET /api/v1/networks/status (real HOF-001/002/011 telemetry)
- *  - Logs:    WS /ws/logs via the existing log-viewer, with an explicit
- *             "streaming unavailable" state instead of an endless spinner.
+ *  - Logs:    SSE GET /api/logs/stream (live) + GET /api/logs/history
+ *             (journald with in-memory fallback) via the existing
+ *             log-viewer, with an explicit "streaming unavailable" state
+ *             instead of an endless spinner.
  *
  * /api/v1/system/events is NOT bound (sample data per design doc).
  * No number is rendered that the backend doesn't provide — nulls are "—".
@@ -631,7 +633,7 @@ function LogsTab() {
   return (
     <Card className="overflow-hidden">
       <div className="flex h-[36rem] flex-col">
-        <LogViewerProvider websocketUrl="/ws/logs" apiEndpoint={`${API_BASE}/logs`}>
+        <LogViewerProvider apiEndpoint={`${API_BASE}/logs`}>
           <LogToolbar />
           <div className="flex min-h-0 flex-1 flex-col overflow-y-auto">
             <LogStreamBody />

@@ -170,15 +170,25 @@ In the React app you should not use the stream directly: `RealtimeProvider`
 writes entity events into the TanStack Query cache; components consume state
 through the normal query hooks and can check stream health via `useRealtime()`.
 
+## Log streaming (SSE)
+
+Live server logs stream over SSE at `GET /api/logs/stream` (admin-only,
+bearer auth). Entries arrive batched as `event: logs` frames whose `data` is
+a JSON array of `{timestamp, level, message, logger, service, thread}`
+objects; on connect the most recent matching entries are replayed from an
+in-memory ring buffer. Optional query params: `level` (minimum python level
+name) and `modules` (comma-separated logger-name prefixes). Historical logs
+are served by `GET /api/logs/history` (journald when available, otherwise the
+in-memory buffer). The old `/ws/logs` WebSocket has been removed.
+
 ## Diagnostic WebSocket endpoints
 
-Five WebSocket endpoints remain for page-scoped diagnostic streams
+Four WebSocket endpoints remain for page-scoped CAN diagnostic streams
 (`backend/websocket/routes.py`). They are not part of the app-wide realtime
 data plane:
 
 | Endpoint           | Purpose                                          |
 | ------------------ | ------------------------------------------------ |
-| `/ws/logs`         | Live server log streaming (log viewer)           |
 | `/ws/can-sniffer`  | Raw CAN frame stream                             |
 | `/ws/can-recorder` | CAN recorder status updates                      |
 | `/ws/can-analyzer` | CAN analyzer statistics and messages             |
@@ -188,7 +198,9 @@ Example:
 
 ```javascript
 const wsProtocol = window.location.protocol === "https:" ? "wss:" : "ws:";
-const socket = new WebSocket(`${wsProtocol}//${window.location.host}/ws/logs`);
+const socket = new WebSocket(
+  `${wsProtocol}//${window.location.host}/ws/can-sniffer`,
+);
 
 socket.onmessage = (event) => {
   const entry = JSON.parse(event.data);

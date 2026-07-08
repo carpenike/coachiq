@@ -1,10 +1,11 @@
 """
 FastAPI WebSocket routes and endpoints.
 
-WebSockets serve only the page-scoped, high-frequency diagnostic streams
-(logs, CAN sniffer/recorder/analyzer/filter). App-wide realtime state
-(entity updates etc.) rides the SSE stream at GET /api/events instead —
-see backend/api/routers/events.py.
+WebSockets serve only the page-scoped, high-frequency CAN diagnostic streams
+(sniffer/recorder/analyzer/filter). App-wide realtime state (entity updates
+etc.) rides the SSE stream at GET /api/events, and live logs ride SSE at
+GET /api/logs/stream — see backend/api/routers/events.py and
+backend/api/routers/logs.py.
 """
 
 import logging
@@ -28,16 +29,6 @@ def setup_websocket_routes(app: Any) -> None:
     """
     app.include_router(router)
     logger.info("WebSocket routes configured")
-
-
-@router.websocket("/ws/logs")
-async def websocket_logs_endpoint(websocket: WebSocket, ws_service: WebSocketManager) -> None:
-    """
-    WebSocket endpoint for log streaming.
-
-    Connect to ws://<host>/ws/logs to receive log messages.
-    """
-    await ws_service.handle_log_connection(websocket)
 
 
 @router.websocket("/ws/can-sniffer")

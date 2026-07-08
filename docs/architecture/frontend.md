@@ -183,9 +183,10 @@ bus activity (from `/api/v1/networks/status`) to derive the single
 `LIVE | STALE | OFFLINE` coach verdict shown in the UI.
 
 WebSocket hooks (`src/hooks/useWebSocket.ts`, `src/hooks/websocket/`) remain
-only for the page-scoped diagnostic streams — `/ws/logs` for the log viewer
-and `/ws/can-sniffer`, `/ws/can-recorder`, `/ws/can-analyzer`, `/ws/can-filter`
-for the CAN tooling pages. Entity data no longer flows over WebSockets.
+only for the page-scoped CAN diagnostic streams — `/ws/can-sniffer`,
+`/ws/can-recorder`, `/ws/can-analyzer`, `/ws/can-filter` for the CAN tooling
+pages. The log viewer consumes the admin-only SSE stream at
+`GET /api/logs/stream`. Entity data no longer flows over WebSockets.
 
 ## Component Structure
 

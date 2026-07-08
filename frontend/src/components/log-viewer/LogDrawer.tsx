@@ -4,14 +4,13 @@ import { useId } from "react";
 import { LogViewer } from "./LogViewer";
 
 interface LogDrawerProps {
-  websocketUrl: string;
   apiEndpoint: string;
   trigger?: React.ReactNode;
   initialFilters?: Record<string, unknown>;
   asChild?: boolean;
 }
 
-export function LogDrawer({ websocketUrl, apiEndpoint, trigger = "View Logs", initialFilters, asChild = false }: LogDrawerProps) {
+export function LogDrawer({ apiEndpoint, trigger = "View Logs", initialFilters, asChild = false }: LogDrawerProps) {
   const drawerId = useId();
   const drawerDescId = `${drawerId}-description`;
 
@@ -34,7 +33,6 @@ export function LogDrawer({ websocketUrl, apiEndpoint, trigger = "View Logs", in
         <div className="p-4 h-[calc(80vh-4rem)]">
           <LogViewer
             variant="drawer"
-            websocketUrl={websocketUrl}
             apiEndpoint={apiEndpoint}
             {...(initialFilters && { initialFilters })}
             useVirtualization

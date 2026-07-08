@@ -252,11 +252,12 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
             msg = "Required services (websocket, entity_manager) failed to initialize"
             raise RuntimeError(msg)
 
-        # Update logging configuration to include WebSocket handler now that manager is available
-        from backend.core.logging_config import update_websocket_logging
+        # Attach the SSE log-stream handler (ring buffer + /api/logs/stream fan-out)
+        # now that the event loop is running.
+        from backend.services.logging.log_stream import setup_log_streaming
 
-        update_websocket_logging(websocket_manager)
-        logger.info("WebSocket logging integration completed")
+        setup_log_streaming()
+        logger.info("SSE log streaming integration completed")
 
         # Authentication middleware will be configured dynamically via the middleware itself
 
@@ -383,7 +384,17 @@ def create_app() -> FastAPI:
     # This should be one of the first middleware to capture all requests
     app.add_middleware(
         LoggingMiddleware,
-        exclude_paths=["/healthz", "/api/healthz", "/metrics", "/readyz", "/startupz"],
+        exclude_paths=[
+            "/healthz",
+            "/api/healthz",
+            "/metrics",
+            "/readyz",
+            "/startupz",
+            # Long-lived SSE streams: excluded so a client disconnect doesn't
+            # log a bogus multi-hour "slow request" warning.
+            "/api/events",
+            "/api/logs/stream",
+        ],
         log_request_body=False,  # Set to True with caution - can log sensitive data
         log_response_body=False,  # Set to True with caution - can be large
         slow_request_threshold_ms=1000,

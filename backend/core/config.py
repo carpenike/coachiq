@@ -235,6 +235,13 @@ class LoggingSettings(BaseSettings):
     )
     max_bytes: int = Field(default=10485760, description="Maximum log file size in bytes")
     backup_count: int = Field(default=5, description="Number of backup log files")
+    journald_unit: str | None = Field(
+        default="coachiq",
+        description=(
+            "Systemd unit whose journal is queried for log history; "
+            "None queries the full journal."
+        ),
+    )
 
     @field_validator("level", mode="before")
     @classmethod
