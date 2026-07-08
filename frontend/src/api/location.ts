@@ -2,7 +2,7 @@
  * Location API client (/api/location) — current GPS position and trip log.
  */
 
-import { apiDelete, apiGet, apiGetBlob } from './client';
+import { apiDelete, apiGet, apiGetBlob, apiPost } from './client';
 
 export interface ICurrentLocation {
   connected: boolean;
@@ -27,7 +27,21 @@ export interface ITrip {
   distance_m: number;
   max_speed_mps: number;
   point_count: number;
+  start_place: string | null;
+  end_place: string | null;
   active: boolean;
+}
+
+export interface ITripSummaryBucket {
+  trip_count: number;
+  distance_m: number;
+  duration_s: number;
+  max_speed_mps: number;
+}
+
+export interface ITripSummary {
+  all_time: ITripSummaryBucket;
+  year: ITripSummaryBucket;
 }
 
 export interface ITripPoint {
@@ -68,4 +82,16 @@ export async function downloadTripGpx(tripId: number): Promise<void> {
 
 export async function deleteTrip(tripId: number): Promise<void> {
   await apiDelete(`/api/location/trips/${tripId}`);
+}
+
+export async function fetchTripSummary(): Promise<ITripSummary> {
+  return apiGet<ITripSummary>('/api/location/trips/summary');
+}
+
+/** Fold a trip into the one before it (a drive split by a long stop). */
+export async function mergeTripWithPrevious(tripId: number): Promise<ITrip> {
+  const result = await apiPost<{ merged: ITrip }>(
+    `/api/location/trips/${tripId}/merge-previous`
+  );
+  return result.merged;
 }

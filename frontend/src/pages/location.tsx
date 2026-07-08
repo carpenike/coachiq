@@ -10,6 +10,8 @@
 import "leaflet/dist/leaflet.css"
 
 import {
+  IconArrowMerge,
+  IconCurrentLocation,
   IconDownload,
   IconPlayerPause,
   IconPlayerPlay,
@@ -18,7 +20,14 @@ import {
   IconTrash,
 } from "@tabler/icons-react"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
-import { useEffect, useMemo, useState } from "react"
+import {
+  useEffect,
+  useMemo,
+  useState,
+  type Dispatch,
+  type ReactNode,
+  type SetStateAction,
+} from "react"
 import { CircleMarker, MapContainer, Polyline, TileLayer, useMap } from "react-leaflet"
 import { toast } from "sonner"
 
@@ -28,6 +37,8 @@ import {
   fetchCurrentLocation,
   fetchTripPoints,
   fetchTrips,
+  fetchTripSummary,
+  mergeTripWithPrevious,
   type ITrip,
   type ITripPoint,
 } from "@/api/location"
@@ -72,6 +83,24 @@ function fmtClock(seconds: number): string {
   })
 }
 
+function fmtMilesLong(meters: number): string {
+  return `${Math.round(meters / METERS_PER_MILE).toLocaleString()} mi`
+}
+
+/** "Nags Head, North Carolina" -> "Nags Head" (for compact A -> B titles). */
+function localityOnly(place: string): string {
+  return place.split(",")[0]?.trim() ?? place
+}
+
+function tripTitle(trip: ITrip): string {
+  if (trip.start_place && trip.end_place) {
+    return trip.start_place === trip.end_place
+      ? trip.start_place
+      : `${localityOnly(trip.start_place)} → ${localityOnly(trip.end_place)}`
+  }
+  return fmtTripDate(trip.started_at)
+}
+
 /**
  * Keep Leaflet's internal size in sync with the container. Leaflet measures
  * once at init; if the tab/panel is laid out later (background tab, sidebar
@@ -105,6 +134,16 @@ function FitBounds({ positions }: Readonly<{ positions: [number, number][] }>) {
 function gpsStatusLabel(fix: boolean, connected: boolean): string {
   if (fix) return "GPS fix"
   return connected ? "Waiting for fix" : "gpsd unreachable"
+}
+
+/** Keep the map centered on the coach while follow mode is on. */
+function FollowHere({ here }: Readonly<{ here: [number, number] | null }>) {
+  const map = useMap()
+  useEffect(() => {
+    if (!here) return
+    map.setView(here, Math.max(map.getZoom(), 13), { animate: true })
+  }, [map, here])
+  return null
 }
 
 // ---------------------------------------------------------------------------
@@ -161,7 +200,7 @@ interface ITripReplay {
 }
 
 /** Replay cursor over a trip's breadcrumbs, advanced on a wall-clock interval. */
-function useTripReplay(points: ITripPoint[]): ITripReplay {
+function useTripReplay(points: ITripPoint[], tripKey: number | null): ITripReplay {
   const [playing, setPlaying] = useState(false)
   const [speedIndex, setSpeedIndex] = useState(1) // 30x
   const [elapsed, setElapsed] = useState(0)
@@ -172,11 +211,12 @@ function useTripReplay(points: ITripPoint[]): ITripReplay {
   const multiplier = REPLAY_SPEEDS.at(speedIndex) ?? 30
   const active = duration > 0
 
-  // A different trip was selected: rewind.
+  // A different trip was selected: rewind. Keyed on the trip id, not the
+  // points array identity, so background refetches don't reset the cursor.
   useEffect(() => {
     setElapsed(0)
     setPlaying(false)
-  }, [points])
+  }, [tripKey])
 
   useEffect(() => {
     if (!playing || duration <= 0) return
@@ -284,10 +324,12 @@ function TrailMap({
   trail,
   here,
   replay,
+  follow,
 }: Readonly<{
   trail: [number, number][]
   here: [number, number] | null
   replay: ITripReplay
+  follow: boolean
 }>) {
   let fitTargets: [number, number][] = trail
   if (fitTargets.length === 0 && here) fitTargets = [here]
@@ -306,7 +348,7 @@ function TrailMap({
         url="https://tile.openstreetmap.org/{z}/{x}/{y}.png"
       />
       <InvalidateOnResize />
-      <FitBounds positions={fitTargets} />
+      {follow ? <FollowHere here={here} /> : <FitBounds positions={fitTargets} />}
       {trail.length > 1 && (
         <Polyline
           positions={trail}
@@ -383,20 +425,65 @@ function CurrentPositionCard() {
 interface ITripRowProps {
   trip: ITrip
   selected: boolean
+  canMerge: boolean
   onSelect: () => void
   onDelete: () => void
+  onMerge: () => void
 }
 
-function TripRow({ trip, selected, onSelect, onDelete }: Readonly<ITripRowProps>) {
-  const [confirmingDelete, setConfirmingDelete] = useState(false)
+/** Icon button whose action needs a second tap to confirm. */
+function ConfirmingIconButton({
+  icon,
+  label,
+  confirmLabel,
+  onConfirm,
+}: Readonly<{
+  icon: ReactNode
+  label: string
+  confirmLabel: string
+  onConfirm: () => void
+}>) {
+  const [confirming, setConfirming] = useState(false)
 
-  // Un-arm the delete confirmation if it isn't followed through.
+  // Un-arm if the second tap doesn't come.
   useEffect(() => {
-    if (!confirmingDelete) return
-    const id = setTimeout(() => setConfirmingDelete(false), 3_000)
+    if (!confirming) return
+    const id = setTimeout(() => setConfirming(false), 3_000)
     return () => clearTimeout(id)
-  }, [confirmingDelete])
+  }, [confirming])
 
+  return (
+    <Button
+      variant="ghost"
+      size="icon"
+      className={cn(
+        "size-7 text-muted-foreground",
+        confirming && "bg-destructive/10 text-destructive"
+      )}
+      aria-label={confirming ? confirmLabel : label}
+      title={confirming ? confirmLabel : label}
+      onClick={() => {
+        if (confirming) {
+          setConfirming(false)
+          onConfirm()
+        } else {
+          setConfirming(true)
+        }
+      }}
+    >
+      {icon}
+    </Button>
+  )
+}
+
+function TripRow({
+  trip,
+  selected,
+  canMerge,
+  onSelect,
+  onDelete,
+  onMerge,
+}: Readonly<ITripRowProps>) {
   const handleDownload = async () => {
     try {
       await downloadTripGpx(trip.id)
@@ -407,6 +494,7 @@ function TripRow({ trip, selected, onSelect, onDelete }: Readonly<ITripRowProps>
     }
   }
 
+  const named = Boolean(trip.start_place && trip.end_place)
   return (
     <div
       className={cn(
@@ -416,14 +504,15 @@ function TripRow({ trip, selected, onSelect, onDelete }: Readonly<ITripRowProps>
     >
       <button type="button" onClick={onSelect} className="min-w-0 flex-1 text-left">
         <p className="truncate font-medium">
-          {fmtTripDate(trip.started_at)}
+          {tripTitle(trip)}
           {trip.active && (
             <Badge variant="default" className="ml-2 text-xs">
               live
             </Badge>
           )}
         </p>
-        <p className="text-xs text-muted-foreground">
+        <p className="truncate text-xs text-muted-foreground">
+          {named && `${fmtTripDate(trip.started_at)} · `}
           {fmtDuration(trip.started_at, trip.ended_at)} · max {fmtMph(trip.max_speed_mps)}
         </p>
       </button>
@@ -438,27 +527,21 @@ function TripRow({ trip, selected, onSelect, onDelete }: Readonly<ITripRowProps>
         >
           <IconDownload className="size-4" />
         </Button>
+        {!trip.active && canMerge && (
+          <ConfirmingIconButton
+            icon={<IconArrowMerge className="size-4" />}
+            label="Merge into previous trip"
+            confirmLabel="Tap again to merge into previous trip"
+            onConfirm={onMerge}
+          />
+        )}
         {!trip.active && (
-          <Button
-            variant="ghost"
-            size="icon"
-            className={cn(
-              "size-7 text-muted-foreground",
-              confirmingDelete && "bg-destructive/10 text-destructive"
-            )}
-            aria-label={confirmingDelete ? "Tap again to delete trip" : "Delete trip"}
-            title={confirmingDelete ? "Tap again to delete" : "Delete trip"}
-            onClick={() => {
-              if (confirmingDelete) {
-                setConfirmingDelete(false)
-                onDelete()
-              } else {
-                setConfirmingDelete(true)
-              }
-            }}
-          >
-            <IconTrash className="size-4" />
-          </Button>
+          <ConfirmingIconButton
+            icon={<IconTrash className="size-4" />}
+            label="Delete trip"
+            confirmLabel="Tap again to delete trip"
+            onConfirm={onDelete}
+          />
         )}
       </div>
     </div>
@@ -469,33 +552,116 @@ function TripRow({ trip, selected, onSelect, onDelete }: Readonly<ITripRowProps>
 // Page
 // ---------------------------------------------------------------------------
 
-export default function LocationPage() {
-  const [selectedTripId, setSelectedTripId] = useState<number | null>(null)
-  const queryClient = useQueryClient()
+const EMPTY_POINTS: ITripPoint[] = []
 
-  const { data: current } = useQuery({
-    queryKey: ["location", "current"],
-    queryFn: fetchCurrentLocation,
-    refetchInterval: 5_000,
+/** Map card with the follow-the-coach toggle and (for finished trips) replay. */
+function MapCard({
+  trail,
+  here,
+  replay,
+  follow,
+  onToggleFollow,
+}: Readonly<{
+  trail: [number, number][]
+  here: [number, number] | null
+  replay: ITripReplay
+  follow: boolean
+  onToggleFollow: () => void
+}>) {
+  return (
+    <Card className="overflow-hidden lg:col-span-2">
+      <div className="relative">
+        <TrailMap trail={trail} here={here} replay={replay} follow={follow} />
+        {here && (
+          <Button
+            variant={follow ? "default" : "secondary"}
+            size="icon"
+            className="absolute right-2 top-2 z-[1000] size-8 shadow"
+            aria-label={follow ? "Stop following position" : "Follow position"}
+            title={follow ? "Stop following" : "Follow the coach"}
+            onClick={onToggleFollow}
+          >
+            <IconCurrentLocation className="size-4" />
+          </Button>
+        )}
+      </div>
+      {replay.active && <ReplayBar replay={replay} />}
+    </Card>
+  )
+}
+
+/** Trips card: odometer summary line plus the trip list. */
+function TripsCard({
+  trips,
+  shownTripId,
+  onSelect,
+  onDelete,
+  onMerge,
+}: Readonly<{
+  trips: ITrip[]
+  shownTripId: number | null
+  onSelect: (tripId: number) => void
+  onDelete: (tripId: number) => void
+  onMerge: (tripId: number) => void
+}>) {
+  const { data: summary } = useQuery({
+    queryKey: ["location", "trip-summary"],
+    queryFn: fetchTripSummary,
+    refetchInterval: 300_000,
     retry: false,
   })
-  const { data: tripData } = useQuery({
-    queryKey: ["location", "trips"],
-    queryFn: () => fetchTrips(50),
-    refetchInterval: 60_000,
-    retry: false,
-  })
-  const { data: pointData } = useQuery({
-    queryKey: ["location", "trip-points", selectedTripId],
-    queryFn: () => fetchTripPoints(selectedTripId as number),
-    enabled: selectedTripId !== null,
-  })
+
+  return (
+    <Card>
+      <CardHeader className="pb-2">
+        <CardTitle className="flex items-center gap-2 text-base">
+          <IconRoute className="size-4 text-muted-foreground" aria-hidden />
+          Trips
+        </CardTitle>
+        {summary && summary.all_time.trip_count > 0 && (
+          <p className="text-xs text-muted-foreground">
+            {fmtMilesLong(summary.all_time.distance_m)} over {summary.all_time.trip_count}{" "}
+            trips
+            {summary.year.trip_count > 0 &&
+              ` · ${fmtMilesLong(summary.year.distance_m)} this year`}
+          </p>
+        )}
+      </CardHeader>
+      <CardContent className="max-h-[50vh] space-y-1 overflow-y-auto">
+        {trips.length === 0 && (
+          <p className="text-sm text-muted-foreground">
+            No trips recorded yet — breadcrumbs start the next time the coach moves.
+          </p>
+        )}
+        {trips.map((trip, index) => (
+          <TripRow
+            key={trip.id}
+            trip={trip}
+            selected={shownTripId === trip.id}
+            canMerge={index < trips.length - 1}
+            onSelect={() => onSelect(trip.id)}
+            onDelete={() => onDelete(trip.id)}
+            onMerge={() => onMerge(trip.id)}
+          />
+        ))}
+      </CardContent>
+    </Card>
+  )
+}
+
+/** Delete/merge mutations with cache invalidation and selection fix-up. */
+function useTripActions(setSelectedTripId: Dispatch<SetStateAction<number | null>>) {
+  const queryClient = useQueryClient()
+  const invalidateTrips = () => {
+    void queryClient.invalidateQueries({ queryKey: ["location", "trips"] })
+    void queryClient.invalidateQueries({ queryKey: ["location", "trip-summary"] })
+  }
 
   const deleteMutation = useMutation({
     mutationFn: deleteTrip,
     onSuccess: (_data, tripId) => {
       setSelectedTripId((prev) => (prev === tripId ? null : prev))
-      void queryClient.invalidateQueries({ queryKey: ["location", "trips"] })
+      invalidateTrips()
     },
     onError: (error) => {
       toast.error(
@@ -504,10 +670,62 @@ export default function LocationPage() {
     },
   })
 
-  const trips = tripData?.trips ?? []
+  const mergeMutation = useMutation({
+    mutationFn: mergeTripWithPrevious,
+    onSuccess: (merged, tripId) => {
+      // The merged-from trip is gone; keep the combined trip on screen.
+      setSelectedTripId((prev) => (prev === tripId ? merged.id : prev))
+      invalidateTrips()
+      void queryClient.invalidateQueries({ queryKey: ["location", "trip-points"] })
+      toast.success("Merged into the previous trip")
+    },
+    onError: (error) => {
+      toast.error(
+        `Failed to merge trip: ${error instanceof Error ? error.message : String(error)}`
+      )
+    },
+  })
+
+  return { deleteMutation, mergeMutation }
+}
+
+export default function LocationPage() {
+  const [selectedTripId, setSelectedTripId] = useState<number | null>(null)
+  const [follow, setFollow] = useState(false)
+
+  // SSE pushes location_update events straight into this cache entry;
+  // the interval is only a fallback for when the stream is down.
+  const { data: current } = useQuery({
+    queryKey: ["location", "current"],
+    queryFn: fetchCurrentLocation,
+    refetchInterval: 15_000,
+    retry: false,
+  })
+  const { data: tripData } = useQuery({
+    queryKey: ["location", "trips"],
+    queryFn: () => fetchTrips(50),
+    refetchInterval: 60_000,
+    retry: false,
+  })
+
+  // With nothing selected, show the trip being recorded right now (if any)
+  // as a live, growing trail.
+  const activeTripId = current?.active_trip_id ?? null
+  const shownTripId = selectedTripId ?? activeTripId
+  const isLiveTrail = shownTripId !== null && shownTripId === activeTripId
+
+  const { data: pointData } = useQuery({
+    queryKey: ["location", "trip-points", shownTripId],
+    queryFn: () => fetchTripPoints(shownTripId as number),
+    enabled: shownTripId !== null,
+    refetchInterval: isLiveTrail ? 15_000 : false,
+  })
+
+  const { deleteMutation, mergeMutation } = useTripActions(setSelectedTripId)
+
   const points = useMemo(
-    () => (selectedTripId !== null ? (pointData?.points ?? []) : []),
-    [selectedTripId, pointData]
+    () => (shownTripId !== null ? (pointData?.points ?? EMPTY_POINTS) : EMPTY_POINTS),
+    [shownTripId, pointData]
   )
   // Memoized so FitBounds doesn't re-fit on every poll/replay render.
   const trail = useMemo<[number, number][]>(
@@ -522,44 +740,30 @@ export default function LocationPage() {
     [current?.fix, current?.latitude, current?.longitude]
   )
 
-  const replay = useTripReplay(points)
+  // Replay applies to finished trips; a live trail has no fixed timeline yet.
+  const replay = useTripReplay(isLiveTrail ? EMPTY_POINTS : points, shownTripId)
 
   return (
     <div className="flex-1 space-y-4 p-4 pt-6 lg:px-6">
       <CurrentPositionCard />
 
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
-        <Card className="overflow-hidden lg:col-span-2">
-          <TrailMap trail={trail} here={here} replay={replay} />
-          {replay.active && <ReplayBar replay={replay} />}
-        </Card>
-
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="flex items-center gap-2 text-base">
-              <IconRoute className="size-4 text-muted-foreground" aria-hidden />
-              Trips
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="max-h-[50vh] space-y-1 overflow-y-auto">
-            {trips.length === 0 && (
-              <p className="text-sm text-muted-foreground">
-                No trips recorded yet — breadcrumbs start the next time the coach moves.
-              </p>
-            )}
-            {trips.map((trip) => (
-              <TripRow
-                key={trip.id}
-                trip={trip}
-                selected={selectedTripId === trip.id}
-                onSelect={() =>
-                  setSelectedTripId(selectedTripId === trip.id ? null : trip.id)
-                }
-                onDelete={() => deleteMutation.mutate(trip.id)}
-              />
-            ))}
-          </CardContent>
-        </Card>
+        <MapCard
+          trail={trail}
+          here={here}
+          replay={replay}
+          follow={follow}
+          onToggleFollow={() => setFollow((prev) => !prev)}
+        />
+        <TripsCard
+          trips={tripData?.trips ?? []}
+          shownTripId={shownTripId}
+          onSelect={(tripId) =>
+            setSelectedTripId(selectedTripId === tripId ? null : tripId)
+          }
+          onDelete={(tripId) => deleteMutation.mutate(tripId)}
+          onMerge={(tripId) => mergeMutation.mutate(tripId)}
+        />
       </div>
     </div>
   )

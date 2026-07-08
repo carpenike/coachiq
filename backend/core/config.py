@@ -1319,9 +1319,17 @@ class TripLogSettings(BaseSettings):
         gt=0,
     )
     retention_days: int = Field(
-        default=0,
+        default=365,
         description="Days of breadcrumbs to keep; 0 keeps everything",
         ge=0,
+    )
+    geocode_enabled: bool = Field(
+        default=True,
+        description="Reverse-geocode trip start/end into place names via Nominatim",
+    )
+    geocode_url: str = Field(
+        default="https://nominatim.openstreetmap.org/reverse",
+        description="Reverse-geocoding endpoint (Nominatim-compatible)",
     )
 
 

@@ -60,6 +60,57 @@ async def list_trips(
     return {"trips": trips, "count": len(trips)}
 
 
+@router.get("/trips/summary", summary="Aggregate trip statistics")
+async def get_trip_summary(
+    trip_log_repository: Annotated[Any, Depends(get_optional_trip_log_repository)],
+) -> dict[str, Any]:
+    """Odometer-style totals over all recorded trips plus the current year."""
+    repository = _require(trip_log_repository, "Trip log")
+    year_start = datetime(datetime.now(tz=UTC).year, 1, 1, tzinfo=UTC).timestamp()
+    return {
+        "all_time": await repository.get_trip_summary(),
+        "year": await repository.get_trip_summary(since=year_start),
+    }
+
+
+@router.post("/trips/{trip_id}/merge-previous", summary="Merge a trip into the one before it")
+async def merge_trip_with_previous(
+    trip_id: int,
+    trip_log_repository: Annotated[Any, Depends(get_optional_trip_log_repository)],
+) -> dict[str, Any]:
+    """Fold a trip into its predecessor (e.g. one drive split by a lunch stop)."""
+    from backend.integrations.router_sidecar.location import haversine_distance_m
+
+    repository = _require(trip_log_repository, "Trip log")
+    trip = await repository.get_trip(trip_id)
+    if trip is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Trip not found")
+    if trip["ended_at"] is None:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Trip is still recording; it can be merged once it ends",
+        )
+    previous = await repository.get_previous_trip(trip_id)
+    if previous is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="No earlier trip to merge into"
+        )
+    bridge_m = 0.0
+    if previous["end_latitude"] is not None:
+        bridge_m = haversine_distance_m(
+            previous["end_latitude"],
+            previous["end_longitude"],
+            trip["start_latitude"],
+            trip["start_longitude"],
+        )
+    merged = await repository.merge_trips(
+        source_id=trip_id, target_id=previous["id"], bridge_distance_m=bridge_m
+    )
+    if merged is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Trip not found")
+    return {"merged": merged}
+
+
 @router.get("/trips/{trip_id}/points", summary="Breadcrumbs for one trip")
 async def get_trip_points(
     trip_id: int,

@@ -23,14 +23,43 @@ class FakeTripLogRepository:
             "ended_at": None,
             "start_latitude": latitude,
             "start_longitude": longitude,
+            "end_latitude": None,
+            "end_longitude": None,
             "distance_m": 0.0,
+            "start_place": None,
+            "end_place": None,
         }
         return trip_id
 
     async def end_trip(
         self, trip_id: int, ended_at: float, latitude: float, longitude: float
     ) -> None:
-        self.trips[trip_id]["ended_at"] = ended_at
+        trip = self.trips[trip_id]
+        trip["ended_at"] = ended_at
+        trip["end_latitude"] = latitude
+        trip["end_longitude"] = longitude
+
+    async def get_trip(self, trip_id: int) -> dict[str, Any] | None:
+        return self.trips.get(trip_id)
+
+    async def set_trip_places(
+        self, trip_id: int, start_place: str | None, end_place: str | None
+    ) -> None:
+        trip = self.trips[trip_id]
+        if start_place is not None:
+            trip["start_place"] = start_place
+        if end_place is not None:
+            trip["end_place"] = end_place
+
+    async def get_trips_missing_places(self, limit: int = 20) -> list[dict[str, Any]]:
+        unnamed = [
+            trip
+            for trip in self.trips.values()
+            if trip["ended_at"] is not None
+            and (trip["start_place"] is None or trip["end_place"] is None)
+        ]
+        unnamed.sort(key=lambda trip: -trip["started_at"])
+        return unnamed[:limit]
 
     async def add_point(self, **kwargs: Any) -> None:
         self.points.append(kwargs)
@@ -80,6 +109,8 @@ def make_service(**overrides: Any) -> tuple[TripLogService, FakeTripLogRepositor
         # drive trips with single fixes; the guard tests override these.
         "start_confirm_seconds": 0.0,
         "min_trip_distance_m": 0.0,
+        # Geocoding is exercised explicitly with a fake geocoder.
+        "geocode_enabled": False,
     }
     kwargs.update(overrides)
     settings = TripLogSettings(**kwargs)
@@ -226,6 +257,81 @@ class TestNoiseGuards:
         await service._resume_or_close_dangling_trip()
         assert service._active_trip_id is None
         assert trip_id not in repository.trips
+
+
+class FakeBroker:
+    def __init__(self) -> None:
+        self.events: list[tuple[str, dict[str, Any]]] = []
+
+    async def publish(self, event: str, data: dict[str, Any]) -> None:
+        self.events.append((event, data))
+
+
+class TestPositionPublishing:
+    async def test_publishes_heartbeat_then_throttles(self):
+        service, _ = make_service()
+        broker = FakeBroker()
+        service._event_broker = broker
+
+        await service._handle_fix(fix(LAT, LON, speed=0.0))
+        assert len(broker.events) == 1
+        assert broker.events[0][0] == "location_update"
+
+        # Same spot moments later: inside min interval, no second event.
+        await service._handle_fix(fix(LAT, LON, speed=0.0))
+        assert len(broker.events) == 1
+
+    async def test_publishes_immediately_on_trip_transition(self):
+        service, _ = make_service()
+        broker = FakeBroker()
+        service._event_broker = broker
+
+        await service._handle_fix(fix(LAT, LON, speed=0.0))  # heartbeat, parked
+        await service._handle_fix(fix(LAT, LON, speed=5.0))  # trip starts
+        assert len(broker.events) == 2
+        assert broker.events[-1][1]["active_trip_id"] is not None
+
+
+class FakeGeocoder:
+    def __init__(self, results: list[str | None]) -> None:
+        self._results = results
+        self.calls: list[tuple[float, float]] = []
+
+    async def reverse(self, latitude: float, longitude: float) -> str | None:
+        self.calls.append((latitude, longitude))
+        return self._results.pop(0) if self._results else None
+
+
+class TestGeocoding:
+    async def test_geocode_trip_fills_missing_places(self, monkeypatch):
+        import backend.services.trip_log.trip_log_service as module
+
+        monkeypatch.setattr(module, "_GEOCODE_PACING_SECONDS", 0.0)
+        service, repository = make_service()
+        service._geocoder = FakeGeocoder(["Nags Head, North Carolina", "Richmond, Virginia"])
+
+        trip_id = await repository.start_trip(time.time() - 3600, LAT, LON)
+        await repository.end_trip(trip_id, time.time(), LAT + 0.5, LON)
+        assert await service._geocode_trip(repository.trips[trip_id]) is True
+        assert repository.trips[trip_id]["start_place"] == "Nags Head, North Carolina"
+        assert repository.trips[trip_id]["end_place"] == "Richmond, Virginia"
+
+    async def test_backfill_stops_when_offline(self, monkeypatch):
+        import backend.services.trip_log.trip_log_service as module
+
+        monkeypatch.setattr(module, "_GEOCODE_PACING_SECONDS", 0.0)
+        service, repository = make_service()
+        geocoder = FakeGeocoder([])  # every lookup fails (offline)
+        service._geocoder = geocoder
+
+        for offset in (7200, 3600):
+            trip_id = await repository.start_trip(time.time() - offset, LAT, LON)
+            await repository.end_trip(trip_id, time.time() - offset + 600, LAT + 0.1, LON)
+
+        await service._geocode_backfill()
+        # First trip failed both lookups; the loop must not hammer the rest.
+        assert len(geocoder.calls) == 2
+        assert all(trip["start_place"] is None for trip in repository.trips.values())
 
 
 class TestReadSide:
