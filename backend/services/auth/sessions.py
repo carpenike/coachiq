@@ -19,6 +19,31 @@ from backend.services.auth.tokens import TokenService
 
 logger = logging.getLogger(__name__)
 
+# Identity claims that must survive into every access token minted here. The
+# initial login mints a token carrying these directly and also stashes them in
+# the session's device_info; refreshes and password-login session creation mint
+# fresh tokens in this service, so they must re-attach the same claims.
+# Everything else in device_info (fingerprint, user_agent, ip_subnet) is session
+# bookkeeping and must NOT leak into the JWT.
+_IDENTITY_CLAIM_KEYS = ("username", "email", "role", "mode", "provider")
+
+
+def _identity_claims(device_info: dict[str, Any] | None) -> dict[str, Any] | None:
+    """Extract the user-identity claims stored alongside a session.
+
+    Returns ``None`` when nothing relevant is present so ``generate_access_token``
+    falls back to its bare defaults. Without this, a refreshed access token has
+    only ``sub``: ``/api/auth/me`` reports an empty username/email and defaults
+    ``role`` to ``"user"``, so the UI shows the bare user_id (a UUID) and silently
+    downgrades admins.
+    """
+    if not device_info:
+        return None
+    claims = {
+        key: device_info[key] for key in _IDENTITY_CLAIM_KEYS if device_info.get(key) is not None
+    }
+    return claims or None
+
 
 class SessionService:
     """Service for session and refresh token management."""
@@ -84,8 +109,11 @@ class SessionService:
                 oldest = min(sessions, key=lambda s: s["created_at"])
                 await self._session_repo.revoke_user_session(oldest["refresh_token"])
 
-        # Generate tokens
-        access_token = self._token_service.generate_access_token(user_id)
+        # Generate tokens. Carry the caller's identity claims into the access
+        # token so /api/auth/me can report username/email/role (not a bare UUID).
+        access_token = self._token_service.generate_access_token(
+            user_id, additional_claims=_identity_claims(device_info)
+        )
         refresh_token = self._token_service.generate_refresh_token()
 
         # Enhance device_info with fingerprint if request is provided
@@ -133,9 +161,13 @@ class SessionService:
             logger.warning("Refresh token not found or expired")
             return None
 
-        # Generate new access token
+        # Generate new access token. Re-attach the identity claims captured when
+        # the session was created; otherwise the refreshed token carries only
+        # `sub` and the user degrades to a bare UUID with role "user".
         user_id = session["user_id"]
-        access_token = self._token_service.generate_access_token(user_id)
+        access_token = self._token_service.generate_access_token(
+            user_id, additional_claims=_identity_claims(session.get("device_info"))
+        )
 
         logger.debug(f"Refreshed access token for user {user_id}")
         return access_token
