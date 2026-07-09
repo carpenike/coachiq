@@ -5,8 +5,11 @@ Reads position from the local gpsd (the same daemon that feeds the Cerbo GX
 and the router sidecar) and records a thoughtful trail rather than a 1 Hz
 firehose:
 
-- a breadcrumb is recorded only after moving ``min_distance_m`` from the
-  last recorded point (and at most every ``min_interval_seconds``),
+- imprecise fixes (large reported ``eph``) and multipath "teleport" spikes
+  are dropped before they reach the trail,
+- a breadcrumb is recorded after moving ``min_distance_m`` from the last
+  recorded point (and at most every ``min_interval_seconds``), OR whenever
+  the heading turns by ``min_course_change_deg`` so corners aren't cut,
 - nothing is recorded while parked,
 - a trip starts only after movement persists for ``start_confirm_seconds``
   (single-fix GPS speed jitter while parked never opens a trip),
@@ -48,6 +51,16 @@ _PUBLISH_MIN_MOVE_M = 10.0
 _GEOCODE_PACING_SECONDS = 1.1
 _GEOCODE_BACKFILL_LIMIT = 20
 
+# Course-change breadcrumbs: gpsd's reported track is unreliable at a crawl,
+# so only trust it above this speed, and require a little real movement and
+# spacing so stationary jitter can't spam turn points.
+_COURSE_MIN_SPEED_MPS = 2.0
+_CORNER_MIN_DISTANCE_M = 5.0
+_CORNER_MIN_INTERVAL_SECONDS = 2.0
+
+_FULL_TURN_DEG = 360.0
+_HALF_TURN_DEG = 180.0
+
 
 class TripLogService:
     """Background recorder of GPS breadcrumbs segmented into trips."""
@@ -82,6 +95,7 @@ class TripLogService:
         self._pending_start_at: float | None = None
         self._last_recorded: tuple[float, float] | None = None  # (lat, lon)
         self._last_recorded_at = 0.0
+        self._last_recorded_course: float | None = None
         self._last_movement_at = 0.0
         self._last_fix: GpsdTpv | None = None
         self._last_fix_at = 0.0
@@ -162,6 +176,11 @@ class TripLogService:
             return
 
         now = time.time()
+        if not self._fix_is_trustworthy(tpv, now):
+            # Drop noisy/spurious fixes before they reach the trail or SSE;
+            # leaving _last_fix untouched lets dt grow so a genuine relocation
+            # (e.g. leaving a tunnel) is accepted after a few seconds.
+            return
         self._last_fix = tpv
         self._last_fix_at = now
 
@@ -169,6 +188,30 @@ class TripLogService:
             await self._track_movement(tpv, now)
         finally:
             await self._maybe_publish_position(tpv, now)
+
+    def _fix_is_trustworthy(self, tpv: GpsdTpv, now: float) -> bool:
+        """Reject imprecise or physically-impossible fixes (GPS noise)."""
+        max_accuracy = self._settings.max_accuracy_m
+        if max_accuracy > 0 and tpv.eph is not None and tpv.eph > max_accuracy:
+            return False
+
+        max_implied = self._settings.max_implied_speed_mps
+        if (
+            max_implied > 0
+            and self._last_fix is not None
+            and self._last_fix.lat is not None
+            and self._last_fix.lon is not None
+            and tpv.lat is not None
+            and tpv.lon is not None
+        ):
+            dt = now - self._last_fix_at
+            if dt > 0:
+                jump_m = haversine_distance_m(
+                    self._last_fix.lat, self._last_fix.lon, tpv.lat, tpv.lon
+                )
+                if jump_m / dt > max_implied:
+                    return False
+        return True
 
     async def _track_movement(self, tpv: GpsdTpv, now: float) -> None:
         if tpv.lat is None or tpv.lon is None:  # narrowed by caller; keeps pyright honest
@@ -211,13 +254,28 @@ class TripLogService:
             await self._end_trip()
             return
 
-        # ...or record the next breadcrumb once we've gone far enough.
-        if (
+        # ...or record the next breadcrumb once we've gone far enough, or the
+        # heading has turned enough that a straight line would cut the corner.
+        far_enough = (
             distance_from_last is not None
             and distance_from_last >= self._settings.min_distance_m
             and now - self._last_recorded_at >= self._settings.min_interval_seconds
-        ):
-            await self._record_point(tpv, now, distance_from_last)
+        )
+        if far_enough or self._heading_turned(tpv, distance_from_last, now):
+            await self._record_point(tpv, now, distance_from_last or 0.0)
+
+    def _heading_turned(self, tpv: GpsdTpv, distance_from_last: float | None, now: float) -> bool:
+        """True when the course has changed enough to warrant a corner point."""
+        threshold = self._settings.min_course_change_deg
+        if threshold <= 0 or tpv.track is None or self._last_recorded_course is None:
+            return False
+        if (tpv.speed or 0.0) < _COURSE_MIN_SPEED_MPS:
+            return False  # gpsd track is unreliable at a crawl
+        if distance_from_last is None or distance_from_last < _CORNER_MIN_DISTANCE_M:
+            return False
+        if now - self._last_recorded_at < _CORNER_MIN_INTERVAL_SECONDS:
+            return False
+        return _angular_difference(tpv.track, self._last_recorded_course) >= threshold
 
     async def _start_trip(self, tpv: GpsdTpv, now: float) -> None:
         if tpv.lat is None or tpv.lon is None:  # narrowed by caller; keeps pyright honest
@@ -244,6 +302,7 @@ class TripLogService:
         self._active_trip_distance_m += leg_distance_m
         self._last_recorded = (tpv.lat, tpv.lon)
         self._last_recorded_at = now
+        self._last_recorded_course = tpv.track
 
     async def _end_trip(self) -> None:
         trip_id = self._active_trip_id
@@ -443,3 +502,9 @@ class TripLogService:
             "gpsd_connected": self._connected,
             "active_trip_id": self._active_trip_id,
         }
+
+
+def _angular_difference(a: float, b: float) -> float:
+    """Smallest absolute difference between two compass headings, in degrees."""
+    diff = abs(a - b) % _FULL_TURN_DEG
+    return _FULL_TURN_DEG - diff if diff > _HALF_TURN_DEG else diff
