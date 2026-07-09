@@ -111,6 +111,32 @@ async def merge_trip_with_previous(
     return {"merged": merged}
 
 
+@router.post("/trips/{trip_id}/rematch", summary="Re-run snap-to-road map matching for a trip")
+async def rematch_trip(
+    trip_id: int,
+    trip_log_service: Annotated[Any, Depends(get_optional_trip_log_service)],
+    trip_log_repository: Annotated[Any, Depends(get_optional_trip_log_repository)],
+) -> dict[str, Any]:
+    """Force a fresh Valhalla match for a finished trip.
+
+    Returns the trip with its (possibly still NULL) ``matched_geometry``; a
+    failed or low-confidence match leaves the raw breadcrumbs as the fallback.
+    """
+    service = _require(trip_log_service, "Trip log")
+    repository = _require(trip_log_repository, "Trip log")
+    trip = await repository.get_trip(trip_id)
+    if trip is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Trip not found")
+    if trip["ended_at"] is None:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Trip is still recording; it can be matched once it ends",
+        )
+    matched = await service.rematch_trip(trip_id)
+    updated = await repository.get_trip(trip_id)
+    return {"trip": updated, "matched": matched}
+
+
 @router.get("/trips/{trip_id}/points", summary="Breadcrumbs for one trip")
 async def get_trip_points(
     trip_id: int,

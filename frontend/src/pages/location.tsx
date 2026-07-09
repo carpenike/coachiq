@@ -554,6 +554,25 @@ function TripRow({
 
 const EMPTY_POINTS: ITripPoint[] = []
 
+/** Parse a trip's stored snap-to-road geometry ("[[lat, lon], ...]") into Leaflet points. */
+function parseMatchedGeometry(raw: string | null | undefined): [number, number][] | null {
+  if (!raw) return null
+  try {
+    const parsed: unknown = JSON.parse(raw)
+    if (!Array.isArray(parsed)) return null
+    const coords = parsed.filter(
+      (point): point is [number, number] =>
+        Array.isArray(point) &&
+        point.length === 2 &&
+        typeof point[0] === "number" &&
+        typeof point[1] === "number"
+    )
+    return coords.length > 1 ? coords : null
+  } catch {
+    return null
+  }
+}
+
 /** Map card with the follow-the-coach toggle and (for finished trips) replay. */
 function MapCard({
   trail,
@@ -561,17 +580,36 @@ function MapCard({
   replay,
   follow,
   onToggleFollow,
+  hasSnapped,
+  showRaw,
+  onToggleRaw,
 }: Readonly<{
   trail: [number, number][]
   here: [number, number] | null
   replay: ITripReplay
   follow: boolean
   onToggleFollow: () => void
+  hasSnapped: boolean
+  showRaw: boolean
+  onToggleRaw: () => void
 }>) {
   return (
     <Card className="overflow-hidden lg:col-span-2">
       <div className="relative">
         <TrailMap trail={trail} here={here} replay={replay} follow={follow} />
+        {hasSnapped && (
+          <Button
+            variant={showRaw ? "secondary" : "default"}
+            size="sm"
+            className="absolute left-2 top-2 z-[1000] h-8 gap-1 px-2 shadow"
+            aria-label={showRaw ? "Show snapped-to-road track" : "Show raw GPS track"}
+            title={showRaw ? "Showing raw GPS — tap for snapped" : "Showing snapped — tap for raw"}
+            onClick={onToggleRaw}
+          >
+            <IconRoute className="size-4" />
+            {showRaw ? "Raw" : "Snapped"}
+          </Button>
+        )}
         {here && (
           <Button
             variant={follow ? "default" : "secondary"}
@@ -689,6 +727,29 @@ function useTripActions(setSelectedTripId: Dispatch<SetStateAction<number | null
   return { deleteMutation, mergeMutation }
 }
 
+/** Derived snapped/raw trail state for the shown trip (snapped preferred when available). */
+function useSnappedTrail(
+  rawTrail: [number, number][],
+  matchedGeometry: string | null | undefined,
+  tripKey: number | null,
+  isLiveTrail: boolean
+): {
+  displayTrail: [number, number][]
+  hasSnapped: boolean
+  showRaw: boolean
+  onToggleRaw: () => void
+} {
+  const [showRaw, setShowRaw] = useState(false)
+  // Reset to the preferred snapped view whenever the shown trip changes.
+  useEffect(() => setShowRaw(false), [tripKey])
+  const snappedTrail = useMemo(() => parseMatchedGeometry(matchedGeometry), [matchedGeometry])
+  // A live trail is still growing, so it is never shown snapped.
+  const hasSnapped = snappedTrail !== null && !isLiveTrail
+  const displayTrail =
+    snappedTrail !== null && !isLiveTrail && !showRaw ? snappedTrail : rawTrail
+  return { displayTrail, hasSnapped, showRaw, onToggleRaw: () => setShowRaw((prev) => !prev) }
+}
+
 export default function LocationPage() {
   const [selectedTripId, setSelectedTripId] = useState<number | null>(null)
   const [follow, setFollow] = useState(false)
@@ -732,6 +793,12 @@ export default function LocationPage() {
     () => points.map((point) => [point.latitude, point.longitude]),
     [points]
   )
+  const { displayTrail, hasSnapped, showRaw, onToggleRaw } = useSnappedTrail(
+    trail,
+    pointData?.trip.matched_geometry,
+    shownTripId,
+    isLiveTrail
+  )
   const here = useMemo<[number, number] | null>(
     () =>
       current?.fix && current.latitude !== null && current.longitude !== null
@@ -749,11 +816,14 @@ export default function LocationPage() {
 
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
         <MapCard
-          trail={trail}
+          trail={displayTrail}
           here={here}
           replay={replay}
           follow={follow}
           onToggleFollow={() => setFollow((prev) => !prev)}
+          hasSnapped={hasSnapped}
+          showRaw={showRaw}
+          onToggleRaw={onToggleRaw}
         />
         <TripsCard
           trips={tripData?.trips ?? []}

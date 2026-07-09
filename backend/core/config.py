@@ -1356,6 +1356,14 @@ class TripLogSettings(BaseSettings):
         default="https://nominatim.openstreetmap.org/reverse",
         description="Reverse-geocoding endpoint (Nominatim-compatible)",
     )
+    matching_enabled: bool = Field(
+        default=True,
+        description="Snap trip breadcrumbs to roads via a self-hosted Valhalla instance",
+    )
+    matching_url: str = Field(
+        default="http://forge.holthome.net:8002/trace_route",
+        description="Valhalla /trace_route map-matching endpoint (empty/unreachable no-ops)",
+    )
 
 
 class TimeSyncSettings(BaseSettings):
