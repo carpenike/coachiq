@@ -1283,13 +1283,38 @@ class TripLogSettings(BaseSettings):
     gpsd_host: str = Field(default="127.0.0.1", description="gpsd host")
     gpsd_port: int = Field(default=2947, description="gpsd JSON port", ge=1, le=65535)
     min_distance_m: float = Field(
-        default=50.0,
+        default=25.0,
         description="Minimum distance between recorded breadcrumbs in meters",
         gt=0,
     )
     min_interval_seconds: float = Field(
-        default=15.0,
+        default=5.0,
         description="Minimum time between recorded breadcrumbs while moving (0 disables)",
+        ge=0,
+    )
+    min_course_change_deg: float = Field(
+        default=12.0,
+        description=(
+            "Record an extra breadcrumb when the heading turns by at least this "
+            "many degrees, so corners are captured instead of cut (0 disables)"
+        ),
+        ge=0,
+        le=180,
+    )
+    max_accuracy_m: float = Field(
+        default=25.0,
+        description=(
+            "Reject fixes whose reported horizontal error (gpsd eph) exceeds this; "
+            "trims multipath scatter near buildings (0 disables, or when eph absent)"
+        ),
+        ge=0,
+    )
+    max_implied_speed_mps: float = Field(
+        default=55.0,
+        description=(
+            "Reject a fix that would imply a jump faster than this from the last "
+            "accepted fix; drops GPS 'teleport' spikes (0 disables). 55 m/s ~ 123 mph"
+        ),
         ge=0,
     )
     stationary_speed_mps: float = Field(

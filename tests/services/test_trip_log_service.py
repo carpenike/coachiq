@@ -111,6 +111,12 @@ def make_service(**overrides: Any) -> tuple[TripLogService, FakeTripLogRepositor
         "min_trip_distance_m": 0.0,
         # Geocoding is exercised explicitly with a fake geocoder.
         "geocode_enabled": False,
+        # Fix-quality gates and course sampling are disabled by default so the
+        # synthetic fixes below (large jumps, no timing) aren't rejected; the
+        # trace-quality tests enable them explicitly.
+        "max_accuracy_m": 0.0,
+        "max_implied_speed_mps": 0.0,
+        "min_course_change_deg": 0.0,
     }
     kwargs.update(overrides)
     settings = TripLogSettings(**kwargs)
@@ -118,8 +124,16 @@ def make_service(**overrides: Any) -> tuple[TripLogService, FakeTripLogRepositor
     return TripLogService(settings, repository), repository
 
 
-def fix(lat: float, lon: float, speed: float = 0.0) -> GpsdTpv:
-    return GpsdTpv(lat=lat, lon=lon, timestamp=None, mode=3, speed=speed, track=90.0, alt=3.0)
+def fix(
+    lat: float,
+    lon: float,
+    speed: float = 0.0,
+    track: float = 90.0,
+    eph: float | None = None,
+) -> GpsdTpv:
+    return GpsdTpv(
+        lat=lat, lon=lon, timestamp=None, mode=3, speed=speed, track=track, alt=3.0, eph=eph
+    )
 
 
 # ~0.001 deg latitude ≈ 111 m; ~0.0001 ≈ 11 m.
@@ -265,6 +279,68 @@ class FakeBroker:
 
     async def publish(self, event: str, data: dict[str, Any]) -> None:
         self.events.append((event, data))
+
+
+class TestTraceQuality:
+    """Fix-quality gates and corner-capturing course sampling."""
+
+    async def test_rejects_imprecise_fix_by_eph(self):
+        service, repository = make_service(max_accuracy_m=25.0)
+        await service._handle_fix(fix(LAT, LON, speed=5.0, eph=10.0))  # good fix
+        good_points = len(repository.points)
+        assert good_points == 1
+
+        # A wildly imprecise fix (eph 80 m) is dropped: no point, and it does
+        # not even become the current position.
+        await service._handle_fix(fix(LAT + 0.001, LON, speed=5.0, eph=80.0))
+        assert len(repository.points) == good_points
+        assert service._last_fix is not None
+        assert service._last_fix.eph == 10.0
+
+    async def test_rejects_teleport_spike_by_implied_speed(self):
+        service, _ = make_service(max_implied_speed_mps=55.0)
+        await service._handle_fix(fix(LAT, LON, speed=5.0))
+        anchor = service._last_fix
+
+        # ~1 km jump one moment later implies ~1000 m/s — multipath, dropped.
+        service._last_fix_at = time.time() - 1.0
+        await service._handle_fix(fix(LAT + 0.009, LON, speed=5.0))
+        assert service._last_fix is anchor  # unchanged; spike ignored
+
+    async def test_relocation_accepted_after_gap(self):
+        # The same jump is legitimate once enough time passes (left a tunnel).
+        service, _ = make_service(max_implied_speed_mps=55.0)
+        await service._handle_fix(fix(LAT, LON, speed=5.0))
+        service._last_fix_at = time.time() - 60.0  # a minute of dead reckoning
+        await service._handle_fix(fix(LAT + 0.009, LON, speed=5.0))
+        assert service._last_fix is not None
+        assert service._last_fix.lat == LAT + 0.009
+
+    async def test_course_change_records_corner_point(self):
+        service, repository = make_service(
+            min_distance_m=200.0,  # far enough that distance alone won't fire
+            min_course_change_deg=12.0,
+        )
+        # Drive east, recording the trip's first point (heading 90).
+        await service._handle_fix(fix(LAT, LON, speed=10.0, track=90.0))
+        assert len(repository.points) == 1
+
+        # ~11 m further but now heading north: a sharp turn under the distance
+        # threshold still earns a breadcrumb so the corner isn't cut.
+        service._last_recorded_at = time.time() - 3.0
+        await service._handle_fix(fix(LAT, LON + 0.0001, speed=10.0, track=0.0))
+        assert len(repository.points) == 2
+
+    async def test_gentle_curve_below_threshold_adds_no_point(self):
+        service, repository = make_service(
+            min_distance_m=200.0,
+            min_course_change_deg=12.0,
+        )
+        await service._handle_fix(fix(LAT, LON, speed=10.0, track=90.0))
+        service._last_recorded_at = time.time() - 3.0
+        # Only a 5-degree drift and under the distance threshold: no point.
+        await service._handle_fix(fix(LAT, LON + 0.0001, speed=10.0, track=95.0))
+        assert len(repository.points) == 1
 
 
 class TestPositionPublishing:
