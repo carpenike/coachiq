@@ -518,6 +518,60 @@ class TestMapMatching:
         assert repository.trips[trip_id]["matched_geometry"] is None
         assert repository.points == points_before
 
+    async def test_backfill_keeps_draining_past_unmappable_run_once_online(self):
+        service, repository = make_service()
+        geometry = "[[35.5784, -75.4655], [35.5884, -75.4655]]"
+        # One match proves connectivity, then a long run of unmappable trips
+        # (more than the consecutive-failure limit) must NOT stop the drain —
+        # the trip after them still matches.
+        service._matcher = FakeMatcher(results=[geometry, None, None, None, None, geometry])
+
+        ids = [
+            await self._finished_trip_with_points(repository, started_offset=offset)
+            for offset in (600, 1200, 1800, 2400, 3000, 3600)
+        ]
+
+        await service._match_backfill()
+        assert repository.trips[ids[0]]["matched_geometry"] == geometry
+        assert repository.trips[ids[5]]["matched_geometry"] == geometry  # reached despite 4 misses
+        assert all(repository.trips[ids[i]]["matched_geometry"] is None for i in (1, 2, 3, 4))
+
+    async def test_enrichment_pass_runs_geocode_and_match(self, monkeypatch):
+        import backend.services.trip_log.trip_log_service as module
+
+        monkeypatch.setattr(module, "_GEOCODE_PACING_SECONDS", 0.0)
+        service, repository = make_service(geocode_enabled=True, matching_enabled=True)
+        geometry = "[[35.5784, -75.4655], [35.5884, -75.4655]]"
+        service._matcher = FakeMatcher(geometry)
+        service._geocoder = FakeGeocoder(
+            ["Nags Head, North Carolina", "Kitty Hawk, North Carolina"]
+        )
+
+        trip_id = await self._finished_trip_with_points(repository)
+
+        await service._run_enrichment_once()
+        assert repository.trips[trip_id]["matched_geometry"] == geometry
+        assert repository.trips[trip_id]["start_place"] == "Nags Head, North Carolina"
+
+    async def test_enrichment_loop_repeats_until_stopped(self, monkeypatch):
+        import backend.services.trip_log.trip_log_service as module
+
+        monkeypatch.setattr(module, "_ENRICHMENT_INTERVAL_SECONDS", 0.0)
+        service, _ = make_service(matching_enabled=True)
+
+        passes = 0
+
+        async def counting_pass() -> None:
+            nonlocal passes
+            passes += 1
+            if passes >= 3:  # let it tick a few times, then stop the loop
+                service._running = False
+
+        service._run_enrichment_once = counting_pass  # type: ignore[method-assign]
+        service._running = True
+        await service._enrichment_loop()
+        assert passes == 3  # ran repeatedly, not just once
+
 
 class TestReadSide:
     async def test_current_position_reflects_last_fix(self):

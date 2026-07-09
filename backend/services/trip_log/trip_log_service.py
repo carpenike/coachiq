@@ -50,7 +50,12 @@ _PUBLISH_MIN_MOVE_M = 10.0
 
 # Nominatim usage policy: at most one request per second.
 _GEOCODE_PACING_SECONDS = 1.1
-_GEOCODE_BACKFILL_LIMIT = 20
+_GEOCODE_BACKFILL_LIMIT = 100
+
+# Enrichment (geocode + map match) runs once at startup and then on this
+# interval, so a coach that regains connectivity to Nominatim/Valhalla while
+# driving self-heals its unnamed/unmatched trips without needing a restart.
+_ENRICHMENT_INTERVAL_SECONDS = 3600.0
 
 # Course-change breadcrumbs: gpsd's reported track is unreliable at a crawl,
 # so only trust it above this speed, and require a little real movement and
@@ -64,10 +69,12 @@ _HALF_TURN_DEG = 180.0
 
 # Map matching runs against a self-hosted Valhalla instance (no rate limit), so
 # it only needs a backfill batch size, not per-request pacing.
-_MATCH_BACKFILL_LIMIT = 20
+_MATCH_BACKFILL_LIMIT = 200
 # Unlike geocoding, a match can fail for a single trip permanently (a drive that
 # stays on roads OSM doesn't map), so the backfill skips isolated failures and
-# only gives up after this many in a row — the signature of Valhalla being down.
+# only gives up after this many in a row *before any trip has matched* — the
+# signature of Valhalla being unreachable. Once one trip matches we know we are
+# online, so later failures are just unmappable trips and never stop the drain.
 _MATCH_BACKFILL_MAX_CONSECUTIVE_FAILURES = 3
 
 
@@ -90,9 +97,8 @@ class TripLogService:
         self._running = False
         self._task: asyncio.Task | None = None
         self._prune_task: asyncio.Task | None = None
-        self._geocode_backfill_task: asyncio.Task | None = None
+        self._enrichment_task: asyncio.Task | None = None
         self._geocode_tasks: set[asyncio.Task] = set()
-        self._match_backfill_task: asyncio.Task | None = None
         self._match_tasks: set[asyncio.Task] = set()
         self._connected = False
 
@@ -130,10 +136,8 @@ class TripLogService:
         self._task = asyncio.create_task(self._watch_loop())
         if self._settings.retention_days > 0:
             self._prune_task = asyncio.create_task(self._prune_loop())
-        if self._settings.geocode_enabled:
-            self._geocode_backfill_task = asyncio.create_task(self._geocode_backfill())
-        if self._settings.matching_enabled:
-            self._match_backfill_task = asyncio.create_task(self._match_backfill())
+        if self._settings.geocode_enabled or self._settings.matching_enabled:
+            self._enrichment_task = asyncio.create_task(self._enrichment_loop())
         logger.info("Trip Log Service started")
 
     async def stop(self) -> None:
@@ -141,9 +145,8 @@ class TripLogService:
         if not self._running:
             return
         self._running = False
-        tasks = [self._task, self._prune_task, self._geocode_backfill_task]
+        tasks = [self._task, self._prune_task, self._enrichment_task]
         tasks.extend(self._geocode_tasks)
-        tasks.append(self._match_backfill_task)
         tasks.extend(self._match_tasks)
         for task in tasks:
             if task:
@@ -152,9 +155,8 @@ class TripLogService:
                     await task
         self._task = None
         self._prune_task = None
-        self._geocode_backfill_task = None
+        self._enrichment_task = None
         self._geocode_tasks.clear()
-        self._match_backfill_task = None
         self._match_tasks.clear()
         logger.info("Trip Log Service stopped")
 
@@ -480,12 +482,15 @@ class TripLogService:
         return True
 
     async def _match_backfill(self) -> None:
-        """Snap recent trips that predate matching (or ended while offline).
+        """Snap trips that predate matching (or ended while offline).
 
         A single trip that won't match (e.g. an entirely-off-road campground
-        drive) is skipped rather than allowed to block the trips behind it; the
-        loop only bails out once enough trips fail in a row to indicate Valhalla
-        is unreachable, and retries the rest on the next start.
+        drive) is skipped rather than allowed to block the trips behind it. The
+        drain only bails out if enough trips fail in a row *before any has
+        matched* — the signature of Valhalla being unreachable (where each
+        attempt is a slow connect timeout). Once one trip matches, connectivity
+        is proven, so the remaining failures are treated as unmappable and
+        skipped so the whole backlog still drains.
         """
         try:
             trips = await self._repository.get_trips_missing_match(_MATCH_BACKFILL_LIMIT)
@@ -497,7 +502,10 @@ class TripLogService:
                     consecutive_failures = 0
                     continue
                 consecutive_failures += 1
-                if consecutive_failures >= _MATCH_BACKFILL_MAX_CONSECUTIVE_FAILURES:
+                if (
+                    matched == 0
+                    and consecutive_failures >= _MATCH_BACKFILL_MAX_CONSECUTIVE_FAILURES
+                ):
                     break
             if matched:
                 logger.info("Map matched %d trips", matched)
@@ -505,6 +513,24 @@ class TripLogService:
             raise
         except Exception:
             logger.exception("Error in map match backfill")
+
+    async def _enrichment_loop(self) -> None:
+        """Run enrichment at startup, then on an interval.
+
+        Retrying on a timer (not only at startup) means a coach that was out of
+        reach of Nominatim/Valhalla while driving self-heals its unnamed and
+        unmatched trips once it regains connectivity, without needing a restart.
+        """
+        while self._running:
+            await self._run_enrichment_once()
+            await asyncio.sleep(_ENRICHMENT_INTERVAL_SECONDS)
+
+    async def _run_enrichment_once(self) -> None:
+        """One geocode + map-match backfill pass (both gated by their setting)."""
+        if self._settings.geocode_enabled:
+            await self._geocode_backfill()
+        if self._settings.matching_enabled:
+            await self._match_backfill()
 
     async def rematch_trip(self, trip_id: int) -> bool:
         """Force a re-match of one trip (used by the API rematch endpoint)."""
