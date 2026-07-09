@@ -28,6 +28,7 @@ class FakeTripLogRepository:
             "distance_m": 0.0,
             "start_place": None,
             "end_place": None,
+            "matched_geometry": None,
         }
         return trip_id
 
@@ -60,6 +61,23 @@ class FakeTripLogRepository:
         ]
         unnamed.sort(key=lambda trip: -trip["started_at"])
         return unnamed[:limit]
+
+    async def set_trip_matched_geometry(self, trip_id: int, geometry: str) -> None:
+        self.trips[trip_id]["matched_geometry"] = geometry
+
+    async def get_trips_missing_match(self, limit: int = 20) -> list[dict[str, Any]]:
+        unmatched = [
+            trip
+            for trip in self.trips.values()
+            if trip["ended_at"] is not None and trip["matched_geometry"] is None
+        ]
+        unmatched.sort(key=lambda trip: -trip["started_at"])
+        return unmatched[:limit]
+
+    async def get_trip_points(self, trip_id: int) -> list[dict[str, Any]]:
+        points = [point for point in self.points if point["trip_id"] == trip_id]
+        points.sort(key=lambda point: point["timestamp"])
+        return points
 
     async def add_point(self, **kwargs: Any) -> None:
         self.points.append(kwargs)
@@ -111,6 +129,8 @@ def make_service(**overrides: Any) -> tuple[TripLogService, FakeTripLogRepositor
         "min_trip_distance_m": 0.0,
         # Geocoding is exercised explicitly with a fake geocoder.
         "geocode_enabled": False,
+        # Map matching is exercised explicitly with a fake matcher.
+        "matching_enabled": False,
         # Fix-quality gates and course sampling are disabled by default so the
         # synthetic fixes below (large jumps, no timing) aren't rejected; the
         # trace-quality tests enable them explicitly.
@@ -408,6 +428,95 @@ class TestGeocoding:
         # First trip failed both lookups; the loop must not hammer the rest.
         assert len(geocoder.calls) == 2
         assert all(trip["start_place"] is None for trip in repository.trips.values())
+
+
+class FakeMatcher:
+    def __init__(
+        self, geometry: str | None = None, *, results: list[str | None] | None = None
+    ) -> None:
+        # `geometry` is returned for every call; `results` is consumed one per
+        # call (then None) to script per-trip success/failure.
+        self._geometry = geometry
+        self._results = list(results) if results is not None else None
+        self.calls: list[tuple[int, float]] = []
+
+    async def match(self, points: list[dict[str, Any]], raw_distance_m: float) -> str | None:
+        self.calls.append((len(points), raw_distance_m))
+        if self._results is not None:
+            return self._results.pop(0) if self._results else None
+        return self._geometry
+
+
+class TestMapMatching:
+    async def _finished_trip_with_points(
+        self, repository: FakeTripLogRepository, started_offset: float = 3600
+    ) -> int:
+        trip_id = await repository.start_trip(time.time() - started_offset, LAT, LON)
+        await repository.add_point(
+            trip_id=trip_id, timestamp=time.time() - started_offset, latitude=LAT, longitude=LON
+        )
+        await repository.add_point(
+            trip_id=trip_id,
+            timestamp=time.time() - started_offset + 60,
+            latitude=LAT + 0.01,
+            longitude=LON,
+        )
+        await repository.end_trip(trip_id, time.time(), LAT + 0.01, LON)
+        return trip_id
+
+    async def test_match_at_end_stores_geometry(self):
+        service, repository = make_service()
+        geometry = "[[35.5784, -75.4655], [35.5884, -75.4655]]"
+        service._matcher = FakeMatcher(geometry)
+
+        trip_id = await self._finished_trip_with_points(repository)
+        points_before = [dict(point) for point in repository.points]
+
+        assert await service._match_trip(repository.trips[trip_id]) is True
+        assert repository.trips[trip_id]["matched_geometry"] == geometry
+        # Raw breadcrumbs must be left completely untouched.
+        assert repository.points == points_before
+
+    async def test_backfill_stops_when_matcher_unreachable(self):
+        service, repository = make_service()
+        matcher = FakeMatcher(None)  # every match fails (Valhalla down)
+        service._matcher = matcher
+
+        for offset in (10800, 7200, 3600, 1800, 900):  # five unmatched trips
+            await self._finished_trip_with_points(repository, started_offset=offset)
+
+        await service._match_backfill()
+        # Bails out after N consecutive failures instead of hammering all five.
+        assert len(matcher.calls) == 3
+        assert all(trip["matched_geometry"] is None for trip in repository.trips.values())
+
+    async def test_backfill_skips_unmappable_trip_and_continues(self):
+        service, repository = make_service()
+        geometry = "[[35.5784, -75.4655], [35.5884, -75.4655]]"
+        # Newest trip is unmappable (None); the two older ones match. Backfill
+        # must not let the one failure block the trips behind it.
+        service._matcher = FakeMatcher(results=[None, geometry, geometry])
+
+        newest = await self._finished_trip_with_points(repository, started_offset=1800)
+        older = await self._finished_trip_with_points(repository, started_offset=3600)
+        oldest = await self._finished_trip_with_points(repository, started_offset=7200)
+
+        await service._match_backfill()
+        assert repository.trips[newest]["matched_geometry"] is None
+        assert repository.trips[older]["matched_geometry"] == geometry
+        assert repository.trips[oldest]["matched_geometry"] == geometry
+
+    async def test_low_confidence_leaves_field_null_and_raw_untouched(self):
+        service, repository = make_service()
+        # A rejected (low-confidence) match returns None from the matcher.
+        service._matcher = FakeMatcher(None)
+
+        trip_id = await self._finished_trip_with_points(repository)
+        points_before = [dict(point) for point in repository.points]
+
+        assert await service._match_trip(repository.trips[trip_id]) is False
+        assert repository.trips[trip_id]["matched_geometry"] is None
+        assert repository.points == points_before
 
 
 class TestReadSide:

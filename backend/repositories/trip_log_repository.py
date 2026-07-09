@@ -43,7 +43,7 @@ class TripLogRepository(MonitoredRepository):
             # the feature first shipped are patched in here (SQLite ALTER).
             result = await session.execute(text("PRAGMA table_info(gps_trips)"))
             existing = {row[1] for row in result}
-            for column in ("start_place", "end_place"):
+            for column in ("start_place", "end_place", "matched_geometry"):
                 if column not in existing:
                     await session.execute(
                         text(f"ALTER TABLE gps_trips ADD COLUMN {column} VARCHAR")
@@ -270,6 +270,9 @@ class TripLogRepository(MonitoredRepository):
             target.distance_m = target.distance_m + source.distance_m + bridge_distance_m
             target.max_speed_mps = max(target.max_speed_mps, source.max_speed_mps)
             target.point_count = target.point_count + source.point_count
+            # The merged trail differs from either matched geometry; drop it so
+            # the backfill re-snaps rather than showing a stale partial road.
+            target.matched_geometry = None
             await session.delete(source)
             await session.commit()
             await session.refresh(target)
@@ -300,6 +303,30 @@ class TripLogRepository(MonitoredRepository):
                 .where(
                     GpsTrip.ended_at.is_not(None),
                     GpsTrip.start_place.is_(None) | GpsTrip.end_place.is_(None),
+                )
+                .order_by(GpsTrip.started_at.desc())
+                .limit(limit)
+            )
+            return [_trip_to_dict(trip) for trip in result.scalars()]
+
+    @MonitoredRepository._monitored_operation("set_trip_matched_geometry")  # noqa: SLF001 - repo-standard decorator (see analytics_repository)
+    async def set_trip_matched_geometry(self, trip_id: int, geometry: str) -> None:
+        """Store snap-to-road geometry (JSON) on a trip."""
+        async with self._db_manager.get_session() as session:
+            await session.execute(
+                update(GpsTrip).where(GpsTrip.id == trip_id).values(matched_geometry=geometry)
+            )
+            await session.commit()
+
+    @MonitoredRepository._monitored_operation("get_trips_missing_match")  # noqa: SLF001 - repo-standard decorator (see analytics_repository)
+    async def get_trips_missing_match(self, limit: int = 20) -> list[dict[str, Any]]:
+        """Newest closed trips that have not been map-matched yet."""
+        async with self._db_manager.get_session() as session:
+            result = await session.execute(
+                select(GpsTrip)
+                .where(
+                    GpsTrip.ended_at.is_not(None),
+                    GpsTrip.matched_geometry.is_(None),
                 )
                 .order_by(GpsTrip.started_at.desc())
                 .limit(limit)
@@ -340,6 +367,7 @@ def _trip_to_dict(trip: GpsTrip) -> dict[str, Any]:
         "point_count": trip.point_count,
         "start_place": trip.start_place,
         "end_place": trip.end_place,
+        "matched_geometry": trip.matched_geometry,
         "active": trip.ended_at is None,
     }
 

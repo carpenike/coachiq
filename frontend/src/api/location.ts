@@ -29,6 +29,8 @@ export interface ITrip {
   point_count: number;
   start_place: string | null;
   end_place: string | null;
+  /** Snap-to-road geometry as JSON "[[lat, lon], ...]"; null falls back to raw breadcrumbs. */
+  matched_geometry: string | null;
   active: boolean;
 }
 
@@ -94,4 +96,12 @@ export async function mergeTripWithPrevious(tripId: number): Promise<ITrip> {
     `/api/location/trips/${tripId}/merge-previous`
   );
   return result.merged;
+}
+
+/** Force a fresh snap-to-road match; returns the trip (matched_geometry may still be null). */
+export async function rematchTrip(tripId: number): Promise<ITrip> {
+  const result = await apiPost<{ trip: ITrip; matched: boolean }>(
+    `/api/location/trips/${tripId}/rematch`
+  );
+  return result.trip;
 }

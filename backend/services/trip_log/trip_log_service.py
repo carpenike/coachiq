@@ -32,6 +32,7 @@ from backend.core.structured_logging import get_logger
 from backend.integrations.router_sidecar.gpsd import GpsdClient, GpsdTpv
 from backend.integrations.router_sidecar.location import haversine_distance_m
 from backend.services.trip_log.geocoding import ReverseGeocoder
+from backend.services.trip_log.map_matching import RouteMatcher
 
 logger = get_logger(__name__, "TripLogService")
 
@@ -61,6 +62,14 @@ _CORNER_MIN_INTERVAL_SECONDS = 2.0
 _FULL_TURN_DEG = 360.0
 _HALF_TURN_DEG = 180.0
 
+# Map matching runs against a self-hosted Valhalla instance (no rate limit), so
+# it only needs a backfill batch size, not per-request pacing.
+_MATCH_BACKFILL_LIMIT = 20
+# Unlike geocoding, a match can fail for a single trip permanently (a drive that
+# stays on roads OSM doesn't map), so the backfill skips isolated failures and
+# only gives up after this many in a row — the signature of Valhalla being down.
+_MATCH_BACKFILL_MAX_CONSECUTIVE_FAILURES = 3
+
 
 class TripLogService:
     """Background recorder of GPS breadcrumbs segmented into trips."""
@@ -76,12 +85,15 @@ class TripLogService:
         self._event_broker = event_broker
         self._client = GpsdClient(settings.gpsd_host, settings.gpsd_port)
         self._geocoder = ReverseGeocoder(settings.geocode_url)
+        self._matcher = RouteMatcher(settings.matching_url)
 
         self._running = False
         self._task: asyncio.Task | None = None
         self._prune_task: asyncio.Task | None = None
         self._geocode_backfill_task: asyncio.Task | None = None
         self._geocode_tasks: set[asyncio.Task] = set()
+        self._match_backfill_task: asyncio.Task | None = None
+        self._match_tasks: set[asyncio.Task] = set()
         self._connected = False
 
         # SSE publish throttle state
@@ -120,6 +132,8 @@ class TripLogService:
             self._prune_task = asyncio.create_task(self._prune_loop())
         if self._settings.geocode_enabled:
             self._geocode_backfill_task = asyncio.create_task(self._geocode_backfill())
+        if self._settings.matching_enabled:
+            self._match_backfill_task = asyncio.create_task(self._match_backfill())
         logger.info("Trip Log Service started")
 
     async def stop(self) -> None:
@@ -129,6 +143,8 @@ class TripLogService:
         self._running = False
         tasks = [self._task, self._prune_task, self._geocode_backfill_task]
         tasks.extend(self._geocode_tasks)
+        tasks.append(self._match_backfill_task)
+        tasks.extend(self._match_tasks)
         for task in tasks:
             if task:
                 task.cancel()
@@ -138,6 +154,8 @@ class TripLogService:
         self._prune_task = None
         self._geocode_backfill_task = None
         self._geocode_tasks.clear()
+        self._match_backfill_task = None
+        self._match_tasks.clear()
         logger.info("Trip Log Service stopped")
 
     # ------------------------------------------------------------------
@@ -327,6 +345,8 @@ class TripLogService:
             logger.info("Trip ended", trip_id=trip_id)
             if self._settings.geocode_enabled:
                 self._spawn_geocode(trip_id)
+            if self._settings.matching_enabled:
+                self._spawn_match(trip_id)
         self._active_trip_id = None
         self._active_trip_distance_m = 0.0
 
@@ -422,6 +442,73 @@ class TripLogService:
             raise
         except Exception:
             logger.exception("Error in geocode backfill")
+
+    # ------------------------------------------------------------------
+    # Map matching (snap-to-road)
+    # ------------------------------------------------------------------
+
+    def _spawn_match(self, trip_id: int) -> None:
+        """Map-match a finished trip in the background (offline-tolerant)."""
+        task = asyncio.create_task(self._match_trip_by_id(trip_id))
+        self._match_tasks.add(task)
+        task.add_done_callback(self._match_tasks.discard)
+
+    async def _match_trip_by_id(self, trip_id: int, *, force: bool = False) -> bool:
+        try:
+            trip = await self._repository.get_trip(trip_id)
+            if trip is None:
+                return False
+            return await self._match_trip(trip, force=force)
+        except Exception:
+            logger.exception("Error map matching trip %s", trip_id)
+            return False
+
+    async def _match_trip(self, trip: dict[str, Any], *, force: bool = False) -> bool:
+        """Snap one trip's breadcrumbs to roads; True if geometry was stored.
+
+        Raw breadcrumbs are read but never modified. A failed or low-confidence
+        match leaves ``matched_geometry`` NULL so the UI falls back to the raw
+        trail and the backfill retries later.
+        """
+        if not force and trip.get("matched_geometry") is not None:
+            return True
+        points = await self._repository.get_trip_points(trip["id"])
+        geometry = await self._matcher.match(points, trip.get("distance_m") or 0.0)
+        if geometry is None:
+            return False
+        await self._repository.set_trip_matched_geometry(trip["id"], geometry)
+        return True
+
+    async def _match_backfill(self) -> None:
+        """Snap recent trips that predate matching (or ended while offline).
+
+        A single trip that won't match (e.g. an entirely-off-road campground
+        drive) is skipped rather than allowed to block the trips behind it; the
+        loop only bails out once enough trips fail in a row to indicate Valhalla
+        is unreachable, and retries the rest on the next start.
+        """
+        try:
+            trips = await self._repository.get_trips_missing_match(_MATCH_BACKFILL_LIMIT)
+            matched = 0
+            consecutive_failures = 0
+            for trip in trips:
+                if await self._match_trip(trip):
+                    matched += 1
+                    consecutive_failures = 0
+                    continue
+                consecutive_failures += 1
+                if consecutive_failures >= _MATCH_BACKFILL_MAX_CONSECUTIVE_FAILURES:
+                    break
+            if matched:
+                logger.info("Map matched %d trips", matched)
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            logger.exception("Error in map match backfill")
+
+    async def rematch_trip(self, trip_id: int) -> bool:
+        """Force a re-match of one trip (used by the API rematch endpoint)."""
+        return await self._match_trip_by_id(trip_id, force=True)
 
     async def _resume_or_close_dangling_trip(self) -> None:
         """After a restart, resume a recent active trip or close a stale one."""

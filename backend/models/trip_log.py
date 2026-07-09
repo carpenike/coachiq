@@ -39,6 +39,11 @@ class GpsTrip(Base, TimestampMixin):
     end_place: Mapped[str | None] = mapped_column(
         String, nullable=True, comment="Reverse-geocoded end locality"
     )
+    matched_geometry: Mapped[str | None] = mapped_column(
+        String,
+        nullable=True,
+        comment="Snap-to-road geometry as JSON [[lat, lon], ...]; NULL falls back to raw",
+    )
 
 
 class GpsBreadcrumb(Base, TimestampMixin):
