@@ -31,6 +31,11 @@ _MIN_POINTS = 2
 # Valhalla accepts large shapes, but keep each request bounded and stitch the
 # chunks so a cross-country trip can't build one pathological request.
 _MAX_POINTS_PER_REQUEST = 1000
+# Valhalla's /trace_route rejects any single request whose matched path exceeds
+# ~200 km (error_code 154). Bound each chunk's driven distance well under that
+# and stitch the pieces so a long highway trip still matches. The breadcrumb leg
+# distances already track the road, so this ~ the snapped distance per request.
+_MAX_CHUNK_DISTANCE_M = 150_000.0
 # Reject a match whose total length differs from the raw trail by more than this
 # fraction — the matcher snapped to the wrong road (common near unmapped
 # campgrounds) and the raw trail is the more trustworthy record.
@@ -83,6 +88,44 @@ def _extract_geometry(payload: dict[str, Any]) -> list[tuple[float, float]]:
     return coordinates
 
 
+def _chunk_points(points: list[dict[str, Any]]) -> list[list[dict[str, Any]]]:
+    """Split breadcrumbs into segments bounded by point count and driven distance.
+
+    Valhalla's trace_route caps a single request at ~200 km, so a long trip must
+    be matched in pieces. Consecutive chunks share their boundary point so the
+    snapped segments join without a gap when stitched.
+    """
+    chunks: list[list[dict[str, Any]]] = []
+    current: list[dict[str, Any]] = []
+    current_distance = 0.0
+    for point in points:
+        if not current:
+            current = [point]
+            current_distance = 0.0
+            continue
+        step = haversine_distance_m(
+            current[-1]["latitude"], current[-1]["longitude"], point["latitude"], point["longitude"]
+        )
+        if (
+            len(current) >= _MAX_POINTS_PER_REQUEST
+            or current_distance + step > _MAX_CHUNK_DISTANCE_M
+        ):
+            chunks.append(current)
+            current = [current[-1]]  # overlap one point so the segments stitch
+            current_distance = 0.0
+            step = haversine_distance_m(
+                current[-1]["latitude"],
+                current[-1]["longitude"],
+                point["latitude"],
+                point["longitude"],
+            )
+        current.append(point)
+        current_distance += step
+    if len(current) >= _MIN_POINTS:
+        chunks.append(current)
+    return chunks
+
+
 class RouteMatcher:
     """Thin async client for Valhalla ``/trace_route``."""
 
@@ -99,10 +142,9 @@ class RouteMatcher:
             return None
         try:
             matched: list[tuple[float, float]] = []
-            for start in range(0, len(points), _MAX_POINTS_PER_REQUEST):
-                chunk = points[start : start + _MAX_POINTS_PER_REQUEST]
+            for chunk in _chunk_points(points):
                 if len(chunk) < _MIN_POINTS:
-                    break
+                    continue
                 geometry = await self._match_chunk(chunk)
                 if not geometry:
                     return None
