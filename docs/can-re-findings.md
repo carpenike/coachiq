@@ -32,7 +32,13 @@ The RV-C name lookup resolving the `0x4F` proprietary frames to `ATS_AC_STATUS_*
 means a large slice of the "proprietary" traffic is **AC power management, not
 lighting** — it can be set aside when hunting the light-command frame.
 
-## The light command dialect (RESOLVED 2026-07-04)
+## Light command and status mapping (PARTIALLY RESOLVED)
+
+**Evidence policy:** prose and commit messages are leads, not ground truth. A
+coach-specific mapping is considered verified only when a retained raw capture
+or a repeatable live test ties a named action to its command and status frames.
+The standard RV-C specification establishes field meaning, but not which
+instance belongs to which physical light on this coach.
 
 Early standard-frame attempts failed and pointed at a proprietary dialect;
 the real causes turned out to be mundane (full chain in the PR #185–#188
@@ -40,16 +46,45 @@ history): the payload byte layout was wrong, and — the biggest single cause �
 **the CAN TX writer was never started** after the service-layer rebuild, so
 commands built frames that nothing transmitted.
 
-The working dialect, verified by DC_DIMMER_STATUS_3 echoing commanded levels:
+The implemented CoachIQ encoder uses this dialect:
 
 - Frame `0x19FEDBF9` (DC_DIMMER_COMMAND_2, prio 6, SA `0xF9`), payload
   `[instance, 0xFF group, level 0-200, 0x00 set-level, 0xFF duration, 0x00,
-  0xFF, 0xFF]`.
-- The mapping's instances (25/`0x19` etc.) were CORRECT; the instance set the
-  G6 cycles in its own ~2 Hz re-broadcasts is unrelated to what the modules
-  accept from other senders.
-- Some lights are multi-channel (bedroom ceiling = instances 25 **and** 26);
-  the command fans out to each (`command.instances` in the coach mapping).
+  `0xFF, 0xFF]`. Unit tests pin this frame shape. No retained July 4 capture
+  contains a dimmer command from source address 0xF9, so acceptance of this
+  exact frame by the live coach must be revalidated rather than inferred from
+  the historical note.
+- The bedroom ceiling is wire-verified as multi-channel instances 25 (`0x19`)
+  **and** 26 (`0x1A`). The command fans out to each (`command.instances` in the
+  coach mapping).
+- The other named light-instance assignments remain provisional. They were
+  carried forward from the June 2025 coach mapping and do not have retained
+  per-light action captures.
+
+### Retained light evidence replay — 2026-07-10
+
+The original JSONL captures remain on `nixpi` under
+`/home/ryan/canre-captures/`. Replaying them through the current
+`coachiq-can-re diff` tool established:
+
+- `ceiling-on.jsonl` and the independent `ceiling-on2.jsonl` both show source
+  `0xFC` send `DC_DIMMER_COMMAND_2` to instances `0x19` and `0x1A`; source
+  `0x8E` reports `DC_DIMMER_STATUS_3` for the same instance within 1–2 ms and
+  continues broadcasting the resulting nonzero levels.
+- `ceiling-off.jsonl` shows the same two commands followed by status level 0
+  for both channels.
+- `ceiling-dim.jsonl` shows both status channels tracking changing levels,
+  including the RV-C ramping sentinel `0xFB`.
+- The idle captures show the G6's unrelated periodic instance set
+  (`0x13`, `0x16`, `0x32`, `0xB5`–`0xBC`). Its presence does not invalidate
+  event-driven status instances `0x19`/`0x1A`.
+
+A live idle audit on 2026-07-10 found all 27 light entities still at their
+startup seed timestamp while the periodic instance set continued on the bus.
+That does not disprove the bedroom mapping, because its status is action-driven,
+but it does mean CoachIQ has no authoritative state for a named light until a
+mapped status frame appears. Every remaining light needs an individual
+Off/On/dim capture before its mapping can be treated as fact.
 
 ## The method: idle vs. action capture diffs
 
@@ -260,6 +295,32 @@ The Front/Mid climate zones source `1FFBF` D5/D0 so the zone card shows "Shed"
 *load*, not a fixed zone↔unit binding; the manager pools compressors, so map
 by the disable test, not by assuming zone N = unit N. (Front & Rear have heat
 pumps, Mid does not — per the owner.)
+
+### Climate/Victron consistency audit — 2026-07-10
+
+A live audit was triggered when Victron showed about 1.6 kW of AC output while
+the Climate page labeled all rooftop zones Off. The coach mapping and deployed
+Nix package were byte-for-byte identical. The wire showed the mapping itself
+was correct:
+
+- `THERMOSTAT_STATUS_1` instance 1 (Mid) reported mode 1 (Cool), 100% fan, and
+  a 69.5 °F setpoint.
+- `AIR_CONDITIONER_STATUS` instance 2 from SA `0x97` reported 100% fan and 100%
+  compressor output.
+- `AC_LOAD_STATUS` instance `D0` reported `0xC8` (energized).
+- Victron reported 1,625 W AC output (1,462 W L1 + 163 W L2).
+
+The display bug was a composite-state field collision. `climate_mid` merges
+thermostat status, ambient channel 5, and AC load `D0`; both thermostat status
+and AC load status define a generic `operating_mode` field. The later load
+frame's value 0 (Automatic load management) overwrote thermostat mode 1
+(Cool). Auxiliary source `instance` fields similarly replaced the canonical
+thermostat instance.
+
+The RX merge now keeps thermostat fields canonical, exposes the sensor source
+as `ambient_instance`, namespaces AC-load fields as `load_*`, and derives
+`shed` from `load_operating_status`. A running compressor therefore remains
+Cool while retaining the independent energy-management status.
 
 ## Guardrail
 

@@ -17,6 +17,7 @@ Covers the root-cause fixes for live-data gaps in the RX pipeline:
 """
 
 from types import SimpleNamespace
+from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -108,6 +109,66 @@ class TestDeviceLookupKeyNormalization:
 
     def test_lowercase_prefix_and_hex_are_uppercased(self):
         assert _device_lookup_key("0x1feda", "25") == ("1FEDA", "25")
+
+
+class TestCompositeClimateSourceMerging:
+    def test_auxiliary_sources_preserve_canonical_thermostat_state(self):
+        """Ambient and load sources must not replace the thermostat mode or instance."""
+        thermostat_raw = {
+            "instance": 1,
+            "operating_mode": 1,
+            "fan_mode": 0,
+            "fan_speed": 200,
+            "setpoint_heat": 0x24BA,
+            "setpoint_cool": 0x24BA,
+        }
+        entity = SimpleNamespace(
+            get_state=lambda: SimpleNamespace(value=thermostat_raw, raw=thermostat_raw)
+        )
+
+        ambient_data = {"instance": 5, "ambient_temperature": 0x25A2}
+        ambient_value, ambient_raw = CANBusService._normalize_entity_source_signals(
+            "climate", "0x1FF9C", ambient_data, ambient_data
+        )
+        merged_value, merged_raw = CANBusService._merged_signal_dicts(
+            entity, ambient_value, ambient_raw
+        )
+
+        entity = SimpleNamespace(
+            get_state=lambda: SimpleNamespace(value=merged_value, raw=merged_raw)
+        )
+        load_data = {
+            "instance": 208,
+            "group": 255,
+            "operating_status": 200,
+            "operating_mode": 0,
+        }
+        load_value, load_raw = CANBusService._normalize_entity_source_signals(
+            "climate", "1FFBF", load_data, load_data
+        )
+        _merged_value, merged_raw = CANBusService._merged_signal_dicts(entity, load_value, load_raw)
+
+        payload: dict[str, Any] = {}
+        CANBusService._update_climate_family_state("climate", payload, merged_raw)
+
+        assert merged_raw["instance"] == 1
+        assert merged_raw["operating_mode"] == 1
+        assert merged_raw["ambient_instance"] == 5
+        assert merged_raw["load_instance"] == 208
+        assert merged_raw["load_operating_mode"] == 0
+        assert merged_raw["load_operating_status"] == 200
+        assert merged_raw["shed"] is False
+        assert payload["state"] == "cool"
+
+    def test_namespaced_load_status_still_drives_shed(self):
+        """The load namespace must retain the climate card's shed indicator."""
+        merged_raw = {"operating_mode": 1, "load_operating_status": 0xFD}
+        payload: dict[str, Any] = {}
+
+        CANBusService._update_climate_family_state("climate", payload, merged_raw)
+
+        assert merged_raw["shed"] is True
+        assert payload["state"] == "cool"
 
 
 class TestDecoderEntryLookup:

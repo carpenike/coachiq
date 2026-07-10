@@ -48,6 +48,8 @@ COMPONENT_IDENTIFICATION_PGN = 0xFEEB
 PENDING_COMMAND_WINDOW_SECONDS = 5.0
 LIGHT_STATUS_SIMULATION_TYPE = 2
 SIMULATION_ERROR_SLEEP_SECONDS = 5
+THERMOSTAT_AMBIENT_STATUS_DGN = "1FF9C"
+AC_LOAD_STATUS_DGN = "1FFBF"
 
 
 def _device_lookup_key(dgn_hex: str, instance: Any) -> tuple[str, str]:
@@ -656,7 +658,9 @@ class CANBusService(GuardrailParticipant):
         finally:
             logger.info("CAN listener stopped", interface=interface_name)
 
-    async def _send_to_can_tools(self, message: Any, interface_name: str) -> bool:
+    async def _send_to_can_tools(  # noqa: C901
+        self, message: Any, interface_name: str
+    ) -> bool:
         """
         Send CAN message to optional analysis tools through composition root.
 
@@ -947,9 +951,19 @@ class CANBusService(GuardrailParticipant):
                             entity_id = device_config.get("entity_id")
                             if entity_id:
                                 logger.debug("Mapped to entity: %s", entity_id)
+                                decoded_data, raw_data = self._normalize_entity_source_signals(
+                                    device_config.get("device_type"),
+                                    dgn_hex,
+                                    decoded_data,
+                                    raw_data,
+                                )
                                 # Update entity state with the decoded CAN message
                                 await self._update_entity_from_can_message(
-                                    entity_id, device_config, decoded_data, raw_data, msg
+                                    entity_id,
+                                    device_config,
+                                    decoded_data,
+                                    raw_data,
+                                    msg,
                                 )
                         else:
                             logger.debug("Unmapped device: %s:%s", dgn_hex, instance)
@@ -1274,6 +1288,31 @@ class CANBusService(GuardrailParticipant):
             logger.exception("Error updating entity %s from CAN message", entity_id)
 
     @staticmethod
+    def _normalize_entity_source_signals(
+        device_type: str | None,
+        source_dgn: str | None,
+        decoded_data: dict[str, Any],
+        raw_data: dict[str, Any],
+    ) -> tuple[dict[str, Any], dict[str, Any]]:
+        """Namespace auxiliary fields so they cannot replace thermostat state."""
+        if device_type != "climate":
+            return decoded_data, raw_data
+
+        normalized_dgn = (source_dgn or "").upper().removeprefix("0X")
+        aliases: dict[str, str] = {}
+        if normalized_dgn == THERMOSTAT_AMBIENT_STATUS_DGN:
+            aliases["instance"] = "ambient_instance"
+        elif normalized_dgn == AC_LOAD_STATUS_DGN:
+            aliases = {key: f"load_{key}" for key in decoded_data.keys() | raw_data.keys()}
+        else:
+            return decoded_data, raw_data
+
+        def apply_aliases(signals: dict[str, Any]) -> dict[str, Any]:
+            return {aliases.get(key, key): value for key, value in signals.items()}
+
+        return apply_aliases(decoded_data), apply_aliases(raw_data)
+
+    @staticmethod
     def _merged_signal_dicts(
         entity: Any,
         decoded_data: dict[str, Any] | None,
@@ -1381,9 +1420,10 @@ class CANBusService(GuardrailParticipant):
                 merged_raw.update(climate_units.derive_climate_fields(merged_raw))
                 payload["state"] = climate_units.climate_state_label(merged_raw)
                 # Zones whose compressor is an energy-managed AC load also
-                # carry AC_LOAD_STATUS (operating_status) — surface shed.
-                if "operating_status" in merged_raw:
-                    _label, shed = climate_units.ac_load_state(merged_raw)
+                # carry namespaced AC_LOAD_STATUS fields — surface shed.
+                load_level = merged_raw.get("load_operating_status")
+                if load_level is not None:
+                    _label, shed = climate_units.ac_load_state({"operating_status": load_level})
                     merged_raw["shed"] = shed
             elif device_type == "air_conditioner":
                 merged_raw.update(climate_units.derive_ac_fields(merged_raw))
