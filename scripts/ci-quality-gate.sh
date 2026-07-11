@@ -19,7 +19,7 @@ RESET="\033[0m"
 # gate's job is to stop the count from going UP (a ratchet); fixing actual
 # pyright errors lower the count and the script will print a green message
 # nudging you to update the baseline downward.
-EXPECTED_PYRIGHT_ERRORS=1207  # Ratcheted 2026-07-08: startup/logging overhaul + WS-logs removal (1232 -> 1207; local delta -25, verify against CI's printed count).
+EXPECTED_PYRIGHT_ERRORS=1204  # Ratcheted 2026-07-11: backend contract and realtime-state cleanup (1207 -> 1204; Linux CI verified).
 EXPECTED_FRONTEND_TS_ERRORS=0  # Ratcheted 2026-05-12 to 0 by PR #110 (DatabaseManagementTab + can-sniffer + useCANScanWebSocket generic). Any new TS error is a hard fail.
 EXPECTED_FRONTEND_ESLINT_ERRORS=219  # Ratcheted 2026-07-11: frontend UX and realtime-state lint fixes (260 -> 219).
 
