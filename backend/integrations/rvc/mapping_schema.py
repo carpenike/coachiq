@@ -173,6 +173,8 @@ def compile_entity_mapping(
             device["groups"] = list(entity.groups)
         if entity.read_only:
             device["read_only"] = True
+        if entity.command:
+            device["command_dgn"] = entity.command.dgn
 
         rx_keys = [(s.dgn, str(s.instance)) for s in entity.sources]
         if entity.command:

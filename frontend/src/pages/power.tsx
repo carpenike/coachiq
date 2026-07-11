@@ -410,8 +410,6 @@ export default function PowerPage() {
     <div className="flex-1 space-y-6 p-4 pt-6 lg:px-6">
       <VictronStatusChip />
 
-      <PowerSection entities={entities} showTitle={false} />
-
       <div className="space-y-3">
         <h2 className="text-sm font-medium text-muted-foreground">Controls</h2>
         {controlsDisabled && (
@@ -424,6 +422,11 @@ export default function PowerPage() {
           <ShoreLimitCard inverter={inverter} controlsDisabled={controlsDisabled} />
           <GeneratorControlCard generator={generator} controlsDisabled={controlsDisabled} />
         </div>
+      </div>
+
+      <div className="space-y-3">
+        <h2 className="text-sm font-medium text-muted-foreground">Telemetry</h2>
+        <PowerSection entities={entities} showTitle={false} />
       </div>
     </div>
   )

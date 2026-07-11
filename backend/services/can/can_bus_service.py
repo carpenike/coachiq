@@ -1269,14 +1269,17 @@ class CANBusService(GuardrailParticipant):
                 # Persist to the runtime state repository so API reads
                 # (which go through EntityRuntimeStateRepository, not the
                 # EntityManager) see live CAN-derived state.
-                await self._persist_entity_state(entity_id, updated_entity)
+                persisted_entity = await self._persist_entity_state(entity_id, updated_entity)
 
                 # Push the update over SSE; payload shape matches the control
                 # paths in EntityService ({entity_id, entity_data}).
                 if self._event_broker:
                     await self._event_broker.publish(
                         "entity_update",
-                        {"entity_id": entity_id, "entity_data": updated_entity.to_dict()},
+                        {
+                            "entity_id": entity_id,
+                            "entity_data": persisted_entity or updated_entity.to_dict(),
+                        },
                     )
 
                 # Check if this completes a pending command (for optimistic UI updates)
@@ -1338,20 +1341,24 @@ class CANBusService(GuardrailParticipant):
             {**previous_raw, **(raw_data or {})},
         )
 
-    async def _persist_entity_state(self, entity_id: str, updated_entity: Any) -> None:
-        """Persist a live entity update to the runtime state repository (best effort)."""
+    async def _persist_entity_state(
+        self, entity_id: str, updated_entity: Any
+    ) -> dict[str, Any] | None:
+        """Persist a live update and return its timestamp-enriched record."""
         if self._entity_state_repository is None:
-            return
+            return None
         try:
             await self._entity_state_repository.save_entity_state(
                 entity_id, updated_entity.to_dict()
             )
+            return await self._entity_state_repository.get_entity_state(entity_id)
         except Exception as repo_error:
             logger.debug(
                 "Unable to persist entity %s state to repository: %s",
                 entity_id,
                 repo_error,
             )
+            return None
 
     async def _update_light_state(
         self, payload: dict[str, Any], _decoded_data: dict[str, Any], raw_data: dict[str, Any]

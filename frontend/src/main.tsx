@@ -5,14 +5,16 @@ import { BrowserRouter, Navigate, Route, Routes } from "react-router-dom";
 import { AppShell } from "@/components/app-shell";
 import { AuthGuard } from "@/components/auth-guard";
 import { ErrorBoundary } from "@/components/error-boundary";
+import { PwaStatus } from "@/components/pwa-status";
 import { ThemeProvider } from "@/components/theme-provider";
 import { Toaster as SonnerToaster } from "@/components/ui/sonner";
-import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { AuthProvider } from "@/contexts/auth-context";
 import { CoachConnectionProvider } from "@/contexts/coach-connection";
+import { PreferencesSyncProvider } from "@/contexts/preferences-sync-provider";
 import { QueryProvider } from "@/contexts/query-provider";
 import { RealtimeProvider } from "@/contexts/realtime-provider";
+import { WallPanelProvider } from "@/hooks/useWallPanel";
 import { appRoutes } from "@/lib/routes";
 import LoginPage from "@/pages/login";
 import NotFoundPage from "@/pages/not-found";
@@ -43,7 +45,8 @@ createRoot(document.getElementById("root")!).render(
   <StrictMode>
     <QueryProvider>
       <AuthProvider>
-        <RealtimeProvider>
+        <PreferencesSyncProvider>
+          <RealtimeProvider>
             <CoachConnectionProvider>
               <ThemeProvider
                 attribute="class"
@@ -51,17 +54,18 @@ createRoot(document.getElementById("root")!).render(
                 enableSystem
                 disableTransitionOnChange
               >
-                <TooltipProvider>
-                  <Toaster />
-                  <SonnerToaster />
-                  <ErrorBoundary>
-                    <BrowserRouter
-                      future={{
-                        v7_startTransition: true,
-                        v7_relativeSplatPath: true,
-                      }}
-                    >
-                      <Routes>
+                <WallPanelProvider>
+                  <TooltipProvider>
+                    <SonnerToaster />
+                    <PwaStatus />
+                    <ErrorBoundary>
+                      <BrowserRouter
+                        future={{
+                          v7_startTransition: true,
+                          v7_relativeSplatPath: true,
+                        }}
+                      >
+                        <Routes>
                         {/* Public routes */}
                         <Route path="/login" element={<LoginPage />} />
                         <Route path="/auth/oidc/callback" element={<OidcCallbackPage />} />
@@ -86,13 +90,15 @@ createRoot(document.getElementById("root")!).render(
                           {/* Friendly 404 inside the shell */}
                           <Route path="*" element={<NotFoundPage />} />
                         </Route>
-                      </Routes>
-                    </BrowserRouter>
-                  </ErrorBoundary>
-                </TooltipProvider>
+                        </Routes>
+                      </BrowserRouter>
+                    </ErrorBoundary>
+                  </TooltipProvider>
+                </WallPanelProvider>
               </ThemeProvider>
             </CoachConnectionProvider>
           </RealtimeProvider>
+        </PreferencesSyncProvider>
       </AuthProvider>
     </QueryProvider>
   </StrictMode>

@@ -4390,6 +4390,26 @@
         }
       }
     },
+    "/api/events": {
+      "get": {
+        "tags": [
+          "events"
+        ],
+        "summary": "Stream Events",
+        "description": "Stream realtime events (entity_update, entity_created, ...) as SSE.\n\nReconnecting clients send Last-Event-ID and get the gap replayed from the\nbroker's ring buffer; fresh connections get no replay and resync via REST.",
+        "operationId": "stream_events_api_events_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/health": {
       "get": {
         "tags": [
@@ -4633,7 +4653,7 @@
           "logs"
         ],
         "summary": "Get historical logs",
-        "description": "Query historical logs from journald. Supports filtering by time, level, module, and pagination via cursor.\n\n    Only available on systems with systemd/journald.",
+        "description": "Query historical logs with filtering by time, level, module, and cursor pagination. Served from journald when available, otherwise from the in-process ring buffer (see the `source` response field). Admin only.",
         "operationId": "get_log_history_api_logs_history_get",
         "parameters": [
           {
@@ -4731,6 +4751,22 @@
               "title": "Limit"
             },
             "description": "Max number of log entries to return"
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
           }
         ],
         "responses": {
@@ -4741,6 +4777,84 @@
                 "schema": {
                   "$ref": "#/components/schemas/LogHistoryResponse"
                 }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/logs/stream": {
+      "get": {
+        "tags": [
+          "logs"
+        ],
+        "summary": "Stream live logs (SSE)",
+        "description": "Server-Sent Events stream of live log entries, batched as `event: logs` frames with a JSON array payload. On connect the most recent matching entries are replayed from the ring buffer. Admin only.",
+        "operationId": "stream_logs_api_logs_stream_get",
+        "parameters": [
+          {
+            "name": "level",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "description": "Minimum python log level name (case-insensitive)",
+              "default": "debug",
+              "title": "Level"
+            },
+            "description": "Minimum python log level name (case-insensitive)"
+          },
+          {
+            "name": "modules",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Comma-separated logger-name prefixes; empty = all",
+              "title": "Modules"
+            },
+            "description": "Comma-separated logger-name prefixes; empty = all"
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
               }
             }
           },
@@ -8649,6 +8763,566 @@
         }
       }
     },
+    "/api/victron/status": {
+      "get": {
+        "tags": [
+          "victron"
+        ],
+        "summary": "Victron integration status",
+        "description": "Connection health and discovered devices for the Cerbo GX integration",
+        "operationId": "get_victron_status_api_victron_status_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object",
+                  "title": "Response Get Victron Status Api Victron Status Get"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required"
+          },
+          "403": {
+            "description": "Admin privileges required"
+          },
+          "503": {
+            "description": "Victron integration disabled or unavailable"
+          }
+        }
+      }
+    },
+    "/api/victron/inverter/mode": {
+      "post": {
+        "tags": [
+          "victron"
+        ],
+        "summary": "Set inverter/charger mode",
+        "description": "Set the VE.Bus switch position (charger_only/inverter_only/on/off)",
+        "operationId": "set_inverter_mode_api_victron_inverter_mode_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/InverterModeRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object",
+                  "title": "Response Set Inverter Mode Api Victron Inverter Mode Post"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required"
+          },
+          "403": {
+            "description": "Admin privileges required"
+          },
+          "503": {
+            "description": "Victron integration disabled or unavailable"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/victron/generator/manual": {
+      "post": {
+        "tags": [
+          "victron"
+        ],
+        "summary": "Manual generator start/stop",
+        "description": "Request a manual generator run via the Cerbo's genset controller (equivalent to VRM's manual start; the Cerbo performs the crank/stop sequence and its own stop conditions still apply)",
+        "operationId": "set_generator_manual_api_victron_generator_manual_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/GeneratorManualRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object",
+                  "title": "Response Set Generator Manual Api Victron Generator Manual Post"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required"
+          },
+          "403": {
+            "description": "Admin privileges required"
+          },
+          "503": {
+            "description": "Victron integration disabled or unavailable"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/victron/inverter/input-current-limit": {
+      "post": {
+        "tags": [
+          "victron"
+        ],
+        "summary": "Set AC input current limit",
+        "description": "Set the VE.Bus AC input current limit in amps (validated against the adjustable range the Cerbo reports)",
+        "operationId": "set_input_current_limit_api_victron_inverter_input_current_limit_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/InputCurrentLimitRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object",
+                  "title": "Response Set Input Current Limit Api Victron Inverter Input Current Limit Post"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required"
+          },
+          "403": {
+            "description": "Admin privileges required"
+          },
+          "503": {
+            "description": "Victron integration disabled or unavailable"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/location": {
+      "get": {
+        "tags": [
+          "location"
+        ],
+        "summary": "Current GPS position and recording state",
+        "description": "Latest gpsd fix plus whether a trip is being recorded.",
+        "operationId": "get_current_location_api_location_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object",
+                  "title": "Response Get Current Location Api Location Get"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required"
+          },
+          "503": {
+            "description": "Trip log disabled or unavailable"
+          }
+        }
+      }
+    },
+    "/api/location/trips": {
+      "get": {
+        "tags": [
+          "location"
+        ],
+        "summary": "List recorded trips (newest first)",
+        "description": "Trips with start/end position, distance, and point counts.",
+        "operationId": "list_trips_api_location_trips_get",
+        "parameters": [
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "default": 50,
+              "title": "Limit"
+            }
+          },
+          {
+            "name": "offset",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "default": 0,
+              "title": "Offset"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response List Trips Api Location Trips Get"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required"
+          },
+          "503": {
+            "description": "Trip log disabled or unavailable"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/location/trips/summary": {
+      "get": {
+        "tags": [
+          "location"
+        ],
+        "summary": "Aggregate trip statistics",
+        "description": "Odometer-style totals over all recorded trips plus the current year.",
+        "operationId": "get_trip_summary_api_location_trips_summary_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object",
+                  "title": "Response Get Trip Summary Api Location Trips Summary Get"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required"
+          },
+          "503": {
+            "description": "Trip log disabled or unavailable"
+          }
+        }
+      }
+    },
+    "/api/location/trips/{trip_id}/merge-previous": {
+      "post": {
+        "tags": [
+          "location"
+        ],
+        "summary": "Merge a trip into the one before it",
+        "description": "Fold a trip into its predecessor (e.g. one drive split by a lunch stop).",
+        "operationId": "merge_trip_with_previous_api_location_trips__trip_id__merge_previous_post",
+        "parameters": [
+          {
+            "name": "trip_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Trip Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response Merge Trip With Previous Api Location Trips  Trip Id  Merge Previous Post"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required"
+          },
+          "503": {
+            "description": "Trip log disabled or unavailable"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/location/trips/{trip_id}/rematch": {
+      "post": {
+        "tags": [
+          "location"
+        ],
+        "summary": "Re-run snap-to-road map matching for a trip",
+        "description": "Force a fresh Valhalla match for a finished trip.\n\nReturns the trip with its (possibly still NULL) ``matched_geometry``; a\nfailed or low-confidence match leaves the raw breadcrumbs as the fallback.",
+        "operationId": "rematch_trip_api_location_trips__trip_id__rematch_post",
+        "parameters": [
+          {
+            "name": "trip_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Trip Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response Rematch Trip Api Location Trips  Trip Id  Rematch Post"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required"
+          },
+          "503": {
+            "description": "Trip log disabled or unavailable"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/location/trips/{trip_id}/points": {
+      "get": {
+        "tags": [
+          "location"
+        ],
+        "summary": "Breadcrumbs for one trip",
+        "description": "Chronological breadcrumbs for the trip, ready for a map polyline.",
+        "operationId": "get_trip_points_api_location_trips__trip_id__points_get",
+        "parameters": [
+          {
+            "name": "trip_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Trip Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response Get Trip Points Api Location Trips  Trip Id  Points Get"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required"
+          },
+          "503": {
+            "description": "Trip log disabled or unavailable"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/location/trips/{trip_id}": {
+      "delete": {
+        "tags": [
+          "location"
+        ],
+        "summary": "Delete a recorded trip",
+        "description": "Remove a trip and its breadcrumbs (e.g. a noise trip or a private one).",
+        "operationId": "delete_trip_api_location_trips__trip_id__delete",
+        "parameters": [
+          {
+            "name": "trip_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Trip Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response Delete Trip Api Location Trips  Trip Id  Delete"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required"
+          },
+          "503": {
+            "description": "Trip log disabled or unavailable"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/location/trips/{trip_id}/gpx": {
+      "get": {
+        "tags": [
+          "location"
+        ],
+        "summary": "Export one trip as GPX",
+        "description": "GPX 1.1 track for use in other mapping tools.",
+        "operationId": "export_trip_gpx_api_location_trips__trip_id__gpx_get",
+        "parameters": [
+          {
+            "name": "trip_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Trip Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response"
+          },
+          "401": {
+            "description": "Authentication required"
+          },
+          "503": {
+            "description": "Trip log disabled or unavailable"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/security/config/": {
       "get": {
         "tags": [
@@ -11597,6 +12271,114 @@
         }
       }
     },
+    "/api/v1/dashboard/preferences": {
+      "get": {
+        "tags": [
+          "dashboard"
+        ],
+        "summary": "Get Home preferences",
+        "description": "Get synchronized Home customization for the current authenticated user.",
+        "operationId": "get_dashboard_preferences_api_v1_dashboard_preferences_get",
+        "parameters": [
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Saved Home preferences, or null before the first synchronized update",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DashboardPreferencesResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "dashboard"
+        ],
+        "summary": "Update Home preferences",
+        "description": "Replace synchronized Home customization for the current authenticated user.",
+        "operationId": "update_dashboard_preferences_api_v1_dashboard_preferences_put",
+        "parameters": [
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DashboardPreferencesUpdate"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The saved Home preferences and update timestamp",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DashboardPreferencesResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/diagnostics/health": {
       "get": {
         "tags": [
@@ -11740,12 +12522,12 @@
         "tags": [
           "diagnostics"
         ],
-        "summary": "Get System Status",
-        "description": "Get overall system health status",
+        "summary": "Get diagnostics system status",
+        "description": "Compute system health and an authoritative verdict from current CAN health, registered diagnostics data, and active DTC severity.",
         "operationId": "get_system_status_api_v1_diagnostics_system_status_get",
         "responses": {
           "200": {
-            "description": "Successful Response",
+            "description": "Computed system health with a deterministic diagnostics verdict",
             "content": {
               "application/json": {
                 "schema": {
@@ -12101,8 +12883,8 @@
         "tags": [
           "entities"
         ],
-        "summary": "Get Entities",
-        "description": "Get entities with filtering and pagination (v2) - optimized for Pi deployment",
+        "summary": "List entities",
+        "description": "List canonical entity records with configured capabilities, explicitly supported commands, availability, and source-backed timestamps.",
         "operationId": "get_entities_api_v1_entities_get",
         "parameters": [
           {
@@ -12189,11 +12971,11 @@
         ],
         "responses": {
           "200": {
-            "description": "Successful Response",
+            "description": "A filtered and paginated collection of canonical entities",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/EntityCollectionV2"
+                  "$ref": "#/components/schemas/EntityCollectionSchemaV2"
                 }
               }
             }
@@ -12228,6 +13010,30 @@
                   "additionalProperties": true,
                   "type": "object",
                   "title": "Response Get Guardrail Status Api V1 Entities Guardrail Status Get"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/entities/config/coach": {
+      "get": {
+        "tags": [
+          "entities"
+        ],
+        "summary": "Get Coach Config",
+        "description": "Get coach mapping metadata: areas hierarchy, lighting scenes, and groups.\n\nThese sections are declared api-exposed in the coach mapping YAML but are\nskipped by the DGN decoder; this endpoint is their only API surface.",
+        "operationId": "get_coach_config_api_v1_entities_config_coach_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object",
+                  "title": "Response Get Coach Config Api V1 Entities Config Coach Get"
                 }
               }
             }
@@ -12424,8 +13230,8 @@
         "tags": [
           "entities"
         ],
-        "summary": "Get Entity",
-        "description": "Get a specific entity by ID (v2)",
+        "summary": "Get an entity",
+        "description": "Get one canonical entity record using the same capability, command, availability, and timestamp semantics as the collection endpoint.",
         "operationId": "get_entity_api_v1_entities__entity_id__get",
         "parameters": [
           {
@@ -12440,7 +13246,7 @@
         ],
         "responses": {
           "200": {
-            "description": "Successful Response",
+            "description": "The requested canonical entity",
             "content": {
               "application/json": {
                 "schema": {
@@ -15852,6 +16658,47 @@
         "title": "DashboardHealth",
         "description": "Overall notification system health status."
       },
+      "DashboardPreferencesResponse": {
+        "properties": {
+          "home": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/HomePreferences"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Saved Home customization, or null before the first synchronized update"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Updated At",
+            "description": "Last dashboard configuration update time"
+          }
+        },
+        "type": "object",
+        "required": [
+          "updated_at"
+        ],
+        "title": "DashboardPreferencesResponse",
+        "description": "Synchronized preferences for the current authenticated user."
+      },
+      "DashboardPreferencesUpdate": {
+        "properties": {
+          "home": {
+            "$ref": "#/components/schemas/HomePreferences",
+            "description": "Home dashboard customization"
+          }
+        },
+        "type": "object",
+        "required": [
+          "home"
+        ],
+        "title": "DashboardPreferencesUpdate",
+        "description": "Complete synchronized preference payload for the current user."
+      },
       "DashboardSummary": {
         "properties": {
           "timestamp": {
@@ -16294,6 +17141,70 @@
         "title": "DiagnosticsServiceFeatures",
         "description": "Feature flags reported by the diagnostics service-health endpoint."
       },
+      "DiagnosticsVerdict": {
+        "properties": {
+          "code": {
+            "type": "string",
+            "enum": [
+              "offline",
+              "unavailable",
+              "action_required",
+              "degraded",
+              "healthy"
+            ],
+            "title": "Code",
+            "description": "Stable machine-readable verdict code"
+          },
+          "label": {
+            "type": "string",
+            "title": "Label",
+            "description": "Human-readable verdict label"
+          },
+          "severity": {
+            "type": "string",
+            "enum": [
+              "critical",
+              "warning",
+              "healthy",
+              "unknown"
+            ],
+            "title": "Severity",
+            "description": "Display-independent verdict severity"
+          },
+          "reason_codes": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Reason Codes",
+            "description": "Stable reasons contributing to the verdict"
+          },
+          "requires_attention": {
+            "type": "boolean",
+            "title": "Requires Attention",
+            "description": "Whether an operator should review the current condition"
+          },
+          "data_freshness": {
+            "type": "string",
+            "enum": [
+              "current",
+              "unavailable"
+            ],
+            "title": "Data Freshness",
+            "description": "Whether all required backend sources are currently available; no stale state is claimed because diagnostics services expose no authoritative staleness threshold"
+          }
+        },
+        "type": "object",
+        "required": [
+          "code",
+          "label",
+          "severity",
+          "requires_attention",
+          "data_freshness"
+        ],
+        "title": "DiagnosticsVerdict",
+        "description": "Authoritative diagnostics assessment derived from backend data sources."
+      },
       "DiscoverDevicesRequest": {
         "properties": {
           "protocol": {
@@ -16306,7 +17217,7 @@
         "title": "DiscoverDevicesRequest",
         "description": "Request model for device discovery."
       },
-      "EntityCollectionV2": {
+      "EntityCollectionSchemaV2": {
         "properties": {
           "entities": {
             "items": {
@@ -16314,12 +17225,12 @@
             },
             "type": "array",
             "title": "Entities",
-            "description": "List of entities"
+            "description": "Collection of entities"
           },
           "total_count": {
             "type": "integer",
             "title": "Total Count",
-            "description": "Total entities available"
+            "description": "Total number of entities available"
           },
           "page": {
             "type": "integer",
@@ -16351,8 +17262,8 @@
           "entities",
           "total_count"
         ],
-        "title": "EntityCollectionV2",
-        "description": "Paginated entity collection"
+        "title": "EntityCollectionSchemaV2",
+        "description": "Entity collection schema with metadata"
       },
       "EntitySchemaV2": {
         "properties": {
@@ -16369,12 +17280,12 @@
           "device_type": {
             "type": "string",
             "title": "Device Type",
-            "description": "Device type classification"
+            "description": "Device type: light, lock, tank, etc."
           },
           "protocol": {
             "type": "string",
             "title": "Protocol",
-            "description": "Communication protocol"
+            "description": "Communication protocol: rvc, j1939, etc."
           },
           "state": {
             "additionalProperties": true,
@@ -16394,16 +17305,81 @@
             "title": "Area",
             "description": "Physical area/location"
           },
-          "last_updated": {
-            "type": "string",
-            "title": "Last Updated",
-            "description": "ISO timestamp of last update"
-          },
           "available": {
-            "type": "boolean",
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
             "title": "Available",
-            "description": "Whether entity is available/responding",
-            "default": true
+            "description": "Whether the source explicitly reports the entity as available"
+          },
+          "capabilities": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Capabilities",
+            "description": "Capabilities declared by the entity configuration"
+          },
+          "supported_commands": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Supported Commands",
+            "description": "Commands explicitly supported by the backend for configured capabilities"
+          },
+          "last_updated": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Updated",
+            "description": "Compatibility timestamp for the most recent persisted update"
+          },
+          "last_seen_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Seen At",
+            "description": "Timestamp when the entity was last observed; falls back to last_updated"
+          },
+          "data_received_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Data Received At",
+            "description": "Timestamp when CoachIQ received and persisted the latest observation"
+          },
+          "state_changed_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "State Changed At",
+            "description": "Timestamp when operational state last changed"
           }
         },
         "type": "object",
@@ -16411,11 +17387,10 @@
           "entity_id",
           "name",
           "device_type",
-          "protocol",
-          "last_updated"
+          "protocol"
         ],
         "title": "EntitySchemaV2",
-        "description": "Enhanced entity schema for v1 API"
+        "description": "Canonical entity response schema for the Domain API."
       },
       "EntitySummary": {
         "properties": {
@@ -16986,6 +17961,21 @@
         "title": "FilterStatisticsResponse",
         "description": "Filter statistics response."
       },
+      "GeneratorManualRequest": {
+        "properties": {
+          "run": {
+            "type": "boolean",
+            "title": "Run",
+            "description": "True starts the generator, False stops it"
+          }
+        },
+        "type": "object",
+        "required": [
+          "run"
+        ],
+        "title": "GeneratorManualRequest",
+        "description": "Request a manual generator start or stop."
+      },
       "GitHubReleaseAsset": {
         "properties": {
           "name": {
@@ -17326,6 +18316,49 @@
         "title": "HealthStatus",
         "description": "Overall health status following IETF health+json standard."
       },
+      "HomePreferences": {
+        "properties": {
+          "favoriteEntityIds": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Favoriteentityids",
+            "description": "Entity IDs shown first on Home"
+          },
+          "sectionOrder": {
+            "items": {
+              "type": "string",
+              "enum": [
+                "alerts",
+                "scenes",
+                "power",
+                "zones"
+              ]
+            },
+            "type": "array",
+            "title": "Sectionorder",
+            "description": "Home sections in display order"
+          },
+          "hiddenSections": {
+            "items": {
+              "type": "string",
+              "enum": [
+                "alerts",
+                "scenes",
+                "power",
+                "zones"
+              ]
+            },
+            "type": "array",
+            "title": "Hiddensections",
+            "description": "Home sections hidden by the user"
+          }
+        },
+        "type": "object",
+        "title": "HomePreferences",
+        "description": "User-specific Home dashboard customization."
+      },
       "IETFHealthStatusResponse": {
         "properties": {
           "status": {
@@ -17431,6 +18464,22 @@
         "title": "InjectorStatusResponse",
         "description": "CAN message injector status."
       },
+      "InputCurrentLimitRequest": {
+        "properties": {
+          "amps": {
+            "type": "number",
+            "minimum": 0.0,
+            "title": "Amps",
+            "description": "Input current limit in amps"
+          }
+        },
+        "type": "object",
+        "required": [
+          "amps"
+        ],
+        "title": "InputCurrentLimitRequest",
+        "description": "Request to change the AC input current limit."
+      },
       "InterlockOverrideClearRequest": {
         "properties": {
           "interlock_name": {
@@ -17445,6 +18494,28 @@
         ],
         "title": "InterlockOverrideClearRequest",
         "description": "Clear interlock override request model."
+      },
+      "InverterModeRequest": {
+        "properties": {
+          "mode": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "string"
+              }
+            ],
+            "title": "Mode",
+            "description": "Target mode: charger_only (1), inverter_only (2), on (3), or off (4)"
+          }
+        },
+        "type": "object",
+        "required": [
+          "mode"
+        ],
+        "title": "InverterModeRequest",
+        "description": "Request to change the VE.Bus switch position."
       },
       "J1939MessageRequest": {
         "properties": {
@@ -17641,7 +18712,7 @@
           "cursor": {
             "type": "string",
             "title": "Cursor",
-            "description": "Journald cursor for pagination"
+            "description": "Opaque cursor for pagination"
           }
         },
         "type": "object",
@@ -17677,6 +18748,18 @@
             "type": "boolean",
             "title": "Has More",
             "description": "True if more results are available"
+          },
+          "source": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source",
+            "description": "Where the entries came from: \"journald\" or \"memory\""
           }
         },
         "type": "object",
@@ -21898,6 +22981,10 @@
             "type": "number",
             "title": "Last Assessment",
             "description": "Last health assessment timestamp"
+          },
+          "verdict": {
+            "$ref": "#/components/schemas/DiagnosticsVerdict",
+            "description": "Authoritative backend verdict with offline/unavailable, urgent DTC, degraded, and healthy precedence"
           }
         },
         "type": "object",
@@ -21906,7 +22993,8 @@
           "health_score",
           "active_systems",
           "degraded_systems",
-          "last_assessment"
+          "last_assessment",
+          "verdict"
         ],
         "title": "SystemStatus",
         "description": "Overall system health status"

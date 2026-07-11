@@ -83,6 +83,16 @@ interface IDiagnosticsSystemStatus {
   active_systems: string[]
   degraded_systems: string[]
   last_assessment: number
+  verdict?: IBackendDiagnosticsVerdict
+}
+
+interface IBackendDiagnosticsVerdict {
+  code: "offline" | "unavailable" | "action_required" | "degraded" | "healthy"
+  label: string
+  severity: "critical" | "warning" | "healthy" | "unknown"
+  reason_codes: string[]
+  requires_attention: boolean
+  data_freshness: "current" | "unavailable"
 }
 
 interface IDiagnosticsStatistics {
@@ -93,6 +103,42 @@ interface IDiagnosticsStatistics {
     processing_rate: number
     system_health_trend: "improving" | "stable" | "degrading"
   }
+}
+
+type CoachConnectionState = "LIVE" | "STALE" | "OFFLINE"
+
+interface IDiagnosticsVerdict {
+  label: string
+  detail: string
+  tone: "critical" | "warning" | "healthy" | "neutral"
+}
+
+const VERDICT_REASON_LABELS = new Map<string, string>([
+  ["can_bus_offline", "The CAN bus is offline"],
+  ["can_status_unavailable", "CAN status is unavailable"],
+  ["diagnostics_status_unavailable", "Diagnostics status is unavailable"],
+  ["active_critical_dtc", "An active critical fault requires review"],
+  ["active_high_dtc", "An active high-severity fault requires review"],
+  ["command_emission_halted", "CoachIQ command emission is halted"],
+  ["can_guardrail_degraded", "CAN command guardrails are degraded"],
+  ["active_non_urgent_dtc", "One or more active faults need attention"],
+  ["degraded_system", "One or more systems are degraded"],
+  ["no_active_faults_or_degradation", "No active faults or degraded systems"]
+])
+
+function backendVerdictDetail(verdict: IBackendDiagnosticsVerdict): string {
+  const reasons = verdict.reason_codes
+    .map((reason) => VERDICT_REASON_LABELS.get(reason) ?? titleCase(reason))
+  return reasons.join(" · ") || "Review the current diagnostic state"
+}
+
+function backendVerdictTone(
+  severity: IBackendDiagnosticsVerdict["severity"]
+): IDiagnosticsVerdict["tone"] {
+  if (severity === "critical") return "critical"
+  if (severity === "warning") return "warning"
+  if (severity === "healthy") return "healthy"
+  return "neutral"
 }
 
 //
@@ -156,23 +202,79 @@ function titleCase(value: string): string {
     .join(" ")
 }
 
+// eslint-disable-next-line react-refresh/only-export-components -- pure verdict policy is unit tested directly
+export function deriveDiagnosticsVerdict(
+  coach: CoachConnectionState,
+  status: IDiagnosticsSystemStatus,
+  collection: IDtcCollection
+): IDiagnosticsVerdict {
+  if (status.verdict) {
+    return {
+      label: status.verdict.label,
+      detail: backendVerdictDetail(status.verdict),
+      tone: backendVerdictTone(status.verdict.severity)
+    }
+  }
+
+  const activeDtcs = collection.dtcs.filter((dtc) => dtc.active && !dtc.resolved)
+  const urgentCount = activeDtcs.filter(
+    (dtc) => dtc.severity === "critical" || dtc.severity === "high"
+  ).length
+
+  if (urgentCount > 0) {
+    return {
+      label: "Action required",
+      detail: `${urgentCount} active critical or high severity ${urgentCount === 1 ? "fault" : "faults"}`,
+      tone: "critical"
+    }
+  }
+
+  if (status.degraded_systems.length > 0 || activeDtcs.length > 0) {
+    const faultLabel = activeDtcs.length === 1 ? "fault" : "faults"
+    const detail = status.degraded_systems.length > 0
+      ? `Degraded: ${status.degraded_systems.map(titleCase).join(", ")}`
+      : `${activeDtcs.length} active ${faultLabel}`
+    return { label: "Attention needed", detail, tone: "warning" }
+  }
+
+  if (coach !== "LIVE") {
+    return {
+      label: coach === "OFFLINE" ? "Health unavailable" : "Last known health",
+      detail: "The coach connection is not live, so this assessment may be out of date.",
+      tone: "neutral"
+    }
+  }
+
+  const healthy = ["excellent", "good", "healthy"].includes(
+    status.overall_health.toLowerCase()
+  )
+  return {
+    label: titleCase(status.overall_health),
+    detail: healthy ? "No active faults or degraded systems" : "Review the current health score",
+    tone: healthy ? "healthy" : "warning"
+  }
+}
+
 //
 // ===== Health verdict card =====
 //
 
-function HealthVerdictCard() {
+function HealthVerdictCard({
+  status,
+  collection,
+  isLoading,
+  error
+}: Readonly<{
+  status: IDiagnosticsSystemStatus | undefined
+  collection: IDtcCollection | undefined
+  isLoading: boolean
+  error: Error | null
+}>) {
   const { coach } = useCoachConnection()
-  const { data, isLoading, error } = useQuery({
-    queryKey: ["diagnostics", "system-status"],
-    queryFn: () => apiGet<IDiagnosticsSystemStatus>("/api/v1/diagnostics/system-status"),
-    refetchInterval: 45_000,
-    staleTime: 30_000,
-    retry: 1,
-  })
 
   if (isLoading) return <Skeleton className="h-32" />
 
-  if (error || !data) {
+  if (error || !status || !collection) {
     return (
       <Card>
         <CardHeader>
@@ -186,16 +288,14 @@ function HealthVerdictCard() {
     )
   }
 
-  // Green verdict styling requires a LIVE coach connection (honesty rule:
-  // no "all good" verdict rendered from anything but live data).
-  const isLive = coach === "LIVE"
-  const looksHealthy = data.degraded_systems.length === 0
+  const verdict = deriveDiagnosticsVerdict(coach, status, collection)
 
   return (
     <Card
       className={cn(
-        isLive && looksHealthy && "border-green-300 dark:border-green-900",
-        data.degraded_systems.length > 0 && "border-amber-300 dark:border-amber-900"
+        verdict.tone === "healthy" && "border-green-300 dark:border-green-900",
+        verdict.tone === "warning" && "border-amber-300 dark:border-amber-900",
+        verdict.tone === "critical" && "border-red-300 dark:border-red-900"
       )}
     >
       <CardHeader className="pb-2">
@@ -209,25 +309,25 @@ function HealthVerdictCard() {
           <span
             className={cn(
               "text-2xl font-semibold",
-              isLive && looksHealthy && "text-green-700 dark:text-green-400"
+              verdict.tone === "healthy" && "text-green-700 dark:text-green-400",
+              verdict.tone === "warning" && "text-amber-700 dark:text-amber-400",
+              verdict.tone === "critical" && "text-red-700 dark:text-red-400"
             )}
           >
-            {titleCase(data.overall_health)}
+            {verdict.label}
           </span>
-          <span className="text-sm text-muted-foreground">
-            score {Math.round(data.health_score)}/100
-          </span>
+          {verdict.tone === "healthy" && (
+            <span className="text-sm text-muted-foreground">
+              score {Math.round(status.health_score)}/100
+            </span>
+          )}
         </div>
-        {data.degraded_systems.length > 0 && (
-          <p className="text-sm text-amber-700 dark:text-amber-400">
-            Degraded: {data.degraded_systems.map(titleCase).join(", ")}
-          </p>
-        )}
+        <p className="text-sm text-muted-foreground">{verdict.detail}</p>
         <p className="text-xs text-muted-foreground">
-          {data.active_systems.length} systems reporting · assessed{" "}
-          {formatEpoch(data.last_assessment)}
+          {status.active_systems.length} systems reporting · assessed{" "}
+          {formatEpoch(status.last_assessment)}
         </p>
-        {!isLive && (
+        {coach !== "LIVE" && verdict.tone !== "neutral" && (
           <p className="flex items-center gap-1.5 text-xs text-amber-700 dark:text-amber-400">
             <IconAlertTriangle className="size-3.5 shrink-0" />
             Based on last known data — the coach connection is not live.
@@ -363,7 +463,7 @@ function ResolveButton({ dtc }: Readonly<{ dtc: IDtcRecord }>) {
 
 function DtcTable({ dtcs }: Readonly<{ dtcs: IDtcRecord[] }>) {
   return (
-    <div className="overflow-x-auto">
+    <div className="hidden overflow-x-auto md:block">
       <Table>
         <TableHeader>
           <TableRow>
@@ -417,6 +517,56 @@ function DtcTable({ dtcs }: Readonly<{ dtcs: IDtcRecord[] }>) {
           ))}
         </TableBody>
       </Table>
+    </div>
+  )
+}
+
+function DtcCardList({ dtcs }: Readonly<{ dtcs: IDtcRecord[] }>) {
+  return (
+    <div className="space-y-3 md:hidden" aria-label="Fault codes">
+      {dtcs.map((dtc) => {
+        const status = dtc.resolved ? "Resolved" : "Active"
+        return (
+          <article
+            key={`${dtc.protocol}-${dtc.code}-${dtc.source_address ?? 0}`}
+            className={cn(
+              "space-y-3 rounded-md border border-l-4 p-3",
+              dtc.severity === "critical" && "border-l-red-500",
+              dtc.severity === "high" && "border-l-orange-500",
+              dtc.severity === "medium" && "border-l-amber-500",
+              (dtc.severity === "low" || dtc.severity === "info") &&
+                "border-l-slate-400",
+              dtc.resolved && "opacity-70"
+            )}
+            aria-label={`${titleCase(dtc.severity)} fault ${dtc.code}, ${status}`}
+          >
+            <div className="flex items-start justify-between gap-2">
+              <div className="flex flex-wrap items-center gap-2">
+                <Badge variant="outline" className={severityBadgeClass(dtc.severity)}>
+                  {titleCase(dtc.severity)}
+                </Badge>
+                <span className="font-mono text-sm">{dtc.code}</span>
+                <span className="text-xs text-muted-foreground">
+                  {PROTOCOL_LABELS[dtc.protocol] ?? titleCase(dtc.protocol)}
+                </span>
+              </div>
+              <Badge variant={dtc.resolved ? "secondary" : "outline"}>{status}</Badge>
+            </div>
+            <div>
+              <p className="text-sm font-medium">{dtc.description || "No description provided"}</p>
+              <p className="mt-1 text-xs text-muted-foreground">
+                {titleCase(dtc.system_type)} · last occurred {formatEpoch(dtc.last_occurrence)} ·{" "}
+                {dtc.occurrence_count} {dtc.occurrence_count === 1 ? "occurrence" : "occurrences"}
+              </p>
+            </div>
+            {!dtc.resolved && (
+              <div className="flex justify-end">
+                <ResolveButton dtc={dtc} />
+              </div>
+            )}
+          </article>
+        )
+      })}
     </div>
   )
 }
@@ -477,27 +627,38 @@ export default function DiagnosticsPage() {
 
   const filtersActive = severity !== "all" || protocol !== "all"
 
-  const dtcsQuery = useQuery({
-    queryKey: ["diagnostics", "dtcs", { severity, protocol }],
-    queryFn: () => {
-      const params = new URLSearchParams()
-      if (severity !== "all") params.set("severity", severity)
-      if (protocol !== "all") params.set("protocol", protocol)
-      const query = params.toString()
-      const suffix = query ? `?${query}` : ""
-      return apiGet<IDtcCollection>(`/api/v1/diagnostics/dtcs${suffix}`)
-    },
-    refetchInterval: 30_000,
-    staleTime: 15_000,
-    retry: 1,
+  const systemStatusQuery = useQuery({
+    queryKey: ["diagnostics", "system-status"],
+    queryFn: () => apiGet<IDiagnosticsSystemStatus>("/api/v1/diagnostics/system-status"),
+    refetchInterval: 45_000,
+    staleTime: 30_000,
+    retry: 1
   })
 
-  const dtcs = dtcsQuery.data?.dtcs ?? []
+  const dtcsQuery = useQuery({
+    queryKey: ["diagnostics", "dtcs"],
+    queryFn: () => apiGet<IDtcCollection>("/api/v1/diagnostics/dtcs"),
+    refetchInterval: 30_000,
+    staleTime: 15_000,
+    retry: 1
+  })
+
+  const dtcs = (dtcsQuery.data?.dtcs ?? []).filter(
+    (dtc) =>
+      (severity === "all" || dtc.severity === severity) &&
+      (protocol === "all" || dtc.protocol === protocol)
+  )
+  const verdictError = systemStatusQuery.error ?? dtcsQuery.error
 
   return (
     <div className="flex-1 space-y-6 p-4 pt-6 lg:px-6">
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
-        <HealthVerdictCard />
+        <HealthVerdictCard
+          status={systemStatusQuery.data}
+          collection={dtcsQuery.data}
+          isLoading={systemStatusQuery.isLoading || dtcsQuery.isLoading}
+          error={verdictError instanceof Error ? verdictError : null}
+        />
         <StatisticsStrip />
       </div>
 
@@ -557,7 +718,12 @@ export default function DiagnosticsPage() {
             <EmptyDtcState filtered={filtersActive} />
           )}
 
-          {!dtcsQuery.isLoading && !dtcsQuery.error && dtcs.length > 0 && <DtcTable dtcs={dtcs} />}
+          {!dtcsQuery.isLoading && !dtcsQuery.error && dtcs.length > 0 && (
+            <>
+              <DtcCardList dtcs={dtcs} />
+              <DtcTable dtcs={dtcs} />
+            </>
+          )}
         </CardContent>
       </Card>
     </div>

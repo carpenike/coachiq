@@ -233,10 +233,65 @@ function cardFor(entity: EntitySchema) {
   }
 }
 
+function firstEntityOfType(
+  entities: EntitySchema[],
+  deviceType: string
+): EntitySchema | undefined {
+  return entities.find((entity) => entity.device_type === deviceType)
+}
+
+function CompactPowerSection({ entities }: Readonly<{ entities: EntitySchema[] }>) {
+  const system = firstEntityOfType(entities, "power_system")
+  const battery = firstEntityOfType(entities, "battery")
+  const solar = firstEntityOfType(entities, "solar_controller")
+  const inverter = firstEntityOfType(entities, "inverter_charger")
+  const systemState = system?.state ?? {}
+  const batteryState = battery?.state ?? {}
+  const solarState = solar?.state ?? {}
+  const inverterState = inverter?.state ?? {}
+  const sourceCode = num(systemState.ac_source_code)
+  const source =
+    sourceCode === null ? "—" : (AC_SOURCE_NAMES.get(sourceCode) ?? "Off-grid")
+  const batterySoc = num(batteryState.soc)
+  const loads = sumWatts(systemState.ac_loads_l1_power, systemState.ac_loads_l2_power)
+  const solarPower = num(systemState.pv_power) ?? num(solarState.pv_power)
+  const acInput = sumWatts(
+    systemState.ac_in_l1_power,
+    systemState.ac_in_l2_power
+  ) ?? num(inverterState.ac_in_power)
+
+  const stats = [
+    {
+      label: "Battery",
+      value: batterySoc === null ? "—" : `${Math.round(batterySoc)}%`
+    },
+    { label: "AC source", value: source },
+    { label: "AC input", value: fmtWatts(acInput) },
+    { label: "Loads", value: fmtWatts(loads) },
+    { label: "Solar", value: fmtWatts(solarPower) }
+  ]
+
+  return (
+    <Card>
+      <CardContent className="grid grid-cols-2 gap-x-4 gap-y-3 py-4 sm:grid-cols-5">
+        {stats.map((stat) => (
+          <div key={stat.label} className="min-w-0">
+            <p className="text-xs text-muted-foreground">{stat.label}</p>
+            <p className="truncate text-sm font-semibold tabular-nums" title={stat.value}>
+              {stat.value}
+            </p>
+          </div>
+        ))}
+      </CardContent>
+    </Card>
+  )
+}
+
 export function PowerSection({
   entities,
   showTitle = true,
-}: Readonly<{ entities: EntitySchema[]; showTitle?: boolean }>) {
+  compact = false,
+}: Readonly<{ entities: EntitySchema[]; showTitle?: boolean; compact?: boolean }>) {
   const powerEntities = entities
     .filter((entity) => POWER_DEVICE_TYPES.has(entity.device_type))
     .sort(
@@ -256,9 +311,13 @@ export function PowerSection({
           <IconChevronRight className="size-4 transition-transform group-hover:translate-x-0.5" aria-hidden />
         </Link>
       )}
-      <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
-        {powerEntities.map(cardFor)}
-      </div>
+      {compact ? (
+        <CompactPowerSection entities={powerEntities} />
+      ) : (
+        <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
+          {powerEntities.map(cardFor)}
+        </div>
+      )}
     </div>
   )
 }

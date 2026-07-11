@@ -63,6 +63,8 @@ def _rvc_config() -> SimpleNamespace:
             "friendly_name": "Kitchen Light",
             "capabilities": ["brightness"],
             "groups": ["main"],
+            "protocol": "firefly",
+            "command_dgn": "1FEDB",
         },
         "tank": {
             "entity_id": "tank_1",
@@ -107,5 +109,7 @@ async def test_startup_saves_initialized_entities_to_async_runtime_repo(monkeypa
     assert states["light_1"]["device_type"] == "light"
     assert states["light_1"]["suggested_area"] == "Kitchen"
     assert states["light_1"]["state"] == "off"
+    assert states["light_1"]["protocol"] == "firefly"
+    assert states["light_1"]["command_dgn"] == "1FEDB"
     assert states["tank_1"]["device_type"] == "tank"
     assert service.get_initialization_status()["entity_count"] == 2

@@ -16,16 +16,100 @@ import { Separator } from "@/components/ui/separator"
 import { useAuth } from "@/contexts"
 import { cn } from "@/lib/utils"
 
-interface LoginFormProps extends React.ComponentProps<"div"> {
+interface ILoginFormProps extends React.ComponentProps<"div"> {
   onLoginSuccess?: () => void
+}
+
+interface ILoginErrorResponse {
+  response?: {
+    status?: number
+    data?: {
+      detail?: {
+        error?: string
+        lockout_until?: string
+        attempts_remaining?: number
+      }
+    }
+  }
+}
+
+function passwordLoginErrorMessage(error: unknown): string {
+  if (!(error && typeof error === "object" && "response" in error)) {
+    return error instanceof Error ? error.message : "Login failed"
+  }
+
+  const response = (error as ILoginErrorResponse).response
+  if (response?.status !== 423) {
+    return "Account is temporarily locked. Please try again later."
+  }
+
+  const lockout = response.data?.detail
+  if (lockout?.error !== "account_locked" || !lockout.lockout_until) {
+    return "Account is temporarily locked. Please try again later."
+  }
+
+  const lockoutUntil = new Date(lockout.lockout_until).toLocaleString()
+  const failedAttempts = lockout.attempts_remaining ?? 0
+  return `Account locked due to ${failedAttempts} failed attempts. Try again after ${lockoutUntil}.`
+}
+
+function authDescription(
+  oidcEnabled: boolean,
+  passwordEnabled: boolean,
+  magicLinkEnabled: boolean
+): string {
+  if (oidcEnabled && (passwordEnabled || magicLinkEnabled)) {
+    return "Choose your preferred sign-in method"
+  }
+  if (oidcEnabled) return "Use PocketID to sign in"
+  if (passwordEnabled && magicLinkEnabled) return "Choose your preferred sign-in method"
+  if (passwordEnabled) return "Enter your username and password"
+  return "Enter your email for a magic link"
+}
+
+function AuthLoadingCard({
+  className,
+  loadingSlow,
+  statusError,
+  ...props
+}: Readonly<React.ComponentProps<"div"> & {
+  loadingSlow: boolean
+  statusError: Error | null
+}>) {
+  return (
+    <div className={cn("flex flex-col gap-6", className)} {...props}>
+      <Card>
+        <CardHeader>
+          <CardTitle>Connecting to CoachIQ</CardTitle>
+          <CardDescription>Checking the coach and restoring your session.</CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div role="status" className="flex items-center gap-2 text-muted-foreground">
+            <IconLoader2 className="size-5 animate-spin motion-reduce:hidden" />
+            <span>{statusError ? "CoachIQ could not be reached." : "Connecting..."}</span>
+          </div>
+          {(loadingSlow || statusError) && (
+            <div className="space-y-3">
+              <p className="text-sm text-muted-foreground">
+                The coach may be restarting or unavailable. You can retry without losing this page.
+              </p>
+              <Button variant="outline" className="w-full" onClick={() => window.location.reload()}>
+                Retry connection
+              </Button>
+            </div>
+          )}
+        </CardContent>
+      </Card>
+    </div>
+  )
 }
 
 export function LoginForm({
   className,
   onLoginSuccess,
   ...props
-}: LoginFormProps) {
-  const { login, sendMagicLink, authStatus, isLoading } = useAuth()
+}: Readonly<ILoginFormProps>) {
+  const { login, sendMagicLink, authStatus, isLoading, statusError } = useAuth()
   const [formData, setFormData] = useState({
     username: "",
     password: "",
@@ -36,6 +120,16 @@ export function LoginForm({
   const [error, setError] = useState<string | null>(null)
   const [magicLinkSent, setMagicLinkSent] = useState(false)
   const [loginMode, setLoginMode] = useState<"password" | "magic">("password")
+  const [loadingSlow, setLoadingSlow] = useState(false)
+
+  useEffect(() => {
+    if (!isLoading && authStatus) {
+      setLoadingSlow(false)
+      return
+    }
+    const timer = window.setTimeout(() => setLoadingSlow(true), 5_000)
+    return () => window.clearTimeout(timer)
+  }, [authStatus, isLoading])
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search)
@@ -68,27 +162,7 @@ export function LoginForm({
       })
       onLoginSuccess?.()
     } catch (err: unknown) {
-      // Handle account lockout specifically
-      if (err && typeof err === 'object' && 'response' in err) {
-        const error = err as { response?: { status?: number; data?: { detail?: { error?: string; lockout_until?: string; attempts_remaining?: number } } } }
-        if (error?.response?.status === 423) {
-          const lockoutData = error.response.data?.detail
-          if (lockoutData?.error === "account_locked" && lockoutData.lockout_until) {
-            const lockoutUntil = new Date(lockoutData.lockout_until).toLocaleString()
-            const failedAttempts = lockoutData.attempts_remaining || 0
-            setError(
-              `Account locked due to ${failedAttempts} failed attempts. ` +
-              `Try again after ${lockoutUntil}.`
-            )
-          } else {
-            setError("Account is temporarily locked. Please try again later.")
-          }
-        } else {
-          setError("Account is temporarily locked. Please try again later.")
-        }
-      } else {
-        setError(err instanceof Error ? err.message : "Login failed")
-      }
+      setError(passwordLoginErrorMessage(err))
     } finally {
       setIsSubmitting(false)
     }
@@ -121,16 +195,12 @@ export function LoginForm({
   // Show loading state while auth status is being determined
   if (isLoading || !authStatus) {
     return (
-      <div className={cn("flex flex-col gap-6", className)} {...props}>
-        <Card>
-          <CardContent className="flex items-center justify-center p-6">
-            <div className="flex items-center gap-2 text-muted-foreground">
-              <IconLoader2 className="h-4 w-4 animate-spin" />
-              <span>Loading authentication...</span>
-            </div>
-          </CardContent>
-        </Card>
-      </div>
+      <AuthLoadingCard
+        className={className}
+        loadingSlow={loadingSlow}
+        statusError={statusError}
+        {...props}
+      />
     )
   }
 
@@ -139,17 +209,10 @@ export function LoginForm({
   const isMagicLinkMode = authStatus.mode === "multi" && authStatus.magic_links_enabled
   const isOidcMode = authStatus.oidc_enabled
   const hasLocalLoginMode = isPasswordMode || isMagicLinkMode
+  const showPasswordForm = isPasswordMode && (!isMagicLinkMode || loginMode === "password")
+  const showMagicLinkForm = isMagicLinkMode && (!isPasswordMode || loginMode === "magic")
   const isNoAuthMode = authStatus.mode === "none"
-  let authDescription = "Enter your email for a magic link"
-  if (isOidcMode) {
-    authDescription = hasLocalLoginMode
-      ? "Choose your preferred sign-in method"
-      : "Use PocketID to sign in"
-  } else if (isPasswordMode && isMagicLinkMode) {
-    authDescription = "Choose your preferred sign-in method"
-  } else if (isPasswordMode) {
-    authDescription = "Enter your username and password"
-  }
+  const description = authDescription(isOidcMode, isPasswordMode, isMagicLinkMode)
 
   if (isNoAuthMode) {
     return (
@@ -186,7 +249,7 @@ export function LoginForm({
             Sign in to CoachIQ
           </CardTitle>
           <CardDescription>
-            {authDescription}
+            {description}
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -257,7 +320,7 @@ export function LoginForm({
               )}
 
               {/* Password login form */}
-              {((isPasswordMode && !isMagicLinkMode) || loginMode === "password") && (
+              {showPasswordForm && (
                 <form onSubmit={(e) => void handlePasswordLogin(e)} className="space-y-4">
                   <div className="space-y-2">
                     <Label htmlFor="username">Username</Label>
@@ -293,7 +356,7 @@ export function LoginForm({
               )}
 
               {/* Magic link form */}
-              {((isMagicLinkMode && !isPasswordMode) || loginMode === "magic") && (
+              {showMagicLinkForm && (
                 <form onSubmit={(e) => void handleMagicLinkRequest(e)} className="space-y-4">
                   <div className="space-y-2">
                     <Label htmlFor="email">Email</Label>
@@ -315,23 +378,6 @@ export function LoginForm({
                 </form>
               )}
 
-              {/* Separator and mode switch option */}
-              {isPasswordMode && isMagicLinkMode && (
-                <>
-                  <Separator />
-                  <div className="text-center text-sm text-muted-foreground">
-                    Or{" "}
-                    <Button
-                      variant="link"
-                      size="sm"
-                      onClick={() => setLoginMode(loginMode === "password" ? "magic" : "password")}
-                      className="p-0 h-auto font-normal"
-                    >
-                      {loginMode === "password" ? "use magic link instead" : "use password instead"}
-                    </Button>
-                  </div>
-                </>
-              )}
             </div>
           )}
         </CardContent>

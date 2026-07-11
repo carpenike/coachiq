@@ -28,6 +28,7 @@ import {
   type IZoneGroup,
 } from "@/hooks/useCoachConfig"
 import { useBulkControlEntities, useControlEntity, useEntities } from "@/hooks/useEntities"
+import { entitySupportsBrightnessControl } from "@/lib/entity-capabilities"
 import { cn } from "@/lib/utils"
 
 /** Stable keys for the zone-grid loading-skeleton placeholders (no zone data exists yet to key on). */
@@ -67,14 +68,14 @@ function lightBrightnessPct(entity: EntitySchema): number {
 }
 
 /**
- * Whether the light supports dimming. The v1 entity schema exposes no
- * capabilities list (contract gap) — a light whose state reports a level
- * (operating_status / brightness) is treated as dimmable.
+ * Whether the light supports dimming according to the canonical contract.
  */
 function lightIsDimmable(entity: EntitySchema): boolean {
-  if (entity.device_type !== "light") return false
-  const state = entity.state ?? {}
-  return typeof state.operating_status === "number" || typeof state.brightness === "number"
+  return entitySupportsBrightnessControl(entity)
+}
+
+function stateChangedAt(entity: EntitySchema): string {
+  return entity.state_changed_at ?? entity.last_updated ?? ""
 }
 
 function relativeTime(value: string): string {
@@ -113,9 +114,15 @@ interface ILightRowProps {
   entity: EntitySchema
   controlsDisabled: boolean
   disabledReason: string
+  showTimestamp: boolean
 }
 
-function LightRow({ entity, controlsDisabled, disabledReason }: Readonly<ILightRowProps>) {
+function LightRow({
+  entity,
+  controlsDisabled,
+  disabledReason,
+  showTimestamp,
+}: Readonly<ILightRowProps>) {
   const control = useControlEntity()
   const isOn = lightIsOn(entity)
   const isAvailable = entity.available !== false
@@ -169,9 +176,11 @@ function LightRow({ entity, controlsDisabled, disabledReason }: Readonly<ILightR
       <div className="flex items-center justify-between gap-2">
         <div className="min-w-0">
           <p className="truncate text-sm font-medium">{entity.name}</p>
-          <p className="text-xs text-muted-foreground">
-            Updated {relativeTime(entity.last_updated)}
-          </p>
+          {showTimestamp && (
+            <p className="text-xs text-muted-foreground">
+              Last changed {relativeTime(stateChangedAt(entity))}
+            </p>
+          )}
         </div>
         {rowDisabled ? (
           <Tooltip>
@@ -215,9 +224,15 @@ interface IZoneLightsCardProps {
   zone: IZoneGroup
   controlsDisabled: boolean
   disabledReason: string
+  showTimestamps: boolean
 }
 
-function ZoneLightsCard({ zone, controlsDisabled, disabledReason }: Readonly<IZoneLightsCardProps>) {
+function ZoneLightsCard({
+  zone,
+  controlsDisabled,
+  disabledReason,
+  showTimestamps,
+}: Readonly<IZoneLightsCardProps>) {
   const bulkControl = useBulkControlEntities()
   const onCount = zone.entities.filter(lightIsOn).length
   const switchableIds = zone.entities
@@ -259,7 +274,7 @@ function ZoneLightsCard({ zone, controlsDisabled, disabledReason }: Readonly<IZo
         size="icon"
         disabled={zoneButtonsDisabled}
         onClick={() => setZone(true)}
-        className="size-7 text-muted-foreground"
+        className="size-11 text-muted-foreground"
         aria-label={`Turn all lights on in ${zone.displayName}`}
       >
         <IconBulb className="size-4" />
@@ -269,7 +284,7 @@ function ZoneLightsCard({ zone, controlsDisabled, disabledReason }: Readonly<IZo
         size="icon"
         disabled={zoneButtonsDisabled}
         onClick={() => setZone(false)}
-        className="size-7 text-muted-foreground"
+        className="size-11 text-muted-foreground"
         aria-label={`Turn all lights off in ${zone.displayName}`}
       >
         <IconBulbOff className="size-4" />
@@ -304,6 +319,7 @@ function ZoneLightsCard({ zone, controlsDisabled, disabledReason }: Readonly<IZo
             entity={entity}
             controlsDisabled={controlsDisabled}
             disabledReason={disabledReason}
+            showTimestamp={showTimestamps}
           />
         ))}
       </CardContent>
@@ -437,6 +453,7 @@ export default function LightsPage() {
   const other = zones.filter((zone) => zone.section === "other")
 
   const controlsDisabled = coach !== "LIVE"
+  const showTimestamps = coach !== "LIVE"
   const disabledReason =
     coach === "OFFLINE"
       ? "Can't reach the coach — controls disabled"
@@ -454,6 +471,7 @@ export default function LightsPage() {
               zone={zone}
               controlsDisabled={controlsDisabled}
               disabledReason={disabledReason}
+              showTimestamps={showTimestamps}
             />
           ))}
         </div>

@@ -832,9 +832,10 @@ class EntityService:
             }
         )
         await self._entity_state_repo.save_entity_state(entity_id, entity)
+        persisted_entity = await self._entity_state_repo.get_entity_state(entity_id)
         await self.event_broker.publish(
             "entity_update",
-            {"entity_id": entity_id, "entity_data": entity},
+            {"entity_id": entity_id, "entity_data": persisted_entity or entity},
         )
 
         try:
@@ -933,9 +934,10 @@ class EntityService:
             }
         )
         await self._entity_state_repo.save_entity_state(entity_id, entity)
+        persisted_entity = await self._entity_state_repo.get_entity_state(entity_id)
         await self.event_broker.publish(
             "entity_update",
-            {"entity_id": entity_id, "entity_data": entity},
+            {"entity_id": entity_id, "entity_data": persisted_entity or entity},
         )
 
         try:
@@ -1159,10 +1161,11 @@ class EntityService:
         # Update entity state optimistically
         entity.update(optimistic_payload)
         await self._entity_state_repo.save_entity_state(entity_id, entity)
+        persisted_entity = await self._entity_state_repo.get_entity_state(entity_id)
 
         await self.event_broker.publish(
             "entity_update",
-            {"entity_id": entity_id, "entity_data": entity},
+            {"entity_id": entity_id, "entity_data": persisted_entity or entity},
         )
 
         # Create and send CAN message(s). A light may map to several dimmer
@@ -1193,7 +1196,7 @@ class EntityService:
 
             await self.event_broker.publish(
                 "entity_update",
-                {"entity_id": entity_id, "entity_data": entity},
+                {"entity_id": entity_id, "entity_data": persisted_entity or entity},
             )
 
             return ControlEntityResponse(

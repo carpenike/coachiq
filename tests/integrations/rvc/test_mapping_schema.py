@@ -48,6 +48,7 @@ def test_sources_and_command_instances_are_independent() -> None:
     assert entity_ids == {"climate_mid"}
     assert entity_map[("1FFE2", "1")]["entity_id"] == "climate_mid"
     assert entity_map[("1FF9C", "5")]["entity_id"] == "climate_mid"
+    assert entity_map[("1FFE2", "1")]["command_dgn"] == "1FEF9"
     # inst_map carries COMMAND addressing, regardless of source declaration order
     assert inst_map["climate_mid"] == {"dgn_hex": "1FEF9", "instance": 1}
 

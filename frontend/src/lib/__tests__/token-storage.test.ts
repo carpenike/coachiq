@@ -12,7 +12,6 @@ const refreshTokenAPI = vi.fn<(token: string) => Promise<RefreshTokenResponse>>(
 vi.mock('@/api/endpoints', () => ({
   refreshToken: (token: string) => refreshTokenAPI(token),
   revokeRefreshToken: vi.fn().mockResolvedValue(undefined),
-  getAuthStatus: vi.fn().mockResolvedValue({ enabled: true, mode: 'multi' }),
 }))
 
 // Import AFTER the mock so the module under test binds to the mocked API.
@@ -126,5 +125,48 @@ describe('tokenStorage.attemptTokenRefresh', () => {
 
     expect(result).toBe(false)
     expect(onTokenExpired).toHaveBeenCalled()
+  })
+})
+
+describe('tokenStorage.initialize', () => {
+  beforeEach(() => {
+    localStorage.clear()
+    refreshTokenAPI.mockReset()
+    tokenStorage.setRefreshCallbacks({})
+  })
+
+  afterEach(() => {
+    localStorage.clear()
+    tokenStorage.cleanup()
+  })
+
+  it('skips token restoration when the shared auth status disables authentication', async () => {
+    seedTokens()
+
+    await tokenStorage.initialize({
+      enabled: false,
+      mode: 'none',
+      jwt_available: false,
+      magic_links_enabled: false,
+      oidc_enabled: false,
+    })
+
+    expect(refreshTokenAPI).not.toHaveBeenCalled()
+  })
+
+  it('restores a stale session from the shared enabled auth status', async () => {
+    seedTokens()
+    refreshTokenAPI.mockResolvedValue(refreshResponse('boot'))
+
+    await tokenStorage.initialize({
+      enabled: true,
+      mode: 'multi',
+      jwt_available: true,
+      magic_links_enabled: true,
+      oidc_enabled: false,
+    })
+
+    expect(refreshTokenAPI).toHaveBeenCalledTimes(1)
+    expect(tokenStorage.getAccessToken()).toBe('access-boot')
   })
 })

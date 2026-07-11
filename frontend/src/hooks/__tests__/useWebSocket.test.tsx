@@ -5,23 +5,33 @@
  * connection management, message handling, and error scenarios.
  */
 
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { renderHook } from '@testing-library/react';
-import { waitFor } from '@testing-library/dom';
-import type { ReactNode } from 'react';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { RVCWebSocketClient } from '../../api/websocket';
-import { useWebSocket } from '../useWebSocket';
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { renderHook, waitFor } from "@testing-library/react";
+import type { ReactNode } from "react";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { RVCWebSocketClient } from "../../api/websocket";
+import { useWebSocket } from "../useWebSocket";
 
 // Mock WebSocket
 class MockWebSocket {
-  static CONNECTING = 0;
-  static OPEN = 1;
-  static CLOSING = 2;
-  static CLOSED = 3;
+  static readonly CONNECTING = 0;
+  static readonly OPEN = 1;
+  static readonly CLOSING = 2;
+  static readonly CLOSED = 3;
+  static readonly instances: MockWebSocket[] = [];
+  private static autoOpen = true;
+
+  static reset(): void {
+    MockWebSocket.instances.length = 0;
+    MockWebSocket.autoOpen = true;
+  }
+
+  static disableAutoOpen(): void {
+    MockWebSocket.autoOpen = false;
+  }
 
   readyState = MockWebSocket.CONNECTING;
-  url = '';
+  url = "";
   onopen: ((event: Event) => void) | null = null;
   onclose: ((event: CloseEvent) => void) | null = null;
   onmessage: ((event: MessageEvent) => void) | null = null;
@@ -29,51 +39,54 @@ class MockWebSocket {
 
   constructor(url: string) {
     this.url = url;
-    // Simulate connection after a short delay
-    setTimeout(() => {
+    MockWebSocket.instances.push(this);
+
+    queueMicrotask(() => {
+      if (!MockWebSocket.autoOpen || this.readyState !== MockWebSocket.CONNECTING) return;
       this.readyState = MockWebSocket.OPEN;
-      this.onopen?.(new Event('open'));
-    }, 10);
+      this.onopen?.(new Event("open"));
+    });
   }
 
   send(data: string | ArrayBuffer | Blob | ArrayBufferView) {
     if (this.readyState !== MockWebSocket.OPEN) {
-      throw new Error('WebSocket is not connected');
+      throw new Error("WebSocket is not connected");
     }
-    // Simulate echo for testing
-    setTimeout(() => {
-      this.onmessage?.(new MessageEvent('message', { data }));
-    }, 5);
+    queueMicrotask(() => {
+      this.onmessage?.(new MessageEvent("message", { data }));
+    });
   }
 
   close(code?: number, reason?: string) {
     this.readyState = MockWebSocket.CLOSING;
-    setTimeout(() => {
+    queueMicrotask(() => {
       this.readyState = MockWebSocket.CLOSED;
       const closeEventInit: CloseEventInit = { code: code || 1000 };
       if (reason !== undefined) {
         closeEventInit.reason = reason;
       }
-      this.onclose?.(new CloseEvent('close', closeEventInit));
-    }, 5);
+      this.onclose?.(new CloseEvent("close", closeEventInit));
+    });
   }
 
   // Test helpers
   simulateMessage(data: unknown) {
     if (this.readyState === MockWebSocket.OPEN) {
-      this.onmessage?.(new MessageEvent('message', {
-        data: typeof data === 'string' ? data : JSON.stringify(data)
-      }));
+      this.onmessage?.(
+        new MessageEvent("message", {
+          data: typeof data === "string" ? data : JSON.stringify(data)
+        })
+      );
     }
   }
 
   simulateError() {
-    this.onerror?.(new Event('error'));
+    this.onerror?.(new Event("error"));
   }
 
-  simulateClose(code = 1000, reason = '') {
+  simulateClose(code = 1000, reason = "") {
     this.readyState = MockWebSocket.CLOSED;
-    this.onclose?.(new CloseEvent('close', { code, reason }));
+    this.onclose?.(new CloseEvent("close", { code, reason }));
   }
 }
 
@@ -81,13 +94,23 @@ class MockWebSocket {
 // Mock WebSocket for testing
 global.WebSocket = MockWebSocket as unknown as typeof WebSocket;
 
+function latestSocket(): MockWebSocket {
+  const socket = MockWebSocket.instances.at(-1);
+  if (!socket) throw new Error("Expected RVCWebSocketClient to create a WebSocket");
+  return socket;
+}
+
+async function flushMicrotasks(): Promise<void> {
+  await Promise.resolve();
+}
+
 /** Fresh hook options per call: new handler identities every render, like real inline callers. */
 function freshHandlerOptions() {
   return {
-    endpoint: '/ws/can-sniffer',
+    endpoint: "/ws/can-sniffer",
     autoConnect: true,
     onMessage: (_message: unknown): undefined => undefined,
-    subscriptions: [{ handler: (_message: unknown): undefined => undefined }],
+    subscriptions: [{ handler: (_message: unknown): undefined => undefined }]
   };
 }
 
@@ -96,37 +119,33 @@ function createWrapper() {
   const queryClient = new QueryClient({
     defaultOptions: {
       queries: { retry: false },
-      mutations: { retry: false },
-    },
+      mutations: { retry: false }
+    }
   });
 
   const TestQueryProvider = ({ children }: { children: ReactNode }) => (
-    <QueryClientProvider client={queryClient}>
-      {children}
-    </QueryClientProvider>
+    <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
   );
-  TestQueryProvider.displayName = 'TestQueryProvider';
+  TestQueryProvider.displayName = "TestQueryProvider";
 
   return TestQueryProvider;
 }
 
-describe('WebSocket Integration Tests', () => {
-  let mockWebSocket: MockWebSocket;
-
+describe("WebSocket Integration Tests", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    // Reset WebSocket mock
-    mockWebSocket = new MockWebSocket('ws://test');
+    MockWebSocket.reset();
   });
 
   afterEach(() => {
+    vi.useRealTimers();
     vi.restoreAllMocks();
   });
 
-  describe('useWebSocket (generic diagnostic-stream hook)', () => {
-    it('should connect automatically when autoConnect is true', async () => {
+  describe("useWebSocket (generic diagnostic-stream hook)", () => {
+    it("should connect automatically when autoConnect is true", async () => {
       const { result } = renderHook(
-        () => useWebSocket({ endpoint: '/ws/can-sniffer', autoConnect: true }),
+        () => useWebSocket({ endpoint: "/ws/can-sniffer", autoConnect: true }),
         { wrapper: createWrapper() }
       );
 
@@ -141,30 +160,28 @@ describe('WebSocket Integration Tests', () => {
       expect(result.current.error).toBeNull();
     });
 
-    it('should not connect automatically when autoConnect is false', async () => {
+    it("should not connect automatically when autoConnect is false", () => {
       const { result } = renderHook(
-        () => useWebSocket({ endpoint: '/ws/can-sniffer', autoConnect: false }),
+        () => useWebSocket({ endpoint: "/ws/can-sniffer", autoConnect: false }),
         { wrapper: createWrapper() }
       );
 
       // Should remain disconnected
       expect(result.current.isConnected).toBe(false);
 
-      // Wait a bit to ensure it doesn't auto-connect
-      await new Promise(resolve => setTimeout(resolve, 50));
       expect(result.current.isConnected).toBe(false);
+      expect(MockWebSocket.instances).toHaveLength(0);
     });
 
-    it('should stay connected across re-renders with inline handlers', async () => {
+    it("should stay connected across re-renders with inline handlers", async () => {
       // Regression guard for the PR #218 bug class: inline handlers used to
       // change identity every render, re-run the connection effect, and tear
       // the socket down mid-connect. freshHandlerOptions() runs on every
       // render, so the handler identities churn exactly like real callers'
       // inline handlers do — that churn is what this test exercises.
-      const { result, rerender } = renderHook(
-        () => useWebSocket(freshHandlerOptions()),
-        { wrapper: createWrapper() }
-      );
+      const { result, rerender } = renderHook(() => useWebSocket(freshHandlerOptions()), {
+        wrapper: createWrapper()
+      });
 
       await waitFor(() => {
         expect(result.current.isConnected).toBe(true);
@@ -177,9 +194,9 @@ describe('WebSocket Integration Tests', () => {
       expect(result.current.error).toBeNull();
     });
 
-    it('should clean up properly on unmount', async () => {
+    it("should clean up properly on unmount", async () => {
       const { result, unmount } = renderHook(
-        () => useWebSocket({ endpoint: '/ws/can-sniffer', autoConnect: true }),
+        () => useWebSocket({ endpoint: "/ws/can-sniffer", autoConnect: true }),
         { wrapper: createWrapper() }
       );
 
@@ -193,139 +210,153 @@ describe('WebSocket Integration Tests', () => {
     });
   });
 
-  describe('RVCWebSocketClient', () => {
-    it('should handle connection lifecycle correctly', async () => {
+  describe("RVCWebSocketClient", () => {
+    it("should handle connection lifecycle correctly", async () => {
       const handlers = {
         onOpen: vi.fn(),
         onClose: vi.fn(),
         onError: vi.fn(),
-        onMessage: vi.fn(),
+        onMessage: vi.fn()
       };
 
-      const client = new RVCWebSocketClient('/test', handlers);
+      const client = new RVCWebSocketClient("/test", handlers);
 
-      expect(client.state).toBe('disconnected');
+      expect(client.state).toBe("disconnected");
       expect(client.isConnected).toBe(false);
 
       // Connect
       client.connect();
-      expect(client.state).toBe('connecting');
+      expect(client.state).toBe("connecting");
 
-      // Wait for connection
-      await waitFor(() => {
-        expect(client.isConnected).toBe(true);
-      });
+      await flushMicrotasks();
 
-      expect(client.state).toBe('connected');
-      expect(handlers.onOpen).toHaveBeenCalled();
+      expect(client.isConnected).toBe(true);
+      expect(client.state).toBe("connected");
+      expect(handlers.onOpen).toHaveBeenCalledTimes(1);
 
       // Disconnect
       client.disconnect();
+      await flushMicrotasks();
 
-      await waitFor(() => {
-        expect(client.state).toBe('disconnected');
-      });
-
-      expect(handlers.onClose).toHaveBeenCalled();
+      expect(client.state).toBe("disconnected");
+      expect(handlers.onClose).toHaveBeenCalledTimes(1);
+      expect(handlers.onClose).toHaveBeenCalledWith(
+        expect.objectContaining({ code: 1000, reason: "Client disconnect" })
+      );
     });
 
-    it('should send messages correctly', async () => {
-      const client = new RVCWebSocketClient('/test');
+    it("should send messages correctly", async () => {
+      const client = new RVCWebSocketClient("/test");
       client.connect();
+      await flushMicrotasks();
 
-      await waitFor(() => {
-        expect(client.isConnected).toBe(true);
-      });
-
-      const message = { type: 'test', data: 'hello' };
+      const message = { type: "test", data: "hello" };
 
       expect(() => {
         client.send(message);
       }).not.toThrow();
     });
 
-    it('should throw error when sending while disconnected', () => {
-      const client = new RVCWebSocketClient('/test');
+    it("should throw error when sending while disconnected", () => {
+      const client = new RVCWebSocketClient("/test");
 
       expect(() => {
-        client.send({ type: 'test' });
-      }).toThrow('WebSocket is not connected');
+        client.send({ type: "test" });
+      }).toThrow("WebSocket is not connected");
     });
 
-    it('should handle heartbeat correctly', async () => {
-      const client = new RVCWebSocketClient('/test', {}, {
-        heartbeatInterval: 100, // Fast heartbeat for testing
-      });
+    it("should handle heartbeat correctly", async () => {
+      vi.useFakeTimers();
+      const client = new RVCWebSocketClient(
+        "/test",
+        {},
+        {
+          heartbeatInterval: 100 // Fast heartbeat for testing
+        }
+      );
 
       client.connect();
+      await flushMicrotasks();
 
-      await waitFor(() => {
-        expect(client.isConnected).toBe(true);
-      });
-
-      // Wait for heartbeat to be sent
-      await new Promise(resolve => setTimeout(resolve, 150));
+      vi.advanceTimersByTime(150);
+      await flushMicrotasks();
 
       // Should still be connected (heartbeat prevents timeout)
       expect(client.isConnected).toBe(true);
     });
 
-    it('should respect reconnection limits', async () => {
+    it("should respect reconnection limits", async () => {
+      vi.useFakeTimers();
       const onClose = vi.fn();
-      const client = new RVCWebSocketClient('/test', { onClose }, {
-        autoReconnect: true,
-        maxReconnectAttempts: 2,
-        reconnectDelay: 50,
-      });
+      const onReconnectAttempt = vi.fn();
+      const onReconnectExhausted = vi.fn();
+      const client = new RVCWebSocketClient(
+        "/test",
+        {
+          onClose,
+          onReconnectAttempt,
+          onReconnectExhausted
+        },
+        {
+          autoReconnect: true,
+          maxReconnectAttempts: 2,
+          reconnectDelay: 50
+        }
+      );
 
       client.connect();
+      await flushMicrotasks();
+      expect(client.isConnected).toBe(true);
 
-      await waitFor(() => {
-        expect(client.isConnected).toBe(true);
-      });
+      MockWebSocket.disableAutoOpen();
 
-      // Simulate multiple disconnections
-      for (let i = 0; i < 3; i++) {
-        mockWebSocket.simulateClose(1006, 'Test disconnect');
-        await new Promise(resolve => setTimeout(resolve, 60));
+      for (let attempt = 1; attempt <= 2; attempt++) {
+        latestSocket().simulateClose(1006, "Test disconnect");
+        expect(onReconnectAttempt).toHaveBeenLastCalledWith(attempt, 2, 50);
+        vi.advanceTimersByTime(50);
+        expect(MockWebSocket.instances).toHaveLength(attempt + 1);
       }
 
-      // Should have stopped attempting to reconnect after max attempts
+      latestSocket().simulateClose(1006, "Test disconnect");
+
       expect(onClose).toHaveBeenCalledTimes(3);
+      expect(onReconnectAttempt).toHaveBeenCalledTimes(2);
+      expect(onReconnectExhausted).toHaveBeenCalledOnce();
+      expect(onReconnectExhausted).toHaveBeenCalledWith(2);
+      expect(client.state).toBe("error");
+
+      vi.runAllTimers();
+      expect(MockWebSocket.instances).toHaveLength(3);
     });
   });
 
-  describe('WebSocket Performance', () => {
-    it('should handle high-frequency messages without blocking', async () => {
+  describe("WebSocket Performance", () => {
+    it("should handle high-frequency messages without blocking", async () => {
       const messageHandler = vi.fn();
-      const client = new RVCWebSocketClient('/test', {
-        onMessage: messageHandler,
+      const client = new RVCWebSocketClient("/test", {
+        onMessage: messageHandler
       });
 
       client.connect();
-
-      await waitFor(() => {
-        expect(client.isConnected).toBe(true);
-      });
+      await flushMicrotasks();
+      expect(client.isConnected).toBe(true);
 
       // Send many messages quickly
       const messageCount = 100;
-      const startTime = Date.now();
+      const startTime = performance.now();
+      const socket = latestSocket();
 
       for (let i = 0; i < messageCount; i++) {
-        mockWebSocket.simulateMessage({
-          type: 'entity_update',
-          data: { entity_id: `entity_${i}`, value: i },
+        socket.simulateMessage({
+          type: "entity_update",
+          data: { entity_id: `entity_${i}`, value: i }
         });
       }
 
-      await waitFor(() => {
-        expect(messageHandler).toHaveBeenCalledTimes(messageCount);
-      });
-
-      const endTime = Date.now();
+      const endTime = performance.now();
       const duration = endTime - startTime;
 
+      expect(messageHandler).toHaveBeenCalledTimes(messageCount);
       // Should process messages reasonably quickly (less than 1 second for 100 messages)
       expect(duration).toBeLessThan(1000);
     });

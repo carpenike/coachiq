@@ -1,9 +1,7 @@
 # React Folder Structure - Reorganization Summary
 
 > **Historical note (2026-07):** This document describes a past migration. The
-> WebSocket context files it references (`websocket-context.ts`,
-> `websocket-provider.tsx`, `use-websocket-context.ts`) no longer exist — the
-> WebSocket data plane was replaced by the SSE-based `RealtimeProvider`
+> deleted feature-WebSocket context was replaced by the SSE-based `RealtimeProvider`
 > (`realtime-provider.tsx` / `realtime-context.ts`) in commit `3bebabb`. The
 > current global contexts in `src/contexts/` are auth (`auth-context.tsx`),
 > realtime (`realtime-provider.tsx` + `realtime-context.ts`), coach connection
@@ -20,9 +18,8 @@ Based on 2024/2025 React best practices research, here's how your project contex
 These contexts were used throughout the application:
 
 - `theme-context.ts` - Theme state (dark/light mode)
-- `websocket-context.ts` - Global WebSocket connection state (since replaced by `realtime-context.ts`)
-- `websocket-provider.tsx` - WebSocket provider component (since replaced by `realtime-provider.tsx`)
-- `use-websocket-context.ts` - Custom hook for WebSocket context (since replaced by `useRealtime`)
+- `realtime-context.ts` - Global SSE connection state
+- `realtime-provider.tsx` - Global SSE event provider
 - `query-provider.tsx` - React Query provider
 - `index.ts` - Centralized exports for clean imports
 
@@ -39,28 +36,15 @@ These contexts remain with their specific components:
 
 ### 1. **Centralized vs Co-located Decision Matrix**
 
-| Context Type                                  | Location              | Reasoning                            |
-| --------------------------------------------- | --------------------- | ------------------------------------ |
-| **Global App State** (Auth, Theme, WebSocket) | `src/contexts/`       | Used throughout the application      |
-| **Feature-Specific** (Log Viewer)             | Within feature folder | Only relevant to specific components |
-| **UI Component** (Sidebar, Form)              | Within component      | Tightly coupled to component         |
+| Context Type                                 | Location              | Reasoning                            |
+| -------------------------------------------- | --------------------- | ------------------------------------ |
+| **Global App State** (Auth, Theme, Realtime) | `src/contexts/`       | Used throughout the application      |
+| **Feature-Specific** (Log Viewer)            | Within feature folder | Only relevant to specific components |
+| **UI Component** (Sidebar, Form)             | Within component      | Tightly coupled to component         |
 
-### 2. **Import Patterns**
+### 2. **Import Pattern**
 
-**Before:**
-
-```tsx
-import { WebSocketProvider } from "@/components/providers/websocket-provider";
-import { useWebSocketContext } from "@/components/providers/use-websocket-context";
-```
-
-**After (Clean Centralized Imports):**
-
-```tsx
-import { WebSocketProvider, useWebSocketContext } from "@/contexts";
-```
-
-**Feature-Specific (Unchanged):**
+Feature-specific contexts remain co-located:
 
 ```tsx
 import { LogViewerContext } from "./log-viewer-context";
@@ -75,9 +59,7 @@ src/
   contexts/
     theme-context.ts
   components/
-    providers/           # ❌ Mixed global/local concerns
-      websocket-context.ts
-      websocket-provider.tsx
+    providers/           # Mixed global/local concerns
       query-provider.tsx
     log-viewer/
       log-viewer-context.tsx
@@ -88,14 +70,13 @@ src/
 ```
 src/
   contexts/              # ✅ All global contexts
-    index.ts            # ✅ Clean export point
+    index.ts            # Clean export point
     theme-context.ts
-    websocket-context.ts
-    websocket-provider.tsx
+    realtime-context.ts
+    realtime-provider.tsx
     query-provider.tsx
-    use-websocket-context.ts
   components/
-    log-viewer/          # ✅ Feature-specific context co-located
+    log-viewer/          # Feature-specific context co-located
       log-viewer-context.tsx
       LogViewer.tsx
       LogList.tsx
@@ -112,12 +93,9 @@ src/
 
 ## 🔄 Migration Completed
 
-- ✅ Moved `WebSocketProvider` and `WebSocketContext` to centralized location
-- ✅ Moved `QueryProvider` to centralized location
-- ✅ Updated all imports throughout the codebase
-- ✅ Created centralized export index for clean imports
-- ✅ Removed duplicate files from old `components/providers/` folder
-- ✅ **Kept `log-viewer-context.tsx` co-located** (correct decision!)
-- ✅ Fixed ESLint violations (removed console.log)
+- Moved `QueryProvider` to the centralized context location
+- Replaced global feature WebSockets with the SSE-based realtime context
+- Updated imports throughout the codebase
+- Kept `log-viewer-context.tsx` co-located with its feature
 
 Your log-viewer context was already correctly placed according to modern React patterns!

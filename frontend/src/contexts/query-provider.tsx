@@ -6,9 +6,16 @@
  */
 
 import { createQueryClient } from '@/lib/query-client';
-import { QueryClientProvider } from '@tanstack/react-query';
 import { ReactQueryDevtools } from '@tanstack/react-query-devtools';
+import { PersistQueryClientProvider } from '@tanstack/react-query-persist-client';
 import type { ReactNode } from 'react';
+
+import {
+  createEntityCachePersister,
+  entityCacheDehydrateOptions,
+  OFFLINE_ENTITY_CACHE_BUSTER,
+  OFFLINE_ENTITY_CACHE_MAX_AGE_MS
+} from '@/lib/offline-query-persistence';
 
 interface QueryProviderProps {
   children: ReactNode;
@@ -16,13 +23,22 @@ interface QueryProviderProps {
 
 // Create a singleton query client instance
 const queryClient = createQueryClient();
+const entityCachePersister = createEntityCachePersister(queryClient);
 
 /**
  * Provides React Query context to the application
  */
 export function QueryProvider({ children }: QueryProviderProps) {
   return (
-    <QueryClientProvider client={queryClient}>
+    <PersistQueryClientProvider
+      client={queryClient}
+      persistOptions={{
+        persister: entityCachePersister,
+        maxAge: OFFLINE_ENTITY_CACHE_MAX_AGE_MS,
+        buster: OFFLINE_ENTITY_CACHE_BUSTER,
+        dehydrateOptions: entityCacheDehydrateOptions
+      }}
+    >
       {children}
       {/* Only show devtools in development */}
       {import.meta.env.DEV && (
@@ -31,6 +47,6 @@ export function QueryProvider({ children }: QueryProviderProps) {
           buttonPosition="bottom-right"
         />
       )}
-    </QueryClientProvider>
+    </PersistQueryClientProvider>
   );
 }

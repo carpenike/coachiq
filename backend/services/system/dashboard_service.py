@@ -204,6 +204,10 @@ class DashboardService:
             "DashboardService", "update_widget_layout"
         )(self.update_widget_layout)
 
+        self.update_dashboard_preferences = self._monitor.monitor_service_method(
+            "DashboardService", "update_dashboard_preferences"
+        )(self.update_dashboard_preferences)
+
     def _is_cache_valid(self, cache_key: str) -> bool:
         """Check if cache entry is still valid."""
         if cache_key not in self._cache_timestamps:
@@ -589,6 +593,13 @@ class DashboardService:
     async def update_widget_layout(self, user_id: str, layout: dict[str, Any]) -> dict[str, Any]:
         """Update dashboard widget layout."""
         config = await self._dashboard_repo.update_layout(user_id, layout)
+        return config.to_dict()
+
+    async def update_dashboard_preferences(
+        self, user_id: str, preferences: dict[str, Any]
+    ) -> dict[str, Any]:
+        """Update synchronized dashboard preferences for a user."""
+        config = await self._dashboard_repo.update_preferences(user_id, preferences)
         return config.to_dict()
 
     async def get_system_analytics(self) -> SystemAnalytics:

@@ -1,34 +1,29 @@
 /**
- * WebSocket Client for Real-time Data
+ * WebSocket Client for Page-Scoped Diagnostics
  *
- * This module provides WebSocket connectivity for real-time updates
- * from the backend, including entity updates, CAN messages, and system status.
+ * App-wide realtime state uses the SSE-based RealtimeProvider. This client is
+ * reserved for diagnostic streams such as CAN sniffing, recording, analysis,
+ * and filtering.
  */
 
-import { WS_BASE, env, logApiRequest, logApiResponse } from './client';
-import { tokenStorage } from '@/lib/token-storage';
-import type {
-  CANMessageUpdate,
-  EntityUpdateMessage,
-  SystemStatusMessage,
-  WebSocketMessage,
-  WebSocketMessageType
-} from './types';
+import { WS_BASE, env, logApiRequest, logApiResponse } from "./client";
+import { tokenStorage } from "@/lib/token-storage";
+import type { CANMessageUpdate, WebSocketMessage, WebSocketMessageType } from "./types";
 
 // Debug utility for WebSocket connections
 export const DEBUG_WS = {
-  enabled: import.meta.env.DEV && import.meta.env.VITE_DEBUG_WS === 'true',
+  enabled: import.meta.env.DEV && import.meta.env.VITE_DEBUG_WS === "true",
   log: (...args: unknown[]) => {
     if (DEBUG_WS.enabled) {
-      console.debug('[WebSocket Debug]', ...args);
+      console.debug("[WebSocket Debug]", ...args);
     }
-  },
+  }
 };
 
 /**
  * WebSocket connection states
  */
-export type WebSocketState = 'connecting' | 'connected' | 'disconnected' | 'error';
+export type WebSocketState = "connecting" | "connected" | "disconnected" | "error";
 
 /**
  * WebSocket event handlers interface
@@ -38,9 +33,9 @@ export interface WebSocketHandlers {
   onClose?: (event: CloseEvent) => void;
   onError?: (error: Event) => void;
   onMessage?: (message: WebSocketMessage) => void;
-  onEntityUpdate?: (data: EntityUpdateMessage['data']) => void;
-  onCANMessage?: (data: CANMessageUpdate['data']) => void;
-  onSystemStatus?: (data: SystemStatusMessage['data']) => void;
+  onReconnectAttempt?: (attempt: number, maxAttempts: number, delay: number) => void;
+  onReconnectExhausted?: (attempts: number) => void;
+  onCANMessage?: (data: CANMessageUpdate["data"]) => void;
 }
 
 /**
@@ -67,7 +62,7 @@ const defaultConfig: Required<WebSocketConfig> = {
   reconnectDelay: 3000,
   maxReconnectAttempts: 0, // Infinite
   connectionTimeout: 10000,
-  heartbeatInterval: 30000, // 30 seconds
+  heartbeatInterval: 30000 // 30 seconds
 };
 
 /**
@@ -78,10 +73,11 @@ export class RVCWebSocketClient {
   private handlers: WebSocketHandlers = {};
   private config: Required<WebSocketConfig>;
   private reconnectAttempts = 0;
-  private reconnectTimer: NodeJS.Timeout | null = null;
-  private heartbeatTimer: NodeJS.Timeout | null = null;
-  private connectionTimer: NodeJS.Timeout | null = null;
-  private _state: WebSocketState = 'disconnected';
+  private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
+  private heartbeatTimer: ReturnType<typeof setInterval> | null = null;
+  private connectionTimer: ReturnType<typeof setTimeout> | null = null;
+  private shouldBeConnected = false;
+  private _state: WebSocketState = "disconnected";
 
   constructor(
     private readonly endpoint: string,
@@ -103,7 +99,7 @@ export class RVCWebSocketClient {
    * Get current connection status
    */
   get isConnected(): boolean {
-    return this._state === 'connected' && this.socket?.readyState === WebSocket.OPEN;
+    return this._state === "connected" && this.socket?.readyState === WebSocket.OPEN;
   }
 
   /**
@@ -114,8 +110,17 @@ export class RVCWebSocketClient {
       return;
     }
 
-    this.cleanup();
-    this._state = 'connecting';
+    this.shouldBeConnected = true;
+    this.reconnectAttempts = 0;
+    this.openSocket();
+  }
+
+  /**
+   * Open one transport connection without resetting the reconnect budget.
+   */
+  private openSocket(): void {
+    this.disposeCurrentSocket();
+    this._state = "connecting";
 
     // Open the socket SYNCHRONOUSLY. An earlier version awaited a token refresh
     // before dialing, which made connect() async — and that opened a race: the
@@ -130,22 +135,30 @@ export class RVCWebSocketClient {
     const wsUrl = token ? `${baseUrl}?token=${encodeURIComponent(token)}` : baseUrl;
 
     if (env.isDevelopment) {
-      logApiRequest('WS CONNECT', wsUrl);
+      logApiRequest("WS CONNECT", wsUrl);
       DEBUG_WS.log(`Connecting to ${wsUrl} (endpoint: ${this.endpoint})`);
     }
 
-    this.socket = new WebSocket(wsUrl);
-    this.setupEventHandlers();
-    this.setupConnectionTimeout();
+    const socket = new WebSocket(wsUrl);
+    this.socket = socket;
+    this.setupEventHandlers(socket);
+    this.setupConnectionTimeout(socket);
   }
 
   /**
    * Disconnect from the WebSocket
    */
   disconnect(): void {
-    this.config.autoReconnect = false; // Prevent automatic reconnection
-    this.cleanup();
-    this._state = 'disconnected';
+    this.shouldBeConnected = false;
+    this.clearReconnectTimer();
+    this.clearConnectionTimeout();
+    this.clearHeartbeat();
+    this._state = "disconnected";
+
+    const socket = this.socket;
+    if (socket?.readyState === WebSocket.CONNECTING || socket?.readyState === WebSocket.OPEN) {
+      socket.close(1000, "Client disconnect");
+    }
   }
 
   /**
@@ -155,14 +168,14 @@ export class RVCWebSocketClient {
    */
   send(message: unknown): void {
     if (!this.isConnected) {
-      throw new Error('WebSocket is not connected');
+      throw new Error("WebSocket is not connected");
     }
 
-    const messageStr = typeof message === 'string' ? message : JSON.stringify(message);
+    const messageStr = typeof message === "string" ? message : JSON.stringify(message);
     this.socket!.send(messageStr);
 
     if (env.isDevelopment) {
-      logApiRequest('WS SEND', this.endpoint, message);
+      logApiRequest("WS SEND", this.endpoint, message);
     }
   }
 
@@ -183,76 +196,68 @@ export class RVCWebSocketClient {
   /**
    * Setup WebSocket event handlers
    */
-  private setupEventHandlers(): void {
-    if (!this.socket) return;
+  private setupEventHandlers(socket: WebSocket): void {
+    socket.onopen = () => {
+      if (this.socket !== socket) return;
 
-    this.socket.onopen = () => {
       this.clearConnectionTimeout();
-      this._state = 'connected';
+      this._state = "connected";
       this.reconnectAttempts = 0;
 
       if (env.isDevelopment) {
         logApiResponse(`WS CONNECTED`, this.endpoint);
       }
 
-      DEBUG_WS.log('WebSocket connected:', this.endpoint);
+      DEBUG_WS.log("WebSocket connected:", this.endpoint);
 
       this.setupHeartbeat();
-      this.handlers.onOpen?.();
+      this.invokeHandler("onOpen", this.handlers.onOpen);
     };
 
-    this.socket.onclose = (event) => {
-      this.cleanup();
-      this._state = 'disconnected';
+    socket.onclose = (event) => {
+      if (this.socket !== socket) return;
+
+      this.clearConnectionTimeout();
+      this.clearHeartbeat();
+      this.socket = null;
+      this._state = "disconnected";
 
       // Notify app-level listeners (e.g. CoachConnectionProvider) of close
       // codes so cross-cutting concerns like auth (4401) can react without
       // hijacking this connection's handler chain.
-      if (typeof window !== 'undefined') {
+      if (typeof window !== "undefined") {
         window.dispatchEvent(
-          new CustomEvent('coachiq:ws-close', {
-            detail: { endpoint: this.endpoint, code: event.code, reason: event.reason },
+          new CustomEvent("coachiq:ws-close", {
+            detail: { endpoint: this.endpoint, code: event.code, reason: event.reason }
           })
         );
       }
 
-      // Handle authentication-related closures
-      if (event.code === 1008) { // Policy violation (auth failure)
-        console.warn(`WebSocket authentication failed: ${event.reason}`);
-
-        // If token expired, try to refresh and reconnect
-        if (event.reason?.includes('expired') && tokenStorage.isRefreshTokenValid()) {
-          tokenStorage.attemptTokenRefresh().then((success) => {
-            if (success) {
-              setTimeout(() => this.connect(), 1000);
-            } else {
-              console.error('Token refresh failed');
-              this.handlers.onError?.(new Event('auth_failed'));
-            }
-          }).catch((error) => {
-            console.error('Token refresh failed:', error);
-            this.handlers.onError?.(new Event('auth_failed'));
-          });
-          return;
-        }
-      }
-
       // Only log unexpected closures (not normal 1000 closure)
       if (env.isDevelopment && event.code !== 1000) {
-        console.debug(`🔌 WebSocket closed unexpectedly: ${this.endpoint}`, { code: event.code, reason: event.reason });
+        console.debug(`🔌 WebSocket closed unexpectedly: ${this.endpoint}`, {
+          code: event.code,
+          reason: event.reason
+        });
       }
 
-      DEBUG_WS.log('WebSocket closed:', this.endpoint, { code: event.code, reason: event.reason });
+      DEBUG_WS.log("WebSocket closed:", this.endpoint, { code: event.code, reason: event.reason });
 
-      this.handlers.onClose?.(event);
+      this.invokeHandler("onClose", this.handlers.onClose, event);
 
-      if (this.config.autoReconnect && this.shouldReconnect()) {
+      if (this.handleAuthenticationClose(event)) {
+        return;
+      }
+
+      if (this.shouldBeConnected && this.config.autoReconnect) {
         this.scheduleReconnect();
       }
     };
 
-    this.socket.onerror = (event) => {
-      this._state = 'error';
+    socket.onerror = (event) => {
+      if (this.socket !== socket) return;
+
+      this._state = "error";
 
       // Only log in development mode and avoid logging for common connection issues
       if (env.isDevelopment) {
@@ -263,31 +268,82 @@ export class RVCWebSocketClient {
         }
       }
 
-      DEBUG_WS.log('WebSocket error:', this.endpoint, event);
+      DEBUG_WS.log("WebSocket error:", this.endpoint, event);
 
-      this.handlers.onError?.(event);
+      this.invokeHandler("onError", this.handlers.onError, event);
     };
 
-    this.socket.onmessage = (event) => {
+    socket.onmessage = (event) => {
+      if (this.socket !== socket) return;
+
+      let message: WebSocketMessage;
+
       try {
-        const message: WebSocketMessage = JSON.parse(event.data);
-
-        if (env.isDevelopment) {
-          logApiResponse(`WS MESSAGE ${this.endpoint}`, message);
-        }
-
-        DEBUG_WS.log('WebSocket message received:', this.endpoint, message);
-
-        // Call generic message handler
-        this.handlers.onMessage?.(message);
-
-        // Call specific handlers based on message type
-        this.handleTypedMessage(message as WebSocketMessageType);
+        message = JSON.parse(event.data) as WebSocketMessage;
       } catch (error) {
-        console.error('Failed to parse WebSocket message:', error, event.data);
-        DEBUG_WS.log('Failed to parse WebSocket message:', error, event.data);
+        console.error("Failed to parse WebSocket message:", error, event.data);
+        DEBUG_WS.log("Failed to parse WebSocket message:", error, event.data);
+        return;
       }
+
+      if (env.isDevelopment) {
+        logApiResponse(`WS MESSAGE ${this.endpoint}`, message);
+      }
+
+      DEBUG_WS.log("WebSocket message received:", this.endpoint, message);
+
+      this.invokeHandler("onMessage", this.handlers.onMessage, message);
+      this.handleTypedMessage(message as WebSocketMessageType);
     };
+  }
+
+  /**
+   * Refresh an expired credential before consuming reconnect budget.
+   */
+  private handleAuthenticationClose(event: CloseEvent): boolean {
+    if (event.code !== 1008) return false;
+
+    console.warn(`WebSocket authentication failed: ${event.reason}`);
+
+    if (!event.reason?.includes("expired") || !tokenStorage.isRefreshTokenValid()) {
+      return true;
+    }
+
+    void tokenStorage
+      .attemptTokenRefresh()
+      .then((success) => {
+        if (!this.shouldBeConnected) return;
+
+        if (success) {
+          this.scheduleReconnect(1000);
+        } else {
+          console.error("Token refresh failed");
+          this.invokeHandler("onError", this.handlers.onError, new Event("auth_failed"));
+        }
+      })
+      .catch((error: unknown) => {
+        console.error("Token refresh failed:", error);
+        this.invokeHandler("onError", this.handlers.onError, new Event("auth_failed"));
+      });
+
+    return true;
+  }
+
+  /**
+   * Invoke a consumer callback without letting it interrupt transport processing.
+   */
+  private invokeHandler<TArgs extends unknown[]>(
+    name: keyof WebSocketHandlers,
+    handler: ((...args: TArgs) => void) | undefined,
+    ...args: TArgs
+  ): void {
+    if (!handler) return;
+
+    try {
+      handler(...args);
+    } catch (error) {
+      console.error(`WebSocket ${name} handler failed:`, error);
+    }
   }
 
   /**
@@ -295,41 +351,40 @@ export class RVCWebSocketClient {
    */
   private handleTypedMessage(message: WebSocketMessageType): void {
     // Only dispatch typed handlers if a type field is present
-    if (!message || typeof message !== 'object' || !('type' in message)) {
+    if (!message || typeof message !== "object" || !("type" in message)) {
       // No type field: just return silently (message will still be handled by onMessage)
       return;
     }
 
     switch (message.type) {
-      case 'entity_update':
-        this.handlers.onEntityUpdate?.((message as EntityUpdateMessage).data);
+      case "can_message":
+        this.invokeHandler(
+          "onCANMessage",
+          this.handlers.onCANMessage,
+          (message as CANMessageUpdate).data
+        );
         break;
-      case 'can_message':
-        this.handlers.onCANMessage?.((message as CANMessageUpdate).data);
-        break;
-      case 'system_status':
-        this.handlers.onSystemStatus?.((message as SystemStatusMessage).data);
-        break;
-      case 'pong':
-      case 'heartbeat_ack':
+      case "pong":
+      case "heartbeat_ack":
         // Handle heartbeat responses silently
         break;
       default:
         // Handle unknown message types gracefully
-        DEBUG_WS.log('Unknown WebSocket message type:', message.type, message);
+        DEBUG_WS.log("Unknown WebSocket message type:", message.type, message);
     }
   }
 
   /**
    * Setup connection timeout
    */
-  private setupConnectionTimeout(): void {
+  private setupConnectionTimeout(socket: WebSocket): void {
     this.connectionTimer = setTimeout(() => {
-      if (this._state === 'connecting') {
-        this.socket?.close();
-        this._state = 'error';
+      if (this.socket === socket && this._state === "connecting") {
+        this._state = "error";
         console.error(`WebSocket connection timeout: ${this.endpoint}`);
-        DEBUG_WS.log('WebSocket connection timeout:', this.endpoint);
+        DEBUG_WS.log("WebSocket connection timeout:", this.endpoint);
+        this.invokeHandler("onError", this.handlers.onError, new Event("timeout"));
+        socket.close();
       }
     }, this.config.connectionTimeout);
   }
@@ -345,6 +400,16 @@ export class RVCWebSocketClient {
   }
 
   /**
+   * Clear the heartbeat timer.
+   */
+  private clearHeartbeat(): void {
+    if (this.heartbeatTimer) {
+      clearInterval(this.heartbeatTimer);
+      this.heartbeatTimer = null;
+    }
+  }
+
+  /**
    * Setup heartbeat to keep connection alive
    */
   private setupHeartbeat(): void {
@@ -353,65 +418,85 @@ export class RVCWebSocketClient {
     this.heartbeatTimer = setInterval(() => {
       if (this.isConnected) {
         try {
-          this.send({ type: 'ping', timestamp: new Date().toISOString() });
-          DEBUG_WS.log('Heartbeat sent:', this.endpoint);
+          this.send({ type: "ping", timestamp: new Date().toISOString() });
+          DEBUG_WS.log("Heartbeat sent:", this.endpoint);
         } catch (error) {
-          console.warn('Failed to send heartbeat:', error);
-          DEBUG_WS.log('Failed to send heartbeat:', error);
+          console.warn("Failed to send heartbeat:", error);
+          DEBUG_WS.log("Failed to send heartbeat:", error);
         }
       }
     }, this.config.heartbeatInterval);
   }
 
   /**
-   * Determine if we should attempt to reconnect
-   */
-  private shouldReconnect(): boolean {
-    return this.config.maxReconnectAttempts === 0 ||
-           this.reconnectAttempts < this.config.maxReconnectAttempts;
-  }
-
-  /**
    * Schedule a reconnection attempt
    */
-  private scheduleReconnect(): void {
-    if (this.reconnectTimer) {
-      clearTimeout(this.reconnectTimer);
+  private scheduleReconnect(delay = this.config.reconnectDelay): void {
+    if (this.reconnectTimer || !this.shouldBeConnected) return;
+
+    if (
+      this.config.maxReconnectAttempts !== 0 &&
+      this.reconnectAttempts >= this.config.maxReconnectAttempts
+    ) {
+      this._state = "error";
+      this.invokeHandler(
+        "onReconnectExhausted",
+        this.handlers.onReconnectExhausted,
+        this.reconnectAttempts
+      );
+      return;
     }
 
     this.reconnectAttempts++;
 
-    DEBUG_WS.log('Scheduling WebSocket reconnect attempt:', this.reconnectAttempts, this.config.reconnectDelay);
+    DEBUG_WS.log(
+      "Scheduling WebSocket reconnect attempt:",
+      this.reconnectAttempts,
+      this.config.reconnectDelay
+    );
+
+    this.invokeHandler(
+      "onReconnectAttempt",
+      this.handlers.onReconnectAttempt,
+      this.reconnectAttempts,
+      this.config.maxReconnectAttempts,
+      delay
+    );
 
     this.reconnectTimer = setTimeout(() => {
-      this.connect();
-    }, this.config.reconnectDelay);
+      this.reconnectTimer = null;
+      if (this.shouldBeConnected) {
+        this.openSocket();
+      }
+    }, delay);
   }
 
   /**
-   * Cleanup timers and connections
+   * Clear a pending reconnect timer.
    */
-  private cleanup(): void {
-    this.clearConnectionTimeout();
-
-    if (this.heartbeatTimer) {
-      clearInterval(this.heartbeatTimer);
-      this.heartbeatTimer = null;
-    }
-
+  private clearReconnectTimer(): void {
     if (this.reconnectTimer) {
       clearTimeout(this.reconnectTimer);
       this.reconnectTimer = null;
     }
+  }
 
-    if (this.socket) {
-      this.socket.onopen = null;
-      this.socket.onclose = null;
-      this.socket.onerror = null;
-      this.socket.onmessage = null;
+  /**
+   * Dispose a superseded socket before opening another one.
+   */
+  private disposeCurrentSocket(): void {
+    this.clearConnectionTimeout();
+    this.clearHeartbeat();
 
-      if (this.socket.readyState === WebSocket.OPEN) {
-        this.socket.close();
+    const socket = this.socket;
+    if (socket) {
+      socket.onopen = null;
+      socket.onclose = null;
+      socket.onerror = null;
+      socket.onmessage = null;
+
+      if (socket.readyState === WebSocket.CONNECTING || socket.readyState === WebSocket.OPEN) {
+        socket.close(1000, "Connection replaced");
       }
 
       this.socket = null;
@@ -429,7 +514,7 @@ export class RVCWebSocketClient {
  * @returns True if WebSocket is available
  */
 export function isWebSocketSupported(): boolean {
-  return typeof WebSocket !== 'undefined';
+  return typeof WebSocket !== "undefined";
 }
 
 /**
@@ -441,14 +526,14 @@ export function isWebSocketSupported(): boolean {
 export function getWebSocketStateString(readyState: number): string {
   switch (readyState) {
     case WebSocket.CONNECTING:
-      return 'connecting';
+      return "connecting";
     case WebSocket.OPEN:
-      return 'open';
+      return "open";
     case WebSocket.CLOSING:
-      return 'closing';
+      return "closing";
     case WebSocket.CLOSED:
-      return 'closed';
+      return "closed";
     default:
-      return 'unknown';
+      return "unknown";
   }
 }

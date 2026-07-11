@@ -223,18 +223,23 @@ class VictronService:
         if updated_entity is None:
             return
 
+        persisted_entity: dict[str, Any] | None = None
         if self._entity_state_repository is not None:
             try:
                 await self._entity_state_repository.save_entity_state(
                     entity_id, updated_entity.to_dict()
                 )
+                persisted_entity = await self._entity_state_repository.get_entity_state(entity_id)
             except Exception as exc:
                 logger.debug("Unable to persist Victron entity %s: %s", entity_id, exc)
 
         if self._event_broker is not None:
             await self._event_broker.publish(
                 "entity_update",
-                {"entity_id": entity_id, "entity_data": updated_entity.to_dict()},
+                {
+                    "entity_id": entity_id,
+                    "entity_data": persisted_entity or updated_entity.to_dict(),
+                },
             )
 
     def _def_for_entity(self, entity_id: str) -> VictronEntityDef | None:

@@ -5,9 +5,49 @@ Pydantic models for aggregated dashboard data and analytics endpoints.
 """
 
 from datetime import datetime
-from typing import Any
+from typing import Any, Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
+
+HomeSectionId = Literal["alerts", "scenes", "power", "zones"]
+
+
+class HomePreferences(BaseModel):
+    """User-specific Home dashboard customization."""
+
+    model_config = ConfigDict(populate_by_name=True)
+
+    favorite_entity_ids: list[str] = Field(
+        default_factory=list,
+        alias="favoriteEntityIds",
+        description="Entity IDs shown first on Home",
+    )
+    section_order: list[HomeSectionId] = Field(
+        default_factory=lambda: ["alerts", "scenes", "power", "zones"],
+        alias="sectionOrder",
+        description="Home sections in display order",
+    )
+    hidden_sections: list[HomeSectionId] = Field(
+        default_factory=list,
+        alias="hiddenSections",
+        description="Home sections hidden by the user",
+    )
+
+
+class DashboardPreferencesUpdate(BaseModel):
+    """Complete synchronized preference payload for the current user."""
+
+    home: HomePreferences = Field(description="Home dashboard customization")
+
+
+class DashboardPreferencesResponse(BaseModel):
+    """Synchronized preferences for the current authenticated user."""
+
+    home: HomePreferences | None = Field(
+        default=None,
+        description="Saved Home customization, or null before the first synchronized update",
+    )
+    updated_at: datetime = Field(description="Last dashboard configuration update time")
 
 
 class EntitySummary(BaseModel):

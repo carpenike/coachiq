@@ -221,16 +221,11 @@ export function AuthProvider({ children }: AuthProviderProps) {
   // Session restore gate: while a stored session may still be revived (token
   // refresh in flight during initializeTokenStorage), AuthGuard must not
   // treat "no valid user yet" as unauthenticated and bounce to /login.
-  const [restoringSession, setRestoringSession] = useState(true);
+  const [restoringSession, setRestoringSession] = useState(false);
 
-  // Initialize token storage and set up refresh callbacks on mount
+  // Register refresh callbacks once. Session restoration starts separately
+  // after the single shared auth-status query resolves.
   useEffect(() => {
-    // Initialize token storage; this awaits an immediate token refresh when
-    // the stored access token is stale, so clearing the gate afterwards means
-    // the session is either revived or genuinely dead.
-    void initializeTokenStorage().finally(() => setRestoringSession(false));
-
-    // Set up refresh callbacks
     setRefreshCallbacks({
       onRefreshSuccess: (_tokens: TokenData) => {
         // Token refreshed successfully - invalidate queries to refresh data
@@ -259,6 +254,19 @@ export function AuthProvider({ children }: AuthProviderProps) {
       cleanupTokenStorage();
     };
   }, [queryClient]);
+
+  useEffect(() => {
+    if (!authStatus) return
+
+    let cancelled = false
+    setRestoringSession(true)
+    void initializeTokenStorage(authStatus).finally(() => {
+      if (!cancelled) setRestoringSession(false)
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [authStatus])
 
   const isLoading = statusLoading || userLoading || restoringSession;
 

@@ -52,7 +52,7 @@ export function ConnectionBanner() {
         variant="outline"
         onClick={retry}
         className={cn(
-          "h-7 shrink-0 gap-1 bg-transparent",
+          "h-11 shrink-0 gap-1 bg-transparent",
           isOffline
             ? "border-red-400 text-red-900 hover:bg-red-100 dark:border-red-800 dark:text-red-200 dark:hover:bg-red-900/40"
             : "border-amber-400 text-amber-900 hover:bg-amber-100 dark:border-amber-800 dark:text-amber-200 dark:hover:bg-amber-900/40"

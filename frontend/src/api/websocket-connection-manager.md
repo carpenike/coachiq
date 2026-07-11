@@ -1,40 +1,35 @@
-# WebSocket Connection Manager
+# Diagnostic WebSocket Connection Manager
 
-## Problem
+CoachIQ uses WebSockets only for page-scoped diagnostic streams such as CAN
+sniffing, recording, analysis, and filtering. App-wide realtime state uses the
+SSE-based `RealtimeProvider` and must not acquire connections through this manager.
 
-React StrictMode causes components to be mounted twice in development, which leads to duplicate WebSocket connections. This causes "Insufficient resources" errors when too many connections are opened to the same endpoint.
+## Ownership
 
-## Solution
+The manager owns one transport per endpoint. Each `useWebSocket` hook owns a
+lease with independent callbacks and connection demand:
 
-The WebSocketConnectionManager implements a singleton pattern per endpoint with reference counting:
+1. `acquireConnection` creates or reuses the endpoint transport.
+2. `lease.connect()` marks that consumer active and opens the transport if needed.
+3. Transport events fan out only to active leases, so one consumer cannot replace another's callbacks.
+4. `lease.disconnect()` removes only that lease's demand. The transport closes when no lease still wants it.
+5. `lease.release()` is idempotent and removes that consumer's callbacks.
 
-1. **Connection Pooling**: Maintains a single WebSocket connection per endpoint
-2. **Reference Counting**: Tracks how many components are using each connection
-3. **Automatic Cleanup**: Disconnects when the last reference is released
+Final cleanup runs in a microtask. A React StrictMode unmount/remount in the same
+turn can therefore reclaim the existing transport without opening a duplicate.
 
-## How It Works
+## Example
 
 ```typescript
-// First component mount
-const client1 = connectionManager.getConnection('/ws/features', handlers, config);
-// Creates new connection, refCount = 1
+const lease = connectionManager.acquireConnection("/ws/can-sniffer", handlers, config);
 
-// Second component mount (StrictMode)
-const client2 = connectionManager.getConnection('/ws/features', handlers, config);
-// Returns same connection, refCount = 2
+lease.connect();
+lease.client.send({ type: "set_filter", canId: 0x1fedb });
 
-// First component unmount
-connectionManager.releaseConnection('/ws/features');
-// refCount = 1, connection stays open
-
-// Second component unmount
-connectionManager.releaseConnection('/ws/features');
-// refCount = 0, connection closed
+// Hook cleanup
+lease.release();
 ```
 
-## Benefits
-
-- Prevents duplicate connections in React StrictMode
-- Reduces resource usage
-- Maintains connection stability
-- Transparent to consuming components
+`RVCWebSocketClient` owns native socket lifecycle, heartbeat, authentication
+refresh, reconnect timers, and retry limits. The manager owns sharing. The hook
+only maps deterministic transport callbacks into React state and metrics.

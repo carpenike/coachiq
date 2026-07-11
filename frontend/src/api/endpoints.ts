@@ -20,6 +20,7 @@ import type {
     ActivityFeed,
     AllCANStats,
     BaselineDeviation,
+    AuthStatus,
     BulkOperationPayload,
     BulkOperationRequest,
     BulkOperationResponse,
@@ -1534,23 +1535,11 @@ export async function getCurrentUser(): Promise<User> {
  *
  * @returns Promise resolving to auth status
  */
-export async function getAuthStatus(): Promise<{
-  enabled: boolean;
-  mode: string;
-  jwt_available: boolean;
-  magic_links_enabled: boolean;
-  oidc_enabled: boolean;
-}> {
+export async function getAuthStatus(): Promise<AuthStatus> {
   const url = '/api/auth/status';
 
   logApiRequest('GET', url);
-  const result = await apiGet<{
-    enabled: boolean;
-    mode: string;
-    jwt_available: boolean;
-    magic_links_enabled: boolean;
-    oidc_enabled: boolean;
-  }>(url);
+  const result = await apiGet<AuthStatus>(url);
   logApiResponse(url, result);
 
   return result;

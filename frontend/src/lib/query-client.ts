@@ -7,6 +7,7 @@
 
 import { QueryClient } from '@tanstack/react-query';
 import { APIClientError } from '../api';
+import { OFFLINE_ENTITY_CACHE_MAX_AGE_MS } from './offline-query-persistence';
 
 /**
  * Default stale time for different types of data
@@ -37,6 +38,9 @@ export function createQueryClient(): QueryClient {
         // Default stale time for all queries
         staleTime: STALE_TIMES.ENTITIES,
 
+        // Keep restored last-known entity data available throughout offline use.
+        gcTime: OFFLINE_ENTITY_CACHE_MAX_AGE_MS,
+
         // Retry configuration
         retry: (failureCount, error) => {
           // Don't retry 4xx errors (client errors)
@@ -62,6 +66,9 @@ export function createQueryClient(): QueryClient {
       },
 
       mutations: {
+        // Run immediately so offline controls fail instead of pausing until reconnect.
+        networkMode: 'always',
+
         // Retry mutations once for network errors
         retry: (failureCount, error) => {
           if (error instanceof APIClientError && error.status >= 400 && error.status < 500) {

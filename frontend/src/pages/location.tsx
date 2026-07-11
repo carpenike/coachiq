@@ -271,12 +271,13 @@ function useTripReplay(points: ITripPoint[], tripKey: number | null): ITripRepla
 
 function ReplayBar({ replay }: Readonly<{ replay: ITripReplay }>) {
   return (
-    <div className="flex items-center gap-3 border-t bg-card px-3 py-2">
+    <div className="grid grid-cols-[auto_1fr_auto] items-center gap-x-3 gap-y-2 border-t bg-card px-3 py-2 sm:grid-cols-[auto_auto_1fr_auto_auto_auto]">
       <Button
-        variant="ghost"
+        variant={replay.playing ? "secondary" : "ghost"}
         size="icon"
-        className="size-8 shrink-0"
+        className="size-11 shrink-0"
         aria-label={replay.playing ? "Pause replay" : "Play replay"}
+        aria-pressed={replay.playing}
         onClick={replay.toggle}
       >
         {replay.playing ? (
@@ -285,7 +286,7 @@ function ReplayBar({ replay }: Readonly<{ replay: ITripReplay }>) {
           <IconPlayerPlay className="size-4" />
         )}
       </Button>
-      <span className="shrink-0 text-xs tabular-nums text-muted-foreground">
+      <span className="shrink-0 text-xs tabular-nums text-muted-foreground sm:block">
         {fmtClock(replay.startTs + replay.elapsed)}
       </span>
       <Slider
@@ -293,19 +294,19 @@ function ReplayBar({ replay }: Readonly<{ replay: ITripReplay }>) {
         max={replay.duration}
         step={1}
         onValueChange={(values) => replay.seek(values[0] ?? 0)}
-        className="flex-1"
+        className="col-span-3 min-h-11 py-4 sm:col-span-1"
         aria-label="Replay position"
       />
-      <span className="shrink-0 text-xs tabular-nums text-muted-foreground">
+      <span className="hidden shrink-0 text-xs tabular-nums text-muted-foreground sm:block">
         {fmtClock(replay.startTs + replay.duration)}
       </span>
-      <span className="w-16 shrink-0 text-right text-sm font-medium tabular-nums">
+      <span className="w-16 shrink-0 text-right text-sm font-medium tabular-nums sm:block">
         {fmtMph(replay.position?.speedMps ?? null)}
       </span>
       <Button
         variant="outline"
         size="sm"
-        className="w-14 shrink-0 tabular-nums"
+        className="h-11 w-14 shrink-0 tabular-nums"
         onClick={replay.cycleSpeed}
         aria-label={`Replay speed ${replay.multiplier}x`}
       >
@@ -432,7 +433,7 @@ interface ITripRowProps {
 }
 
 /** Icon button whose action needs a second tap to confirm. */
-function ConfirmingIconButton({
+export function ConfirmingIconButton({
   icon,
   label,
   confirmLabel,
@@ -455,9 +456,9 @@ function ConfirmingIconButton({
   return (
     <Button
       variant="ghost"
-      size="icon"
+      size={confirming ? "sm" : "icon"}
       className={cn(
-        "size-7 text-muted-foreground",
+        "h-11 min-w-11 text-muted-foreground",
         confirming && "bg-destructive/10 text-destructive"
       )}
       aria-label={confirming ? confirmLabel : label}
@@ -472,6 +473,7 @@ function ConfirmingIconButton({
       }}
     >
       {icon}
+      {confirming && <span className="ml-1.5">{confirmLabel}</span>}
     </Button>
   )
 }
@@ -498,12 +500,16 @@ function TripRow({
   return (
     <div
       className={cn(
-        "flex w-full items-center justify-between gap-2 rounded-md px-2 py-2 text-sm transition-colors hover:bg-muted",
+        "flex w-full flex-col gap-2 rounded-md px-2 py-3 text-sm transition-colors hover:bg-muted sm:flex-row sm:items-center sm:justify-between",
         selected && "bg-muted"
       )}
     >
-      <button type="button" onClick={onSelect} className="min-w-0 flex-1 text-left">
-        <p className="truncate font-medium">
+      <button
+        type="button"
+        onClick={onSelect}
+        className="min-h-11 min-w-0 flex-1 py-1 text-left"
+      >
+        <p className="break-words font-medium leading-snug">
           {tripTitle(trip)}
           {trip.active && (
             <Badge variant="default" className="ml-2 text-xs">
@@ -511,17 +517,19 @@ function TripRow({
             </Badge>
           )}
         </p>
-        <p className="truncate text-xs text-muted-foreground">
+        <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
           {named && `${fmtTripDate(trip.started_at)} · `}
           {fmtDuration(trip.started_at, trip.ended_at)} · max {fmtMph(trip.max_speed_mps)}
         </p>
       </button>
-      <div className="flex shrink-0 items-center gap-1">
-        <span className="mr-1 font-medium tabular-nums">{fmtMiles(trip.distance_m)}</span>
+      <div className="flex min-w-0 flex-wrap items-center justify-end gap-1 self-stretch sm:shrink-0 sm:self-auto">
+        <span className="mr-auto font-medium tabular-nums sm:mr-1">
+          {fmtMiles(trip.distance_m)}
+        </span>
         <Button
           variant="ghost"
           size="icon"
-          className="size-7 text-muted-foreground"
+          className="size-11 text-muted-foreground"
           aria-label="Download GPX"
           onClick={() => void handleDownload()}
         >
@@ -601,7 +609,7 @@ function MapCard({
           <Button
             variant={showRaw ? "secondary" : "default"}
             size="sm"
-            className="absolute left-2 top-2 z-[1000] h-8 gap-1 px-2 shadow"
+            className="absolute left-2 top-2 z-[1000] h-11 gap-1 px-3 shadow"
             aria-label={showRaw ? "Show snapped-to-road track" : "Show raw GPS track"}
             title={showRaw ? "Showing raw GPS — tap for snapped" : "Showing snapped — tap for raw"}
             onClick={onToggleRaw}
@@ -614,7 +622,7 @@ function MapCard({
           <Button
             variant={follow ? "default" : "secondary"}
             size="icon"
-            className="absolute right-2 top-2 z-[1000] size-8 shadow"
+            className="absolute right-2 top-2 z-[1000] size-11 shadow"
             aria-label={follow ? "Stop following position" : "Follow position"}
             title={follow ? "Stop following" : "Follow the coach"}
             onClick={onToggleFollow}

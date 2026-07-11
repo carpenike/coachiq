@@ -33,6 +33,7 @@ class EntityConfig(TypedDict, total=False):
     # empty/absent means command only the primary `instance`.
     command_instances: list[int]
     command_dgn: str
+    read_only: bool
     status_dgn: str
     status_source_addr: int
     status_instance: int
@@ -73,6 +74,8 @@ class EntityState(BaseModel):
         default_factory=list,
         description="Extra dimmer instances to fan a command out to (multi-channel lights)",
     )
+    command_dgn: str | None = Field(None, description="Configured command DGN")
+    read_only: bool = Field(False, description="Whether command emission is disabled")
 
 
 class Entity:
@@ -121,6 +124,8 @@ class Entity:
             protocol_metadata=config.get("protocol_metadata", {}),
             instance=config.get("instance"),
             command_instances=list(config.get("command_instances", [])),
+            command_dgn=config.get("command_dgn"),
+            read_only=config.get("read_only", False),
         )
 
         # Add initial state to history

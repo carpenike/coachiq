@@ -29,26 +29,7 @@ import {
   IconTool,
   IconWifi,
 } from "@tabler/icons-react"
-import type { ReactElement } from "react"
-
-import AdminPage from "@/pages/admin"
-import HomePage from "@/pages/home"
-// Temporary routings to old pages (to be replaced by later agents):
-import CanSniffer from "@/pages/can-sniffer"
-import CanTools from "@/pages/can-tools"
-import DeviceMapping from "@/pages/device-mapping"
-import ClimatePage from "@/pages/climate"
-import DevicesPage from "@/pages/devices"
-import DiagnosticsPage from "@/pages/diagnostics"
-import Lights from "@/pages/lights"
-import LocationPage from "@/pages/location"
-import NetworkMap from "@/pages/network-map"
-import PowerPage from "@/pages/power"
-import RVCSpec from "@/pages/rvc-spec"
-import AccountPage from "@/pages/account"
-import SystemPage from "@/pages/system"
-import UnknownPGNs from "@/pages/unknown-pgns"
-import UnmappedEntries from "@/pages/unmapped-entries"
+import { lazy, Suspense, type ComponentType, type ReactElement } from "react"
 
 export type RouteSection = "owner" | "advanced" | "account"
 
@@ -60,33 +41,75 @@ export interface IAppRoute {
   icon: Icon
   section: RouteSection
   element: ReactElement
+  /** Warm the route module without rendering it. */
+  preload: () => Promise<unknown>
   /** Only render in nav / allow for admin users */
   adminOnly?: boolean
 }
 
+interface IPageModule {
+  default: ComponentType
+}
+type PageLoader = () => Promise<IPageModule>
+
+export function RouteLoadingFallback({ title }: Readonly<{ title: string }>) {
+  return (
+    <div
+      className="flex min-h-48 items-center justify-center gap-3 p-6 text-sm text-muted-foreground"
+      role="status"
+      aria-live="polite"
+      aria-busy="true"
+    >
+      <span
+        className="size-5 animate-spin rounded-full border-2 border-muted border-t-primary motion-reduce:animate-none"
+        aria-hidden="true"
+      />
+      <span>Loading {title}...</span>
+    </div>
+  )
+}
+
+function lazyPage(title: string, preload: PageLoader) {
+  let modulePromise: Promise<IPageModule> | undefined
+  const load = () => {
+    modulePromise ??= preload()
+    return modulePromise
+  }
+  const Page = lazy(load)
+
+  return {
+    element: (
+      <Suspense fallback={<RouteLoadingFallback title={title} />}>
+        <Page />
+      </Suspense>
+    ),
+    preload: load,
+  }
+}
+
 export const appRoutes: IAppRoute[] = [
   // ===== Owner section =====
-  { path: "/", title: "Home", icon: IconHome, section: "owner", element: <HomePage /> },
-  { path: "/lights", title: "Lights", icon: IconBulb, section: "owner", element: <Lights /> },
-  { path: "/climate", title: "Climate", icon: IconTemperature, section: "owner", element: <ClimatePage /> },
-  { path: "/power", title: "Power", icon: IconBolt, section: "owner", element: <PowerPage /> },
-  { path: "/location", title: "Location", icon: IconRoute, section: "owner", element: <LocationPage /> },
-  { path: "/devices", title: "Devices", icon: IconCpu, section: "owner", element: <DevicesPage /> },
-  { path: "/diagnostics", title: "Diagnostics", icon: IconStethoscope, section: "owner", element: <DiagnosticsPage /> },
-  { path: "/system", title: "System", icon: IconListDetails, section: "owner", element: <SystemPage /> },
+  { path: "/", title: "Home", icon: IconHome, section: "owner", ...lazyPage("Home", () => import("@/pages/home")) },
+  { path: "/lights", title: "Lights", icon: IconBulb, section: "owner", ...lazyPage("Lights", () => import("@/pages/lights")) },
+  { path: "/climate", title: "Climate", icon: IconTemperature, section: "owner", ...lazyPage("Climate", () => import("@/pages/climate")) },
+  { path: "/power", title: "Power", icon: IconBolt, section: "owner", ...lazyPage("Power", () => import("@/pages/power")) },
+  { path: "/location", title: "Location", icon: IconRoute, section: "owner", ...lazyPage("Location", () => import("@/pages/location")) },
+  { path: "/devices", title: "Devices", icon: IconCpu, section: "owner", ...lazyPage("Devices", () => import("@/pages/devices")) },
+  { path: "/diagnostics", title: "Diagnostics", icon: IconStethoscope, section: "owner", ...lazyPage("Diagnostics", () => import("@/pages/diagnostics")) },
+  { path: "/system", title: "System", icon: IconListDetails, section: "owner", ...lazyPage("System", () => import("@/pages/system")) },
 
   // ===== Advanced (technician) section =====
-  { path: "/advanced/can-sniffer", title: "CAN Sniffer", icon: IconWifi, section: "advanced", element: <CanSniffer /> },
-  { path: "/advanced/can-tools", title: "CAN Tools", icon: IconTool, section: "advanced", element: <CanTools /> },
-  { path: "/advanced/network-map", title: "Network Map", icon: IconMapPin, section: "advanced", element: <NetworkMap /> },
-  { path: "/advanced/unknown-pgns", title: "Unknown PGNs", icon: IconQuestionMark, section: "advanced", element: <UnknownPGNs /> },
-  { path: "/advanced/unmapped-entries", title: "Unmapped Entries", icon: IconCircuitSwitchOpen, section: "advanced", element: <UnmappedEntries /> },
-  { path: "/advanced/device-mapping", title: "Device Mapping", icon: IconAdjustments, section: "advanced", element: <DeviceMapping /> },
-  { path: "/advanced/rvc-spec", title: "RV-C Spec", icon: IconFileWord, section: "advanced", element: <RVCSpec /> },
+  { path: "/advanced/can-sniffer", title: "CAN Sniffer", icon: IconWifi, section: "advanced", ...lazyPage("CAN Sniffer", () => import("@/pages/can-sniffer")) },
+  { path: "/advanced/can-tools", title: "CAN Tools", icon: IconTool, section: "advanced", ...lazyPage("CAN Tools", () => import("@/pages/can-tools")) },
+  { path: "/advanced/network-map", title: "Network Map", icon: IconMapPin, section: "advanced", ...lazyPage("Network Map", () => import("@/pages/network-map")) },
+  { path: "/advanced/unknown-pgns", title: "Unknown PGNs", icon: IconQuestionMark, section: "advanced", ...lazyPage("Unknown PGNs", () => import("@/pages/unknown-pgns")) },
+  { path: "/advanced/unmapped-entries", title: "Unmapped Entries", icon: IconCircuitSwitchOpen, section: "advanced", ...lazyPage("Unmapped Entries", () => import("@/pages/unmapped-entries")) },
+  { path: "/advanced/device-mapping", title: "Device Mapping", icon: IconAdjustments, section: "advanced", ...lazyPage("Device Mapping", () => import("@/pages/device-mapping")) },
+  { path: "/advanced/rvc-spec", title: "RV-C Spec", icon: IconFileWord, section: "advanced", ...lazyPage("RV-C Spec", () => import("@/pages/rvc-spec")) },
 
   // ===== Account section =====
-  { path: "/account", title: "Account", icon: IconSettings, section: "account", element: <AccountPage /> },
-  { path: "/admin", title: "Admin", icon: IconShield, section: "account", element: <AdminPage />, adminOnly: true },
+  { path: "/account", title: "Account", icon: IconSettings, section: "account", ...lazyPage("Account", () => import("@/pages/account")) },
+  { path: "/admin", title: "Admin", icon: IconShield, section: "account", ...lazyPage("Admin", () => import("@/pages/admin")), adminOnly: true },
 ]
 
 /** Routes for a given sidebar section, in registry order. */

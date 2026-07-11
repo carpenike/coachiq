@@ -30,7 +30,6 @@ import { LogViewerProvider } from "@/components/log-viewer/log-viewer-context"
 import { LogToolbar } from "@/components/log-viewer/LogToolbar"
 import { useLogViewer } from "@/components/log-viewer/useLogViewer"
 import { Badge } from "@/components/ui/badge"
-import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Skeleton } from "@/components/ui/skeleton"
 import {
@@ -139,6 +138,19 @@ function statusBadge(status: string) {
 }
 
 const HEALTHY_STATUSES = new Set(["healthy", "ok", "pass", "operational"])
+const OPTIONAL_UNAVAILABLE_STATUSES = new Set([
+  "disabled",
+  "not_configured",
+  "unavailable",
+  "unknown",
+])
+const OPTIONAL_COMPONENT_IDS = new Set([
+  "analytics_service",
+  "j1939_service",
+  "multi_network_service",
+  "predictive_maintenance_service",
+  "vector_search_service",
+])
 
 /**
  * Humanize an uptime duration. The backend currently reports an epoch
@@ -209,9 +221,11 @@ function ServicesCard() {
   })
 
   const services = data ?? []
-  const healthyCount = services.filter((service) =>
+  const enabledServices = services.filter((service) => service.enabled)
+  const healthyCount = enabledServices.filter((service) =>
     HEALTHY_STATUSES.has(service.status.toLowerCase())
   ).length
+  const optionalUnavailableCount = services.length - enabledServices.length
 
   return (
     <Card>
@@ -219,7 +233,9 @@ function ServicesCard() {
         <CardTitle className="text-base">Services</CardTitle>
         {services.length > 0 && (
           <CardDescription>
-            {healthyCount} of {services.length} healthy
+            {healthyCount} of {enabledServices.length} enabled services healthy
+            {optionalUnavailableCount > 0 &&
+              ` · ${optionalUnavailableCount} optional unavailable`}
           </CardDescription>
         )}
       </CardHeader>
@@ -241,10 +257,10 @@ function ServicesCard() {
                 <div className="flex items-center gap-2">
                   {!service.enabled && (
                     <Badge variant="secondary" className="text-xs">
-                      disabled
+                      optional · unavailable
                     </Badge>
                   )}
-                  {statusBadge(service.status)}
+                  {service.enabled && statusBadge(service.status)}
                 </div>
               </div>
             ))}
@@ -265,9 +281,14 @@ function ComponentHealthCard() {
   })
 
   const components = data?.components ?? []
-  const healthyCount = components.filter((component) =>
+  const isOptionalUnavailable = (component: IComponentHealthInfo) =>
+    OPTIONAL_COMPONENT_IDS.has(component.id) &&
+    OPTIONAL_UNAVAILABLE_STATUSES.has(component.status.toLowerCase())
+  const enabledComponents = components.filter((component) => !isOptionalUnavailable(component))
+  const healthyCount = enabledComponents.filter((component) =>
     HEALTHY_STATUSES.has(component.status.toLowerCase())
   ).length
+  const optionalUnavailableCount = components.length - enabledComponents.length
 
   return (
     <Card>
@@ -275,7 +296,9 @@ function ComponentHealthCard() {
         <CardTitle className="text-base">Component health</CardTitle>
         {components.length > 0 && (
           <CardDescription>
-            {healthyCount} of {components.length} healthy
+            {healthyCount} of {enabledComponents.length} enabled components healthy
+            {optionalUnavailableCount > 0 &&
+              ` · ${optionalUnavailableCount} optional unavailable`}
           </CardDescription>
         )}
       </CardHeader>
@@ -296,10 +319,18 @@ function ComponentHealthCard() {
                 <div className="min-w-0">
                   <p className="truncate text-sm font-medium">{component.name}</p>
                   <p className="truncate text-xs text-muted-foreground">
-                    {titleCase(component.category)} · {component.message}
+                    {titleCase(component.category)} · {isOptionalUnavailable(component)
+                      ? "Optional component is not enabled in this deployment"
+                      : component.message}
                   </p>
                 </div>
-                {statusBadge(component.status)}
+                {isOptionalUnavailable(component) ? (
+                  <Badge variant="secondary" className="shrink-0 text-xs">
+                    optional · unavailable
+                  </Badge>
+                ) : (
+                  statusBadge(component.status)
+                )}
               </div>
             ))}
           </div>
@@ -583,10 +614,10 @@ function CanBusTab() {
 
 /**
  * Body of the log stream with explicit connection states: when the log
- * WebSocket is down, say so — never an endless "Connecting…" spinner.
+ * live stream is down, say so — never an endless "Connecting…" spinner.
  */
 function LogStreamBody() {
-  const { logs, mode, connectionStatus, reconnect } = useLogViewer()
+  const { logs, mode, connectionStatus } = useLogViewer()
 
   if (mode === "live") {
     if (connectionStatus === "error" || connectionStatus === "disconnected") {
@@ -594,14 +625,11 @@ function LogStreamBody() {
         <div className="flex flex-col items-center gap-3 py-12 text-center">
           <IconPlugConnectedX className="size-8 text-destructive" />
           <div>
-            <p className="text-sm font-medium">Log streaming unavailable</p>
+            <p className="text-sm font-medium">Live stream disconnected</p>
             <p className="text-sm text-muted-foreground">
-              WebSocket disconnected — live log entries cannot be received.
+              Live log entries cannot be received until the stream reconnects.
             </p>
           </div>
-          <Button variant="outline" size="sm" onClick={reconnect}>
-            Reconnect
-          </Button>
         </div>
       )
     }

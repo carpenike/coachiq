@@ -5,6 +5,7 @@ This package contains domain-specific API routers for the v1 API architecture.
 Each domain provides enhanced capabilities over the legacy monolithic API.
 
 Domain routers:
+- dashboard: Synchronized dashboard customization
 - entities: Entity management and control operations
 - diagnostics: Diagnostic trouble codes and system health
 - networks: Network topology and device discovery
@@ -58,10 +59,10 @@ def register_all_domain_routers(app: FastAPI) -> None:
 
 # Import domain modules to trigger registration
 try:
-    from . import auth, diagnostics, entities, networks, system
+    from backend.api.domains import auth, dashboard, diagnostics, entities, networks, system
 
     # Explicitly reference imported modules to satisfy linter
-    _domain_modules = [auth, entities, diagnostics, networks, system]
+    _domain_modules = [auth, dashboard, entities, diagnostics, networks, system]
 except ImportError as e:
     logger.warning("⚠️  Some domain modules not available: %s", e)
     _domain_modules = []

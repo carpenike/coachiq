@@ -3,6 +3,7 @@ import tailwindcss from "@tailwindcss/vite";
 import reactPlugin from "@vitejs/plugin-react";
 import path from "path";
 import { defineConfig } from "vite";
+import { VitePWA } from "vite-plugin-pwa";
 import { visualizer } from "rollup-plugin-visualizer";
 
 export default defineConfig({
@@ -11,6 +12,73 @@ export default defineConfig({
     // @ts-expect-error fastRefresh is not in types
     reactPlugin({ fastRefresh: false }),
     tailwindcss(),
+    VitePWA({
+      registerType: "prompt",
+      includeAssets: ["coachiq-icon-192.png", "coachiq-icon-512.png"],
+      manifest: {
+        name: "CoachIQ",
+        short_name: "CoachIQ",
+        description: "Offline-aware RV coach monitoring and control",
+        theme_color: "#111827",
+        background_color: "#111827",
+        display: "standalone",
+        orientation: "any",
+        start_url: "/",
+        scope: "/",
+        icons: [
+          {
+            src: "/coachiq-icon-192.png",
+            sizes: "192x192",
+            type: "image/png"
+          },
+          {
+            src: "/coachiq-icon-512.png",
+            sizes: "512x512",
+            type: "image/png",
+            purpose: "any maskable"
+          }
+        ]
+      },
+      workbox: {
+        navigateFallback: "/index.html",
+        globPatterns: ["**/*.{js,css,html,png,svg,woff2}"],
+        runtimeCaching: [
+          {
+            urlPattern: ({ url }) =>
+              url.pathname.startsWith("/api/") || url.pathname.startsWith("/ws/"),
+            handler: "NetworkOnly",
+            method: "GET"
+          },
+          {
+            urlPattern: ({ url }) =>
+              url.pathname.startsWith("/api/") || url.pathname.startsWith("/ws/"),
+            handler: "NetworkOnly",
+            method: "POST"
+          },
+          {
+            urlPattern: ({ url }) =>
+              url.pathname.startsWith("/api/") || url.pathname.startsWith("/ws/"),
+            handler: "NetworkOnly",
+            method: "PUT"
+          },
+          {
+            urlPattern: ({ url }) =>
+              url.pathname.startsWith("/api/") || url.pathname.startsWith("/ws/"),
+            handler: "NetworkOnly",
+            method: "PATCH"
+          },
+          {
+            urlPattern: ({ url }) =>
+              url.pathname.startsWith("/api/") || url.pathname.startsWith("/ws/"),
+            handler: "NetworkOnly",
+            method: "DELETE"
+          }
+        ]
+      },
+      devOptions: {
+        enabled: false
+      }
+    }),
     // Bundle analyzer for performance optimization
     ...(process.env.ANALYZE === "true"
       ? [
@@ -41,6 +109,7 @@ export default defineConfig({
     globals: true,
     environment: "jsdom",
     setupFiles: ["./src/test/setup.ts"],
+    include: ["src/**/*.{test,spec}.{ts,tsx}"],
     css: true,
   },
   // Development server optimizations to prevent resource exhaustion
@@ -132,8 +201,6 @@ export default defineConfig({
       maxParallelFileOps: 64,
       output: {
         manualChunks: {
-          // Separate vendor libraries for better caching
-          vendor: ['react', 'react-dom'],
           router: ['react-router-dom'],
           ui: ['@radix-ui/react-checkbox', '@radix-ui/react-dialog'],
           charts: ['recharts', '@tanstack/react-table'],

@@ -4,6 +4,7 @@ from collections.abc import Generator
 from unittest.mock import Mock
 
 import pytest
+from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from backend.api.domains import diagnostics as diagnostics_domain
@@ -11,7 +12,6 @@ from backend.core.config import Settings
 from backend.integrations.diagnostics.handler import DiagnosticHandler
 from backend.integrations.diagnostics.models import DTCSeverity, ProtocolType, SystemType
 from backend.integrations.rvc import load_config_data_v2
-from backend.main import app
 from backend.services.can.can_bus_service import CANBusService
 
 pytestmark = [pytest.mark.api, pytest.mark.can]
@@ -62,19 +62,21 @@ def can_bus_service(diagnostic_handler: DiagnosticHandler) -> CANBusService:
 @pytest.fixture
 def diagnostics_client(diagnostic_handler: DiagnosticHandler) -> Generator[TestClient, None, None]:
     """TestClient with diagnostics dependencies overridden."""
-    app.dependency_overrides[diagnostics_domain.get_diagnostics_handler] = (  # type: ignore[attr-defined]
+    test_app = FastAPI()
+    test_app.include_router(
+        diagnostics_domain.create_diagnostics_router(), prefix="/api/v1/diagnostics"
+    )
+    test_app.dependency_overrides[diagnostics_domain.get_diagnostics_handler] = (
         lambda: diagnostic_handler
     )
-    app.dependency_overrides[diagnostics_domain.get_optional_can_facade] = (  # type: ignore[attr-defined]
-        lambda: FakeCANFacade(
-            {"healthy": True, "guardrail_status": "safe", "command_halt_active": False}
-        )
+    test_app.dependency_overrides[diagnostics_domain.get_optional_can_facade] = lambda: (
+        FakeCANFacade({"healthy": True, "guardrail_status": "safe", "command_halt_active": False})
     )
 
-    with TestClient(app=app) as client:
+    with TestClient(app=test_app) as client:
         yield client
 
-    app.dependency_overrides.clear()  # type: ignore[attr-defined]
+    test_app.dependency_overrides.clear()
 
 
 @pytest.mark.asyncio
@@ -175,3 +177,64 @@ def test_v2_system_status_is_computed_not_hardcoded(
     assert "can_bus" in payload["active_systems"]
     assert "diagnostics" in payload["active_systems"]
     assert "diagnostics" in payload["degraded_systems"]
+    assert payload["verdict"] == {
+        "code": "action_required",
+        "label": "Action required",
+        "severity": "critical",
+        "reason_codes": ["active_high_dtc"],
+        "requires_attention": True,
+        "data_freshness": "current",
+    }
+
+
+def test_diagnostics_verdict_precedence() -> None:
+    """Offline/unavailable, urgent DTC, degraded, and healthy precedence is deterministic."""
+    critical_dtc = {"severity": "critical", "active": True, "resolved": False}
+    healthy_can = {
+        "healthy": True,
+        "guardrail_status": "safe",
+        "command_halt_active": False,
+    }
+
+    offline = diagnostics_domain.derive_diagnostics_verdict(
+        can_status={"healthy": False, "guardrail_status": "unsafe"},
+        diagnostics_available=True,
+        active_dtcs=[critical_dtc],
+        degraded_systems=["can_bus", "diagnostics"],
+    )
+    unavailable = diagnostics_domain.derive_diagnostics_verdict(
+        can_status=None,
+        diagnostics_available=True,
+        active_dtcs=[critical_dtc],
+        degraded_systems=["diagnostics"],
+    )
+    urgent = diagnostics_domain.derive_diagnostics_verdict(
+        can_status=healthy_can,
+        diagnostics_available=True,
+        active_dtcs=[critical_dtc],
+        degraded_systems=["diagnostics"],
+    )
+    degraded = diagnostics_domain.derive_diagnostics_verdict(
+        can_status=healthy_can,
+        diagnostics_available=True,
+        active_dtcs=[{"severity": "medium", "active": True, "resolved": False}],
+        degraded_systems=["diagnostics"],
+    )
+    healthy = diagnostics_domain.derive_diagnostics_verdict(
+        can_status=healthy_can,
+        diagnostics_available=True,
+        active_dtcs=[],
+        degraded_systems=[],
+    )
+
+    assert offline.code == "offline"
+    assert offline.reason_codes == ["can_bus_offline"]
+    assert offline.data_freshness == "unavailable"
+    assert unavailable.code == "unavailable"
+    assert unavailable.reason_codes == ["can_status_unavailable"]
+    assert urgent.code == "action_required"
+    assert urgent.reason_codes == ["active_critical_dtc"]
+    assert degraded.code == "degraded"
+    assert degraded.reason_codes == ["active_non_urgent_dtc", "degraded_system"]
+    assert healthy.code == "healthy"
+    assert healthy.requires_attention is False

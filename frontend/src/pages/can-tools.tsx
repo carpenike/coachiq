@@ -5,9 +5,17 @@
  * Currently includes message injection tool with more tools planned.
  */
 
-import { useState, useEffect, useMemo } from 'react';
+import { useMemo, useState } from 'react';
 import { AppLayout } from '@/components/app-layout';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -30,13 +38,11 @@ import {
   IconPlayerPause,
   IconPlayerPlay,
   IconDownload,
-  IconUpload,
   IconTrash,
   IconShield,
   IconInfoCircle,
   IconCheck,
   IconFile,
-  IconClock,
   IconWifi,
   IconWifiOff,
 } from '@tabler/icons-react';
@@ -96,6 +102,132 @@ interface MessageTemplate {
   description: string;
 }
 
+interface IRawInjectionForm {
+  canIdInput: string;
+  dataInput: string;
+  interfaceInput: string;
+  mode: InjectionRequest['mode'];
+  count: string;
+  interval: string;
+  duration: string;
+  description: string;
+  reason: string;
+}
+
+interface IJ1939InjectionForm {
+  pgnInput: string;
+  dataInput: string;
+  priorityInput: string;
+  sourceAddressInput: string;
+  destinationAddressInput: string;
+  interfaceInput: string;
+}
+
+interface IJ1939InjectionRequest {
+  pgn: number;
+  data: string;
+  priority: number;
+  source_address: number;
+  destination_address: number;
+  interface: string;
+  mode: InjectionRequest['mode'];
+}
+
+type PendingInjection =
+  | { kind: 'raw'; request: InjectionRequest }
+  | { kind: 'j1939'; request: IJ1939InjectionRequest };
+
+function parseIntegerInRange(value: string, label: string, min: number, max: number): number {
+  const parsed = Number.parseInt(value, 10);
+  if (!Number.isInteger(parsed) || parsed < min || parsed > max) {
+    throw new Error(`${label} must be between ${min} and ${max}`);
+  }
+  return parsed;
+}
+
+function parseFiniteInRange(value: string, label: string, min: number): number {
+  const parsed = Number.parseFloat(value);
+  if (!Number.isFinite(parsed) || parsed < min) {
+    throw new Error(`${label} must be at least ${min}`);
+  }
+  return parsed;
+}
+
+function normalizeHexData(value: string): string {
+  const cleanData = value.replace(/\s/g, '').toUpperCase();
+  if (!/^[0-9A-F]+$/.test(cleanData) || cleanData.length % 2 !== 0) {
+    throw new Error('Data must contain complete hexadecimal bytes');
+  }
+  if (cleanData.length > 16) {
+    throw new Error('Data must be 8 bytes or fewer');
+  }
+  return cleanData;
+}
+
+export function buildRawInjectionRequest(form: IRawInjectionForm): InjectionRequest {
+  const canId = form.canIdInput.startsWith('0x')
+    ? Number.parseInt(form.canIdInput, 16)
+    : Number.parseInt(form.canIdInput, 10);
+  if (!Number.isInteger(canId) || canId < 0 || canId > 0x1fffffff) {
+    throw new Error('CAN ID must be a valid 11-bit or 29-bit identifier');
+  }
+
+  const cleanReason = form.reason.trim();
+  if (form.mode !== 'single' && cleanReason.length === 0) {
+    throw new Error('A reason is required for burst and periodic injection');
+  }
+
+  const request: InjectionRequest = {
+    can_id: canId,
+    data: normalizeHexData(form.dataInput),
+    interface: form.interfaceInput,
+    mode: form.mode,
+    description: form.description,
+    reason: cleanReason,
+  };
+
+  if (form.mode === 'burst') {
+    request.count = parseIntegerInRange(form.count, 'Message count', 1, 1000);
+  } else if (form.mode === 'periodic') {
+    request.interval = parseFiniteInRange(form.interval, 'Interval', 0.01);
+    request.duration = parseFiniteInRange(form.duration, 'Duration', 0);
+  }
+  return request;
+}
+
+export function buildJ1939InjectionRequest(form: IJ1939InjectionForm): IJ1939InjectionRequest {
+  const pgn = Number.parseInt(form.pgnInput, 16);
+  if (!Number.isInteger(pgn) || pgn < 0 || pgn > 0x3ffff) {
+    throw new Error('PGN must be between 0x00000 and 0x3FFFF');
+  }
+
+  return {
+    pgn,
+    data: normalizeHexData(form.dataInput),
+    priority: parseIntegerInRange(form.priorityInput, 'Priority', 0, 7),
+    source_address: parseIntegerInRange(form.sourceAddressInput, 'Source address', 0, 255),
+    destination_address: parseIntegerInRange(
+      form.destinationAddressInput,
+      'Destination address',
+      0,
+      255
+    ),
+    interface: form.interfaceInput,
+    mode: 'single',
+  };
+}
+
+function injectionSchedule(request: InjectionRequest | IJ1939InjectionRequest): string {
+  if (request.mode === 'burst' && 'count' in request) {
+    return `${request.count ?? 1} messages as a burst`;
+  }
+  if (request.mode === 'periodic' && 'interval' in request) {
+    const duration = request.duration === 0 ? 'until manually stopped' : `for ${request.duration}s`;
+    return `Every ${request.interval}s ${duration}`;
+  }
+  return request.mode === 'single' ? 'One message' : `${request.mode} using endpoint defaults`;
+}
+
 export default function CANToolsPage() {
   const [selectedTab, setSelectedTab] = useState('injector');
   const queryClient = useQueryClient();
@@ -139,6 +271,7 @@ export default function CANToolsPage() {
   const [j1939Priority, setJ1939Priority] = useState('6');
   const [j1939SourceAddr, setJ1939SourceAddr] = useState('254');
   const [j1939DestAddr, setJ1939DestAddr] = useState('255');
+  const [pendingInjection, setPendingInjection] = useState<PendingInjection | null>(null);
 
   // Initialize WebSocket connections based on active tab
   const recorderWS = useCANRecorderWebSocket(selectedTab === 'recorder');
@@ -252,15 +385,8 @@ export default function CANToolsPage() {
 
   // J1939 injection mutation
   const j1939InjectMutation = useMutation({
-    mutationFn: (request: {
-      pgn: number;
-      data: string;
-      priority: number;
-      source_address: number;
-      destination_address: number;
-      interface: string;
-      mode: InjectionRequest['mode'];
-    }) => apiPost<InjectionResponse>('/api/can-tools/inject/j1939', request),
+    mutationFn: (request: IJ1939InjectionRequest) =>
+      apiPost<InjectionResponse>('/api/can-tools/inject/j1939', request),
     onSuccess: (data) => {
       queryClient.invalidateQueries({ queryKey: ['can-tools', 'status'] });
       if (!data.success) {
@@ -373,39 +499,19 @@ export default function CANToolsPage() {
 
   const handleInject = () => {
     try {
-      // Parse CAN ID
-      const canId = canIdInput.startsWith('0x')
-        ? parseInt(canIdInput, 16)
-        : parseInt(canIdInput, 10);
-
-      if (isNaN(canId)) {
-        throw new Error('Invalid CAN ID');
-      }
-
-      // Validate data
-      const cleanData = dataInput.replace(/\s/g, '').toUpperCase();
-      if (!/^[0-9A-F]*$/.test(cleanData) || cleanData.length % 2 !== 0) {
-        throw new Error('Invalid hex data');
-      }
-
-      const request: InjectionRequest = {
-        can_id: canId,
-        data: cleanData,
-        interface: interfaceInput,
+      const request = buildRawInjectionRequest({
+        canIdInput,
+        dataInput,
+        interfaceInput,
         mode,
+        count,
+        interval,
+        duration,
         description,
         reason,
-      };
+      });
 
-      // Add mode-specific parameters
-      if (mode === 'burst') {
-        request.count = parseInt(count);
-      } else if (mode === 'periodic') {
-        request.interval = parseFloat(interval);
-        request.duration = parseFloat(duration);
-      }
-
-      injectMutation.mutate(request);
+      setPendingInjection({ kind: 'raw', request });
     } catch (error) {
       toast.error('Invalid injection request', {
         description: error instanceof Error ? error.message : 'Check the CAN ID and data fields.',
@@ -415,24 +521,16 @@ export default function CANToolsPage() {
 
   const handleJ1939Inject = () => {
     try {
-      const pgn = parseInt(j1939Pgn, 16);
-      if (isNaN(pgn)) {
-        throw new Error('Invalid PGN');
-      }
-
-      const cleanData = dataInput.replace(/\s/g, '').toUpperCase();
-      if (!/^[0-9A-F]*$/.test(cleanData) || cleanData.length % 2 !== 0) {
-        throw new Error('Invalid hex data');
-      }
-
-      j1939InjectMutation.mutate({
-        pgn,
-        data: cleanData,
-        priority: parseInt(j1939Priority),
-        source_address: parseInt(j1939SourceAddr),
-        destination_address: parseInt(j1939DestAddr),
-        interface: interfaceInput,
-        mode,
+      setPendingInjection({
+        kind: 'j1939',
+        request: buildJ1939InjectionRequest({
+          pgnInput: j1939Pgn,
+          dataInput,
+          priorityInput: j1939Priority,
+          sourceAddressInput: j1939SourceAddr,
+          destinationAddressInput: j1939DestAddr,
+          interfaceInput,
+        }),
       });
     } catch (error) {
       toast.error('Invalid J1939 request', {
@@ -447,17 +545,27 @@ export default function CANToolsPage() {
     setDescription(template.description);
   };
 
+  const confirmInjection = () => {
+    if (!pendingInjection) return;
+    if (pendingInjection.kind === 'raw') {
+      injectMutation.mutate(pendingInjection.request);
+    } else {
+      j1939InjectMutation.mutate(pendingInjection.request);
+    }
+    setPendingInjection(null);
+  };
+
   return (
     <AppLayout>
-      <div className="flex-1 space-y-4 p-4 md:p-8 pt-6">
+      <div className="min-w-0 flex-1 space-y-4 overflow-x-hidden p-4 pt-6 md:p-8 md:pt-6">
         {/* Header (title comes from the app shell) */}
-        <div className="flex justify-between items-center">
+        <div className="flex min-w-0 flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <div>
             <p className="text-muted-foreground">
               Advanced CAN bus utilities for testing and diagnostics
             </p>
           </div>
-          <div className="flex items-center gap-4">
+          <div className="flex min-w-0 flex-wrap items-center gap-2 sm:justify-end">
             {/* WebSocket Connection Status */}
             {selectedTab === 'recorder' && (
               <Badge variant={recorderWS.state === 'connected' ? 'default' : 'secondary'}>
@@ -517,8 +625,8 @@ export default function CANToolsPage() {
           <IconAlertTriangle className="h-4 w-4" />
           <AlertTitle>Safety Warning</AlertTitle>
           <AlertDescription>
-            CAN message injection can affect vehicle systems. Use with caution and only for
-            legitimate testing and diagnostics. Always ensure vehicle is in a safe state.
+            Raw CAN injection can change coach systems or add bus load. Use it only for
+            legitimate diagnostics; Firefly remains the physical control authority.
           </AlertDescription>
         </Alert>
 
@@ -526,15 +634,15 @@ export default function CANToolsPage() {
         {statusQuery.data && (
           <Card>
             <CardHeader className="pb-3">
-              <div className="flex items-center justify-between">
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                 <CardTitle className="text-base">Injector Status</CardTitle>
-                <div className="flex items-center gap-2">
+                <div className="flex flex-col gap-1.5 sm:flex-row sm:items-center sm:gap-2">
                   <Label className="whitespace-nowrap">Safety Level:</Label>
                   <Select
                     value={statusQuery.data.safety_level}
                     onValueChange={(value) => safetyMutation.mutate(value)}
                   >
-                    <SelectTrigger className="w-44">
+                    <SelectTrigger className="w-full sm:w-44">
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
@@ -597,15 +705,17 @@ export default function CANToolsPage() {
         )}
 
         {/* Main Tabs */}
-        <Tabs value={selectedTab} onValueChange={setSelectedTab} className="space-y-4">
-          <TabsList>
-            <TabsTrigger value="injector">Message Injector</TabsTrigger>
-            <TabsTrigger value="recorder">Recorder</TabsTrigger>
-            <TabsTrigger value="analyzer">Analyzer</TabsTrigger>
-            <TabsTrigger value="filter">Filter</TabsTrigger>
-            <TabsTrigger value="j1939">J1939 Helper</TabsTrigger>
-            <TabsTrigger value="templates">Templates</TabsTrigger>
-          </TabsList>
+        <Tabs value={selectedTab} onValueChange={setSelectedTab} className="min-w-0 space-y-4">
+          <div className="max-w-full overflow-x-auto overscroll-x-contain pb-1 [scrollbar-width:thin]">
+            <TabsList className="w-max min-w-full justify-start">
+              <TabsTrigger value="injector">Message Injector</TabsTrigger>
+              <TabsTrigger value="recorder">Recorder</TabsTrigger>
+              <TabsTrigger value="analyzer">Analyzer</TabsTrigger>
+              <TabsTrigger value="filter">Filter</TabsTrigger>
+              <TabsTrigger value="j1939">J1939 Helper</TabsTrigger>
+              <TabsTrigger value="templates">Templates</TabsTrigger>
+            </TabsList>
+          </div>
 
           <TabsContent value="injector" className="space-y-4">
             <Card>
@@ -657,7 +767,10 @@ export default function CANToolsPage() {
 
                 <div className="space-y-2">
                   <Label>Injection Mode</Label>
-                  <RadioGroup value={mode} onValueChange={(v) => setMode(v as any)}>
+                  <RadioGroup
+                    value={mode}
+                    onValueChange={(value) => setMode(value as InjectionRequest['mode'])}
+                  >
                     <div className="flex items-center space-x-2">
                       <RadioGroupItem value="single" id="single" />
                       <Label htmlFor="single">Single - Send one message</Label>
@@ -727,7 +840,9 @@ export default function CANToolsPage() {
                 </div>
 
                 <div className="space-y-2">
-                  <Label htmlFor="reason">Reason (optional)</Label>
+                  <Label htmlFor="reason">
+                    Reason {mode === 'single' ? '(optional)' : '(required)'}
+                  </Label>
                   <Textarea
                     id="reason"
                     placeholder="Why are you sending this message?"
@@ -737,13 +852,13 @@ export default function CANToolsPage() {
                   />
                 </div>
 
-                <div className="flex gap-2">
+                <div className="flex min-w-0 gap-2">
                   <Button
                     onClick={handleInject}
                     disabled={injectMutation.isPending || !canIdInput || !dataInput}
                   >
                     <IconSend className="mr-2 h-4 w-4" />
-                    Inject Message
+                    Review Injection
                   </Button>
                 </div>
 
@@ -1343,7 +1458,7 @@ export default function CANToolsPage() {
                 <div className="space-y-2">
                   <Label>Conditions</Label>
                   {filterConditions.map((condition, index) => (
-                    <div key={index} className="flex gap-2">
+                    <div key={index} className="grid min-w-0 gap-2 sm:grid-cols-[10rem_8rem_minmax(0,1fr)_auto]">
                       <Select
                         value={condition.field}
                         onValueChange={(value) => {
@@ -1354,7 +1469,7 @@ export default function CANToolsPage() {
                           }
                         }}
                       >
-                        <SelectTrigger className="w-40">
+                        <SelectTrigger className="w-full min-w-0">
                           <SelectValue />
                         </SelectTrigger>
                         <SelectContent>
@@ -1377,7 +1492,7 @@ export default function CANToolsPage() {
                           }
                         }}
                       >
-                        <SelectTrigger className="w-32">
+                        <SelectTrigger className="w-full min-w-0">
                           <SelectValue />
                         </SelectTrigger>
                         <SelectContent>
@@ -1398,7 +1513,7 @@ export default function CANToolsPage() {
                             setFilterConditions(newConditions);
                           }
                         }}
-                        className="flex-1"
+                        className="min-w-0"
                       />
 
                       <Button
@@ -1562,7 +1677,7 @@ export default function CANToolsPage() {
               <CardHeader>
                 <CardTitle>J1939 Message Helper</CardTitle>
                 <CardDescription>
-                  Simplified J1939 message injection with automatic CAN ID generation
+                  Send one J1939 message with automatic CAN ID generation
                 </CardDescription>
               </CardHeader>
               <CardContent className="space-y-4">
@@ -1614,13 +1729,13 @@ export default function CANToolsPage() {
                   </div>
                 </div>
 
-                <div className="flex gap-2">
+                <div className="flex min-w-0 gap-2">
                   <Button
                     onClick={handleJ1939Inject}
                     disabled={j1939InjectMutation.isPending || !j1939Pgn || !dataInput}
                   >
                     <IconSend className="mr-2 h-4 w-4" />
-                    Send J1939 Message
+                    Review J1939 Message
                   </Button>
                 </div>
               </CardContent>
@@ -1661,6 +1776,56 @@ export default function CANToolsPage() {
             </Card>
           </TabsContent>
         </Tabs>
+
+        <Dialog
+          open={pendingInjection !== null}
+          onOpenChange={(open) => !open && setPendingInjection(null)}
+        >
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>Review CAN injection</DialogTitle>
+              <DialogDescription>
+                This sends raw traffic to the selected CAN interface. Verify every field before
+                continuing.
+              </DialogDescription>
+            </DialogHeader>
+            {pendingInjection && (
+              <dl className="grid grid-cols-[auto_minmax(0,1fr)] gap-x-4 gap-y-2 rounded-md border p-4 text-sm">
+                <dt className="text-muted-foreground">Message</dt>
+                <dd className="min-w-0 break-all font-mono">
+                  {pendingInjection.kind === 'raw'
+                    ? `CAN 0x${pendingInjection.request.can_id.toString(16).toUpperCase()}`
+                    : `J1939 PGN 0x${pendingInjection.request.pgn.toString(16).toUpperCase()}`}
+                </dd>
+                <dt className="text-muted-foreground">Data</dt>
+                <dd className="min-w-0 break-all font-mono">{pendingInjection.request.data}</dd>
+                <dt className="text-muted-foreground">Interface</dt>
+                <dd>{pendingInjection.request.interface}</dd>
+                <dt className="text-muted-foreground">Schedule</dt>
+                <dd>{injectionSchedule(pendingInjection.request)}</dd>
+                <dt className="text-muted-foreground">Reason</dt>
+                <dd className="min-w-0 break-words">
+                  {pendingInjection.kind === 'raw'
+                    ? pendingInjection.request.reason || 'Not provided for single message'
+                    : 'J1939 message injection (recorded by backend)'}
+                </dd>
+              </dl>
+            )}
+            <DialogFooter>
+              <Button variant="outline" onClick={() => setPendingInjection(null)}>
+                Cancel
+              </Button>
+              <Button
+                variant="destructive"
+                onClick={confirmInjection}
+                disabled={injectMutation.isPending || j1939InjectMutation.isPending}
+              >
+                <IconSend className="mr-2 h-4 w-4" />
+                Confirm and send
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
       </div>
     </AppLayout>
   );

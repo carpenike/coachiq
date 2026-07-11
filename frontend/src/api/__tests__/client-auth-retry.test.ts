@@ -20,7 +20,6 @@ const refreshTokenAPI = vi.fn<(token: string) => Promise<RefreshTokenResponse>>(
 vi.mock('@/api/endpoints', () => ({
   refreshToken: (token: string) => refreshTokenAPI(token),
   revokeRefreshToken: vi.fn().mockResolvedValue(undefined),
-  getAuthStatus: vi.fn().mockResolvedValue({ enabled: true, mode: 'multi' }),
 }))
 
 // Import AFTER the mock so the modules under test bind to the mocked endpoints.

@@ -16,24 +16,41 @@ from pydantic import BaseModel, Field
 
 
 class EntitySchemaV2(BaseModel):
-    """Enhanced entity schema with comprehensive metadata"""
+    """Canonical entity response schema for the Domain API."""
 
     entity_id: str = Field(..., description="Unique entity identifier")
     name: str = Field(..., description="Human-readable entity name")
     device_type: str = Field(..., description="Device type: light, lock, tank, etc.")
     protocol: str = Field(..., description="Communication protocol: rvc, j1939, etc.")
-    state: dict[str, Any] = Field(..., description="Current entity state")
-    last_updated: str = Field(..., description="ISO datetime of last update")
-    capabilities: list[str] = Field(
-        default_factory=list, description="Available entity capabilities"
+    state: dict[str, Any] = Field(default_factory=dict, description="Current entity state")
+    area: str | None = Field(None, description="Physical area/location")
+    available: bool | None = Field(
+        None,
+        description="Whether the source explicitly reports the entity as available",
     )
-    suggested_area: str | None = Field(None, description="Suggested location/area")
-    groups: list[str] = Field(default_factory=list, description="Entity group memberships")
-    safety_critical: bool = Field(False, description="Whether this entity is safety-critical")
-    guardrail_status: str = Field("unknown", description="Safety validation status")
-    status: str = Field("unknown", description="Entity operational status")
-    last_seen: str | None = Field(None, description="ISO datetime when entity was last seen")
-    metadata: dict[str, Any] = Field(default_factory=dict, description="Additional entity metadata")
+    capabilities: list[str] = Field(
+        default_factory=list, description="Capabilities declared by the entity configuration"
+    )
+    supported_commands: list[str] = Field(
+        default_factory=list,
+        description="Commands explicitly supported by the backend for configured capabilities",
+    )
+    last_updated: str | None = Field(
+        None,
+        description="Compatibility timestamp for the most recent persisted update",
+    )
+    last_seen_at: str | None = Field(
+        None,
+        description="Timestamp when the entity was last observed; falls back to last_updated",
+    )
+    data_received_at: str | None = Field(
+        None,
+        description="Timestamp when CoachIQ received and persisted the latest observation",
+    )
+    state_changed_at: str | None = Field(
+        None,
+        description="Timestamp when operational state last changed",
+    )
 
     @classmethod
     def to_zod_schema(cls) -> dict[str, Any]:
@@ -46,17 +63,19 @@ class EntitySchemaV2(BaseModel):
                 "device_type": {"type": "string"},
                 "protocol": {"type": "string"},
                 "state": {"type": "object"},
-                "last_updated": {"type": "string", "format": "date-time"},
+                "area": {"type": ["string", "null"]},
+                "available": {"type": ["boolean", "null"]},
                 "capabilities": {"type": "array", "items": {"type": "string"}},
-                "suggested_area": {"type": ["string", "null"]},
-                "groups": {"type": "array", "items": {"type": "string"}},
-                "safety_critical": {"type": "boolean", "default": False},
-                "guardrail_status": {"type": "string"},
-                "status": {"type": "string"},
-                "last_seen": {"type": ["string", "null"], "format": "date-time"},
-                "metadata": {"type": "object"},
+                "supported_commands": {"type": "array", "items": {"type": "string"}},
+                "last_updated": {"type": ["string", "null"], "format": "date-time"},
+                "last_seen_at": {"type": ["string", "null"], "format": "date-time"},
+                "data_received_at": {"type": ["string", "null"], "format": "date-time"},
+                "state_changed_at": {
+                    "type": ["string", "null"],
+                    "format": "date-time",
+                },
             },
-            "required": ["entity_id", "name", "device_type", "protocol", "state", "last_updated"],
+            "required": ["entity_id", "name", "device_type", "protocol"],
             "additionalProperties": False,
         }
 
@@ -251,7 +270,8 @@ class EntityCollectionSchemaV2(BaseModel):
     entities: list[EntitySchemaV2] = Field(..., description="Collection of entities")
     total_count: int = Field(..., description="Total number of entities available")
     page: int = Field(1, description="Current page number")
-    page_size: int = Field(100, description="Number of entities per page")
+    page_size: int = Field(50, description="Number of entities per page")
+    has_next: bool = Field(False, description="Whether more pages are available")
     filters_applied: dict[str, Any] = Field(default_factory=dict, description="Applied filters")
 
     @classmethod
@@ -263,7 +283,8 @@ class EntityCollectionSchemaV2(BaseModel):
                 "entities": {"type": "array", "items": EntitySchemaV2.to_zod_schema()},
                 "total_count": {"type": "number"},
                 "page": {"type": "number", "default": 1},
-                "page_size": {"type": "number", "default": 100},
+                "page_size": {"type": "number", "default": 50},
+                "has_next": {"type": "boolean", "default": False},
                 "filters_applied": {"type": "object"},
             },
             "required": ["entities", "total_count"],

@@ -145,6 +145,9 @@ class EntityInitializationService:
                     friendly_name=config.get("friendly_name"),
                     capabilities=config.get("capabilities", []),
                     groups=config.get("groups", []),
+                    protocol=config.get("protocol", "rvc"),
+                    command_dgn=config.get("command_dgn"),
+                    read_only=config.get("read_only", False),
                 )
                 # The DGN instance lives in inst_map (keyed by entity_id), not
                 # in the per-entity mapping dict; without it the control path

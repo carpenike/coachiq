@@ -8,6 +8,7 @@
 import type { QueryClient } from '@tanstack/react-query'
 
 import type { EntityCollectionSchema, EntitySchema, LegacyEntity } from '@/api/types/domains'
+import { reconcileEntityCommandLifecycle } from '@/hooks/entity-command-lifecycle'
 import { entitiesQueryKeys } from '@/hooks/useEntities'
 
 export interface IEntityUpdatePayload {
@@ -30,7 +31,13 @@ export interface IEntityUpdatePayload {
  * REST-provided fields (name, protocol, available, area) survive when the SSE
  * payload omits them.
  */
-type SseEntity = Partial<LegacyEntity> & { protocol?: string; last_updated?: string }
+type SseEntity = Partial<LegacyEntity> & {
+  protocol?: string
+  last_updated?: string | null
+  last_seen_at?: string | null
+  data_received_at?: string | null
+  state_changed_at?: string | null
+}
 
 /** Build an EntitySchema from an SSE payload alone (no prior REST entity). */
 function bootstrapEntity(legacy: SseEntity): EntitySchema {
@@ -51,15 +58,21 @@ function toEntitySchema(data: Record<string, unknown>, prev?: EntitySchema): Ent
   const legacy = data as SseEntity
   const base = prev ?? bootstrapEntity(legacy)
   const lastUpdated =
-    typeof legacy.timestamp === 'number'
+    legacy.last_updated ??
+    (typeof legacy.timestamp === 'number'
       ? new Date(legacy.timestamp * 1000).toISOString()
-      : (legacy.last_updated ?? base.last_updated)
+      : (base.last_updated ?? null))
+  const lastSeenAt = legacy.last_seen_at ?? lastUpdated
+  const dataReceivedAt = legacy.data_received_at ?? lastUpdated
 
   // Map the SSE `raw` field values onto `state` — the shape every page reads.
   return {
     ...base,
     state: legacy.raw ?? legacy.value ?? base.state ?? {},
     last_updated: lastUpdated,
+    last_seen_at: lastSeenAt,
+    data_received_at: dataReceivedAt,
+    state_changed_at: legacy.state_changed_at ?? base.state_changed_at ?? null,
     available: true,
   }
 }
@@ -76,9 +89,12 @@ function toEntitySchema(data: Record<string, unknown>, prev?: EntitySchema): Ent
  * on entity_created, which still invalidates.
  */
 export function applyEntityUpdate(client: QueryClient, payload: IEntityUpdatePayload): void {
-  client.setQueryData<EntitySchema>(entitiesQueryKeys.entity(payload.entity_id), (prev) =>
-    toEntitySchema(payload.entity_data, prev)
+  const previousEntity = client.getQueryData<EntitySchema>(
+    entitiesQueryKeys.entity(payload.entity_id)
   )
+  const updatedEntity = toEntitySchema(payload.entity_data, previousEntity)
+  reconcileEntityCommandLifecycle(client, updatedEntity, 'sse')
+  client.setQueryData<EntitySchema>(entitiesQueryKeys.entity(payload.entity_id), updatedEntity)
   client.setQueriesData<EntityCollectionSchema>(
     { queryKey: entitiesQueryKeys.collections() },
     (collection) => {

@@ -17,6 +17,7 @@ The OEM Firefly MIRA panel owns the actual vehicle safety case. See
 """
 
 import logging
+from datetime import UTC, datetime
 from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
@@ -29,6 +30,7 @@ from backend.core.dependencies import (
     get_entity_service,
     root_service_dependency,
 )
+from backend.schemas.entity_schemas import EntityCollectionSchemaV2, EntitySchemaV2
 from backend.services.entities.entity_domain_service import (
     BulkSafetyOperationRequestV2,
     BulkSafetyOperationResultV2,
@@ -43,19 +45,97 @@ get_entity_domain_service = root_service_dependency("entity_domain_service")
 
 logger = logging.getLogger(__name__)
 
+_SUPPORTED_COMMANDS_BY_CAPABILITY: dict[str, dict[str, tuple[str, ...]]] = {
+    "light": {
+        "on_off": ("set", "toggle"),
+        "brightness": ("set", "brightness_up", "brightness_down"),
+    },
+    "climate": {
+        "setpoint": ("set",),
+        "setpoint_heat": ("set",),
+        "setpoint_cool": ("set",),
+        "operating_mode": ("set",),
+        "fan": ("set",),
+        "fan_speed": ("set",),
+    },
+    "ac_load": {"on_off": ("set", "toggle")},
+}
 
-# Domain-specific schemas for v1 API
-class EntitySchemaV2(BaseModel):
-    """Enhanced entity schema for v1 API"""
 
-    entity_id: str = Field(..., description="Unique entity identifier")
-    name: str = Field(..., description="Human-readable entity name")
-    device_type: str = Field(..., description="Device type classification")
-    protocol: str = Field(..., description="Communication protocol")
-    state: dict[str, Any] = Field(default_factory=dict, description="Current entity state")
-    area: str | None = Field(None, description="Physical area/location")
-    last_updated: str = Field(..., description="ISO timestamp of last update")
-    available: bool = Field(True, description="Whether entity is available/responding")
+def _serialize_timestamp(value: object) -> str | None:
+    """Serialize supported source timestamps without inventing a value."""
+    if value is None:
+        return None
+    if isinstance(value, str):
+        return value
+    if isinstance(value, datetime):
+        return value.isoformat()
+    if isinstance(value, int | float):
+        return datetime.fromtimestamp(value, tz=UTC).isoformat().replace("+00:00", "Z")
+    return None
+
+
+def _timestamp_from_payload(
+    entity_data: dict[str, Any], source_fields: tuple[str, ...], fallback: str | None
+) -> str | None:
+    """Return the first present timestamp field, falling back only when all are absent."""
+    for field_name in source_fields:
+        if field_name in entity_data:
+            return _serialize_timestamp(entity_data[field_name])
+    return fallback
+
+
+def _configured_capabilities(entity_data: dict[str, Any]) -> list[str]:
+    """Return only string capabilities supplied by the entity payload."""
+    capabilities = entity_data.get("capabilities")
+    if not isinstance(capabilities, list):
+        return []
+    return [capability for capability in capabilities if isinstance(capability, str)]
+
+
+def _supported_commands(entity_data: dict[str, Any], capabilities: list[str]) -> list[str]:
+    """Map configured capabilities to commands implemented for that device type."""
+    if entity_data.get("read_only") is True or not entity_data.get("command_dgn"):
+        return []
+
+    capability_commands = _SUPPORTED_COMMANDS_BY_CAPABILITY.get(
+        str(entity_data.get("device_type", "")), {}
+    )
+    commands: list[str] = []
+    for capability in capabilities:
+        for command in capability_commands.get(capability, ()):
+            if command not in commands:
+                commands.append(command)
+    return commands
+
+
+def _entity_schema_from_payload(entity_id: str, entity_data: dict[str, Any]) -> EntitySchemaV2:
+    """Adapt an EntityService payload to the canonical API contract."""
+    capabilities = _configured_capabilities(entity_data)
+    raw_state = entity_data.get("raw")
+    state = raw_state if isinstance(raw_state, dict) else {}
+    last_updated = _serialize_timestamp(
+        entity_data.get("last_updated", entity_data.get("timestamp"))
+    )
+    available = entity_data.get("available")
+
+    return EntitySchemaV2(
+        entity_id=entity_id,
+        name=entity_data.get("friendly_name", entity_data.get("name", entity_id)),
+        device_type=entity_data.get("device_type", "unknown"),
+        protocol=entity_data.get("protocol", "rvc"),
+        state=state,
+        area=entity_data.get("area", entity_data.get("suggested_area")),
+        available=available if isinstance(available, bool) else None,
+        capabilities=capabilities,
+        supported_commands=_supported_commands(entity_data, capabilities),
+        last_updated=last_updated,
+        last_seen_at=_timestamp_from_payload(
+            entity_data, ("last_seen_at", "last_seen"), last_updated
+        ),
+        data_received_at=_timestamp_from_payload(entity_data, ("data_received_at",), last_updated),
+        state_changed_at=_timestamp_from_payload(entity_data, ("state_changed_at",), None),
+    )
 
 
 class ControlCommandV2(BaseModel):
@@ -97,17 +177,6 @@ class BulkOperationResultV2(BaseModel):
     failed_count: int = Field(..., description="Number of failed operations")
     results: list[OperationResultV2] = Field(..., description="Per-entity operation results")
     total_execution_time_ms: float = Field(..., description="Total execution time")
-
-
-class EntityCollectionV2(BaseModel):
-    """Paginated entity collection"""
-
-    entities: list[EntitySchemaV2] = Field(..., description="List of entities")
-    total_count: int = Field(..., description="Total entities available")
-    page: int = Field(1, description="Current page number")
-    page_size: int = Field(50, description="Number of entities per page")
-    has_next: bool = Field(False, description="Whether more pages are available")
-    filters_applied: dict[str, Any] = Field(default_factory=dict, description="Applied filters")
 
 
 # Query parameters
@@ -210,7 +279,7 @@ def create_entities_router() -> APIRouter:
             "BulkControlRequest": BulkControlRequestV2.model_json_schema(),
             "OperationResult": OperationResultV2.model_json_schema(),
             "BulkOperationResult": BulkOperationResultV2.model_json_schema(),
-            "EntityCollection": EntityCollectionV2.model_json_schema(),
+            "EntityCollection": EntityCollectionSchemaV2.model_json_schema(),
         }
 
     @router.get("/debug/system-info")
@@ -308,7 +377,16 @@ def create_entities_router() -> APIRouter:
             logger.error(f"Debug info failed: {e}")
             return {"error": str(e), "message": "Debug info collection failed"}
 
-    @router.get("", response_model=EntityCollectionV2)
+    @router.get(
+        "",
+        response_model=EntityCollectionSchemaV2,
+        summary="List entities",
+        description=(
+            "List canonical entity records with configured capabilities, explicitly supported "
+            "commands, availability, and source-backed timestamps."
+        ),
+        response_description="A filtered and paginated collection of canonical entities",
+    )
     async def get_entities(
         request: Request,
         entity_service: Annotated[Any, Depends(get_entity_service)],
@@ -317,7 +395,7 @@ def create_entities_router() -> APIRouter:
         protocol: str | None = Query(None, description="Filter by protocol"),
         page: int = Query(1, ge=1, description="Page number"),
         page_size: int = Query(50, ge=1, le=100, description="Items per page"),
-    ) -> EntityCollectionV2:
+    ) -> EntityCollectionSchemaV2:
         """Get entities with filtering and pagination (v2) - optimized for Pi deployment"""
 
         try:
@@ -327,17 +405,7 @@ def create_entities_router() -> APIRouter:
             # Convert to v2 format and apply filters
             entities_v2 = []
             for entity_id, entity_data in all_entities.items():
-                # Convert legacy entity to v2 schema
-                entity_v2 = EntitySchemaV2(
-                    entity_id=entity_id,
-                    name=entity_data.get("friendly_name", entity_data.get("name", entity_id)),
-                    device_type=entity_data.get("device_type", "unknown"),
-                    protocol=entity_data.get("protocol", "rvc"),
-                    state=entity_data.get("raw", {}),
-                    area=entity_data.get("suggested_area"),
-                    last_updated=entity_data.get("last_updated", "2025-01-11T00:00:00Z"),
-                    available=entity_data.get("available", True),
-                )
+                entity_v2 = _entity_schema_from_payload(entity_id, entity_data)
 
                 # Apply filters
                 if device_type and entity_v2.device_type != device_type:
@@ -355,7 +423,7 @@ def create_entities_router() -> APIRouter:
             end_idx = start_idx + page_size
             paginated_entities = entities_v2[start_idx:end_idx]
 
-            return EntityCollectionV2(
+            return EntityCollectionSchemaV2(
                 entities=paginated_entities,
                 total_count=total_count,
                 page=page,
@@ -517,7 +585,16 @@ def create_entities_router() -> APIRouter:
             logger.error(f"Failed to create entity mapping: {e}")
             raise HTTPException(status_code=500, detail=f"Failed to create entity mapping: {e!s}")
 
-    @router.get("/{entity_id}", response_model=EntitySchemaV2)
+    @router.get(
+        "/{entity_id}",
+        response_model=EntitySchemaV2,
+        summary="Get an entity",
+        description=(
+            "Get one canonical entity record using the same capability, command, availability, "
+            "and timestamp semantics as the collection endpoint."
+        ),
+        response_description="The requested canonical entity",
+    )
     async def get_entity(
         request: Request,
         entity_id: str,
@@ -531,17 +608,7 @@ def create_entities_router() -> APIRouter:
             if entity_id not in all_entities:
                 raise HTTPException(status_code=404, detail=f"Entity {entity_id} not found")
 
-            entity_data = all_entities[entity_id]
-            return EntitySchemaV2(
-                entity_id=entity_id,
-                name=entity_data.get("friendly_name", entity_data.get("name", entity_id)),
-                device_type=entity_data.get("device_type", "unknown"),
-                protocol=entity_data.get("protocol", "rvc"),
-                state=entity_data.get("raw", {}),
-                area=entity_data.get("suggested_area"),
-                last_updated=entity_data.get("last_updated", "2025-01-11T00:00:00Z"),
-                available=entity_data.get("available", True),
-            )
+            return _entity_schema_from_payload(entity_id, all_entities[entity_id])
 
         except HTTPException:
             raise

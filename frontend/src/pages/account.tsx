@@ -11,15 +11,19 @@
  */
 
 import {
+  IconArrowsMaximize,
+  IconArrowsMinimize,
   IconDeviceDesktop,
   IconMoon,
   IconPalette,
+  IconPresentation,
   IconSun,
   IconUser,
 } from "@tabler/icons-react"
 
 import { MFASetup } from "@/components/mfa"
 import { Badge } from "@/components/ui/badge"
+import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Label } from "@/components/ui/label"
 import {
@@ -29,9 +33,12 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select"
+import { Switch } from "@/components/ui/switch"
 import { useAuth } from "@/contexts"
 import type { Theme } from "@/contexts/theme-context"
 import { useTheme } from "@/hooks/use-theme"
+import { setWallPanelEnabled, usePreferences } from "@/hooks/usePreferences"
+import { useWallPanel } from "@/hooks/useWallPanel"
 
 const THEME_OPTIONS: { value: Theme; label: string; icon: typeof IconSun }[] = [
   { value: "light", label: "Light", icon: IconSun },
@@ -144,12 +151,76 @@ function AppearanceCard() {
   )
 }
 
+function WallPanelCard() {
+  const preferences = usePreferences()
+  const wallPanel = useWallPanel()
+
+  const statusLabel = (() => {
+    if (!preferences.wallPanelEnabled) return "Disabled"
+    if (wallPanel.wakeLockStatus === "active") return "Display kept awake"
+    if (wallPanel.wakeLockStatus === "unsupported") return "Wake lock unsupported"
+    if (wallPanel.wakeLockStatus === "error") return "Wake lock unavailable"
+    return "Requesting wake lock"
+  })()
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="flex items-center gap-2">
+          <IconPresentation className="size-5" />
+          Wall panel
+        </CardTitle>
+        <CardDescription>
+          Keep this device awake for a mounted coach display. This preference is local to the
+          current browser.
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        <div className="flex items-center justify-between gap-4">
+          <div>
+            <Label htmlFor="wall-panel-mode">Wall-panel mode</Label>
+            <p className="text-sm text-muted-foreground">{statusLabel}</p>
+          </div>
+          <Switch
+            id="wall-panel-mode"
+            checked={preferences.wallPanelEnabled}
+            onCheckedChange={setWallPanelEnabled}
+            aria-label="Enable wall-panel mode"
+          />
+        </div>
+        {wallPanel.wakeLockError && (
+          <p className="text-sm text-destructive">{wallPanel.wakeLockError}</p>
+        )}
+        <Button
+          variant="outline"
+          disabled={!wallPanel.fullscreenSupported}
+          onClick={() => void wallPanel.toggleFullscreen()}
+        >
+          {wallPanel.isFullscreen ? (
+            <IconArrowsMinimize className="size-4" />
+          ) : (
+            <IconArrowsMaximize className="size-4" />
+          )}
+          {wallPanel.isFullscreen ? "Exit fullscreen" : "Enter fullscreen"}
+        </Button>
+        {!wallPanel.fullscreenSupported && (
+          <p className="text-xs text-muted-foreground">
+            Fullscreen is not available in this browser. Installed PWA windows already use a
+            standalone display.
+          </p>
+        )}
+      </CardContent>
+    </Card>
+  )
+}
+
 export default function AccountPage() {
   return (
     <div className="flex-1 space-y-6 p-4 pt-6 lg:px-6">
       <div className="grid max-w-3xl gap-6">
         <AccountInfoCard />
         <AppearanceCard />
+        <WallPanelCard />
         <MFASetup />
       </div>
     </div>

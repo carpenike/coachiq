@@ -38,6 +38,7 @@ import {
   SidebarMenuItem,
   SidebarProvider,
   SidebarTrigger,
+  useSidebar,
 } from "@/components/ui/sidebar"
 import {
   Tooltip,
@@ -121,10 +122,14 @@ export function CoachConnectionPill() {
 function NavRouteItem({ route, currentPath }: Readonly<{ route: IAppRoute; currentPath: string }>) {
   const isActive =
     route.path === "/" ? currentPath === "/" : currentPath.startsWith(route.path)
+  const preloadRoute = () => {
+    void route.preload()
+  }
+
   return (
     <SidebarMenuItem>
       <SidebarMenuButton tooltip={route.title} asChild isActive={isActive}>
-        <Link to={route.path}>
+        <Link to={route.path} onFocus={preloadRoute} onPointerEnter={preloadRoute}>
           <route.icon />
           <span>{route.title}</span>
         </Link>
@@ -135,6 +140,7 @@ function NavRouteItem({ route, currentPath }: Readonly<{ route: IAppRoute; curre
 
 function AppShellSidebar(props: React.ComponentProps<typeof Sidebar>) {
   const location = useLocation()
+  const { isMobile, setOpenMobile } = useSidebar()
   const { user, authStatus } = useAuth()
   const isAdmin = user?.role === "admin" || authStatus?.mode === "none"
 
@@ -147,6 +153,30 @@ function AppShellSidebar(props: React.ComponentProps<typeof Sidebar>) {
   const advancedActive = advancedRoutes.some((route) =>
     location.pathname.startsWith(route.path)
   )
+
+  React.useEffect(() => {
+    if (isMobile) setOpenMobile(false)
+  }, [isMobile, location.pathname, setOpenMobile])
+
+  React.useEffect(() => {
+    const warmOwnerRoutes = () => {
+      for (const route of routesForSection("owner")) {
+        if (route.path !== location.pathname) void route.preload()
+      }
+    }
+
+    const idleWindow = window as unknown as {
+      requestIdleCallback?: (callback: IdleRequestCallback, options?: IdleRequestOptions) => number
+      cancelIdleCallback?: (callbackId: number) => void
+    }
+    if (idleWindow.requestIdleCallback) {
+      const callbackId = idleWindow.requestIdleCallback(warmOwnerRoutes, { timeout: 2500 })
+      return () => idleWindow.cancelIdleCallback?.(callbackId)
+    }
+
+    const timeoutId = window.setTimeout(warmOwnerRoutes, 1500)
+    return () => window.clearTimeout(timeoutId)
+  }, [location.pathname])
 
   return (
     <Sidebar collapsible="offcanvas" {...props}>
@@ -218,7 +248,7 @@ function AppShellHeader() {
   const title = titleForPath(location.pathname) ?? "CoachIQ"
 
   return (
-    <header className="flex h-(--header-height) shrink-0 items-center gap-2 border-b transition-[width,height] ease-linear group-has-data-[collapsible=icon]/sidebar-wrapper:h-(--header-height)">
+    <header className="app-material sticky top-0 z-40 flex h-(--header-height) shrink-0 items-center gap-2 border-b transition-[width,height] ease-linear group-has-data-[collapsible=icon]/sidebar-wrapper:h-(--header-height)">
       <div className="flex w-full items-center gap-1 px-4 lg:gap-2 lg:px-6">
         <SidebarTrigger className="-ml-1" />
         <Separator orientation="vertical" className="mx-2 data-[orientation=vertical]:h-4" />

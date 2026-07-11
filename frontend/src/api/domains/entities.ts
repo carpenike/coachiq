@@ -270,6 +270,7 @@ export function convertEntityLegacyToV2(legacyEntity: LegacyEntity): EntitySchem
  * @returns Legacy Entity format
  */
 export function convertEntitySchemaToLegacy(entity: EntitySchema): Record<string, unknown> {
+  const timestamp = entity.last_seen_at ?? entity.data_received_at ?? entity.last_updated
   return {
     entity_id: entity.entity_id,
     name: entity.name,
@@ -278,13 +279,13 @@ export function convertEntitySchemaToLegacy(entity: EntitySchema): Record<string
     suggested_area: entity.area || '',
     state: entity.state?.state || 'unknown',
     raw: entity.state || {},
-    capabilities: [], // Could be extracted from state if needed
-    timestamp: new Date(entity.last_updated).getTime(),
+    capabilities: entity.capabilities ?? [],
+    timestamp: timestamp ? new Date(timestamp).getTime() : 0,
     value: entity.state || {},
     groups: [],
     // Legacy fields
     id: entity.entity_id,
-    last_updated: entity.last_updated,
+    ...(entity.last_updated ? { last_updated: entity.last_updated } : {}),
     current_state: entity.state?.state || 'unknown',
   };
 }

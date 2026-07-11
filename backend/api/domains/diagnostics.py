@@ -12,7 +12,7 @@ This router integrates with existing diagnostic services.
 
 import logging
 import time
-from typing import Annotated, Any, cast
+from typing import Annotated, Any, Literal, cast
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
@@ -117,11 +117,10 @@ async def _service_score(service_name: str) -> float | None:
     return 100.0
 
 
-def _can_health_score(can_facade: Any | None) -> tuple[float | None, bool]:
-    """Return CAN health score and degraded flag from CANFacade health."""
-    if can_facade is None or not hasattr(can_facade, "get_health_status"):
+def _can_health_score(status: dict[str, Any] | None) -> tuple[float | None, bool]:
+    """Return CAN health score and degraded flag from one CAN health snapshot."""
+    if status is None or not isinstance(status.get("healthy"), bool):
         return None, True
-    status = can_facade.get_health_status()
     if status.get("command_halt_active"):
         return 20.0, True
     if not status.get("healthy", False):
@@ -129,6 +128,137 @@ def _can_health_score(can_facade: Any | None) -> tuple[float | None, bool]:
     if str(status.get("guardrail_status", "")).lower() == "degraded":
         return 75.0, True
     return 100.0, False
+
+
+def _can_health_status(can_facade: Any | None) -> dict[str, Any] | None:
+    """Return the current CAN health payload when the facade can provide one."""
+    if can_facade is None or not hasattr(can_facade, "get_health_status"):
+        return None
+    try:
+        status = can_facade.get_health_status()
+    except Exception:
+        logger.warning("CAN health status is unavailable", exc_info=True)
+        return None
+    return status if isinstance(status, dict) else None
+
+
+class DiagnosticsVerdict(BaseModel):
+    """Authoritative diagnostics assessment derived from backend data sources."""
+
+    code: Literal["offline", "unavailable", "action_required", "degraded", "healthy"] = Field(
+        ..., description="Stable machine-readable verdict code"
+    )
+    label: str = Field(..., description="Human-readable verdict label")
+    severity: Literal["critical", "warning", "healthy", "unknown"] = Field(
+        ..., description="Display-independent verdict severity"
+    )
+    reason_codes: list[str] = Field(
+        default_factory=list, description="Stable reasons contributing to the verdict"
+    )
+    requires_attention: bool = Field(
+        ..., description="Whether an operator should review the current condition"
+    )
+    data_freshness: Literal["current", "unavailable"] = Field(
+        ...,
+        description=(
+            "Whether all required backend sources are currently available; no stale state is "
+            "claimed because diagnostics services expose no authoritative staleness threshold"
+        ),
+    )
+
+
+def derive_diagnostics_verdict(  # noqa: C901
+    *,
+    can_status: dict[str, Any] | None,
+    diagnostics_available: bool,
+    active_dtcs: list[dict[str, Any]],
+    degraded_systems: list[str],
+) -> DiagnosticsVerdict:
+    """Apply deterministic verdict precedence to backend diagnostics data."""
+    can_health_available = can_status is not None and isinstance(can_status.get("healthy"), bool)
+    command_halt_active = bool(can_status and can_status.get("command_halt_active"))
+    can_offline = bool(
+        can_health_available
+        and can_status
+        and can_status.get("healthy") is False
+        and not command_halt_active
+    )
+
+    if can_offline:
+        return DiagnosticsVerdict(
+            code="offline",
+            label="System offline",
+            severity="critical",
+            reason_codes=["can_bus_offline"],
+            requires_attention=True,
+            data_freshness="unavailable",
+        )
+
+    unavailable_reasons = []
+    if not can_health_available:
+        unavailable_reasons.append("can_status_unavailable")
+    if not diagnostics_available:
+        unavailable_reasons.append("diagnostics_status_unavailable")
+    if unavailable_reasons:
+        return DiagnosticsVerdict(
+            code="unavailable",
+            label="Health unavailable",
+            severity="unknown",
+            reason_codes=unavailable_reasons,
+            requires_attention=True,
+            data_freshness="unavailable",
+        )
+
+    active_severities = {
+        str(dtc.get("severity"))
+        for dtc in active_dtcs
+        if dtc.get("active", True) and not dtc.get("resolved", False)
+    }
+    urgent_reasons = [
+        reason
+        for severity, reason in (
+            ("critical", "active_critical_dtc"),
+            ("high", "active_high_dtc"),
+        )
+        if severity in active_severities
+    ]
+    if urgent_reasons:
+        return DiagnosticsVerdict(
+            code="action_required",
+            label="Action required",
+            severity="critical",
+            reason_codes=urgent_reasons,
+            requires_attention=True,
+            data_freshness="current",
+        )
+
+    degraded_reasons: list[str] = []
+    if command_halt_active:
+        degraded_reasons.append("command_emission_halted")
+    if can_status and str(can_status.get("guardrail_status", "")).lower() == "degraded":
+        degraded_reasons.append("can_guardrail_degraded")
+    if active_severities:
+        degraded_reasons.append("active_non_urgent_dtc")
+    if degraded_systems:
+        degraded_reasons.append("degraded_system")
+    if degraded_reasons:
+        return DiagnosticsVerdict(
+            code="degraded",
+            label="Attention needed",
+            severity="warning",
+            reason_codes=list(dict.fromkeys(degraded_reasons)),
+            requires_attention=True,
+            data_freshness="current",
+        )
+
+    return DiagnosticsVerdict(
+        code="healthy",
+        label="Healthy",
+        severity="healthy",
+        reason_codes=["no_active_faults_or_degradation"],
+        requires_attention=False,
+        data_freshness="current",
+    )
 
 
 async def _compute_system_status(
@@ -139,17 +269,18 @@ async def _compute_system_status(
     degraded_systems: list[str] = []
     scores: list[float] = []
 
-    can_score, can_degraded = _can_health_score(can_facade)
+    can_status = _can_health_status(can_facade)
+    can_score, can_degraded = _can_health_score(can_status)
     if can_score is not None:
         active_systems.append("can_bus")
         scores.append(can_score)
         if can_degraded:
             degraded_systems.append("can_bus")
 
+    active_dtcs = _dtc_dicts(diagnostics_handler)
     if diagnostics_handler is not None:
         active_systems.append("diagnostics")
-        active_dtcs = len(diagnostics_handler.get_active_dtcs())
-        diagnostics_score = max(0.0, 100.0 - (active_dtcs * 10.0))
+        diagnostics_score = max(0.0, 100.0 - (len(active_dtcs) * 10.0))
         scores.append(diagnostics_score)
         if active_dtcs:
             degraded_systems.append("diagnostics")
@@ -178,6 +309,12 @@ async def _compute_system_status(
         active_systems=active_systems,
         degraded_systems=degraded_systems,
         last_assessment=time.time(),
+        verdict=derive_diagnostics_verdict(
+            can_status=can_status,
+            diagnostics_available=diagnostics_handler is not None,
+            active_dtcs=active_dtcs,
+            degraded_systems=degraded_systems,
+        ),
     )
 
 
@@ -215,6 +352,13 @@ class SystemStatus(BaseModel):
     active_systems: list[str] = Field(..., description="List of active systems")
     degraded_systems: list[str] = Field(..., description="Systems with issues")
     last_assessment: float = Field(..., description="Last health assessment timestamp")
+    verdict: DiagnosticsVerdict = Field(
+        ...,
+        description=(
+            "Authoritative backend verdict with offline/unavailable, urgent DTC, degraded, "
+            "and healthy precedence"
+        ),
+    )
 
 
 DiagnosticsHandlerDependency = Annotated[DiagnosticHandler | None, Depends(get_diagnostics_handler)]
@@ -302,7 +446,16 @@ def create_diagnostics_router() -> APIRouter:  # noqa: C901, PLR0915
             logger.error("Error getting fault summary: %s", e)
             raise HTTPException(status_code=500, detail=f"Failed to get faults: {e!s}") from e
 
-    @router.get("/system-status", response_model=SystemStatus)
+    @router.get(
+        "/system-status",
+        response_model=SystemStatus,
+        summary="Get diagnostics system status",
+        description=(
+            "Compute system health and an authoritative verdict from current CAN health, "
+            "registered diagnostics data, and active DTC severity."
+        ),
+        response_description="Computed system health with a deterministic diagnostics verdict",
+    )
     async def get_system_status(
         diagnostics_handler: DiagnosticsHandlerDependency = None,
         can_facade: CANFacadeDependency = None,

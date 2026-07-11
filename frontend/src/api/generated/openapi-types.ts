@@ -2720,6 +2720,29 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/events": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Stream Events
+         * @description Stream realtime events (entity_update, entity_created, ...) as SSE.
+         *
+         *     Reconnecting clients send Last-Event-ID and get the gap replayed from the
+         *     broker's ring buffer; fresh connections get no replay and resync via REST.
+         */
+        get: operations["stream_events_api_events_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/health": {
         parameters: {
             query?: never;
@@ -2809,11 +2832,29 @@ export interface paths {
         };
         /**
          * Get historical logs
-         * @description Query historical logs from journald. Supports filtering by time, level, module, and pagination via cursor.
-         *
-         *         Only available on systems with systemd/journald.
+         * @description Query historical logs with filtering by time, level, module, and cursor pagination. Served from journald when available, otherwise from the in-process ring buffer (see the `source` response field). Admin only.
          */
         get: operations["get_log_history_api_logs_history_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/logs/stream": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Stream live logs (SSE)
+         * @description Server-Sent Events stream of live log entries, batched as `event: logs` frames with a JSON array payload. On connect the most recent matching entries are replayed from the ring buffer. Admin only.
+         */
+        get: operations["stream_logs_api_logs_stream_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -4689,6 +4730,249 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/victron/status": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Victron integration status
+         * @description Connection health and discovered devices for the Cerbo GX integration
+         */
+        get: operations["get_victron_status_api_victron_status_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/victron/inverter/mode": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Set inverter/charger mode
+         * @description Set the VE.Bus switch position (charger_only/inverter_only/on/off)
+         */
+        post: operations["set_inverter_mode_api_victron_inverter_mode_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/victron/generator/manual": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Manual generator start/stop
+         * @description Request a manual generator run via the Cerbo's genset controller (equivalent to VRM's manual start; the Cerbo performs the crank/stop sequence and its own stop conditions still apply)
+         */
+        post: operations["set_generator_manual_api_victron_generator_manual_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/victron/inverter/input-current-limit": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Set AC input current limit
+         * @description Set the VE.Bus AC input current limit in amps (validated against the adjustable range the Cerbo reports)
+         */
+        post: operations["set_input_current_limit_api_victron_inverter_input_current_limit_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/location": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Current GPS position and recording state
+         * @description Latest gpsd fix plus whether a trip is being recorded.
+         */
+        get: operations["get_current_location_api_location_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/location/trips": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List recorded trips (newest first)
+         * @description Trips with start/end position, distance, and point counts.
+         */
+        get: operations["list_trips_api_location_trips_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/location/trips/summary": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Aggregate trip statistics
+         * @description Odometer-style totals over all recorded trips plus the current year.
+         */
+        get: operations["get_trip_summary_api_location_trips_summary_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/location/trips/{trip_id}/merge-previous": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Merge a trip into the one before it
+         * @description Fold a trip into its predecessor (e.g. one drive split by a lunch stop).
+         */
+        post: operations["merge_trip_with_previous_api_location_trips__trip_id__merge_previous_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/location/trips/{trip_id}/rematch": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Re-run snap-to-road map matching for a trip
+         * @description Force a fresh Valhalla match for a finished trip.
+         *
+         *     Returns the trip with its (possibly still NULL) ``matched_geometry``; a
+         *     failed or low-confidence match leaves the raw breadcrumbs as the fallback.
+         */
+        post: operations["rematch_trip_api_location_trips__trip_id__rematch_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/location/trips/{trip_id}/points": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Breadcrumbs for one trip
+         * @description Chronological breadcrumbs for the trip, ready for a map polyline.
+         */
+        get: operations["get_trip_points_api_location_trips__trip_id__points_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/location/trips/{trip_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /**
+         * Delete a recorded trip
+         * @description Remove a trip and its breadcrumbs (e.g. a noise trip or a private one).
+         */
+        delete: operations["delete_trip_api_location_trips__trip_id__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/location/trips/{trip_id}/gpx": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Export one trip as GPX
+         * @description GPX 1.1 track for use in other mapping tools.
+         */
+        get: operations["export_trip_gpx_api_location_trips__trip_id__gpx_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/security/config/": {
         parameters: {
             query?: never;
@@ -6156,6 +6440,30 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/dashboard/preferences": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Home preferences
+         * @description Get synchronized Home customization for the current authenticated user.
+         */
+        get: operations["get_dashboard_preferences_api_v1_dashboard_preferences_get"];
+        /**
+         * Update Home preferences
+         * @description Replace synchronized Home customization for the current authenticated user.
+         */
+        put: operations["update_dashboard_preferences_api_v1_dashboard_preferences_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/diagnostics/health": {
         parameters: {
             query?: never;
@@ -6244,8 +6552,8 @@ export interface paths {
             cookie?: never;
         };
         /**
-         * Get System Status
-         * @description Get overall system health status
+         * Get diagnostics system status
+         * @description Compute system health and an authoritative verdict from current CAN health, registered diagnostics data, and active DTC severity.
          */
         get: operations["get_system_status_api_v1_diagnostics_system_status_get"];
         put?: never;
@@ -6424,8 +6732,8 @@ export interface paths {
             cookie?: never;
         };
         /**
-         * Get Entities
-         * @description Get entities with filtering and pagination (v2) - optimized for Pi deployment
+         * List entities
+         * @description List canonical entity records with configured capabilities, explicitly supported commands, availability, and source-backed timestamps.
          */
         get: operations["get_entities_api_v1_entities_get"];
         put?: never;
@@ -6448,6 +6756,29 @@ export interface paths {
          * @description Get current guardrail status
          */
         get: operations["get_guardrail_status_api_v1_entities_guardrail_status_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/entities/config/coach": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Coach Config
+         * @description Get coach mapping metadata: areas hierarchy, lighting scenes, and groups.
+         *
+         *     These sections are declared api-exposed in the coach mapping YAML but are
+         *     skipped by the DGN decoder; this endpoint is their only API surface.
+         */
+        get: operations["get_coach_config_api_v1_entities_config_coach_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -6588,8 +6919,8 @@ export interface paths {
             cookie?: never;
         };
         /**
-         * Get Entity
-         * @description Get a specific entity by ID (v2)
+         * Get an entity
+         * @description Get one canonical entity record using the same capability, command, availability, and timestamp semantics as the collection endpoint.
          */
         get: operations["get_entity_api_v1_entities__entity_id__get"];
         put?: never;
@@ -8492,6 +8823,28 @@ export interface components {
             warnings?: string[];
         };
         /**
+         * DashboardPreferencesResponse
+         * @description Synchronized preferences for the current authenticated user.
+         */
+        DashboardPreferencesResponse: {
+            /** @description Saved Home customization, or null before the first synchronized update */
+            home?: components["schemas"]["HomePreferences"] | null;
+            /**
+             * Updated At
+             * Format: date-time
+             * @description Last dashboard configuration update time
+             */
+            updated_at: string;
+        };
+        /**
+         * DashboardPreferencesUpdate
+         * @description Complete synchronized preference payload for the current user.
+         */
+        DashboardPreferencesUpdate: {
+            /** @description Home dashboard customization */
+            home: components["schemas"]["HomePreferences"];
+        };
+        /**
          * DashboardSummary
          * @description Aggregated dashboard data.
          */
@@ -8755,6 +9108,45 @@ export interface components {
             cross_protocol_analysis: boolean;
         };
         /**
+         * DiagnosticsVerdict
+         * @description Authoritative diagnostics assessment derived from backend data sources.
+         */
+        DiagnosticsVerdict: {
+            /**
+             * Code
+             * @description Stable machine-readable verdict code
+             * @enum {string}
+             */
+            code: "offline" | "unavailable" | "action_required" | "degraded" | "healthy";
+            /**
+             * Label
+             * @description Human-readable verdict label
+             */
+            label: string;
+            /**
+             * Severity
+             * @description Display-independent verdict severity
+             * @enum {string}
+             */
+            severity: "critical" | "warning" | "healthy" | "unknown";
+            /**
+             * Reason Codes
+             * @description Stable reasons contributing to the verdict
+             */
+            reason_codes?: string[];
+            /**
+             * Requires Attention
+             * @description Whether an operator should review the current condition
+             */
+            requires_attention: boolean;
+            /**
+             * Data Freshness
+             * @description Whether all required backend sources are currently available; no stale state is claimed because diagnostics services expose no authoritative staleness threshold
+             * @enum {string}
+             */
+            data_freshness: "current" | "unavailable";
+        };
+        /**
          * DiscoverDevicesRequest
          * @description Request model for device discovery.
          */
@@ -8766,18 +9158,18 @@ export interface components {
             protocol?: string;
         };
         /**
-         * EntityCollectionV2
-         * @description Paginated entity collection
+         * EntityCollectionSchemaV2
+         * @description Entity collection schema with metadata
          */
-        EntityCollectionV2: {
+        EntityCollectionSchemaV2: {
             /**
              * Entities
-             * @description List of entities
+             * @description Collection of entities
              */
             entities: components["schemas"]["EntitySchemaV2"][];
             /**
              * Total Count
-             * @description Total entities available
+             * @description Total number of entities available
              */
             total_count: number;
             /**
@@ -8808,7 +9200,7 @@ export interface components {
         };
         /**
          * EntitySchemaV2
-         * @description Enhanced entity schema for v1 API
+         * @description Canonical entity response schema for the Domain API.
          */
         EntitySchemaV2: {
             /**
@@ -8823,12 +9215,12 @@ export interface components {
             name: string;
             /**
              * Device Type
-             * @description Device type classification
+             * @description Device type: light, lock, tank, etc.
              */
             device_type: string;
             /**
              * Protocol
-             * @description Communication protocol
+             * @description Communication protocol: rvc, j1939, etc.
              */
             protocol: string;
             /**
@@ -8844,16 +9236,40 @@ export interface components {
              */
             area?: string | null;
             /**
-             * Last Updated
-             * @description ISO timestamp of last update
-             */
-            last_updated: string;
-            /**
              * Available
-             * @description Whether entity is available/responding
-             * @default true
+             * @description Whether the source explicitly reports the entity as available
              */
-            available?: boolean;
+            available?: boolean | null;
+            /**
+             * Capabilities
+             * @description Capabilities declared by the entity configuration
+             */
+            capabilities?: string[];
+            /**
+             * Supported Commands
+             * @description Commands explicitly supported by the backend for configured capabilities
+             */
+            supported_commands?: string[];
+            /**
+             * Last Updated
+             * @description Compatibility timestamp for the most recent persisted update
+             */
+            last_updated?: string | null;
+            /**
+             * Last Seen At
+             * @description Timestamp when the entity was last observed; falls back to last_updated
+             */
+            last_seen_at?: string | null;
+            /**
+             * Data Received At
+             * @description Timestamp when CoachIQ received and persisted the latest observation
+             */
+            data_received_at?: string | null;
+            /**
+             * State Changed At
+             * @description Timestamp when operational state last changed
+             */
+            state_changed_at?: string | null;
         };
         /**
          * EntitySummary
@@ -9162,6 +9578,17 @@ export interface components {
             }[];
         };
         /**
+         * GeneratorManualRequest
+         * @description Request a manual generator start or stop.
+         */
+        GeneratorManualRequest: {
+            /**
+             * Run
+             * @description True starts the generator, False stops it
+             */
+            run: boolean;
+        };
+        /**
          * GitHubReleaseAsset
          * @description Represents a downloadable asset attached to a GitHub release.
          */
@@ -9271,6 +9698,27 @@ export interface components {
          */
         HealthStatus: "pass" | "warn" | "fail";
         /**
+         * HomePreferences
+         * @description User-specific Home dashboard customization.
+         */
+        HomePreferences: {
+            /**
+             * Favoriteentityids
+             * @description Entity IDs shown first on Home
+             */
+            favoriteEntityIds?: string[];
+            /**
+             * Sectionorder
+             * @description Home sections in display order
+             */
+            sectionOrder?: ("alerts" | "scenes" | "power" | "zones")[];
+            /**
+             * Hiddensections
+             * @description Home sections hidden by the user
+             */
+            hiddenSections?: ("alerts" | "scenes" | "power" | "zones")[];
+        };
+        /**
          * IETFHealthStatusResponse
          * @description IETF health+json response emitted by system status with format=ietf.
          */
@@ -9338,6 +9786,17 @@ export interface components {
             active_interfaces: string[];
         };
         /**
+         * InputCurrentLimitRequest
+         * @description Request to change the AC input current limit.
+         */
+        InputCurrentLimitRequest: {
+            /**
+             * Amps
+             * @description Input current limit in amps
+             */
+            amps: number;
+        };
+        /**
          * InterlockOverrideClearRequest
          * @description Clear interlock override request model.
          */
@@ -9347,6 +9806,17 @@ export interface components {
              * @description Name of the interlock to clear override
              */
             interlock_name: string;
+        };
+        /**
+         * InverterModeRequest
+         * @description Request to change the VE.Bus switch position.
+         */
+        InverterModeRequest: {
+            /**
+             * Mode
+             * @description Target mode: charger_only (1), inverter_only (2), on (3), or off (4)
+             */
+            mode: number | string;
         };
         /**
          * J1939MessageRequest
@@ -9454,7 +9924,7 @@ export interface components {
             module?: string | null;
             /**
              * Cursor
-             * @description Journald cursor for pagination
+             * @description Opaque cursor for pagination
              */
             cursor: string;
         };
@@ -9472,6 +9942,11 @@ export interface components {
              * @description True if more results are available
              */
             has_more: boolean;
+            /**
+             * Source
+             * @description Where the entries came from: "journald" or "memory"
+             */
+            source?: string | null;
         };
         /**
          * LoginStepResponse
@@ -12023,6 +12498,8 @@ export interface components {
              * @description Last health assessment timestamp
              */
             last_assessment: number;
+            /** @description Authoritative backend verdict with offline/unavailable, urgent DTC, degraded, and healthy precedence */
+            verdict: components["schemas"]["DiagnosticsVerdict"];
         };
         /**
          * ServiceStatus
@@ -15537,6 +16014,26 @@ export interface operations {
             };
         };
     };
+    stream_events_api_events_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
     health_check_api_health_get: {
         parameters: {
             query?: {
@@ -15728,7 +16225,9 @@ export interface operations {
                 /** @description Max number of log entries to return */
                 limit?: number;
             };
-            header?: never;
+            header?: {
+                authorization?: string | null;
+            };
             path?: never;
             cookie?: never;
         };
@@ -15741,6 +16240,42 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["LogHistoryResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    stream_logs_api_logs_stream_get: {
+        parameters: {
+            query?: {
+                /** @description Minimum python log level name (case-insensitive) */
+                level?: string;
+                /** @description Comma-separated logger-name prefixes; empty = all */
+                modules?: string | null;
+            };
+            header?: {
+                authorization?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
                 };
             };
             /** @description Validation Error */
@@ -18276,6 +18811,568 @@ export interface operations {
             };
         };
     };
+    get_victron_status_api_victron_status_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Admin privileges required */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Victron integration disabled or unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    set_inverter_mode_api_victron_inverter_mode_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["InverterModeRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Admin privileges required */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+            /** @description Victron integration disabled or unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    set_generator_manual_api_victron_generator_manual_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["GeneratorManualRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Admin privileges required */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+            /** @description Victron integration disabled or unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    set_input_current_limit_api_victron_inverter_input_current_limit_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["InputCurrentLimitRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Admin privileges required */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+            /** @description Victron integration disabled or unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    get_current_location_api_location_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Trip log disabled or unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    list_trips_api_location_trips_get: {
+        parameters: {
+            query?: {
+                limit?: number;
+                offset?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+            /** @description Trip log disabled or unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    get_trip_summary_api_location_trips_summary_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Trip log disabled or unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    merge_trip_with_previous_api_location_trips__trip_id__merge_previous_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                trip_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+            /** @description Trip log disabled or unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    rematch_trip_api_location_trips__trip_id__rematch_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                trip_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+            /** @description Trip log disabled or unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    get_trip_points_api_location_trips__trip_id__points_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                trip_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+            /** @description Trip log disabled or unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    delete_trip_api_location_trips__trip_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                trip_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+            /** @description Trip log disabled or unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    export_trip_gpx_api_location_trips__trip_id__gpx_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                trip_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+            /** @description Trip log disabled or unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
     get_security_config_api_security_config__get: {
         parameters: {
             query?: never;
@@ -20153,6 +21250,72 @@ export interface operations {
             };
         };
     };
+    get_dashboard_preferences_api_v1_dashboard_preferences_get: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Saved Home preferences, or null before the first synchronized update */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DashboardPreferencesResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    update_dashboard_preferences_api_v1_dashboard_preferences_put: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DashboardPreferencesUpdate"];
+            };
+        };
+        responses: {
+            /** @description The saved Home preferences and update timestamp */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DashboardPreferencesResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     health_check_api_v1_diagnostics_health_get: {
         parameters: {
             query?: never;
@@ -20258,7 +21421,7 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description Successful Response */
+            /** @description Computed system health with a deterministic diagnostics verdict */
             200: {
                 headers: {
                     [name: string]: unknown;
@@ -20516,13 +21679,13 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description Successful Response */
+            /** @description A filtered and paginated collection of canonical entities */
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["EntityCollectionV2"];
+                    "application/json": components["schemas"]["EntityCollectionSchemaV2"];
                 };
             };
             /** @description Validation Error */
@@ -20537,6 +21700,28 @@ export interface operations {
         };
     };
     get_guardrail_status_api_v1_entities_guardrail_status_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+        };
+    };
+    get_coach_config_api_v1_entities_config_coach_get: {
         parameters: {
             query?: never;
             header?: never;
@@ -20718,7 +21903,7 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description Successful Response */
+            /** @description The requested canonical entity */
             200: {
                 headers: {
                     [name: string]: unknown;

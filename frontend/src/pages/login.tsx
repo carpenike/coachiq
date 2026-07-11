@@ -10,7 +10,7 @@ export default function LoginPage() {
   const { isAuthenticated, authStatus } = useAuth()
 
   // Get the path to redirect to after login
-  const from = (location.state as { from?: string })?.from || "/dashboard"
+  const from = (location.state as { from?: string } | null)?.from ?? "/"
 
   // Redirect if already authenticated or auth is disabled
   useEffect(() => {
@@ -23,13 +23,8 @@ export default function LoginPage() {
     navigate(from)
   }
 
-  // Don't render anything while checking auth status
-  if (!authStatus) {
-    return null
-  }
-
   // Don't render login page if auth is disabled or already authenticated
-  if (authStatus.mode === "none" || isAuthenticated) {
+  if ((authStatus && authStatus.mode === "none") || isAuthenticated) {
     return null
   }
 

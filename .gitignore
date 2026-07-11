@@ -211,6 +211,8 @@ frontend/.cache/
 frontend/.coverage/
 frontend/coverage/
 frontend/.nyc_output/
+frontend/playwright-report/
+frontend/test-results/
 
 # Ignore devcontainer secrets
 devcontainer.env

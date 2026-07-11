@@ -1,7 +1,7 @@
 /**
  * Devices — all entities in one filterable table (replaces "Multi-Protocol Entities").
  *
- * Columns: Name, Type, Zone, Protocol, State, Last updated, Available.
+ * Columns: Name, Type, Zone, Protocol, State, Last changed, Available.
  * Filter options are derived from the coach config (zones) and the actual
  * entity list (types, protocols) — no fabricated protocol-health numbers.
  * Row click opens a detail sheet with the full state dict and controls
@@ -57,6 +57,7 @@ import {
   type ICoachConfig,
 } from "@/hooks/useCoachConfig"
 import { useControlEntity, useEntities } from "@/hooks/useEntities"
+import { entitySupportsPowerControl, getEntityCapabilityPolicy } from "@/lib/entity-capabilities"
 
 //
 // ===== Helpers =====
@@ -132,20 +133,10 @@ function StateBadge({ entity }: { readonly entity: EntitySchema }) {
 }
 
 /**
- * Derived capabilities. The v1 entity schema exposes no capabilities list
- * (contract gap) — these are inferred from device_type and observed state.
+ * Human-readable capabilities from the canonical entity contract.
  */
 function derivedCapabilities(entity: EntitySchema): string[] {
-  const capabilities: string[] = []
-  const state = entity.state ?? {}
-  if (isControllable(entity)) capabilities.push("on/off")
-  if (
-    entity.device_type === "light" &&
-    (typeof state.operating_status === "number" || typeof state.brightness === "number")
-  ) {
-    capabilities.push("dimmable")
-  }
-  return capabilities
+  return getEntityCapabilityPolicy(entity).rawCapabilities.map(titleCase)
 }
 
 function isControllable(entity: EntitySchema): boolean {
@@ -156,7 +147,11 @@ function isControllable(entity: EntitySchema): boolean {
   // service-layer handler, so rendering their buttons sent commands the
   // backend rejects (e.g. the read-only entrance door lock 500'd on press).
   // Re-add a type here only once control_entity actually dispatches it.
-  return entity.device_type === "light"
+  return entity.device_type === "light" && entitySupportsPowerControl(entity)
+}
+
+function stateChangedAt(entity: EntitySchema): string {
+  return entity.state_changed_at ?? entity.last_updated ?? ""
 }
 
 //
@@ -180,7 +175,7 @@ function StateCell(context: EntityCellContext) {
 function LastUpdatedCell(context: EntityCellContext) {
   return (
     <span className="text-muted-foreground">
-      {relativeTime(context.row.original.last_updated)}
+      {relativeTime(stateChangedAt(context.row.original))}
     </span>
   )
 }
@@ -240,7 +235,7 @@ function buildDeviceColumns(config: ICoachConfig | undefined): ColumnDef<EntityS
     },
     {
       accessorKey: "last_updated",
-      header: "Last updated",
+      header: "Last changed",
       cell: LastUpdatedCell,
     },
     {
@@ -348,8 +343,8 @@ function DeviceSummaryFacts({
       <dd>{zoneDisplayName(zoneIdForEntity(entity), config)}</dd>
       <dt className="text-muted-foreground">Available</dt>
       <dd>{isAvailable ? "Yes" : "No — not responding"}</dd>
-      <dt className="text-muted-foreground">Last updated</dt>
-      <dd>{relativeTime(entity.last_updated)}</dd>
+      <dt className="text-muted-foreground">Last changed</dt>
+      <dd>{relativeTime(stateChangedAt(entity))}</dd>
       <dt className="text-muted-foreground">Capabilities</dt>
       <dd>{capabilities.length > 0 ? capabilities.join(", ") : "—"}</dd>
     </dl>
@@ -492,7 +487,7 @@ function DeviceFilterBar({
   onClearFilters,
 }: Readonly<IDeviceFilterBarProps>) {
   return (
-    <div className="flex flex-col gap-2 lg:flex-row lg:items-center">
+    <div className="app-material sticky top-(--header-height) z-30 -mx-1 flex flex-col gap-2 border-b px-1 py-2 lg:flex-row lg:items-center">
       <div className="relative flex-1 lg:max-w-xs">
         <IconSearch className="absolute left-2.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
         <Input
@@ -503,9 +498,9 @@ function DeviceFilterBar({
           aria-label="Search devices"
         />
       </div>
-      <div className="flex flex-wrap items-center gap-2">
+      <div className="grid grid-cols-2 gap-2 sm:flex sm:flex-wrap sm:items-center">
         <Select value={typeFilter} onValueChange={onTypeFilterChange}>
-          <SelectTrigger className="w-36" aria-label="Filter by type">
+          <SelectTrigger className="w-full sm:w-36" aria-label="Filter by type">
             <SelectValue placeholder="Type" />
           </SelectTrigger>
           <SelectContent>
@@ -518,7 +513,7 @@ function DeviceFilterBar({
           </SelectContent>
         </Select>
         <Select value={zoneFilter} onValueChange={onZoneFilterChange}>
-          <SelectTrigger className="w-44" aria-label="Filter by zone">
+          <SelectTrigger className="w-full sm:w-44" aria-label="Filter by zone">
             <SelectValue placeholder="Zone" />
           </SelectTrigger>
           <SelectContent>
@@ -531,7 +526,7 @@ function DeviceFilterBar({
           </SelectContent>
         </Select>
         <Select value={protocolFilter} onValueChange={onProtocolFilterChange}>
-          <SelectTrigger className="w-40" aria-label="Filter by protocol">
+          <SelectTrigger className="w-full sm:w-40" aria-label="Filter by protocol">
             <SelectValue placeholder="Protocol" />
           </SelectTrigger>
           <SelectContent>
@@ -544,12 +539,79 @@ function DeviceFilterBar({
           </SelectContent>
         </Select>
         {hasActiveFilters && (
-          <Button variant="ghost" size="sm" onClick={onClearFilters} className="gap-1">
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={onClearFilters}
+            className="h-11 justify-start gap-1 sm:justify-center"
+          >
             <IconX className="size-4" />
             Clear
           </Button>
         )}
       </div>
+    </div>
+  )
+}
+
+/** Compact device rows for narrow screens; all core status fields remain visible. */
+function DeviceMobileList({
+  entities,
+  config,
+  hasAnyEntities,
+  onSelectEntity,
+}: Readonly<{
+  entities: EntitySchema[]
+  config: ICoachConfig | undefined
+  hasAnyEntities: boolean
+  onSelectEntity: (entityId: string) => void
+}>) {
+  if (entities.length === 0) {
+    return (
+      <div className="rounded-md border px-4 py-10 text-center md:hidden">
+        <p className="text-sm text-muted-foreground">
+          {hasAnyEntities
+            ? "No devices match the current filters."
+            : "No entities are mapped for this coach."}
+        </p>
+      </div>
+    )
+  }
+
+  return (
+    <div className="divide-y rounded-md border md:hidden">
+      {entities.map((entity) => {
+        const available = entity.available !== false
+        return (
+          <button
+            key={entity.entity_id}
+            type="button"
+            className="flex min-h-24 w-full flex-col gap-3 px-4 py-3 text-left transition-colors hover:bg-muted/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset"
+            onClick={() => onSelectEntity(entity.entity_id)}
+          >
+            <span className="flex w-full items-start justify-between gap-3">
+              <span className="min-w-0">
+                <span className="block truncate font-medium">{entity.name}</span>
+                <span className="mt-0.5 block text-xs text-muted-foreground">
+                  {titleCase(entity.device_type)} · {zoneLabelForEntity(entity, config)}
+                </span>
+              </span>
+              <StateBadge entity={entity} />
+            </span>
+            <span className="flex w-full flex-wrap items-center justify-between gap-x-3 gap-y-1 text-xs text-muted-foreground">
+              <span className="uppercase">{entity.protocol}</span>
+              <span>Last changed {relativeTime(stateChangedAt(entity))}</span>
+              <span className="flex items-center gap-1.5">
+                <span
+                  className={`size-2 rounded-full ${available ? "bg-green-500" : "bg-red-500"}`}
+                  aria-hidden
+                />
+                {available ? "Available" : "Unavailable"}
+              </span>
+            </span>
+          </button>
+        )
+      })}
     </div>
   )
 }
@@ -706,6 +768,7 @@ interface IDevicesResultsProps {
   columnCount: number
   entities: EntitySchema[]
   filteredEntities: EntitySchema[]
+  config: ICoachConfig | undefined
   hasNext: boolean
   totalCount: number
   onSelectEntity: (entityId: string) => void
@@ -719,6 +782,7 @@ function DevicesResults({
   columnCount,
   entities,
   filteredEntities,
+  config,
   hasNext,
   totalCount,
   onSelectEntity,
@@ -748,7 +812,14 @@ function DevicesResults({
 
   return (
     <>
-      <div className="overflow-x-auto rounded-md border">
+      <DeviceMobileList
+        entities={filteredEntities}
+        config={config}
+        hasAnyEntities={entities.length > 0}
+        onSelectEntity={onSelectEntity}
+      />
+
+      <div className="hidden overflow-x-auto rounded-md border md:block">
         <Table>
           <DeviceTableHeader table={table} />
           <DeviceTableBody
@@ -848,6 +919,7 @@ export default function DevicesPage() {
         columnCount={columns.length}
         entities={entities}
         filteredEntities={filteredEntities}
+        config={config}
         hasNext={entityCollection?.has_next ?? false}
         totalCount={entityCollection?.total_count ?? 0}
         onSelectEntity={setSelectedEntityId}

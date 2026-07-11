@@ -5,11 +5,9 @@
  * bulk operations, and enhanced error handling.
  */
 
-/* eslint-disable sonarjs/cognitive-complexity */
-
-import type { UseQueryResult } from '@tanstack/react-query';
+import type { QueryClient, UseQueryResult } from '@tanstack/react-query';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { useCallback, useState } from 'react';
+import { useCallback, useState, useSyncExternalStore } from 'react';
 
 import {
   bulkControlEntitiesV2,
@@ -26,11 +24,23 @@ import {
 import { isDomainAPIAvailable } from '../api/domains/index';
 import type {
   BulkControlRequestSchema,
+  BulkOperationResultSchema,
   ControlCommandSchema,
   EntitiesQueryParams,
   EntityCollectionSchema,
   EntitySchema,
+  OperationResultSchema,
 } from '../api/types/domains';
+import {
+  acceptEntityCommandLifecycle,
+  beginEntityCommandLifecycle,
+  entityCommandQueryKeys,
+  failEntityCommandLifecycle,
+  reconcileEntityCommandLifecycle,
+  type EntityCommandOperation,
+  type IEntityCommandLifecycle,
+  type IEntityCommandTransaction,
+} from './entity-command-lifecycle';
 
 //
 // ===== QUERY KEYS =====
@@ -81,9 +91,16 @@ export function useEntitiesDomainAPIAvailability(): UseQueryResult<boolean, Erro
 export function useEntities(
   params?: EntitiesQueryParams
 ): UseQueryResult<EntityCollectionSchema, Error> {
+  const queryClient = useQueryClient();
   return useQuery({
     queryKey: entitiesQueryKeys.collection(params),
-    queryFn: () => fetchEntitiesV2(params),
+    queryFn: async () => {
+      const collection = await fetchEntitiesV2(params);
+      collection.entities.forEach((entity) => {
+        reconcileEntityCommandLifecycle(queryClient, entity, 'refetch');
+      });
+      return collection;
+    },
     staleTime: 30000, // Consider data fresh for 30 seconds
     refetchOnWindowFocus: false,
   });
@@ -100,9 +117,14 @@ export function useEntity(
   entityId: string,
   enabled = true
 ): UseQueryResult<EntitySchema, Error> {
+  const queryClient = useQueryClient();
   return useQuery({
     queryKey: entitiesQueryKeys.entity(entityId),
-    queryFn: () => fetchEntityV2(entityId),
+    queryFn: async () => {
+      const entity = await fetchEntityV2(entityId);
+      reconcileEntityCommandLifecycle(queryClient, entity, 'refetch');
+      return entity;
+    },
     enabled: enabled && !!entityId,
     staleTime: 30000,
     refetchOnWindowFocus: false,
@@ -127,6 +149,136 @@ export function useEntitiesSchemas(): UseQueryResult<Record<string, unknown>, Er
 // ===== MUTATION HOOKS =====
 //
 
+interface IEntityControlVariables {
+  entityId: string;
+  command: ControlCommandSchema;
+}
+
+type EntityControlMutation = (
+  entityId: string,
+  command: ControlCommandSchema
+) => Promise<OperationResultSchema>;
+
+type BulkControlMutation = (
+  request: BulkControlRequestSchema
+) => Promise<BulkOperationResultSchema>;
+
+function resultFailurePhase(status: string): 'rejected' | 'timeout' {
+  return status === 'timeout' ? 'timeout' : 'rejected';
+}
+
+function invalidateEntityCaches(queryClient: QueryClient, entityIds: readonly string[]): void {
+  entityIds.forEach((entityId) => {
+    void queryClient.invalidateQueries({
+      queryKey: entitiesQueryKeys.entity(entityId),
+    });
+  });
+  void queryClient.invalidateQueries({
+    queryKey: entitiesQueryKeys.collections(),
+  });
+}
+
+function useEntityControlMutation(mutationFn: EntityControlMutation) {
+  const queryClient = useQueryClient();
+
+  return useMutation<
+    OperationResultSchema,
+    Error,
+    IEntityControlVariables,
+    IEntityCommandTransaction
+  >({
+    mutationFn: ({ entityId, command }) => mutationFn(entityId, command),
+    onMutate: ({ entityId, command }) =>
+      beginEntityCommandLifecycle(queryClient, [entityId], command),
+    onError: (error, { entityId }, transaction) => {
+      if (!transaction) return;
+      failEntityCommandLifecycle(
+        queryClient,
+        transaction,
+        [entityId],
+        'rejected',
+        error.message
+      );
+    },
+    onSuccess: (result, { entityId }, transaction) => {
+      if (!transaction) return;
+      if (result.status === 'success') {
+        acceptEntityCommandLifecycle(
+          queryClient,
+          transaction,
+          entityId,
+          result.operation_id
+        );
+        return;
+      }
+      failEntityCommandLifecycle(
+        queryClient,
+        transaction,
+        [entityId],
+        resultFailurePhase(result.status),
+        result.error_message ?? `Command ${result.status}.`
+      );
+    },
+    onSettled: (_data, _error, { entityId }) => {
+      invalidateEntityCaches(queryClient, [entityId]);
+    },
+  });
+}
+
+function useBulkEntityControlMutation(mutationFn: BulkControlMutation) {
+  const queryClient = useQueryClient();
+
+  return useMutation<
+    BulkOperationResultSchema,
+    Error,
+    BulkControlRequestSchema,
+    IEntityCommandTransaction
+  >({
+    mutationFn: (request) => mutationFn(request),
+    onMutate: ({ entity_ids: entityIds, command }) =>
+      beginEntityCommandLifecycle(queryClient, entityIds, command),
+    onError: (error, request, transaction) => {
+      if (!transaction) return;
+      failEntityCommandLifecycle(
+        queryClient,
+        transaction,
+        request.entity_ids,
+        'rejected',
+        error.message
+      );
+    },
+    onSuccess: (result, request, transaction) => {
+      if (!transaction) return;
+      const resultsByEntity = new Map(
+        result.results.map((operationResult) => [operationResult.entity_id, operationResult])
+      );
+      request.entity_ids.forEach((entityId) => {
+        const operationResult = resultsByEntity.get(entityId);
+        if (operationResult?.status === 'success') {
+          acceptEntityCommandLifecycle(
+            queryClient,
+            transaction,
+            entityId,
+            operationResult.operation_id
+          );
+          return;
+        }
+        const status = operationResult?.status ?? 'failed';
+        failEntityCommandLifecycle(
+          queryClient,
+          transaction,
+          [entityId],
+          resultFailurePhase(status),
+          operationResult?.error_message ?? `Command ${status}.`
+        );
+      });
+    },
+    onSettled: (_data, _error, request) => {
+      invalidateEntityCaches(queryClient, request.entity_ids);
+    },
+  });
+}
+
 /**
  * Hook for controlling a single entity with safety-aware optimistic updates
  *
@@ -136,85 +288,7 @@ export function useEntitiesSchemas(): UseQueryResult<Record<string, unknown>, Er
  * @returns Mutation object for entity control
  */
 export function useControlEntity() {
-  const queryClient = useQueryClient();
-  const { data: isDomainAPIAvailable, isLoading: isCheckingAPI } = useEntitiesDomainAPIAvailability();
-
-  return useMutation({
-    mutationFn: ({
-      entityId,
-      command,
-    }: {
-      entityId: string;
-      command: ControlCommandSchema;
-    }) => controlEntityV2(entityId, command),
-    onMutate: async ({ entityId, command }) => {
-      // Cancel outgoing refetches
-      await queryClient.cancelQueries({
-        queryKey: entitiesQueryKeys.entity(entityId),
-      });
-
-      // Snapshot the previous value
-      const previousEntity = queryClient.getQueryData<EntitySchema>(
-        entitiesQueryKeys.entity(entityId)
-      );
-
-      // SAFETY CRITICAL: Only apply optimistic updates if domain API v1 is available
-      // When falling back to legacy API, we wait for server confirmation to prevent
-      // dangerous state mismatches in vehicle control systems
-      if (isDomainAPIAvailable && !isCheckingAPI && previousEntity) {
-        const optimisticState = { ...previousEntity.state };
-
-        // Apply optimistic updates based on command
-        if (command.command === 'set') {
-          if (command.state !== undefined && command.state !== null) {
-            optimisticState.state = command.state ? 'on' : 'off';
-          }
-          if (command.brightness !== undefined && command.brightness !== null) {
-            optimisticState.brightness = command.brightness;
-          }
-        } else if (command.command === 'toggle') {
-          optimisticState.state = optimisticState.state === 'on' ? 'off' : 'on';
-        } else if (command.command === 'brightness_up') {
-          const currentBrightness = typeof optimisticState.brightness === 'number' ? optimisticState.brightness : 0;
-          optimisticState.brightness = Math.min(100, currentBrightness + 10);
-        } else if (command.command === 'brightness_down') {
-          const currentBrightness = typeof optimisticState.brightness === 'number' ? optimisticState.brightness : 0;
-          optimisticState.brightness = Math.max(0, currentBrightness - 10);
-        }
-
-        queryClient.setQueryData<EntitySchema>(
-          entitiesQueryKeys.entity(entityId),
-          {
-            ...previousEntity,
-            state: optimisticState,
-            last_updated: new Date().toISOString(),
-          }
-        );
-      }
-
-      return { previousEntity };
-    },
-    onError: (error, { entityId }, context) => {
-      // Rollback optimistic update on error
-      if (context?.previousEntity) {
-        queryClient.setQueryData(
-          entitiesQueryKeys.entity(entityId),
-          context.previousEntity
-        );
-      }
-    },
-    onSettled: (data, error, { entityId }) => {
-      // Refetch entity data to ensure consistency
-      void queryClient.invalidateQueries({
-        queryKey: entitiesQueryKeys.entity(entityId),
-      });
-
-      // Also invalidate collections that might contain this entity
-      void queryClient.invalidateQueries({
-        queryKey: entitiesQueryKeys.collections(),
-      });
-    },
-  });
+  return useEntityControlMutation(controlEntityV2);
 }
 
 /**
@@ -226,104 +300,7 @@ export function useControlEntity() {
  * @returns Mutation object for bulk operations
  */
 export function useBulkControlEntities() {
-  const queryClient = useQueryClient();
-  const { data: isDomainAPIAvailable, isLoading: isCheckingAPI } = useEntitiesDomainAPIAvailability();
-
-  return useMutation({
-    mutationFn: (request: BulkControlRequestSchema) => bulkControlEntitiesV2(request),
-    onMutate: async (request) => {
-      // Cancel outgoing refetches for affected entities
-      const cancelPromises = request.entity_ids.map((entityId) =>
-        queryClient.cancelQueries({
-          queryKey: entitiesQueryKeys.entity(entityId),
-        })
-      );
-      await Promise.all(cancelPromises);
-
-      // Snapshot previous values
-      const previousEntities = request.entity_ids.map((entityId) => ({
-        entityId,
-        data: queryClient.getQueryData<EntitySchema>(
-          entitiesQueryKeys.entity(entityId)
-        ),
-      }));
-
-      // SAFETY CRITICAL: Only apply optimistic updates if domain API v1 is available
-      // When falling back to legacy API, we wait for server confirmation to prevent
-      // dangerous state mismatches in vehicle control systems
-      if (isDomainAPIAvailable && !isCheckingAPI) {
-        // Apply optimistic updates to all entities
-        request.entity_ids.forEach((entityId) => {
-          const previousEntity = queryClient.getQueryData<EntitySchema>(
-            entitiesQueryKeys.entity(entityId)
-          );
-
-          if (previousEntity) {
-            const optimisticState = { ...previousEntity.state };
-
-            // Apply the same optimistic logic as single entity control
-            if (request.command.command === 'set') {
-              if (request.command.state !== undefined && request.command.state !== null) {
-                optimisticState.state = request.command.state ? 'on' : 'off';
-              }
-              if (request.command.brightness !== undefined && request.command.brightness !== null) {
-                optimisticState.brightness = request.command.brightness;
-              }
-            } else if (request.command.command === 'toggle') {
-              optimisticState.state = optimisticState.state === 'on' ? 'off' : 'on';
-            }
-
-            queryClient.setQueryData<EntitySchema>(
-              entitiesQueryKeys.entity(entityId),
-              {
-                ...previousEntity,
-                state: optimisticState,
-                last_updated: new Date().toISOString(),
-              }
-            );
-          }
-        });
-      }
-
-      return { previousEntities };
-    },
-    onError: (error, request, context) => {
-      // Rollback optimistic updates on error
-      if (context?.previousEntities) {
-        context.previousEntities.forEach(({ entityId, data }) => {
-          if (data) {
-            queryClient.setQueryData(
-              entitiesQueryKeys.entity(entityId),
-              data
-            );
-          }
-        });
-      }
-    },
-    onSuccess: (result, _request) => {
-      // Handle partial success scenarios
-      result.results.forEach((operationResult) => {
-        if (operationResult.status !== 'success') {
-          // Rollback optimistic update for failed entities
-          void queryClient.invalidateQueries({
-            queryKey: entitiesQueryKeys.entity(operationResult.entity_id),
-          });
-        }
-      });
-    },
-    onSettled: (data, error, request) => {
-      // Refetch all affected entities and collections
-      request.entity_ids.forEach((entityId) => {
-        void queryClient.invalidateQueries({
-          queryKey: entitiesQueryKeys.entity(entityId),
-        });
-      });
-
-      void queryClient.invalidateQueries({
-        queryKey: entitiesQueryKeys.collections(),
-      });
-    },
-  });
+  return useBulkEntityControlMutation(bulkControlEntitiesV2);
 }
 
 //
@@ -470,6 +447,65 @@ export function useEntityFilters() {
   };
 }
 
+export interface IEntityCommandState {
+  lifecycle: IEntityCommandLifecycle | undefined;
+  phase: IEntityCommandLifecycle['phase'] | 'idle';
+  statusText: string;
+  isPending: boolean;
+  isAccepted: boolean;
+  isUnconfirmed: boolean;
+  isConfirmed: boolean;
+  isRejected: boolean;
+  isTimedOut: boolean;
+}
+
+function lifecycleStatusText(lifecycle: IEntityCommandLifecycle | undefined): string {
+  if (!lifecycle) return '';
+  if (lifecycle.phase === 'pending') return 'Sending command…';
+  if (lifecycle.phase === 'accepted') return 'Waiting for device confirmation…';
+  if (lifecycle.phase === 'confirmed') {
+    return lifecycle.confirmationSource === 'sse'
+      ? 'Confirmed by realtime update'
+      : 'Confirmed by refresh';
+  }
+  if (lifecycle.phase === 'timeout') return lifecycle.error ?? 'Confirmation timed out';
+  return lifecycle.error ?? 'Command rejected';
+}
+
+/** Subscribe to the shared lifecycle for one entity operation. */
+export function useEntityCommandState(
+  entityId: string,
+  operation: EntityCommandOperation
+): IEntityCommandState {
+  const queryClient = useQueryClient();
+  const subscribe = useCallback(
+    (onStoreChange: () => void) =>
+      queryClient.getQueryCache().subscribe(() => onStoreChange()),
+    [queryClient]
+  );
+  const getSnapshot = useCallback(
+    () =>
+      queryClient.getQueryData<IEntityCommandLifecycle>(
+        entityCommandQueryKeys.operation(entityId, operation)
+      ),
+    [entityId, operation, queryClient]
+  );
+  const lifecycle = useSyncExternalStore(subscribe, getSnapshot, getSnapshot);
+  const phase = lifecycle?.phase ?? 'idle';
+
+  return {
+    lifecycle,
+    phase,
+    statusText: lifecycleStatusText(lifecycle),
+    isPending: phase === 'pending',
+    isAccepted: phase === 'accepted',
+    isUnconfirmed: phase === 'pending' || phase === 'accepted',
+    isConfirmed: phase === 'confirmed',
+    isRejected: phase === 'rejected',
+    isTimedOut: phase === 'timeout',
+  };
+}
+
 //
 // ===== VALIDATION-ENHANCED HOOKS =====
 //
@@ -486,9 +522,16 @@ export function useEntityFilters() {
 export function useEntitiesWithValidation(
   params?: EntitiesQueryParams
 ): UseQueryResult<EntityCollectionSchema, Error> {
+  const queryClient = useQueryClient();
   return useQuery({
     queryKey: [...entitiesQueryKeys.collection(params), 'validated'],
-    queryFn: () => fetchEntitiesV2WithValidation(params),
+    queryFn: async () => {
+      const collection = await fetchEntitiesV2WithValidation(params);
+      collection.entities.forEach((entity) => {
+        reconcileEntityCommandLifecycle(queryClient, entity, 'refetch');
+      });
+      return collection;
+    },
     staleTime: 30000,
     refetchOnWindowFocus: false,
   });
@@ -505,9 +548,14 @@ export function useEntityWithValidation(
   entityId: string,
   enabled = true
 ): UseQueryResult<EntitySchema, Error> {
+  const queryClient = useQueryClient();
   return useQuery({
     queryKey: [...entitiesQueryKeys.entity(entityId), 'validated'],
-    queryFn: () => fetchEntityV2WithValidation(entityId),
+    queryFn: async () => {
+      const entity = await fetchEntityV2WithValidation(entityId);
+      reconcileEntityCommandLifecycle(queryClient, entity, 'refetch');
+      return entity;
+    },
     enabled: enabled && !!entityId,
     staleTime: 30000,
     refetchOnWindowFocus: false,
@@ -526,97 +574,7 @@ export function useEntityWithValidation(
  * @returns Mutation object for validated entity control
  */
 export function useControlEntityWithValidation() {
-  const queryClient = useQueryClient();
-  const { data: isDomainAPIAvailable, isLoading: isCheckingAPI } = useEntitiesDomainAPIAvailability();
-
-  return useMutation({
-    mutationFn: ({
-      entityId,
-      command,
-    }: {
-      entityId: string;
-      command: ControlCommandSchema;
-    }) => controlEntityV2WithValidation(entityId, command),
-    onMutate: async ({ entityId, command }) => {
-      // Cancel outgoing refetches
-      await queryClient.cancelQueries({
-        queryKey: entitiesQueryKeys.entity(entityId),
-      });
-
-      // Snapshot the previous value
-      const previousEntity = queryClient.getQueryData<EntitySchema>(
-        entitiesQueryKeys.entity(entityId)
-      );
-
-      // SAFETY CRITICAL: Only apply optimistic updates if domain API v1 is available
-      // AND validation is working properly
-      if (isDomainAPIAvailable && !isCheckingAPI && previousEntity) {
-        const optimisticState = { ...previousEntity.state };
-
-        // Apply optimistic updates with enhanced safety checks
-        if (command.command === 'set') {
-          if (command.state !== undefined && command.state !== null) {
-            optimisticState.state = command.state ? 'on' : 'off';
-          }
-          if (command.brightness !== undefined && command.brightness !== null) {
-            // Safety clamp brightness
-            const safeBrightness = Math.max(0, Math.min(100, command.brightness));
-            optimisticState.brightness = safeBrightness;
-
-            if (command.brightness !== safeBrightness) {
-              console.warn(`⚠️ Brightness clamped from ${command.brightness} to ${safeBrightness} for safety`);
-            }
-          }
-        } else if (command.command === 'toggle') {
-          optimisticState.state = optimisticState.state === 'on' ? 'off' : 'on';
-        } else if (command.command === 'brightness_up') {
-          const currentBrightness = typeof optimisticState.brightness === 'number' ? optimisticState.brightness : 0;
-          optimisticState.brightness = Math.min(100, currentBrightness + 10);
-        } else if (command.command === 'brightness_down') {
-          const currentBrightness = typeof optimisticState.brightness === 'number' ? optimisticState.brightness : 0;
-          optimisticState.brightness = Math.max(0, currentBrightness - 10);
-        }
-
-        queryClient.setQueryData<EntitySchema>(
-          entitiesQueryKeys.entity(entityId),
-          {
-            ...previousEntity,
-            state: optimisticState,
-            last_updated: new Date().toISOString(),
-          }
-        );
-      }
-
-      return { previousEntity };
-    },
-    onError: (error, { entityId }, context) => {
-      // Enhanced error handling for validation failures
-      if (error.message.includes('Invalid control command')) {
-        console.error('❌ Command validation failed:', error.message);
-      } else if (error.message.includes('validation failed')) {
-        console.error('❌ Response validation failed:', error.message);
-      }
-
-      // Rollback optimistic update on error
-      if (context?.previousEntity) {
-        queryClient.setQueryData(
-          entitiesQueryKeys.entity(entityId),
-          context.previousEntity
-        );
-      }
-    },
-    onSettled: (data, error, { entityId }) => {
-      // Refetch entity data to ensure consistency
-      void queryClient.invalidateQueries({
-        queryKey: entitiesQueryKeys.entity(entityId),
-      });
-
-      // Also invalidate collections that might contain this entity
-      void queryClient.invalidateQueries({
-        queryKey: entitiesQueryKeys.collections(),
-      });
-    },
-  });
+  return useEntityControlMutation(controlEntityV2WithValidation);
 }
 
 /**
@@ -631,119 +589,7 @@ export function useControlEntityWithValidation() {
  * @returns Mutation object for validated bulk operations
  */
 export function useBulkControlEntitiesWithValidation() {
-  const queryClient = useQueryClient();
-  const { data: isDomainAPIAvailable, isLoading: isCheckingAPI } = useEntitiesDomainAPIAvailability();
-
-  return useMutation({
-    mutationFn: (request: BulkControlRequestSchema) => bulkControlEntitiesV2WithValidation(request),
-    onMutate: async (request) => {
-      // Cancel outgoing refetches for affected entities
-      const cancelPromises = request.entity_ids.map((entityId) =>
-        queryClient.cancelQueries({
-          queryKey: entitiesQueryKeys.entity(entityId),
-        })
-      );
-      await Promise.all(cancelPromises);
-
-      // Snapshot previous values
-      const previousEntities = request.entity_ids.map((entityId) => ({
-        entityId,
-        data: queryClient.getQueryData<EntitySchema>(
-          entitiesQueryKeys.entity(entityId)
-        ),
-      }));
-
-      // SAFETY CRITICAL: Enhanced validation checks for bulk operations
-      if (isDomainAPIAvailable && !isCheckingAPI) {
-        // Additional safety check: prevent excessive bulk operations
-        if (request.entity_ids.length > 50) {
-          console.warn(`⚠️ Large bulk operation detected: ${request.entity_ids.length} entities`);
-        }
-
-        // Apply optimistic updates to all entities
-        request.entity_ids.forEach((entityId) => {
-          const previousEntity = queryClient.getQueryData<EntitySchema>(
-            entitiesQueryKeys.entity(entityId)
-          );
-
-          if (previousEntity) {
-            const optimisticState = { ...previousEntity.state };
-
-            // Apply the same optimistic logic as single entity control with safety checks
-            if (request.command.command === 'set') {
-              if (request.command.state !== undefined && request.command.state !== null) {
-                optimisticState.state = request.command.state ? 'on' : 'off';
-              }
-              if (request.command.brightness !== undefined && request.command.brightness !== null) {
-                // Safety clamp brightness for bulk operations
-                const safeBrightness = Math.max(0, Math.min(100, request.command.brightness));
-                optimisticState.brightness = safeBrightness;
-              }
-            } else if (request.command.command === 'toggle') {
-              optimisticState.state = optimisticState.state === 'on' ? 'off' : 'on';
-            }
-
-            queryClient.setQueryData<EntitySchema>(
-              entitiesQueryKeys.entity(entityId),
-              {
-                ...previousEntity,
-                state: optimisticState,
-                last_updated: new Date().toISOString(),
-              }
-            );
-          }
-        });
-      }
-
-      return { previousEntities };
-    },
-    onError: (error, request, context) => {
-      // Enhanced error handling for validation failures
-      if (error.message.includes('Invalid bulk control request')) {
-        console.error('❌ Bulk request validation failed:', error.message);
-      } else if (error.message.includes('validation failed')) {
-        console.error('❌ Bulk response validation failed:', error.message);
-      }
-
-      // Rollback optimistic updates on error
-      if (context?.previousEntities) {
-        context.previousEntities.forEach(({ entityId, data }) => {
-          if (data) {
-            queryClient.setQueryData(
-              entitiesQueryKeys.entity(entityId),
-              data
-            );
-          }
-        });
-      }
-    },
-    onSuccess: (result, _request) => {
-      // Handle partial success scenarios with detailed logging
-      const failedOperations = result.results.filter(r => r.status !== 'success');
-      if (failedOperations.length > 0) {
-        console.warn('⚠️ Some bulk operations failed:', failedOperations);
-
-        // Rollback optimistic update for failed entities
-        failedOperations.forEach((operationResult) => {
-          void queryClient.invalidateQueries({
-            queryKey: entitiesQueryKeys.entity(operationResult.entity_id),
-          });
-        });
-      }
-    },
-    onSettled: (data, error, request) => {
-      // Refetch all affected entities and collections
-      request.entity_ids.forEach((entityId) => {
-        void queryClient.invalidateQueries({
-          queryKey: entitiesQueryKeys.entity(entityId),
-        });
-      });
-
-      void queryClient.invalidateQueries({
-        queryKey: entitiesQueryKeys.collections(),
-      });
-    },
-  });
+  return useBulkEntityControlMutation(bulkControlEntitiesV2WithValidation);
 }
 
 //

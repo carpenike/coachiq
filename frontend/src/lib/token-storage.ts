@@ -5,8 +5,8 @@
  * refresh functionality and secure cleanup.
  */
 
-import { refreshToken as refreshTokenAPI, revokeRefreshToken, getAuthStatus } from '@/api/endpoints'
-import type { RefreshTokenResponse } from '@/api/types'
+import { refreshToken as refreshTokenAPI, revokeRefreshToken } from '@/api/endpoints'
+import type { AuthStatus, RefreshTokenResponse } from '@/api/types'
 
 // Storage keys
 const ACCESS_TOKEN_KEY = 'auth_token'
@@ -324,21 +324,12 @@ class TokenStorageManager {
   /**
    * Initialize token manager (call on app startup)
    */
-  async initialize(): Promise<void> {
-    // Check auth status first
-    try {
-      const authStatus = await getAuthStatus()
-      this.authEnabled = authStatus.enabled
+  async initialize(authStatus: AuthStatus): Promise<void> {
+    this.authEnabled = authStatus.enabled
 
-      // If auth is disabled, skip token initialization
-      if (!authStatus.enabled || authStatus.mode === 'none') {
-        console.info('Token initialization skipped: Authentication is disabled')
-        return
-      }
-    } catch (error) {
-      // If we can't get auth status, assume auth is enabled
-      console.warn('Failed to get auth status, assuming authentication is enabled:', error)
-      this.authEnabled = true
+    if (!authStatus.enabled || authStatus.mode === 'none') {
+      console.info('Token initialization skipped: Authentication is disabled')
+      return
     }
 
     const tokenData = this.getTokenData()

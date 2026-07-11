@@ -116,6 +116,7 @@ class CompositionServices:
     auth_event_repository: Any = None
     can_command_repository: Any = None
     credential_repository: Any = None
+    dashboard_config_repository: Any = None
     entity_config_repository: Any = None
     entity_history_repository: Any = None
     entity_manager_service: Any = None
@@ -200,6 +201,7 @@ class CompositionRoot:
         "auth_event_repository",
         "can_command_repository",
         "credential_repository",
+        "dashboard_config_repository",
         "entity_config_repository",
         "entity_history_repository",
         "entity_manager_service",
@@ -510,6 +512,7 @@ class CompositionRoot:
             MfaRepository,
             SessionRepository,
         )
+        from backend.repositories.dashboard_config_repository import DashboardConfigRepository
         from backend.repositories.database_repository import (
             DatabaseSessionRepository,
             MigrationRepository,
@@ -579,6 +582,9 @@ class CompositionRoot:
             ),
             "credential_repository": lambda: CredentialRepository(
                 database_manager, performance_monitor
+            ),
+            "dashboard_config_repository": lambda: DashboardConfigRepository(
+                database_manager, performance_monitor, settings.data_dir
             ),
             "entity_config_repository": lambda: EntityConfigRepository(
                 database_manager, performance_monitor
@@ -956,7 +962,7 @@ class CompositionRoot:
             self._set_root_constructed_service(
                 "dashboard_service",
                 DashboardService(
-                    dashboard_repository=None,
+                    dashboard_repository=self.require_service("dashboard_config_repository"),
                     entity_repository=self.require_service("entity_state_repository"),
                     performance_monitor=performance_monitor,
                     websocket_manager=self.require_service("websocket_manager"),

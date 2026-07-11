@@ -13,7 +13,9 @@ export function getEntityState(entity: EntitySchema): string {
 }
 
 export function getEntityTimestamp(entity: EntitySchema): number {
-  const timestamp = Date.parse(entity.last_updated);
+  const value = entity.last_seen_at ?? entity.data_received_at ?? entity.last_updated;
+  if (!value) return 0;
+  const timestamp = Date.parse(value);
   return Number.isNaN(timestamp) ? 0 : timestamp;
 }
 
@@ -52,7 +54,7 @@ export function toDisplayEntity(entity: EntitySchema): Entity {
     capabilities: [],
     groups: [],
     timestamp: getEntityTimestamp(entity),
-    last_updated: entity.last_updated,
+    ...(entity.last_updated ? { last_updated: entity.last_updated } : {}),
     source_type: entity.protocol,
     entity_type: entity.device_type
   };

@@ -5,11 +5,12 @@ and user preferences using the repository pattern.
 """
 
 import asyncio
+import hashlib
 import json
 import logging
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 from backend.core.performance import PerformanceMonitor
 from backend.repositories.base import MonitoredRepository
@@ -79,6 +80,11 @@ class DashboardConfigRepository(MonitoredRepository):
         self._lock = asyncio.Lock()
         self._loaded = False
 
+    def _config_path(self, user_id: str) -> Path:
+        """Return a stable path that cannot be influenced by identity path syntax."""
+        digest = hashlib.sha256(user_id.encode("utf-8")).hexdigest()
+        return self.data_dir / f"{digest}.json"
+
     async def _ensure_loaded(self) -> None:
         """Ensure configurations are loaded from disk."""
         if not self._loaded:
@@ -105,7 +111,7 @@ class DashboardConfigRepository(MonitoredRepository):
     @MonitoredRepository._monitored_operation("save_to_disk")
     async def _save_to_disk(self, config: DashboardConfig) -> None:
         """Save a dashboard configuration to disk."""
-        config_file = self.data_dir / f"{config.user_id}.json"
+        config_file = self._config_path(config.user_id)
 
         try:
             with open(config_file, "w") as f:
@@ -129,18 +135,10 @@ class DashboardConfigRepository(MonitoredRepository):
         async with self._lock:
             return self._configs.get(user_id)
 
-    @MonitoredRepository._monitored_operation("create_default")
-    async def create_default(self, user_id: str) -> DashboardConfig:
-        """Create a default dashboard configuration.
-
-        Args:
-            user_id: The user ID
-
-        Returns:
-            New default dashboard configuration
-        """
+    @staticmethod
+    def _build_default(user_id: str) -> DashboardConfig:
+        """Build a default configuration without acquiring repository locks."""
         default_layout = {"type": "grid", "columns": 3, "rows": 3, "gap": 16}
-
         default_widgets = [
             {
                 "id": "entity-summary",
@@ -167,21 +165,34 @@ class DashboardConfigRepository(MonitoredRepository):
                 "title": "Activity Feed",
             },
         ]
-
         default_preferences = {
             "theme": "auto",
             "refresh_interval": 5000,
             "show_notifications": True,
         }
-
-        config = DashboardConfig(
+        return DashboardConfig(
             user_id=user_id,
             layout=default_layout,
             widgets=default_widgets,
             preferences=default_preferences,
         )
 
+    @MonitoredRepository._monitored_operation("create_default")  # noqa: SLF001
+    async def create_default(self, user_id: str) -> DashboardConfig:
+        """Create a default dashboard configuration.
+
+        Args:
+            user_id: The user ID
+
+        Returns:
+            New default dashboard configuration
+        """
+        await self._ensure_loaded()
         async with self._lock:
+            existing = self._configs.get(user_id)
+            if existing:
+                return existing
+            config = self._build_default(user_id)
             self._configs[user_id] = config
             await self._save_to_disk(config)
 
@@ -203,7 +214,8 @@ class DashboardConfigRepository(MonitoredRepository):
         async with self._lock:
             config = self._configs.get(user_id)
             if not config:
-                config = await self.create_default(user_id)
+                config = self._build_default(user_id)
+                self._configs[user_id] = config
 
             config.layout = layout
             config.updated_at = datetime.now()
@@ -228,7 +240,8 @@ class DashboardConfigRepository(MonitoredRepository):
         async with self._lock:
             config = self._configs.get(user_id)
             if not config:
-                config = await self.create_default(user_id)
+                config = self._build_default(user_id)
+                self._configs[user_id] = config
 
             config.widgets = widgets
             config.updated_at = datetime.now()
@@ -255,7 +268,8 @@ class DashboardConfigRepository(MonitoredRepository):
         async with self._lock:
             config = self._configs.get(user_id)
             if not config:
-                config = await self.create_default(user_id)
+                config = self._build_default(user_id)
+                self._configs[user_id] = config
 
             config.preferences.update(preferences)
             config.updated_at = datetime.now()
@@ -282,7 +296,7 @@ class DashboardConfigRepository(MonitoredRepository):
 
             del self._configs[user_id]
 
-            config_file = self.data_dir / f"{user_id}.json"
+            config_file = self._config_path(user_id)
             if config_file.exists():
                 config_file.unlink()
 

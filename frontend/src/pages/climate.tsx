@@ -42,6 +42,7 @@ import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip
 import { useCoachConnection } from "@/contexts/coach-connection-context"
 import { toast } from "@/hooks/use-toast"
 import { useControlEntity, useEntities } from "@/hooks/useEntities"
+import { entityHasCapability } from "@/lib/entity-capabilities"
 import { cn } from "@/lib/utils"
 
 const ZONE_LOADING_SKELETON_IDS = ["climate-skel-1", "climate-skel-2", "climate-skel-3"]
@@ -77,7 +78,9 @@ const SELECTABLE_MODES = ["off", "cool", "heat", "auto"]
 const SETPOINT_MIN_F = 40
 const SETPOINT_MAX_F = 105
 /** Debounce between setpoint taps and the CAN command. */
-const SETPOINT_COMMIT_MS = 700
+const SETPOINT_COMMIT_MS = 350
+/** How long a successful confirmation remains visible. */
+const SETPOINT_CONFIRMED_MS = 1_500
 /** Manual fan level split: <=60% displays as Low, above as High. */
 const FAN_LOW_MAX_PCT = 60
 
@@ -111,13 +114,11 @@ function zoneSetpointF(entity: EntitySchema, heatOnly: boolean): number | null {
 }
 
 /**
- * Heat-only zones (Aqua-Hot heat counterparts / bay / floor loops) have no
- * compressor or fan. The v1 entity schema exposes no capabilities list (same
- * contract gap the Lights page works around), so this keys off the
- * coach-mapping entity ids (climate_front_heat, climate_aux_heat_5, ...).
+ * Heat-only zones have no compressor or fan. Prefer server capabilities and
+ * retain the entity-id fallback for older backend payloads.
  */
 function zoneIsHeatOnly(entity: EntitySchema): boolean {
-  return entity.entity_id.includes("_heat")
+  return entityHasCapability(entity, "heat_only") || entity.entity_id.includes("_heat")
 }
 
 /** Current fan selection: auto, or manual low/high (the Mira offers Low/High). */
@@ -137,6 +138,10 @@ function relativeTime(value: string): string {
   const date = new Date(value)
   if (Number.isNaN(date.getTime())) return "unknown"
   return formatDistanceToNow(date, { addSuffix: true })
+}
+
+function stateChangedAt(entity: EntitySchema): string {
+  return entity.state_changed_at ?? entity.last_updated ?? ""
 }
 
 //
@@ -199,34 +204,77 @@ interface ISetpointStepperProps {
   disabled: boolean
 }
 
-function SetpointStepper({ entity, heatOnly, disabled }: Readonly<ISetpointStepperProps>) {
+type SetpointCommandState = "idle" | "pending" | "sending" | "confirmed"
+
+export function SetpointStepper({
+  entity,
+  heatOnly,
+  disabled,
+}: Readonly<ISetpointStepperProps>) {
   const control = useControlEntity()
   const stateSetpoint = zoneSetpointF(entity, heatOnly)
   const [pending, setPending] = useState<number | null>(null)
+  const [commandState, setCommandState] = useState<SetpointCommandState>("idle")
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const confirmationTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   // Drop the local pending value once the entity state catches up.
   useEffect(() => {
     if (pending !== null && stateSetpoint !== null && Math.round(stateSetpoint) === pending) {
       setPending(null)
+      if (commandState === "confirmed") setCommandState("idle")
     }
-  }, [pending, stateSetpoint])
+  }, [commandState, pending, stateSetpoint])
 
   useEffect(
     () => () => {
       if (timer.current) clearTimeout(timer.current)
+      if (confirmationTimer.current) clearTimeout(confirmationTimer.current)
     },
     []
   )
 
   const shown = pending ?? (stateSetpoint === null ? null : Math.round(stateSetpoint))
 
+  const showConfirmation = () => {
+    setCommandState("confirmed")
+    if (confirmationTimer.current) clearTimeout(confirmationTimer.current)
+    confirmationTimer.current = setTimeout(() => {
+      setPending(null)
+      setCommandState("idle")
+      confirmationTimer.current = null
+    }, SETPOINT_CONFIRMED_MS)
+  }
+
+  const handleCommandResult = (result: OperationResultSchema) => {
+    if (result.status !== "success") {
+      setPending(null)
+      setCommandState("idle")
+      reportCommandResult(result, entity.name)
+      return
+    }
+    showConfirmation()
+  }
+
+  const handleCommandError = (error: Error) => {
+    setPending(null)
+    setCommandState("idle")
+    reportCommandError(error, entity.name)
+  }
+
   const step = (delta: number) => {
     if (shown === null) return
+    if (confirmationTimer.current) {
+      clearTimeout(confirmationTimer.current)
+      confirmationTimer.current = null
+    }
     const target = Math.max(SETPOINT_MIN_F, Math.min(SETPOINT_MAX_F, shown + delta))
     setPending(target)
+    setCommandState("pending")
     if (timer.current) clearTimeout(timer.current)
     timer.current = setTimeout(() => {
+      timer.current = null
+      setCommandState("sending")
       control.mutate(
         {
           entityId: entity.entity_id,
@@ -236,48 +284,63 @@ function SetpointStepper({ entity, heatOnly, disabled }: Readonly<ISetpointStepp
           },
         },
         {
-          onSuccess: (result) => reportCommandResult(result, entity.name),
-          onError: (error) => {
-            setPending(null)
-            reportCommandError(error, entity.name)
-          },
+          onSuccess: handleCommandResult,
+          onError: handleCommandError
         }
       )
     }, SETPOINT_COMMIT_MS)
   }
 
-  const stepperDisabled = disabled || shown === null
+  const stepperDisabled = disabled || shown === null || commandState === "sending"
+  const statusText = (() => {
+    if (commandState === "pending") return `Setpoint ${shown} degrees pending`
+    if (commandState === "sending") return `Sending setpoint ${shown} degrees`
+    if (commandState === "confirmed") return `Setpoint ${shown} degrees confirmed`
+    return ""
+  })()
 
   return (
-    <div className="flex items-center gap-1">
-      <Button
-        variant="outline"
-        size="icon"
-        className="size-8"
-        disabled={stepperDisabled}
-        onClick={() => step(-1)}
-        aria-label={`Lower ${entity.name} setpoint`}
-      >
-        <IconMinus className="size-4" />
-      </Button>
-      <span
+    <div className="flex min-h-12 flex-col items-end justify-center gap-0.5">
+      <div className="flex items-center gap-1">
+        <Button
+          variant="outline"
+          size="icon"
+          className="size-11"
+          disabled={stepperDisabled}
+          onClick={() => step(-1)}
+          aria-label={`Lower ${entity.name} setpoint`}
+        >
+          <IconMinus className="size-4" />
+        </Button>
+        <span
+          className={cn(
+            "w-12 text-center text-lg font-semibold tabular-nums",
+            commandState !== "idle" && "text-primary"
+          )}
+        >
+          {shown === null ? "—" : `${shown}°`}
+        </span>
+        <Button
+          variant="outline"
+          size="icon"
+          className="size-11"
+          disabled={stepperDisabled}
+          onClick={() => step(1)}
+          aria-label={`Raise ${entity.name} setpoint`}
+        >
+          <IconPlus className="size-4" />
+        </Button>
+      </div>
+      <p
         className={cn(
-          "w-12 text-center text-lg font-semibold tabular-nums",
-          pending !== null && "text-primary"
+          "min-h-4 text-[11px] text-muted-foreground",
+          commandState === "confirmed" && "text-green-700 dark:text-green-400"
         )}
+        aria-live="polite"
+        aria-atomic="true"
       >
-        {shown === null ? "—" : `${shown}°`}
-      </span>
-      <Button
-        variant="outline"
-        size="icon"
-        className="size-8"
-        disabled={stepperDisabled}
-        onClick={() => step(1)}
-        aria-label={`Raise ${entity.name} setpoint`}
-      >
-        <IconPlus className="size-4" />
-      </Button>
+        {statusText}
+      </p>
     </div>
   )
 }
@@ -302,7 +365,7 @@ function ZoneModeRow({ entity, disabled, onCommand }: Readonly<IZoneSelectRowPro
         disabled={disabled}
         onValueChange={(value) => onCommand({ mode: value }, "mode")}
       >
-        <SelectTrigger className="h-8 w-32" aria-label={`${entity.name} mode`}>
+        <SelectTrigger className="h-11 w-32" aria-label={`${entity.name} mode`}>
           <SelectValue placeholder="—" />
         </SelectTrigger>
         <SelectContent>
@@ -332,7 +395,7 @@ function ZoneFanRow({ entity, disabled, onCommand }: Readonly<IZoneSelectRowProp
         disabled={disabled || fanSelection === null}
         onValueChange={setFan}
       >
-        <SelectTrigger className="h-8 w-32" aria-label={`${entity.name} fan`}>
+        <SelectTrigger className="h-11 w-32" aria-label={`${entity.name} fan`}>
           <SelectValue placeholder="—" />
         </SelectTrigger>
         <SelectContent>
@@ -369,7 +432,7 @@ function ZoneCardHeader({
           {icon}
           {entity.name}
         </CardTitle>
-        <p className="text-xs text-muted-foreground">Updated {relativeTime(entity.last_updated)}</p>
+        <p className="text-xs text-muted-foreground">Last changed {relativeTime(stateChangedAt(entity))}</p>
       </div>
       <div className="flex flex-col items-end">
         <p className="text-3xl font-semibold tabular-nums">{formatTempF(currentF)}</p>
@@ -571,7 +634,7 @@ function AcUnitRow({ entity }: Readonly<{ entity: EntitySchema }>) {
     <div className="flex items-center justify-between py-2">
       <div>
         <p className="text-sm font-medium">{entity.name}</p>
-        <p className="text-xs text-muted-foreground">Updated {relativeTime(entity.last_updated)}</p>
+        <p className="text-xs text-muted-foreground">Last changed {relativeTime(stateChangedAt(entity))}</p>
       </div>
       <div className="flex items-center gap-2">
         {running ? (
@@ -746,7 +809,7 @@ function AquaHotRow({
       <div>
         <p className="text-sm font-medium">{entity.name}</p>
         <p className="text-xs text-muted-foreground">
-          {statusLabel} · updated {relativeTime(entity.last_updated)}
+          {statusLabel} · last changed {relativeTime(stateChangedAt(entity))}
         </p>
       </div>
       <div className="flex items-center gap-4">
@@ -953,7 +1016,7 @@ function OutsideTempRow({ sensors }: Readonly<{ sensors: EntitySchema[] }>) {
               <div>
                 <p className="text-sm font-medium">{entity.name}</p>
                 <p className="text-xs text-muted-foreground">
-                  Updated {relativeTime(entity.last_updated)}
+                  Last changed {relativeTime(stateChangedAt(entity))}
                 </p>
               </div>
               <span className="text-lg font-semibold tabular-nums">

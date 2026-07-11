@@ -89,6 +89,23 @@ describe('applyEntityUpdate', () => {
     expect(cached?.available).toBe(true)
   })
 
+  it('preserves authoritative server freshness and state-change timestamps', () => {
+    const timestamps = {
+      last_updated: '2026-07-08T12:00:03Z',
+      last_seen_at: '2026-07-08T12:00:01Z',
+      data_received_at: '2026-07-08T12:00:03Z',
+      state_changed_at: '2026-07-08T11:58:00Z',
+    }
+
+    applyEntityUpdate(client, {
+      entity_id: 'thermostat_1',
+      entity_data: makeSsePayload('thermostat_1', { temp: 72 }, timestamps),
+    })
+
+    const cached = client.getQueryData<EntitySchema>(entitiesQueryKeys.entity('thermostat_1'))
+    expect(cached).toMatchObject(timestamps)
+  })
+
   it('patches raw values into cached collections while preserving REST fields', () => {
     const stale = makeRestEntity('thermostat_1', { name: 'Bedroom', state: { temp: 68 } })
     const other = makeRestEntity('thermostat_2')

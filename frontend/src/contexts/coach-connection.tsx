@@ -135,7 +135,9 @@ function computeEntitiesFreshestAt(queryClient: QueryClient): Date | null {
   });
   for (const [, collection] of collections) {
     for (const entity of collection?.entities ?? []) {
-      const updatedAt = new Date(entity.last_updated);
+      const freshness = entity.last_seen_at ?? entity.data_received_at ?? entity.last_updated;
+      if (!freshness) continue;
+      const updatedAt = new Date(freshness);
       if (!Number.isNaN(updatedAt.getTime()) && (!freshest || updatedAt > freshest)) {
         freshest = updatedAt;
       }

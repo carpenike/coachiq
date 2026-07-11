@@ -21,9 +21,7 @@ from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 
-from backend.core.dependencies import (
-    root_service_dependency,
-)
+from backend.core.dependencies import root_service_dependency
 
 # Create dashboard service dependency
 get_dashboard_service = root_service_dependency("dashboard_service")

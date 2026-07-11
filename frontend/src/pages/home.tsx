@@ -2,7 +2,7 @@
  * Home — the owner screen (Vegatouch Mira / Firefly panel replacement).
  *
  * Answers, in order:
- *  1. Is my coach reachable, and is what I'm seeing current?  (hero strip)
+ *  1. Is my coach reachable, and is what I'm seeing current?  (global banner)
  *  2. What state is each zone of the coach in?                (zone grid)
  *  3. Can I change it right now?                              (controls w/ feedback)
  *
@@ -12,9 +12,10 @@
 
 import {
   IconAlertTriangle,
+  IconArrowDown,
+  IconArrowUp,
+  IconAdjustments,
   IconMoon,
-  IconPlugConnectedX,
-  IconRefresh,
   IconShieldBolt,
   IconSparkles,
   IconSunOff,
@@ -28,9 +29,18 @@ import { fetchActiveDTCs } from "@/api/domains/diagnostics"
 import type { EntitySchema, OperationResultSchema } from "@/api/types/domains"
 import { PowerSection } from "@/components/power-section"
 import { Badge } from "@/components/ui/badge"
-import { POWER_DEVICE_TYPES } from "@/lib/power"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
+import { Checkbox } from "@/components/ui/checkbox"
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from "@/components/ui/dialog"
+import { Label } from "@/components/ui/label"
 import { Skeleton } from "@/components/ui/skeleton"
 import { Slider } from "@/components/ui/slider"
 import { Switch } from "@/components/ui/switch"
@@ -45,6 +55,17 @@ import {
   type IZoneGroup,
 } from "@/hooks/useCoachConfig"
 import { useBulkControlEntities, useControlEntity, useEntities } from "@/hooks/useEntities"
+import {
+  moveHomeSection,
+  setFavoriteEntityIds,
+  setHomeSectionVisible,
+  useHomePreferences,
+  type HomeSectionId,
+} from "@/hooks/usePreferences"
+import {
+  entitySupportsBrightnessControl,
+  entitySupportsPowerControl,
+} from "@/lib/entity-capabilities"
 import { cn } from "@/lib/utils"
 
 /** Stable keys for the zone-grid loading-skeleton placeholders (no zone data exists yet to key on). */
@@ -56,6 +77,15 @@ const ZONE_LOADING_SKELETON_IDS = [
   "zone-skeleton-5",
   "zone-skeleton-6",
 ]
+
+/** Device types whose current UI command contract explicitly supports a binary toggle. */
+const HOME_TOGGLE_DEVICE_TYPES = new Set(["light"])
+const HOME_SECTION_LABELS = new Map<HomeSectionId, string>([
+  ["alerts", "Active alerts"],
+  ["scenes", "Scenes"],
+  ["power", "Power summary"],
+  ["zones", "Zone controls"],
+])
 
 //
 // ===== Entity state helpers (RV-C operating_status is raw 0..200) =====
@@ -72,6 +102,11 @@ function entityIsOn(entity: EntitySchema): boolean {
   return false
 }
 
+// eslint-disable-next-line react-refresh/only-export-components -- pure capability policy is unit tested directly
+export function entitySupportsHomeToggle(entity: EntitySchema): boolean {
+  return HOME_TOGGLE_DEVICE_TYPES.has(entity.device_type) && entitySupportsPowerControl(entity)
+}
+
 function entityBrightnessPct(entity: EntitySchema): number {
   const state = entity.state ?? {}
   if (typeof state.brightness === "number") {
@@ -84,14 +119,14 @@ function entityBrightnessPct(entity: EntitySchema): number {
 }
 
 /**
- * Whether the entity supports dimming. The v1 entity schema exposes no
- * capabilities list (contract gap) — a light whose state reports a level
- * (operating_status / brightness) is treated as dimmable.
+ * Whether the entity supports dimming according to the canonical contract.
  */
 function entityIsDimmable(entity: EntitySchema): boolean {
-  if (entity.device_type !== "light") return false
-  const state = entity.state ?? {}
-  return typeof state.operating_status === "number" || typeof state.brightness === "number"
+  return entitySupportsBrightnessControl(entity)
+}
+
+function stateChangedAt(entity: EntitySchema): string | null {
+  return entity.state_changed_at ?? entity.last_updated ?? null
 }
 
 function formatTime(value: string | Date | null): string {
@@ -117,59 +152,6 @@ function reportCommandError(error: Error, entityName: string) {
     title: `Command failed: ${entityName}`,
     description: error.message,
   })
-}
-
-//
-// ===== Connection hero strip =====
-//
-
-function ConnectionHero() {
-  const { coach, reason, lastDataAt, retry } = useCoachConnection()
-
-  if (coach === "LIVE") {
-    return (
-      <div className="flex items-center gap-2 rounded-lg border border-green-200 bg-green-50 px-3 py-1.5 text-sm text-green-800 dark:border-green-900 dark:bg-green-950/40 dark:text-green-300">
-        <span className="size-2 rounded-full bg-green-500" aria-hidden />
-        <span className="font-medium">Live</span>
-        <span className="text-green-700/80 dark:text-green-400/80">
-          Realtime updates active
-        </span>
-      </div>
-    )
-  }
-
-  const isOffline = coach === "OFFLINE"
-  return (
-    <Card
-      className={cn(
-        "border-2",
-        isOffline
-          ? "border-red-300 dark:border-red-900"
-          : "border-amber-300 dark:border-amber-900"
-      )}
-    >
-      <CardContent className="flex flex-col gap-3 p-4 sm:flex-row sm:items-center">
-        {isOffline ? (
-          <IconPlugConnectedX className="size-8 shrink-0 text-red-600 dark:text-red-400" />
-        ) : (
-          <IconAlertTriangle className="size-8 shrink-0 text-amber-600 dark:text-amber-400" />
-        )}
-        <div className="flex-1">
-          <p className="font-semibold">
-            {isOffline ? "Can't reach the coach" : "Showing last known state"}
-          </p>
-          <p className="text-sm text-muted-foreground">
-            {reason === "authentication" ? "Session expired — sign in again." : reason}
-            {" · "}Last data {formatTime(lastDataAt)}
-          </p>
-        </div>
-        <Button variant="outline" size="sm" onClick={retry} className="gap-1 self-start sm:self-auto">
-          <IconRefresh className="size-4" />
-          Retry
-        </Button>
-      </CardContent>
-    </Card>
-  )
 }
 
 //
@@ -376,7 +358,7 @@ interface IDeviceRowProps {
   showTimestamps: boolean
 }
 
-function DeviceRow({ entity, controlsDisabled, disabledReason, showTimestamps }: Readonly<IDeviceRowProps>) {
+function ToggleDeviceRow({ entity, controlsDisabled, disabledReason, showTimestamps }: Readonly<IDeviceRowProps>) {
   const control = useControlEntity()
   const isOn = entityIsOn(entity)
   const isAvailable = entity.available !== false
@@ -432,7 +414,7 @@ function DeviceRow({ entity, controlsDisabled, disabledReason, showTimestamps }:
           <p className="truncate text-sm font-medium">{entity.name}</p>
           {showTimestamps && (
             <p className="text-xs text-muted-foreground">
-              Updated {formatTime(entity.last_updated)}
+              Last changed at {formatTime(stateChangedAt(entity))}
             </p>
           )}
         </div>
@@ -475,9 +457,13 @@ interface IZoneCardProps {
 
 function ZoneCard({ zone, controlsDisabled, disabledReason, showTimestamps }: Readonly<IZoneCardProps>) {
   const bulkControl = useBulkControlEntities()
-  const onCount = zone.entities.filter(entityIsOn).length
+  const onCount = zone.entities.filter(
+    (entity) => entitySupportsHomeToggle(entity) && entityIsOn(entity)
+  ).length
   const switchableIds = zone.entities
-    .filter((entity) => entity.available !== false)
+    .filter(
+      (entity) => entitySupportsHomeToggle(entity) && entity.available !== false
+    )
     .map((entity) => entity.entity_id)
 
   const handleAllOff = () => {
@@ -502,7 +488,7 @@ function ZoneCard({ zone, controlsDisabled, disabledReason, showTimestamps }: Re
     )
   }
 
-  const allOffDisabled = controlsDisabled || switchableIds.length === 0 || bulkControl.isPending
+  const allOffDisabled = controlsDisabled || bulkControl.isPending
 
   const allOffButton = (
     <Button
@@ -510,8 +496,8 @@ function ZoneCard({ zone, controlsDisabled, disabledReason, showTimestamps }: Re
       size="icon"
       disabled={allOffDisabled}
       onClick={handleAllOff}
-      className="size-7 text-muted-foreground"
-      aria-label={`Turn everything off in ${zone.displayName}`}
+      className="size-11 text-muted-foreground"
+      aria-label={`Turn all lights off in ${zone.displayName}`}
     >
       <IconSunOff className="size-4" />
     </Button>
@@ -527,21 +513,22 @@ function ZoneCard({ zone, controlsDisabled, disabledReason, showTimestamps }: Re
               {onCount} on
             </Badge>
           )}
-          {allOffDisabled && controlsDisabled ? (
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <span>{allOffButton}</span>
-              </TooltipTrigger>
-              <TooltipContent>{disabledReason}</TooltipContent>
-            </Tooltip>
-          ) : (
-            allOffButton
-          )}
+          {switchableIds.length > 0 &&
+            (allOffDisabled && controlsDisabled ? (
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <span>{allOffButton}</span>
+                </TooltipTrigger>
+                <TooltipContent>{disabledReason}</TooltipContent>
+              </Tooltip>
+            ) : (
+              allOffButton
+            ))}
         </div>
       </CardHeader>
       <CardContent className="divide-y">
         {zone.entities.map((entity) => (
-          <DeviceRow
+          <ToggleDeviceRow
             key={entity.entity_id}
             entity={entity}
             controlsDisabled={controlsDisabled}
@@ -593,6 +580,97 @@ function ZoneGrid({ zones, controlsDisabled, disabledReason, showTimestamps }: R
   )
 }
 
+function HomeCustomizationDialog({
+  controllableEntities,
+}: Readonly<{ controllableEntities: EntitySchema[] }>) {
+  const preferences = useHomePreferences()
+  const favorites = new Set(preferences.favoriteEntityIds)
+
+  const toggleFavorite = (entityId: string, selected: boolean) => {
+    setFavoriteEntityIds(
+      selected
+        ? [...preferences.favoriteEntityIds, entityId]
+        : preferences.favoriteEntityIds.filter((id) => id !== entityId)
+    )
+  }
+
+  return (
+    <Dialog>
+      <DialogTrigger asChild>
+        <Button variant="outline" size="sm">
+          <IconAdjustments className="size-4" />
+          Customize Home
+        </Button>
+      </DialogTrigger>
+      <DialogContent className="max-h-[85vh] overflow-y-auto sm:max-w-xl">
+        <DialogHeader>
+          <DialogTitle>Customize Home</DialogTitle>
+          <DialogDescription>
+            Choose visible sections, their order, and which quick controls appear first on this
+            device.
+          </DialogDescription>
+        </DialogHeader>
+        <div className="space-y-5">
+          <section className="space-y-2">
+            <h3 className="text-sm font-semibold">Sections</h3>
+            {preferences.sectionOrder.map((section, index) => {
+              const visible = !preferences.hiddenSections.includes(section)
+              return (
+                <div key={section} className="flex min-h-11 items-center gap-2 rounded-md border px-2">
+                  <Checkbox
+                    id={`home-section-${section}`}
+                    checked={visible}
+                    onCheckedChange={(checked) =>
+                      setHomeSectionVisible(section, checked === true)
+                    }
+                  />
+                  <Label htmlFor={`home-section-${section}`} className="flex-1">
+                    {HOME_SECTION_LABELS.get(section)}
+                  </Label>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    disabled={index === 0}
+                    onClick={() => moveHomeSection(section, -1)}
+                    aria-label={`Move ${HOME_SECTION_LABELS.get(section)} up`}
+                  >
+                    <IconArrowUp className="size-4" />
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    disabled={index === preferences.sectionOrder.length - 1}
+                    onClick={() => moveHomeSection(section, 1)}
+                    aria-label={`Move ${HOME_SECTION_LABELS.get(section)} down`}
+                  >
+                    <IconArrowDown className="size-4" />
+                  </Button>
+                </div>
+              )
+            })}
+          </section>
+          <section className="space-y-2">
+            <h3 className="text-sm font-semibold">Favorite controls</h3>
+            <p className="text-sm text-muted-foreground">
+              Favorites stay in their coach zone and sort ahead of other controls.
+            </p>
+            {controllableEntities.map((entity) => (
+              <div key={entity.entity_id} className="flex min-h-11 items-center gap-2">
+                <Checkbox
+                  id={`favorite-${entity.entity_id}`}
+                  checked={favorites.has(entity.entity_id)}
+                  onCheckedChange={(checked) => toggleFavorite(entity.entity_id, checked === true)}
+                />
+                <Label htmlFor={`favorite-${entity.entity_id}`}>{entity.name}</Label>
+              </div>
+            ))}
+          </section>
+        </div>
+      </DialogContent>
+    </Dialog>
+  )
+}
+
 //
 // ===== Page =====
 //
@@ -601,17 +679,18 @@ export default function HomePage() {
   const { coach, reason } = useCoachConnection()
   const { data: config } = useCoachConfig()
   const { data: entityCollection, isLoading, error } = useEntities({ page_size: 100 })
+  const homePreferences = useHomePreferences()
 
   const entities = entityCollection?.entities ?? []
-  // Victron entities are telemetry, never switches: power devices get their
-  // own section, and the rest (temperature sensors, GPS) live on their own
-  // pages — none of them belong in the zone grid, whose DeviceRow renders a
-  // toggle switch for every row.
-  const zoneEntities = entities.filter(
-    (entity) =>
-      entity.protocol !== "victron" && !POWER_DEVICE_TYPES.has(entity.device_type)
-  )
+  // Home is a quick-control surface. Read-only climate, tank, temperature,
+  // and power telemetry belongs on its dedicated page instead of masquerading
+  // as a generic switch here.
+  const favoriteIds = new Set(homePreferences.favoriteEntityIds)
+  const zoneEntities = entities
+    .filter(entitySupportsHomeToggle)
+    .sort((left, right) => Number(favoriteIds.has(right.entity_id)) - Number(favoriteIds.has(left.entity_id)))
   const zones = groupEntitiesByZone(zoneEntities, config)
+  const homeToggleEntities = entities.filter(entitySupportsHomeToggle)
 
   const controlsDisabled = coach !== "LIVE"
   const disabledReason =
@@ -619,13 +698,33 @@ export default function HomePage() {
       ? "Can't reach the coach — controls disabled"
       : `Coach data is not live — ${reason}`
   const showTimestamps = coach !== "LIVE"
+  const sectionContent = new Map<HomeSectionId, React.ReactNode>([
+    ["alerts", <AlertsStrip key="alerts" />],
+    ["scenes", <ScenesRow key="scenes" entities={homeToggleEntities} />],
+    ["power", <PowerSection key="power" entities={entities} compact />],
+    [
+      "zones",
+      !isLoading && !error && zones.length > 0 ? (
+        <ZoneGrid
+          key="zones"
+          zones={zones}
+          controlsDisabled={controlsDisabled}
+          disabledReason={disabledReason}
+          showTimestamps={showTimestamps}
+        />
+      ) : null,
+    ],
+  ])
 
   return (
     <div className="flex-1 space-y-6 p-4 pt-6 lg:px-6">
-      <ConnectionHero />
-      <AlertsStrip />
-      <ScenesRow entities={entities} />
-      <PowerSection entities={entities} />
+      <div className="flex justify-end">
+        <HomeCustomizationDialog controllableEntities={homeToggleEntities} />
+      </div>
+
+      {homePreferences.sectionOrder.map((section) =>
+        homePreferences.hiddenSections.includes(section) ? null : sectionContent.get(section)
+      )}
 
       {isLoading && (
         <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
@@ -661,14 +760,6 @@ export default function HomePage() {
         </Card>
       )}
 
-      {!isLoading && !error && zones.length > 0 && (
-        <ZoneGrid
-          zones={zones}
-          controlsDisabled={controlsDisabled}
-          disabledReason={disabledReason}
-          showTimestamps={showTimestamps}
-        />
-      )}
     </div>
   )
 }

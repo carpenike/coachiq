@@ -5,6 +5,7 @@
   },
   "include": [
     "src/**/*",
+    "tests/**/*",
     "*.config.{js,ts,mts}",
     "*.d.ts"
   ],

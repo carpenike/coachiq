@@ -309,8 +309,13 @@ export const EntitySchemaZod = z.object({
   protocol: z.string().min(1),
   state: z.record(z.unknown()).optional(),
   area: z.string().nullable().optional(),
-  last_updated: z.string().datetime(),
-  available: z.boolean(),
+  available: z.boolean().nullable().optional(),
+  capabilities: z.array(z.string()).optional(),
+  supported_commands: z.array(z.string()).optional(),
+  last_updated: z.string().datetime().nullable().optional(),
+  last_seen_at: z.string().datetime().nullable().optional(),
+  data_received_at: z.string().datetime().nullable().optional(),
+  state_changed_at: z.string().datetime().nullable().optional(),
 }).strict();
 
 /** Control command schema with safety validation */

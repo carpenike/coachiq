@@ -132,6 +132,53 @@ class EntityRuntimeStateRepository(MonitoredRepository):
         self._transient_states: dict[str, dict[str, Any]] = {}
         self._optimistic_updates: dict[str, dict[str, Any]] = {}
 
+    @staticmethod
+    def _source_observed_at(state: dict[str, Any], fallback: str) -> str:
+        """Return the source observation timestamp as an ISO datetime."""
+        value = state.get("timestamp")
+        if isinstance(value, int | float):
+            return datetime.fromtimestamp(value, tz=UTC).isoformat()
+        if isinstance(value, str):
+            return value
+        return fallback
+
+    @staticmethod
+    def _operational_state(state: dict[str, Any] | None) -> dict[str, Any]:
+        """Extract fields whose changes represent a device-state transition."""
+        if state is None:
+            return {}
+        return {
+            key: state.get(key)
+            for key in ("raw", "value", "state", "brightness_pct", "status")
+            if key in state
+        }
+
+    def _with_runtime_timestamps(
+        self,
+        entity_id: str,
+        state: dict[str, Any],
+        received_at: str,
+    ) -> dict[str, Any]:
+        """Attach honest receipt, observation, and state-change timestamps."""
+        previous = self._entity_states.get(entity_id)
+        observed_at = self._source_observed_at(state, received_at)
+        state_changed_at = observed_at
+        if previous is not None and self._operational_state(previous) == self._operational_state(
+            state
+        ):
+            previous_changed_at = previous.get("state_changed_at")
+            if isinstance(previous_changed_at, str):
+                state_changed_at = previous_changed_at
+
+        return {
+            **state,
+            "entity_id": entity_id,
+            "last_updated": received_at,
+            "data_received_at": received_at,
+            "last_seen_at": observed_at,
+            "state_changed_at": state_changed_at,
+        }
+
     @MonitoredRepository._monitored_operation("save_entity_state")
     async def save_entity_state(self, entity_id: str, state: dict[str, Any]) -> bool:
         """Save entity runtime state.
@@ -143,11 +190,12 @@ class EntityRuntimeStateRepository(MonitoredRepository):
         Returns:
             True if saved successfully
         """
-        self._entity_states[entity_id] = {
-            **state,
-            "entity_id": entity_id,
-            "last_updated": datetime.now(UTC).isoformat(),
-        }
+        received_at = datetime.now(UTC).isoformat()
+        self._entity_states[entity_id] = self._with_runtime_timestamps(
+            entity_id,
+            state,
+            received_at,
+        )
 
         logger.debug(f"Saved state for entity {entity_id}")
         return True
@@ -178,11 +226,11 @@ class EntityRuntimeStateRepository(MonitoredRepository):
         count = 0
 
         for entity_id, state in states.items():
-            self._entity_states[entity_id] = {
-                **state,
-                "entity_id": entity_id,
-                "last_updated": timestamp,
-            }
+            self._entity_states[entity_id] = self._with_runtime_timestamps(
+                entity_id,
+                state,
+                timestamp,
+            )
             count += 1
 
         logger.info(f"Saved {count} entity states in bulk")

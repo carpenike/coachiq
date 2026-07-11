@@ -44,7 +44,7 @@ export type OperationResultSchema = GeneratedSchemas["SafetyOperationResultV2"];
 export type BulkOperationResultSchema = GeneratedSchemas["BulkSafetyOperationResultV2"];
 
 /** Entity collection with pagination and filtering from the OpenAPI contract */
-export type EntityCollectionSchema = GeneratedSchemas["EntityCollectionV2"];
+export type EntityCollectionSchema = GeneratedSchemas["EntityCollectionSchemaV2"];
 
 /** Network status schema from the OpenAPI contract */
 export type NetworkStatusSchema = GeneratedSchemas["NetworkStatus"];

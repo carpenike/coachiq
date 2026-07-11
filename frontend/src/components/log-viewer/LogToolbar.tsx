@@ -39,6 +39,7 @@ export function LogToolbar() {
   };
 
   const showReconnectButton = connectionStatus === "disconnected" || connectionStatus === "error";
+  const streamConnected = connectionStatus === "connected";
   const shouldShowPerformanceMonitor = logs.length > 100; // Show performance monitor for larger datasets
   const shouldUseEnhancedFilters = logs.length > 50; // Use enhanced filters for better UX with more logs
 
@@ -71,7 +72,7 @@ export function LogToolbar() {
               variant="outline"
               size="sm"
               onClick={reconnect}
-              aria-label="Reconnect WebSocket"
+              aria-label="Reconnect live stream"
             >
               Reconnect
             </Button>
@@ -80,23 +81,28 @@ export function LogToolbar() {
       )}
 
       {/* Stream Controls */}
-      <Button
-        variant="outline"
-        size="sm"
-        onClick={isPaused ? resumeStream : pauseStream}
-        aria-label={isPaused ? "Resume log stream" : "Pause log stream"}
-      >
-        {isPaused ? "Resume" : "Pause"}
-      </Button>
+      {mode === "live" && streamConnected && (
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={isPaused ? resumeStream : pauseStream}
+          aria-label={isPaused ? "Resume log stream" : "Pause log stream"}
+        >
+          {isPaused ? "Resume" : "Pause"}
+        </Button>
+      )}
 
-      <Button
-        variant="outline"
-        size="sm"
-        onClick={clearLogs}
-        aria-label="Clear logs"
-      >
-        Clear
-      </Button>
+      {(mode === "history" || streamConnected) && (
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={clearLogs}
+          aria-label="Clear logs"
+          disabled={logs.length === 0}
+        >
+          Clear
+        </Button>
+      )}
 
       {/* Mode Toggle */}
       <Button
