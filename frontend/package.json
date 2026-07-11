@@ -120,7 +120,7 @@
   },
   "overrides": {
     "eslint-plugin-sonarjs": {
-      "minimatch": "^10.2.5"
+      "minimatch": "10.2.5"
     }
   }
 }
