@@ -13,7 +13,7 @@ export default defineConfig({
     reactPlugin({ fastRefresh: false }),
     tailwindcss(),
     VitePWA({
-      registerType: "prompt",
+      registerType: "autoUpdate",
       includeAssets: ["coachiq-icon-192.png", "coachiq-icon-512.png"],
       manifest: {
         name: "CoachIQ",
@@ -40,6 +40,8 @@ export default defineConfig({
         ]
       },
       workbox: {
+        clientsClaim: true,
+        skipWaiting: true,
         navigateFallback: "/index.html",
         globPatterns: ["**/*.{js,css,html,png,svg,woff2}"],
         runtimeCaching: [

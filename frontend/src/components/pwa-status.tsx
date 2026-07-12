@@ -1,9 +1,10 @@
 import { IconCircleCheck, IconDownload, IconX } from "@tabler/icons-react"
+import { useEffect } from "react"
 import { useRegisterSW } from "virtual:pwa-register/react"
 
 import { Button } from "@/components/ui/button"
 
-const UPDATE_CHECK_INTERVAL_MS = 60 * 60 * 1_000
+const UPDATE_CHECK_INTERVAL_MS = 5 * 60 * 1_000
 
 export function PwaStatus() {
   const {
@@ -11,6 +12,7 @@ export function PwaStatus() {
     needRefresh: [needRefresh, setNeedRefresh],
     updateServiceWorker,
   } = useRegisterSW({
+    immediate: true,
     onRegisteredSW: (_scriptUrl, registration) => {
       if (!registration) return
       window.setInterval(() => void registration.update(), UPDATE_CHECK_INTERVAL_MS)
@@ -19,6 +21,10 @@ export function PwaStatus() {
       console.warn("CoachIQ service worker registration failed", error)
     },
   })
+
+  useEffect(() => {
+    if (needRefresh) void updateServiceWorker(true)
+  }, [needRefresh, updateServiceWorker])
 
   if (!offlineReady && !needRefresh) return null
 
