@@ -403,7 +403,7 @@ function DeviceDetailSheet({ entity, config, onClose }: IDeviceDetailSheetProps)
     )
   }
 
-  const controlsAreDisabled = controlsDisabled || control.isPending || powerState === null
+  const controlsAreDisabled = controlsDisabled || powerState === null
   const powerDisabledReason =
     powerState === null ? "Device has not reported a power state" : disabledReason
   const powerControl = (

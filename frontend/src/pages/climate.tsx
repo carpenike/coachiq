@@ -178,7 +178,7 @@ function useSetParameters(entity: EntitySchema) {
       }
     )
   }
-  return { send, isPending: control.isPending }
+  return { send }
 }
 
 //
@@ -291,7 +291,9 @@ export function SetpointStepper({
     }, SETPOINT_COMMIT_MS)
   }
 
-  const stepperDisabled = disabled || shown === null || commandState === "sending"
+  // Stay tappable while a command is in flight: a new tap re-enters the
+  // debounce from the shown value and simply re-targets the setpoint.
+  const stepperDisabled = disabled || shown === null
   const statusText = (() => {
     if (commandState === "pending") return `Setpoint ${shown} degrees pending`
     if (commandState === "sending") return `Sending setpoint ${shown} degrees`
@@ -435,7 +437,7 @@ function ZoneCardHeader({
         <p className="text-xs text-muted-foreground">Last changed {relativeTime(stateChangedAt(entity))}</p>
       </div>
       <div className="flex flex-col items-end">
-        <p className="text-3xl font-semibold tabular-nums">{formatTempF(currentF)}</p>
+        <p className="text-3xl font-semibold tracking-tight tabular-nums">{formatTempF(currentF)}</p>
         {isShed(entity) ? (
           <ShedBadge />
         ) : (
@@ -505,7 +507,7 @@ function AquaHotToggleRow({
         </span>
         <Switch
           checked={on}
-          disabled={disabled || control.isPending || mode === "unknown"}
+          disabled={disabled || mode === "unknown"}
           onCheckedChange={setOn}
           aria-label={`Toggle ${entity.name}`}
         />
@@ -536,12 +538,11 @@ function ThermostatZoneCard({
   controlsDisabled,
   disabledReason,
 }: Readonly<IThermostatZoneCardProps>) {
-  const { send: sendParameters, isPending } = useSetParameters(entity)
+  const { send: sendParameters } = useSetParameters(entity)
   const isAvailable = entity.available !== false
   const cardDisabled = controlsDisabled || !isAvailable
   const cardReason = !isAvailable ? "Zone is not responding on the CAN bus" : disabledReason
   const mode = zoneMode(entity)
-  const rowDisabled = cardDisabled || isPending
 
   return (
     <Card className={cn(!isAvailable && "opacity-60")}>
@@ -551,15 +552,15 @@ function ThermostatZoneCard({
           <div className="space-y-3">
             <div className="flex items-center justify-between gap-2">
               <span className="text-xs text-muted-foreground">Setpoint</span>
-              <SetpointStepper entity={entity} heatOnly={false} disabled={rowDisabled} />
+              <SetpointStepper entity={entity} heatOnly={false} disabled={cardDisabled} />
             </div>
-            <ZoneModeRow entity={entity} disabled={rowDisabled} onCommand={sendParameters} />
-            <ZoneFanRow entity={entity} disabled={rowDisabled} onCommand={sendParameters} />
+            <ZoneModeRow entity={entity} disabled={cardDisabled} onCommand={sendParameters} />
+            <ZoneFanRow entity={entity} disabled={cardDisabled} onCommand={sendParameters} />
             {aquaHot && (
               <AquaHotToggleRow
                 entity={aquaHot}
                 sourceOn={aquaHotSourceOn}
-                disabled={rowDisabled}
+                disabled={cardDisabled}
               />
             )}
           </div>
@@ -608,13 +609,13 @@ function HeatZoneCard({ entity, controlsDisabled, disabledReason }: Readonly<IZo
             <div className="flex items-center gap-2">
               <Switch
                 checked={heatOn}
-                disabled={cardDisabled || control.isPending || mode === "unknown"}
+                disabled={cardDisabled || mode === "unknown"}
                 onCheckedChange={setHeat}
                 aria-label={`Toggle ${entity.name}`}
               />
               <span className="text-xs text-muted-foreground">{heatStatus}</span>
             </div>
-            <SetpointStepper entity={entity} heatOnly disabled={cardDisabled || control.isPending} />
+            <SetpointStepper entity={entity} heatOnly disabled={cardDisabled} />
           </div>
         </DisabledTooltip>
       </CardContent>
@@ -707,7 +708,7 @@ function AcLoadSwitch({
   const requestedOn = acLoadRequestedOn(entity)
   const shed = isShed(entity)
   const isAvailable = entity.available !== false
-  const rowDisabled = disabled || !isAvailable || control.isPending
+  const rowDisabled = disabled || !isAvailable
   const rowReason = !isAvailable ? `${entity.name} is not responding` : disabledReason
 
   const send = (targetOn: boolean) => {

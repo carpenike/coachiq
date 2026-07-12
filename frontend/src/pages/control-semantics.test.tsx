@@ -7,11 +7,19 @@ import { DevicePowerControl } from "@/pages/devices"
 import { ToggleDeviceRow } from "@/pages/home"
 import { LightRow } from "@/pages/lights"
 
-const { mutateMock } = vi.hoisted(() => ({ mutateMock: vi.fn() }))
+const { mutateMock, controlState } = vi.hoisted(() => ({
+  mutateMock: vi.fn(),
+  controlState: { isPending: false },
+}))
 
 vi.mock("@/hooks/useEntities", () => ({
   useBulkControlEntities: vi.fn(),
-  useControlEntity: () => ({ mutate: mutateMock, isPending: false }),
+  useControlEntity: () => ({
+    mutate: mutateMock,
+    get isPending() {
+      return controlState.isPending
+    },
+  }),
   useEntities: vi.fn(),
 }))
 
@@ -95,6 +103,33 @@ describe("binary control semantics", () => {
       },
       expect.any(Object)
     )
+  })
+})
+
+describe("interruptibility", () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    controlState.isPending = false
+  })
+
+  it("keeps the light switch interactive while a command is in flight", async () => {
+    controlState.isPending = true
+    const user = userEvent.setup()
+    render(
+      <LightRow
+        entity={lightEntity()}
+        controlsDisabled={false}
+        disabledReason=""
+        showTimestamp={false}
+      />
+    )
+
+    const lightSwitch = screen.getByRole("switch", { name: "Galley light" })
+    expect(lightSwitch).toBeEnabled()
+
+    // A second command can redirect the first — never lock out input.
+    await user.click(lightSwitch)
+    expect(mutateMock).toHaveBeenCalledTimes(1)
   })
 })
 

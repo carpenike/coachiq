@@ -410,7 +410,7 @@ export function ToggleDeviceRow({ entity, controlsDisabled, disabledReason, show
       )}
       <Switch
         checked={isOn}
-        disabled={rowDisabled || control.isPending}
+        disabled={rowDisabled}
         onCheckedChange={(checked) => sendCommand({ command: "set", state: checked })}
         aria-label={entity.name}
       />
@@ -445,7 +445,7 @@ export function ToggleDeviceRow({ entity, controlsDisabled, disabledReason, show
             value={[shownBrightness]}
             max={100}
             step={5}
-            disabled={rowDisabled || control.isPending}
+            disabled={rowDisabled}
             onValueChange={(value) => {
               const level = value[0]
               if (level !== undefined) setPendingBrightness(level)
@@ -521,13 +521,11 @@ function ZoneCard({ zone, controlsDisabled, disabledReason, showTimestamps }: Re
     )
   }
 
-  const allOffDisabled = controlsDisabled || bulkControl.isPending
-
   const allOffButton = (
     <Button
       variant="ghost"
       size="sm"
-      disabled={allOffDisabled}
+      disabled={controlsDisabled}
       onClick={handleAllOff}
       className="h-11 gap-1.5 px-2 text-muted-foreground"
       aria-label={`Turn all lights off in ${zone.displayName}`}
@@ -548,7 +546,7 @@ function ZoneCard({ zone, controlsDisabled, disabledReason, showTimestamps }: Re
             </Badge>
           )}
           {switchableIds.length > 0 &&
-            (allOffDisabled && controlsDisabled ? (
+            (controlsDisabled ? (
               <Tooltip>
                 <TooltipTrigger asChild>
                   <span>{allOffButton}</span>
