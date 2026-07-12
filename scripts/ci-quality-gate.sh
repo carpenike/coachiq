@@ -21,7 +21,7 @@ RESET="\033[0m"
 # nudging you to update the baseline downward.
 EXPECTED_PYRIGHT_ERRORS=1204  # Ratcheted 2026-07-11: backend contract and realtime-state cleanup (1207 -> 1204; Linux CI verified).
 EXPECTED_FRONTEND_TS_ERRORS=0  # Ratcheted 2026-05-12 to 0 by PR #110 (DatabaseManagementTab + can-sniffer + useCANScanWebSocket generic). Any new TS error is a hard fail.
-EXPECTED_FRONTEND_ESLINT_ERRORS=219  # Ratcheted 2026-07-11: frontend UX and realtime-state lint fixes (260 -> 219).
+EXPECTED_FRONTEND_ESLINT_ERRORS=216  # Ratcheted 2026-07-11: session cache cleanup lint fixes (219 -> 216).
 
 # Determine target branch (for GitHub Actions or local testing)
 if [ -n "${GITHUB_BASE_REF:-}" ]; then

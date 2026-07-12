@@ -17,6 +17,7 @@ const REFRESH_TOKEN_EXPIRY_KEY = 'refresh_token_expiry'
 // Token refresh timing
 const REFRESH_BUFFER_MS = 60000 // Refresh 1 minute before expiry
 const REFRESH_RETRY_DELAY_MS = 5000 // Retry failed refresh after 5 seconds
+const TOKEN_REFRESH_LOCK_NAME = 'coachiq-token-refresh'
 // Cap transient-failure retries so a permanently-broken refresh (e.g. the
 // backend was restarted and the server-side session is gone) lands the user on
 // /login instead of looping "Token refresh failed" every 5s until the refresh
@@ -42,7 +43,16 @@ export interface TokenRefreshCallbacks {
   onTokenExpired?: () => void
 }
 
-class TokenStorageManager {
+interface IWebLockManager {
+  request: <T>(name: string, callback: () => Promise<T>) => Promise<T>
+}
+
+function getWebLockManager(): IWebLockManager | null {
+  if (typeof navigator === 'undefined') return null
+  return (navigator as unknown as { locks?: IWebLockManager }).locks ?? null
+}
+
+export class TokenStorageManager {
   private refreshTimeout: NodeJS.Timeout | null = null
   private refreshCallbacks: TokenRefreshCallbacks = {}
   private refreshPromise: Promise<boolean> | null = null
@@ -188,10 +198,29 @@ class TokenStorageManager {
    * proceeds only once the fresh token is actually stored.
    */
   async attemptTokenRefresh(): Promise<boolean> {
-    this.refreshPromise ??= this.performTokenRefresh().finally(() => {
+    this.refreshPromise ??= this.performTokenRefreshWithCrossTabLock().finally(() => {
       this.refreshPromise = null
     })
     return this.refreshPromise
+  }
+
+  private async performTokenRefreshWithCrossTabLock(): Promise<boolean> {
+    const lockManager = getWebLockManager()
+    if (!lockManager) return this.performTokenRefresh()
+
+    const refreshTokenBeforeLock = this.getRefreshToken()
+    return lockManager.request(TOKEN_REFRESH_LOCK_NAME, async () => {
+      const currentRefreshToken = this.getRefreshToken()
+      if (
+        currentRefreshToken &&
+        currentRefreshToken !== refreshTokenBeforeLock &&
+        this.isAccessTokenValid()
+      ) {
+        this.refreshRetryCount = 0
+        return true
+      }
+      return this.performTokenRefresh()
+    })
   }
 
   private async performTokenRefresh(): Promise<boolean> {
@@ -202,7 +231,7 @@ class TokenStorageManager {
 
     const tokenData = this.getTokenData()
     if (!tokenData || !this.isRefreshTokenValid()) {
-      this.refreshCallbacks.onTokenExpired?.()
+      this.expireTokensIfCurrent(tokenData?.refreshToken ?? null)
       return false
     }
 
@@ -239,7 +268,7 @@ class TokenStorageManager {
         return true
       }
       console.error('Token refresh failed:', error)
-      this.handleRefreshFailure(error as Error)
+      this.handleRefreshFailure(error as Error, tokenData.refreshToken)
       return false
     }
   }
@@ -255,7 +284,7 @@ class TokenStorageManager {
    * without a cap a permanently-broken refresh loops every few seconds until
    * the refresh token's multi-day expiry.
    */
-  private handleRefreshFailure(error: Error): void {
+  private handleRefreshFailure(error: Error, attemptedRefreshToken: string): void {
     const status = (error as { statusCode?: number; status?: number }).statusCode
       ?? (error as { status?: number }).status
     const isUnrecoverable = typeof status === 'number' && status >= 400 && status < 500
@@ -279,7 +308,7 @@ class TokenStorageManager {
         clearTimeout(this.refreshTimeout)
         this.refreshTimeout = null
       }
-      this.refreshCallbacks.onTokenExpired?.()
+      this.expireTokensIfCurrent(attemptedRefreshToken)
     }
 
     this.refreshCallbacks.onRefreshFailure?.(error)
@@ -308,7 +337,17 @@ class TokenStorageManager {
       }
     }
 
-    // Clear from localStorage
+    this.removeStoredTokens()
+  }
+
+  private expireTokensIfCurrent(expectedRefreshToken: string | null): void {
+    if (this.getRefreshToken() !== expectedRefreshToken) return
+    this.removeStoredTokens()
+    this.refreshRetryCount = 0
+    this.refreshCallbacks.onTokenExpired?.()
+  }
+
+  private removeStoredTokens(): void {
     localStorage.removeItem(ACCESS_TOKEN_KEY)
     localStorage.removeItem(REFRESH_TOKEN_KEY)
     localStorage.removeItem(TOKEN_EXPIRY_KEY)

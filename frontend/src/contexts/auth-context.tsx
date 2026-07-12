@@ -22,7 +22,7 @@ import type {
   MagicLinkRequest,
   User,
 } from '@/api/types';
-import { queryKeys } from '@/lib/query-client';
+import { clearProtectedQueries, queryKeys } from '@/lib/query-client';
 import {
   cleanupTokenStorage,
   initializeTokenStorage,
@@ -185,14 +185,13 @@ export function AuthProvider({ children }: AuthProviderProps) {
     onSuccess: () => {
       // Clear all tokens securely
       void tokenStorage.clearTokens();
-      // Clear all cached data
-      void queryClient.clear();
+      clearProtectedQueries(queryClient);
     },
     onError: (error) => {
       console.error('Logout failed:', error);
       // Even if logout fails, clear local state
       void tokenStorage.clearTokens();
-      void queryClient.clear();
+      clearProtectedQueries(queryClient);
     },
   });
 
@@ -236,9 +235,9 @@ export function AuthProvider({ children }: AuthProviderProps) {
         // Could show notification to user
       },
       onTokenExpired: () => {
-        // Tokens expired, clearing auth state
-        void queryClient.clear();
-        void tokenStorage.clearTokens();
+        // Token storage already removed the rejected token. Keep the public
+        // auth-status result so AuthGuard can route directly to /login.
+        clearProtectedQueries(queryClient);
       },
     });
 

@@ -15,7 +15,7 @@ vi.mock('@/api/endpoints', () => ({
 }))
 
 // Import AFTER the mock so the module under test binds to the mocked API.
-const { tokenStorage } = await import('@/lib/token-storage')
+const { TokenStorageManager, tokenStorage } = await import('@/lib/token-storage')
 
 function seedTokens({
   accessExpired = true,
@@ -48,6 +48,7 @@ describe('tokenStorage.attemptTokenRefresh', () => {
   afterEach(() => {
     localStorage.clear()
     tokenStorage.cleanup()
+    vi.unstubAllGlobals()
   })
 
   it('coalesces concurrent callers onto a single refresh request', async () => {
@@ -84,6 +85,20 @@ describe('tokenStorage.attemptTokenRefresh', () => {
     expect(refreshTokenAPI).toHaveBeenCalledTimes(2)
     expect(tokenStorage.getAccessToken()).toBe('access-two')
   })
+})
+
+describe('tokenStorage cross-tab refresh', () => {
+  beforeEach(() => {
+    localStorage.clear()
+    refreshTokenAPI.mockReset()
+    tokenStorage.setRefreshCallbacks({})
+  })
+
+  afterEach(() => {
+    localStorage.clear()
+    tokenStorage.cleanup()
+    vi.unstubAllGlobals()
+  })
 
   it('adopts tokens rotated by another tab instead of killing the session', async () => {
     seedTokens()
@@ -112,6 +127,34 @@ describe('tokenStorage.attemptTokenRefresh', () => {
     expect(tokenStorage.getRefreshToken()).toBe('refresh-winner')
   })
 
+  it('serializes refresh across tabs and adopts the lock winner', async () => {
+    seedTokens()
+    const firstTab = new TokenStorageManager()
+    const secondTab = new TokenStorageManager()
+    let lockTail: Promise<unknown> = Promise.resolve()
+    const lockRequest = vi.fn(
+      (_name: string, callback: () => Promise<boolean>): Promise<boolean> => {
+        const result = lockTail.then(callback)
+        lockTail = result.catch(() => undefined)
+        return result
+      }
+    )
+    vi.stubGlobal('navigator', { locks: { request: lockRequest } })
+    refreshTokenAPI.mockResolvedValue(refreshResponse('winner'))
+
+    const results = await Promise.all([
+      firstTab.attemptTokenRefresh(),
+      secondTab.attemptTokenRefresh(),
+    ])
+
+    expect(results).toEqual([true, true])
+    expect(lockRequest).toHaveBeenCalledTimes(2)
+    expect(refreshTokenAPI).toHaveBeenCalledTimes(1)
+    expect(firstTab.getRefreshToken()).toBe('refresh-winner')
+    firstTab.cleanup()
+    secondTab.cleanup()
+  })
+
   it('signals expiry when the refresh token is genuinely dead', async () => {
     seedTokens()
     const onTokenExpired = vi.fn()
@@ -122,9 +165,14 @@ describe('tokenStorage.attemptTokenRefresh', () => {
     refreshTokenAPI.mockRejectedValue(error)
 
     const result = await tokenStorage.attemptTokenRefresh()
+    const repeatedResult = await tokenStorage.attemptTokenRefresh()
 
     expect(result).toBe(false)
+    expect(repeatedResult).toBe(false)
     expect(onTokenExpired).toHaveBeenCalled()
+    expect(refreshTokenAPI).toHaveBeenCalledTimes(1)
+    expect(tokenStorage.getAccessToken()).toBeNull()
+    expect(tokenStorage.getRefreshToken()).toBeNull()
   })
 })
 
@@ -138,6 +186,7 @@ describe('tokenStorage.initialize', () => {
   afterEach(() => {
     localStorage.clear()
     tokenStorage.cleanup()
+    vi.unstubAllGlobals()
   })
 
   it('skips token restoration when the shared auth status disables authentication', async () => {

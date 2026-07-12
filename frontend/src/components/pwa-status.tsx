@@ -1,4 +1,4 @@
-import { IconDownload, IconWifiOff, IconX } from "@tabler/icons-react"
+import { IconCircleCheck, IconDownload, IconX } from "@tabler/icons-react"
 import { useRegisterSW } from "virtual:pwa-register/react"
 
 import { Button } from "@/components/ui/button"
@@ -36,12 +36,12 @@ export function PwaStatus() {
       {needRefresh ? (
         <IconDownload className="size-5 shrink-0 text-primary" aria-hidden />
       ) : (
-        <IconWifiOff className="size-5 shrink-0 text-muted-foreground" aria-hidden />
+        <IconCircleCheck className="size-5 shrink-0 text-emerald-500" aria-hidden />
       )}
       <p className="flex-1 text-sm">
         {needRefresh
           ? "A CoachIQ update is ready."
-          : "The CoachIQ shell is available offline. Controls remain disabled without the coach."}
+          : "CoachIQ is ready for offline viewing. Live controls still require a coach connection."}
       </p>
       {needRefresh && (
         <Button size="sm" onClick={() => void updateServiceWorker(true)}>

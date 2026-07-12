@@ -84,6 +84,13 @@ export function createQueryClient(): QueryClient {
   });
 }
 
+/** Remove session-bound data while retaining the public auth-mode query. */
+export function clearProtectedQueries(queryClient: QueryClient): void {
+  queryClient.removeQueries({
+    predicate: ({ queryKey }) => queryKey[0] !== 'auth' || queryKey[1] !== 'status',
+  });
+}
+
 /**
  * Query keys factory for consistent key management
  */
