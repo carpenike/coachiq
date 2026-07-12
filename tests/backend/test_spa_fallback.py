@@ -1,11 +1,13 @@
 """Tests for serving the built React SPA from the FastAPI app."""
 
 from collections.abc import Generator
+from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
 from fastapi.testclient import TestClient
 
+from backend.core.http_navigation import safe_spa_file_path
 from backend.main import _SPA_FALLBACK_ROUTE_NAME, app, configure_spa_fallback, create_app
 
 
@@ -71,6 +73,16 @@ def test_spa_fallback_serves_static_assets(spa_client: TestClient) -> None:
 
     assert response.status_code == 200
     assert "coachiq" in response.text
+
+
+@pytest.mark.parametrize("request_path", ["../secret.txt", "/%2e%2e/secret.txt"])
+def test_safe_spa_file_path_rejects_parent_escape(tmp_path: Path, request_path: str) -> None:
+    """SPA file resolution never returns a file outside the mounted distribution."""
+    spa_dir = tmp_path / "spa"
+    spa_dir.mkdir()
+    (tmp_path / "secret.txt").write_text("secret", encoding="utf-8")
+
+    assert safe_spa_file_path(spa_dir, request_path) is None
 
 
 def test_spa_fallback_ignores_non_browser_requests(spa_client: TestClient) -> None:

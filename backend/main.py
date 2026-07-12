@@ -16,7 +16,6 @@ from contextlib import asynccontextmanager
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, cast
-from urllib.parse import unquote
 
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import FileResponse, JSONResponse, Response
@@ -27,7 +26,7 @@ from slowapi.middleware import SlowAPIMiddleware
 from backend.api.router_config import configure_routers
 from backend.core.composition_root import CompositionRoot
 from backend.core.config import Settings, get_settings, is_real_secret, resolve_project_path
-from backend.core.http_navigation import accepts_html, route_family
+from backend.core.http_navigation import accepts_html, route_family, safe_spa_file_path
 from backend.core.logging_config import setup_early_logging
 from backend.core.metrics import initialize_backend_metrics
 from backend.core.security_config_validator import validate_security_config
@@ -76,23 +75,6 @@ def _derive_reserved_route_families(app: FastAPI) -> frozenset[str]:
     return frozenset(families)
 
 
-def _safe_spa_file_path(spa_dir: Path, request_path: str) -> Path | None:
-    """Resolve a requested SPA asset path without allowing directory escape."""
-    relative_path = unquote(request_path).lstrip("/")
-    if not relative_path:
-        return None
-
-    candidate = (spa_dir / relative_path).resolve()
-    try:
-        candidate.relative_to(spa_dir)
-    except ValueError:
-        return None
-
-    if candidate.is_file():
-        return candidate
-    return None
-
-
 def configure_spa_fallback(app: FastAPI, settings: Settings | None = None) -> bool:
     """Register the built React SPA fallback as the final app route when available."""
     active_settings = settings or get_settings()
@@ -121,7 +103,7 @@ def configure_spa_fallback(app: FastAPI, settings: Settings | None = None) -> bo
         if route_family_value in reserved_families:
             raise HTTPException(status_code=404, detail="Not Found")
 
-        asset_path = _safe_spa_file_path(spa_dir, request_path)
+        asset_path = safe_spa_file_path(spa_dir, request_path)
         if asset_path:
             return FileResponse(asset_path)
 

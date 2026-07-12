@@ -185,14 +185,14 @@ def _client() -> TestClient:
     return TestClient(app)
 
 
-def _spa_client(*, mounted: bool = True) -> TestClient:
+def _spa_client(*, mounted: bool = True, static_dir: str | Path = "mounted") -> TestClient:
     """Build an auth-enabled app with a minimal SPA fallback route."""
     app = FastAPI()
     register_exception_handlers(app)
     app.add_middleware(AuthenticationMiddleware, auth_manager=_SpaAuthManager())
 
     if mounted:
-        app.state.spa_static_dir = "mounted"
+        app.state.spa_static_dir = static_dir
         app.state.spa_reserved_route_families = frozenset(
             {
                 "/api",
@@ -214,7 +214,7 @@ def _spa_client(*, mounted: bool = True) -> TestClient:
     async def protected_route() -> dict[str, bool]:
         return {"ok": True}
 
-    @app.get("/{path:path}")
+    @app.api_route("/{path:path}", methods=["GET", "HEAD"])
     async def spa_fallback(path: str) -> HTMLResponse:
         return HTMLResponse(
             '<!doctype html><html><head><title>CoachIQ SPA</title></head><body id="spa-root"></body></html>'
@@ -509,6 +509,41 @@ def test_spa_json_fetch_does_not_bypass_auth() -> None:
     assert response.status_code == 401
     assert response.headers["www-authenticate"] == "Bearer"
     assert response.json()["error"]["message"] == "Authentication required"
+
+
+@pytest.mark.parametrize("method", ["get", "head"])
+def test_existing_spa_static_asset_bypasses_auth(tmp_path: Path, method: str) -> None:
+    """Root-level PWA files remain public so anonymous login pages can install the shell."""
+    (tmp_path / "sw.js").write_text("self.skipWaiting();", encoding="utf-8")
+    client = _spa_client(static_dir=tmp_path)
+
+    response = getattr(client, method)("/sw.js", headers={"Accept": "application/javascript"})
+
+    assert response.status_code == 200
+
+
+def test_missing_spa_static_asset_remains_protected(tmp_path: Path) -> None:
+    """An arbitrary non-document path does not bypass auth merely by resembling an asset."""
+    response = _spa_client(static_dir=tmp_path).get(
+        "/missing.js", headers={"Accept": "application/javascript"}
+    )
+
+    assert response.status_code == 401
+    assert response.headers["www-authenticate"] == "Bearer"
+
+
+def test_reserved_api_file_remains_protected(tmp_path: Path) -> None:
+    """A packaged file cannot bypass authentication for a backend-owned route family."""
+    api_file = tmp_path / "api" / "v1" / "protected"
+    api_file.parent.mkdir(parents=True)
+    api_file.write_text("not public", encoding="utf-8")
+
+    response = _spa_client(static_dir=tmp_path).get(
+        "/api/v1/protected", headers={"Accept": "application/octet-stream"}
+    )
+
+    assert response.status_code == 401
+    assert response.headers["www-authenticate"] == "Bearer"
 
 
 @pytest.mark.parametrize("accept", ["text/html", "application/json"])

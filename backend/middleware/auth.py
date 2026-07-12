@@ -8,6 +8,7 @@ configured authentication mode.
 
 import logging
 from collections.abc import Set as AbstractSet
+from pathlib import Path
 from typing import Annotated, ClassVar
 
 from fastapi import Depends, HTTPException, Request, Response, status
@@ -15,7 +16,7 @@ from fastapi.responses import JSONResponse
 from fastapi.security.utils import get_authorization_scheme_param
 from starlette.middleware.base import BaseHTTPMiddleware
 
-from backend.core.http_navigation import accepts_html, route_family
+from backend.core.http_navigation import accepts_html, route_family, safe_spa_file_path
 from backend.services.auth.manager import AuthManager, AuthMode, InvalidTokenError
 
 logger = logging.getLogger(__name__)
@@ -130,7 +131,11 @@ class AuthenticationMiddleware(BaseHTTPMiddleware):
             return await call_next(request)
 
         # Skip authentication for excluded paths and mounted SPA document navigations
-        if self._is_excluded_path(request.url.path) or self._is_spa_document_navigation(request):
+        if (
+            self._is_excluded_path(request.url.path)
+            or self._is_spa_static_asset(request)
+            or self._is_spa_document_navigation(request)
+        ):
             self.logger.debug(f"Skipping authentication for excluded path: {request.url.path}")
             return await call_next(request)
 
@@ -226,6 +231,23 @@ class AuthenticationMiddleware(BaseHTTPMiddleware):
 
         route_family_value = route_family(request.url.path)
         return route_family_value not in reserved_families
+
+    def _is_spa_static_asset(self, request: Request) -> bool:
+        """Return true for a real file in the mounted SPA distribution."""
+        if request.method not in {"GET", "HEAD"}:
+            return False
+
+        spa_static_dir = getattr(request.app.state, "spa_static_dir", None)
+        if not isinstance(spa_static_dir, str | Path):
+            return False
+
+        reserved_families = getattr(request.app.state, "spa_reserved_route_families", None)
+        if isinstance(reserved_families, AbstractSet):
+            route_family_value = route_family(request.url.path)
+            if route_family_value in reserved_families:
+                return False
+
+        return safe_spa_file_path(spa_static_dir, request.url.path) is not None
 
     def _extract_token_from_request(self, request: Request) -> str | None:
         """

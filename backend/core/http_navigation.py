@@ -1,6 +1,8 @@
 """HTTP navigation helpers shared by middleware and route fallback code."""
 
+from pathlib import Path
 from typing import Any
+from urllib.parse import unquote
 
 
 def accepts_html(request: Any) -> bool:
@@ -17,3 +19,19 @@ def route_family(path: str) -> str | None:
     if not path or path == "/":
         return None
     return f"/{path.lstrip('/').split('/', maxsplit=1)[0]}"
+
+
+def safe_spa_file_path(spa_dir: str | Path, request_path: str) -> Path | None:
+    """Resolve an existing SPA file without allowing directory escape."""
+    relative_path = unquote(request_path).lstrip("/")
+    if not relative_path:
+        return None
+
+    root = Path(spa_dir).resolve()
+    candidate = (root / relative_path).resolve()
+    try:
+        candidate.relative_to(root)
+    except ValueError:
+        return None
+
+    return candidate if candidate.is_file() else None
