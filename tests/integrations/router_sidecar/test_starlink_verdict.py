@@ -1,14 +1,17 @@
 """Tests for RouterOS sidecar Starlink client and verdict evaluation."""
 
-from datetime import UTC, datetime, timedelta
-from google.protobuf import descriptor_pb2, descriptor_pool, json_format, message_factory
 import time
+from datetime import UTC, datetime, timedelta
+from typing import Any, override
 
 import pytest
 from fastapi.testclient import TestClient
+from google.protobuf import descriptor_pb2, descriptor_pool, json_format, message_factory
 
+import backend.integrations.router_sidecar.starlink as starlink_module
 from backend.core.config import RouterSidecarSettings
 from backend.integrations.router_sidecar import RouterSidecarService
+from backend.integrations.router_sidecar.service import RouterSidecarServiceClients
 from backend.integrations.router_sidecar.starlink import StarlinkGrpcClient, StarlinkSnapshot
 from backend.integrations.router_sidecar.verdict import (
     StarlinkVerdictConfig,
@@ -298,6 +301,83 @@ async def test_starlink_client_uses_fake_handle_call() -> None:
     assert snapshot.device_info == {"id": "ut-test"}
     assert snapshot.location is None
     assert snapshot.location_error is not None
+
+
+def test_starlink_client_reuses_and_closes_reflected_transport(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Repeated snapshots retain one descriptor pool and close its channel once."""
+    transports = []
+
+    class FakeTransport:
+        def __init__(self, target: str, timeout_seconds: float) -> None:
+            self.target = target
+            self.timeout_seconds = timeout_seconds
+            self.calls: list[str] = []
+            self.close_count = 0
+            transports.append(self)
+
+        def call(self, request_field: str) -> dict[str, Any]:
+            self.calls.append(request_field)
+            return {
+                "dish_get_status": {},
+                "dish_get_history": {},
+                "dish_get_diagnostics": {},
+                "get_device_info": {},
+                "dish_get_location": {},
+            }
+
+        @override
+        def close(self) -> None:
+            self.close_count += 1
+
+    monkeypatch.setattr(starlink_module, "_ReflectedHandleTransport", FakeTransport)
+    client = StarlinkGrpcClient("dish", 9200, timeout_seconds=3.0)
+
+    assert client.fetch_snapshot_blocking().reachable is True
+    assert client.fetch_snapshot_blocking().reachable is True
+    client.close()
+    client.close()
+
+    assert len(transports) == 1
+    assert transports[0].target == "dish:9200"
+    assert transports[0].timeout_seconds == 3.0
+    assert (
+        transports[0].calls
+        == [
+            "get_status",
+            "get_history",
+            "get_diagnostics",
+            "get_device_info",
+            "get_location",
+        ]
+        * 2
+    )
+    assert transports[0].close_count == 1
+
+
+@pytest.mark.asyncio
+async def test_router_sidecar_stop_closes_starlink_client() -> None:
+    """Sidecar shutdown releases the persistent Starlink channel and descriptors."""
+
+    class ClosableStarlinkClient(StarlinkGrpcClient):
+        def __init__(self) -> None:
+            super().__init__("dish", 9200, handle_call=lambda _request: {})
+            self.closed = False
+
+        def close(self) -> None:
+            self.closed = True
+
+    starlink_client = ClosableStarlinkClient()
+    service = RouterSidecarService(
+        RouterSidecarSettings(enabled=False),
+        RouterSidecarServiceClients(starlink=starlink_client),
+    )
+
+    await service.start()
+    await service.stop()
+
+    assert starlink_client.closed is True
 
 
 def test_raw_line_is_single_key_value_line() -> None:

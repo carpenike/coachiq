@@ -162,6 +162,7 @@ class RouterSidecarService:
         for task in tasks:
             with contextlib.suppress(asyncio.CancelledError):
                 await task
+        await asyncio.to_thread(self._starlink_client.close)
         self._tasks.clear()
         self._running = False
         logger.info("Router sidecar service stopped")
