@@ -22,6 +22,7 @@ from typing import Any, Optional
 
 import can
 
+from backend.core.config import get_can_settings
 from backend.core.guardrail_interfaces import (
     CommandHaltAction,
     GuardrailParticipant,
@@ -343,7 +344,12 @@ class CANMessageInjector(GuardrailParticipant):
         """Get or create CAN bus for interface."""
         if interface not in self._buses:
             try:
-                self._buses[interface] = can.interface.Bus(interface, bustype="socketcan")
+                can_settings = get_can_settings()
+                self._buses[interface] = can.interface.Bus(
+                    channel=interface,
+                    bustype=can_settings.bustype,
+                    bitrate=can_settings.bitrate,
+                )
                 logger.info("Created CAN bus for interface: %s", interface)
             except Exception as e:
                 logger.error("Failed to create CAN bus %s: %s", interface, e)
