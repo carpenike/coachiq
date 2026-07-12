@@ -514,10 +514,12 @@ def test_spa_json_fetch_does_not_bypass_auth() -> None:
 @pytest.mark.parametrize("method", ["get", "head"])
 def test_existing_spa_static_asset_bypasses_auth(tmp_path: Path, method: str) -> None:
     """Root-level PWA files remain public so anonymous login pages can install the shell."""
-    (tmp_path / "sw.js").write_text("self.skipWaiting();", encoding="utf-8")
+    (tmp_path / "coachiq-sw.js").write_text("self.skipWaiting();", encoding="utf-8")
     client = _spa_client(static_dir=tmp_path)
 
-    response = getattr(client, method)("/sw.js", headers={"Accept": "application/javascript"})
+    response = getattr(client, method)(
+        "/coachiq-sw.js", headers={"Accept": "application/javascript"}
+    )
 
     assert response.status_code == 200
 

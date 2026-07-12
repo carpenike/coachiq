@@ -21,6 +21,8 @@ def spa_client(tmp_path) -> Generator[TestClient, None, None]:
     )
     (tmp_path / "assets").mkdir()
     (tmp_path / "assets" / "app.js").write_text("console.log('coachiq');", encoding="utf-8")
+    (tmp_path / "coachiq-sw.js").write_text("self.skipWaiting();", encoding="utf-8")
+    (tmp_path / "manifest.webmanifest").write_text("{}", encoding="utf-8")
 
     original_routes = list(app.router.routes)
     previous_state = {
@@ -73,6 +75,27 @@ def test_spa_fallback_serves_static_assets(spa_client: TestClient) -> None:
 
     assert response.status_code == 200
     assert "coachiq" in response.text
+    assert "no-store" not in response.headers.get("cache-control", "")
+
+
+@pytest.mark.parametrize(
+    "path",
+    ["/", "/settings", "/manifest.webmanifest", "/coachiq-sw.js"],
+)
+def test_spa_mutable_shell_files_require_revalidation(spa_client: TestClient, path: str) -> None:
+    """HTML, manifest, and worker revisions cannot be pinned by browser or edge caches."""
+    response = spa_client.get(path, headers={"Accept": "text/html"})
+
+    assert response.status_code == 200
+    assert response.headers["cache-control"] == "no-cache, no-store, must-revalidate"
+
+
+def test_spa_service_worker_has_root_scope(spa_client: TestClient) -> None:
+    """The renamed worker can continue controlling the full application scope."""
+    response = spa_client.get("/coachiq-sw.js")
+
+    assert response.status_code == 200
+    assert response.headers["service-worker-allowed"] == "/"
 
 
 @pytest.mark.parametrize("request_path", ["../secret.txt", "/%2e%2e/secret.txt"])

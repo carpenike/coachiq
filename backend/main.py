@@ -61,6 +61,26 @@ SERVER_START_TIME = time.time()
 
 _DEVELOPMENT_CSRF_SECRET = "development-only-csrf-secret-do-not-use-in-production"  # noqa: S105
 _SPA_FALLBACK_ROUTE_NAME = "spa_fallback"
+_SPA_REVALIDATE_FILENAMES = frozenset(
+    {"index.html", "manifest.webmanifest", "coachiq-sw.js", "sw.js"}
+)
+_SERVICE_WORKER_FILENAMES = frozenset({"coachiq-sw.js", "sw.js"})
+
+
+def _spa_file_response(path: Path) -> FileResponse:
+    """Serve mutable SPA entry files without browser or edge cache pinning."""
+    headers: dict[str, str] = {}
+    if path.name in _SPA_REVALIDATE_FILENAMES:
+        headers.update(
+            {
+                "Cache-Control": "no-cache, no-store, must-revalidate",
+                "Expires": "0",
+                "Pragma": "no-cache",
+            }
+        )
+    if path.name in _SERVICE_WORKER_FILENAMES:
+        headers["Service-Worker-Allowed"] = "/"
+    return FileResponse(path, headers=headers)
 
 
 def _derive_reserved_route_families(app: FastAPI) -> frozenset[str]:
@@ -105,10 +125,10 @@ def configure_spa_fallback(app: FastAPI, settings: Settings | None = None) -> bo
 
         asset_path = safe_spa_file_path(spa_dir, request_path)
         if asset_path:
-            return FileResponse(asset_path)
+            return _spa_file_response(asset_path)
 
         if accepts_html(request):
-            return FileResponse(index_path)
+            return _spa_file_response(index_path)
 
         raise HTTPException(status_code=404, detail="Not Found")
 
@@ -438,7 +458,7 @@ async def root(request: Request) -> FileResponse | dict[str, str]:
     if spa_static_dir and accepts_html(request):
         index_path = Path(spa_static_dir) / "index.html"
         if index_path.is_file():
-            return FileResponse(index_path)
+            return _spa_file_response(index_path)
 
     return {"message": "CoachIQ Backend is running", "version": "2.0.0"}
 

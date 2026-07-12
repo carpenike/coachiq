@@ -14,6 +14,7 @@ export default defineConfig({
     tailwindcss(),
     VitePWA({
       registerType: "autoUpdate",
+      filename: "coachiq-sw.js",
       includeAssets: ["coachiq-icon-192.png", "coachiq-icon-512.png"],
       manifest: {
         name: "CoachIQ",
