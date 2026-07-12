@@ -54,7 +54,7 @@ function UnknownPGNStats({ unknownPGNs }: { unknownPGNs: UnknownPGNEntry[] }) {
           <IconQuestionMark className="h-4 w-4 text-muted-foreground" />
         </CardHeader>
         <CardContent>
-          <div className="text-2xl font-bold">{stats.totalEntries}</div>
+          <div className="text-2xl font-bold tracking-tight">{stats.totalEntries}</div>
           <p className="text-xs text-muted-foreground">
             Distinct PGN identifiers
           </p>
@@ -67,7 +67,7 @@ function UnknownPGNStats({ unknownPGNs }: { unknownPGNs: UnknownPGNEntry[] }) {
           <IconAlertTriangle className="h-4 w-4 text-muted-foreground" />
         </CardHeader>
         <CardContent>
-          <div className="text-2xl font-bold">{stats.totalMessages.toLocaleString()}</div>
+          <div className="text-2xl font-bold tracking-tight">{stats.totalMessages.toLocaleString()}</div>
           <p className="text-xs text-muted-foreground">
             Avg {stats.avgCount} per PGN
           </p>
@@ -80,7 +80,7 @@ function UnknownPGNStats({ unknownPGNs }: { unknownPGNs: UnknownPGNEntry[] }) {
           <IconClock className="h-4 w-4 text-muted-foreground" />
         </CardHeader>
         <CardContent>
-          <div className="text-2xl font-bold">{stats.recentEntries}</div>
+          <div className="text-2xl font-bold tracking-tight">{stats.recentEntries}</div>
           <p className="text-xs text-muted-foreground">
             Seen in last 24 hours
           </p>
@@ -93,7 +93,7 @@ function UnknownPGNStats({ unknownPGNs }: { unknownPGNs: UnknownPGNEntry[] }) {
           <IconAlertTriangle className="h-4 w-4 text-muted-foreground" />
         </CardHeader>
         <CardContent>
-          <div className="text-2xl font-bold">{stats.highFrequency}</div>
+          <div className="text-2xl font-bold tracking-tight">{stats.highFrequency}</div>
           <p className="text-xs text-muted-foreground">
             Over 100 messages
           </p>

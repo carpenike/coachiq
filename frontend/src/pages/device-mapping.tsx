@@ -73,7 +73,7 @@ function DeviceMappingStats({ entities }: Readonly<{ entities: EntityData[] }>) 
           <IconDeviceDesktop className="h-4 w-4 text-muted-foreground" />
         </CardHeader>
         <CardContent>
-          <div className="text-2xl font-bold">{stats.total}</div>
+          <div className="text-2xl font-bold tracking-tight">{stats.total}</div>
           <p className="text-xs text-muted-foreground">
             Across {Object.keys(stats.byDeviceType).length} device types
           </p>
@@ -86,7 +86,7 @@ function DeviceMappingStats({ entities }: Readonly<{ entities: EntityData[] }>) 
           <IconMapPin className="h-4 w-4 text-muted-foreground" />
         </CardHeader>
         <CardContent>
-          <div className="text-2xl font-bold">{stats.withRealArea}</div>
+          <div className="text-2xl font-bold tracking-tight">{stats.withRealArea}</div>
           <p className="text-xs text-muted-foreground">
             {stats.total > 0 ? `${Math.round((stats.withRealArea / stats.total) * 100)}% mapped` : "No devices"}
           </p>
@@ -99,7 +99,7 @@ function DeviceMappingStats({ entities }: Readonly<{ entities: EntityData[] }>) 
           <IconAlertCircle className="h-4 w-4 text-muted-foreground" />
         </CardHeader>
         <CardContent>
-          <div className="text-2xl font-bold">{stats.unmapped}</div>
+          <div className="text-2xl font-bold tracking-tight">{stats.unmapped}</div>
           <p className="text-xs text-muted-foreground">
             Need area assignment
           </p>
@@ -112,7 +112,7 @@ function DeviceMappingStats({ entities }: Readonly<{ entities: EntityData[] }>) 
           <IconDeviceGamepad className="h-4 w-4 text-muted-foreground" />
         </CardHeader>
         <CardContent>
-          <div className="text-2xl font-bold">{Object.keys(stats.bySourceType).length}</div>
+          <div className="text-2xl font-bold tracking-tight">{Object.keys(stats.bySourceType).length}</div>
           <p className="text-xs text-muted-foreground">
             Different source protocols
           </p>

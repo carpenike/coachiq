@@ -67,7 +67,7 @@ function UnmappedEntriesStats({ unmappedEntries }: { unmappedEntries: UnmappedEn
           <IconCircuitSwitchOpen className="h-4 w-4 text-muted-foreground" />
         </CardHeader>
         <CardContent>
-          <div className="text-2xl font-bold">{stats.totalEntries}</div>
+          <div className="text-2xl font-bold tracking-tight">{stats.totalEntries}</div>
           <p className="text-xs text-muted-foreground">
             DGN/instance pairs
           </p>
@@ -80,7 +80,7 @@ function UnmappedEntriesStats({ unmappedEntries }: { unmappedEntries: UnmappedEn
           <IconMapPin className="h-4 w-4 text-muted-foreground" />
         </CardHeader>
         <CardContent>
-          <div className="text-2xl font-bold">{stats.withSuggestions}</div>
+          <div className="text-2xl font-bold tracking-tight">{stats.withSuggestions}</div>
           <p className="text-xs text-muted-foreground">
             {stats.totalEntries > 0
               ? Math.round((stats.withSuggestions / stats.totalEntries) * 100)
@@ -95,7 +95,7 @@ function UnmappedEntriesStats({ unmappedEntries }: { unmappedEntries: UnmappedEn
           <IconClock className="h-4 w-4 text-muted-foreground" />
         </CardHeader>
         <CardContent>
-          <div className="text-2xl font-bold">{stats.recentEntries}</div>
+          <div className="text-2xl font-bold tracking-tight">{stats.recentEntries}</div>
           <p className="text-xs text-muted-foreground">
             Seen in last 24 hours
           </p>
@@ -108,7 +108,7 @@ function UnmappedEntriesStats({ unmappedEntries }: { unmappedEntries: UnmappedEn
           <IconSettings className="h-4 w-4 text-muted-foreground" />
         </CardHeader>
         <CardContent>
-          <div className="text-2xl font-bold">{stats.uniqueDeviceTypes}</div>
+          <div className="text-2xl font-bold tracking-tight">{stats.uniqueDeviceTypes}</div>
           <p className="text-xs text-muted-foreground">
             Unique DGN types
           </p>

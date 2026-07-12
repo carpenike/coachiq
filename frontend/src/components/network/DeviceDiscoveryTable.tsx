@@ -354,25 +354,25 @@ export function DeviceDiscoveryTable({
         {availability && (
           <div className="grid grid-cols-4 gap-4 p-4 bg-muted/50 rounded-lg">
             <div className="text-center">
-              <div className="text-2xl font-bold text-emerald-600">
+              <div className="text-2xl font-bold tracking-tight text-emerald-600">
                 {availability.online_devices || 0}
               </div>
               <div className="text-sm text-muted-foreground">Online</div>
             </div>
             <div className="text-center">
-              <div className="text-2xl font-bold text-gray-500">
+              <div className="text-2xl font-bold tracking-tight text-gray-500">
                 {availability.offline_devices || 0}
               </div>
               <div className="text-sm text-muted-foreground">Offline</div>
             </div>
             <div className="text-center">
-              <div className="text-2xl font-bold text-blue-600">
+              <div className="text-2xl font-bold tracking-tight text-blue-600">
                 {availability.total_devices || 0}
               </div>
               <div className="text-sm text-muted-foreground">Total</div>
             </div>
             <div className="text-center">
-              <div className="text-2xl font-bold text-purple-600">
+              <div className="text-2xl font-bold tracking-tight text-purple-600">
                 {availableProtocols.length}
               </div>
               <div className="text-sm text-muted-foreground">Protocols</div>

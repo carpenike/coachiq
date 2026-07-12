@@ -172,15 +172,15 @@ const MFAManagement: React.FC = () => {
           {/* Summary Stats */}
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             <div className="p-4 border rounded-lg">
-              <div className="text-2xl font-bold text-green-600">{enabledCount}</div>
+              <div className="text-2xl font-bold tracking-tight text-green-600">{enabledCount}</div>
               <div className="text-sm text-muted-foreground">Users with MFA Enabled</div>
             </div>
             <div className="p-4 border rounded-lg">
-              <div className="text-2xl font-bold text-blue-600">{totalUsers - enabledCount}</div>
+              <div className="text-2xl font-bold tracking-tight text-blue-600">{totalUsers - enabledCount}</div>
               <div className="text-sm text-muted-foreground">Users without MFA</div>
             </div>
             <div className="p-4 border rounded-lg">
-              <div className="text-2xl font-bold text-purple-600">
+              <div className="text-2xl font-bold tracking-tight text-purple-600">
                 {totalUsers > 0 ? Math.round((enabledCount / totalUsers) * 100) : 0}%
               </div>
               <div className="text-sm text-muted-foreground">MFA Adoption Rate</div>

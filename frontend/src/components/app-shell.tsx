@@ -232,12 +232,34 @@ function AppShellSidebar(props: React.ComponentProps<typeof Sidebar>) {
 // ===== Header =====
 //
 
+/** True once the page is scrolled at all, i.e. content sits under the sticky header. */
+function useScrolledUnderHeader(): boolean {
+  const [scrolled, setScrolled] = React.useState(false)
+  React.useEffect(() => {
+    const onScroll = () => setScrolled(window.scrollY > 0)
+    onScroll()
+    window.addEventListener("scroll", onScroll, { passive: true })
+    return () => window.removeEventListener("scroll", onScroll)
+  }, [])
+  return scrolled
+}
+
 function AppShellHeader() {
   const location = useLocation()
   const title = titleForPath(location.pathname) ?? "CoachIQ"
+  // Scroll edge effect: the divider exists only while content is actually
+  // under the header, so at rest the chrome blends into the page.
+  const scrolled = useScrolledUnderHeader()
 
   return (
-    <header className="app-material sticky top-0 z-40 flex h-(--header-height) shrink-0 items-center gap-2 border-b transition-[width,height] ease-linear group-has-data-[collapsible=icon]/sidebar-wrapper:h-(--header-height)">
+    <header
+      className={cn(
+        "app-material sticky top-0 z-40 flex h-(--header-height) shrink-0 items-center gap-2 border-b transition-[width,height,border-color,box-shadow] ease-linear group-has-data-[collapsible=icon]/sidebar-wrapper:h-(--header-height)",
+        scrolled
+          ? "border-border shadow-[0_1px_8px_-4px_oklch(0_0_0/0.25)]"
+          : "border-transparent"
+      )}
+    >
       <div className="flex w-full items-center gap-1 px-4 lg:gap-2 lg:px-6">
         <SidebarTrigger className="-ml-1" />
         <Separator orientation="vertical" className="mx-2 data-[orientation=vertical]:h-4" />

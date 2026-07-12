@@ -101,25 +101,25 @@ function NetworkStatsSidebar({
         <CardContent className="space-y-4">
           <div className="grid grid-cols-2 gap-4">
             <div className="text-center">
-              <div className="text-2xl font-bold text-emerald-600">{stats.online}</div>
+              <div className="text-2xl font-bold tracking-tight text-emerald-600">{stats.online}</div>
               <div className="text-xs text-muted-foreground">Online</div>
             </div>
             <div className="text-center">
-              <div className="text-2xl font-bold text-gray-500">{stats.offline}</div>
+              <div className="text-2xl font-bold tracking-tight text-gray-500">{stats.offline}</div>
               <div className="text-xs text-muted-foreground">Offline</div>
             </div>
           </div>
 
           {stats.errors > 0 && (
             <div className="text-center">
-              <div className="text-2xl font-bold text-red-600">{stats.errors}</div>
+              <div className="text-2xl font-bold tracking-tight text-red-600">{stats.errors}</div>
               <div className="text-xs text-muted-foreground">Errors</div>
             </div>
           )}
 
           {availability && (stats.recent || 0) > 0 && (
             <div className="text-center">
-              <div className="text-2xl font-bold text-blue-600">{stats.recent}</div>
+              <div className="text-2xl font-bold tracking-tight text-blue-600">{stats.recent}</div>
               <div className="text-xs text-muted-foreground">Recent Activity</div>
             </div>
           )}
@@ -365,18 +365,18 @@ function MultiProtocolStats({ entities }: { entities: EntityData[] }) {
         <CardContent className="space-y-4">
           <div className="grid grid-cols-2 gap-4">
             <div className="text-center">
-              <div className="text-2xl font-bold text-emerald-600">{stats.online}</div>
+              <div className="text-2xl font-bold tracking-tight text-emerald-600">{stats.online}</div>
               <div className="text-xs text-muted-foreground">Online</div>
             </div>
             <div className="text-center">
-              <div className="text-2xl font-bold text-gray-500">{stats.offline}</div>
+              <div className="text-2xl font-bold tracking-tight text-gray-500">{stats.offline}</div>
               <div className="text-xs text-muted-foreground">Offline</div>
             </div>
           </div>
 
           {stats.errors > 0 && (
             <div className="text-center">
-              <div className="text-2xl font-bold text-red-600">{stats.errors}</div>
+              <div className="text-2xl font-bold tracking-tight text-red-600">{stats.errors}</div>
               <div className="text-xs text-muted-foreground">Errors</div>
             </div>
           )}
@@ -687,13 +687,13 @@ export default function NetworkMap() {
                         <div className="space-y-4">
                           <div className="grid grid-cols-2 gap-4">
                             <div className="text-center">
-                              <div className="text-2xl font-bold text-blue-600">
+                              <div className="text-2xl font-bold tracking-tight text-blue-600">
                                 {bridgeStatus.bridges_active || 0}
                               </div>
                               <div className="text-sm text-muted-foreground">Active Bridges</div>
                             </div>
                             <div className="text-center">
-                              <div className="text-2xl font-bold">
+                              <div className="text-2xl font-bold tracking-tight">
                                 {((bridgeStatus.health_score || 0) * 100).toFixed(0)}%
                               </div>
                               <div className="text-sm text-muted-foreground">Bridge Health</div>
@@ -808,7 +808,7 @@ export default function NetworkMap() {
                   <CardContent>
                     <div className="grid gap-4 md:grid-cols-3">
                       <div className="text-center">
-                        <div className="text-2xl font-bold text-green-600">
+                        <div className="text-2xl font-bold tracking-tight text-green-600">
                           {Math.round((allEntities.filter(e => {
                             const entity = e;
                             return entity.state === 'on' || entity.state === 'online';
@@ -817,13 +817,13 @@ export default function NetworkMap() {
                         <div className="text-sm text-muted-foreground">Connectivity</div>
                       </div>
                       <div className="text-center">
-                        <div className="text-2xl font-bold text-blue-600">
+                        <div className="text-2xl font-bold tracking-tight text-blue-600">
                           {Object.values(throughput || {}).reduce((a, b) => a + b, 0).toFixed(1)}
                         </div>
                         <div className="text-sm text-muted-foreground">Total msg/sec</div>
                       </div>
                       <div className="text-center">
-                        <div className="text-2xl font-bold text-purple-600">
+                        <div className="text-2xl font-bold tracking-tight text-purple-600">
                           {bridgeStatus ? ((bridgeStatus.health_score || 0) * 100).toFixed(0) : 0}%
                         </div>
                         <div className="text-sm text-muted-foreground">Bridge Health</div>

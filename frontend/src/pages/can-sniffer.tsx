@@ -119,7 +119,7 @@ function CANStatistics({ messages }: { messages: CANMessage[] }) {
           <IconActivity className="h-4 w-4 text-muted-foreground" />
         </CardHeader>
         <CardContent>
-          <div className="text-2xl font-bold">{stats.total}</div>
+          <div className="text-2xl font-bold tracking-tight">{stats.total}</div>
           <p className="text-xs text-muted-foreground">
             {stats.lastMinute} in last minute
           </p>
@@ -132,7 +132,7 @@ function CANStatistics({ messages }: { messages: CANMessage[] }) {
           <IconFilter className="h-4 w-4 text-muted-foreground" />
         </CardHeader>
         <CardContent>
-          <div className="text-2xl font-bold">{stats.uniquePGNs}</div>
+          <div className="text-2xl font-bold tracking-tight">{stats.uniquePGNs}</div>
           <p className="text-xs text-muted-foreground">
             Different message types
           </p>
@@ -145,7 +145,7 @@ function CANStatistics({ messages }: { messages: CANMessage[] }) {
           <IconAlertTriangle className="h-4 w-4 text-muted-foreground" />
         </CardHeader>
         <CardContent>
-          <div className="text-2xl font-bold">{stats.errorMessages}</div>
+          <div className="text-2xl font-bold tracking-tight">{stats.errorMessages}</div>
           <p className="text-xs text-muted-foreground">
             {stats.total > 0 ? Math.round((stats.errorMessages / stats.total) * 100) : 0}% error rate
           </p>
@@ -158,7 +158,7 @@ function CANStatistics({ messages }: { messages: CANMessage[] }) {
           <IconActivity className="h-4 w-4 text-muted-foreground" />
         </CardHeader>
         <CardContent>
-          <div className="text-2xl font-bold">{stats.lastMinute}</div>
+          <div className="text-2xl font-bold tracking-tight">{stats.lastMinute}</div>
           <p className="text-xs text-muted-foreground">
             messages/minute
           </p>
