@@ -1099,7 +1099,7 @@ class CompositionRoot:
 
             async def audit_injection(request: Any, result: Any) -> None:
                 security_audit = self.get_optional_service("security_audit_service")
-                if security_audit and hasattr(security_audit, "log_injection"):
+                if security_audit:
                     await security_audit.log_injection(request, result)
 
             can_message_injector = CANMessageInjector(

@@ -25,7 +25,7 @@ from collections import defaultdict, deque
 from datetime import UTC, datetime
 from enum import Enum
 from ipaddress import ip_address, ip_network
-from typing import Any, Dict, List, Optional, Set
+from typing import TYPE_CHECKING, Any
 
 from pydantic import BaseModel, Field
 
@@ -33,6 +33,9 @@ from backend.core.performance import PerformanceMonitor
 from backend.models.audit_events import AuditEventType as EnhancedAuditEventType
 from backend.models.audit_events import StructuredAuditEvent
 from backend.repositories.security_audit_repository import SecurityAuditRepository
+
+if TYPE_CHECKING:
+    from backend.integrations.can.message_injector import InjectionRequest, InjectionResult
 
 logger = logging.getLogger(__name__)
 
@@ -64,6 +67,9 @@ class SecurityEventType(str, Enum):
     ENTITY_CONTROL_FAILURE = "entity_control_failure"
     BULK_OPERATION_STARTED = "bulk_operation_started"
     BULK_OPERATION_COMPLETED = "bulk_operation_completed"
+
+    # CAN Bus Events
+    CAN_MESSAGE_INJECTION = "can_message_injection"
 
     # Security Threats
     RATE_LIMIT_EXCEEDED = "rate_limit_exceeded"
@@ -295,6 +301,47 @@ class SecurityAuditService:
 
         return event_id
 
+    async def log_injection(self, request: "InjectionRequest", result: "InjectionResult") -> str:
+        """
+        Log a CAN message injection audit event.
+
+        Invoked via CANMessageInjector's audit callback for every injection
+        attempt, including the synthetic record emitted on command halt.
+
+        Args:
+            request: The injection request that was executed
+            result: The outcome of the injection
+
+        Returns:
+            str: Event ID
+        """
+        severity = (
+            SecurityEventSeverity.MEDIUM
+            if result.success and not result.warnings
+            else SecurityEventSeverity.HIGH
+        )
+
+        return await self.log_security_event(
+            event_type=SecurityEventType.CAN_MESSAGE_INJECTION,
+            severity=severity,
+            user_id=request.user,
+            details={
+                "can_id": f"0x{request.can_id:X}",
+                "data": request.data.hex(),
+                "interface": request.interface,
+                "mode": request.mode.value,
+                "count": request.count,
+                "description": request.description,
+                "reason": request.reason,
+                "success": result.success,
+                "messages_sent": result.messages_sent,
+                "messages_failed": result.messages_failed,
+                "duration_seconds": result.duration,
+                "error": result.error,
+                "warnings": list(result.warnings),
+            },
+        )
+
     async def log_structured_event(self, event: StructuredAuditEvent) -> str:
         """
         Log a structured audit event following OWASP ASVS V7 guidelines.
@@ -377,6 +424,8 @@ class SecurityAuditService:
             return "critical_safety_action"
         if event_type == SecurityEventType.SAFETY_INTERLOCK_VIOLATED:
             return "safety_constraint_violated"
+        if event_type == SecurityEventType.CAN_MESSAGE_INJECTION:
+            return "direct_can_bus_write"
         if event_type in [
             SecurityEventType.ENTITY_CONTROL_SUCCESS,
             SecurityEventType.ENTITY_CONTROL_FAILURE,
