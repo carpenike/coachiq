@@ -396,7 +396,7 @@ function StatisticsStrip() {
 }
 
 //
-// ===== Resolve action =====
+// ===== Mark-resolved action =====
 //
 
 function ResolveButton({ dtc }: Readonly<{ dtc: IDtcRecord }>) {
@@ -414,22 +414,22 @@ function ResolveButton({ dtc }: Readonly<{ dtc: IDtcRecord }>) {
     onSuccess: (result) => {
       if (result.resolved) {
         toast({
-          title: "Fault code resolved",
+          title: "Fault code marked resolved",
           description: `${PROTOCOL_LABELS[dtc.protocol] ?? dtc.protocol} code ${dtc.code} marked resolved.`,
         })
         void queryClient.invalidateQueries({ queryKey: ["diagnostics"] })
       } else {
         toast({
           variant: "destructive",
-          title: "Could not resolve fault code",
-          description: `The backend did not resolve ${PROTOCOL_LABELS[dtc.protocol] ?? dtc.protocol} code ${dtc.code}.`,
+          title: "Could not mark fault code resolved",
+          description: `The backend did not mark ${PROTOCOL_LABELS[dtc.protocol] ?? dtc.protocol} code ${dtc.code} resolved.`,
         })
       }
     },
     onError: (error: Error) => {
       toast({
         variant: "destructive",
-        title: "Resolve failed",
+        title: "Mark resolved failed",
         description: error.message,
       })
     },
@@ -442,7 +442,7 @@ function ResolveButton({ dtc }: Readonly<{ dtc: IDtcRecord }>) {
       disabled={!isAdmin || resolveMutation.isPending}
       onClick={() => resolveMutation.mutate()}
     >
-      {resolveMutation.isPending ? "Resolving…" : "Resolve"}
+      {resolveMutation.isPending ? "Marking resolved…" : "Mark resolved"}
     </Button>
   )
 
@@ -452,7 +452,7 @@ function ResolveButton({ dtc }: Readonly<{ dtc: IDtcRecord }>) {
       <TooltipTrigger asChild>
         <span>{button}</span>
       </TooltipTrigger>
-      <TooltipContent>Resolving fault codes requires an administrator account</TooltipContent>
+      <TooltipContent>Marking fault codes resolved requires an administrator account</TooltipContent>
     </Tooltip>
   )
 }

@@ -117,7 +117,7 @@ interface ILightRowProps {
   showTimestamp: boolean
 }
 
-function LightRow({
+export function LightRow({
   entity,
   controlsDisabled,
   disabledReason,
@@ -165,8 +165,8 @@ function LightRow({
       <Switch
         checked={isOn}
         disabled={rowDisabled || control.isPending}
-        onCheckedChange={() => sendCommand({ command: "toggle" })}
-        aria-label={`Toggle ${entity.name}`}
+        onCheckedChange={(checked) => sendCommand({ command: "set", state: checked })}
+        aria-label={entity.name}
       />
     </div>
   )
@@ -194,23 +194,42 @@ function LightRow({
         )}
       </div>
       {dimmable && isOn && (
-        <Slider
-          value={[shownBrightness]}
-          max={100}
-          step={5}
-          disabled={rowDisabled}
-          onValueChange={(value) => {
-            const level = value[0]
-            if (level !== undefined) setPendingBrightness(level)
-          }}
-          onValueCommit={(value) => {
-            const level = value[0]
-            if (level !== undefined) {
-              sendCommand({ command: "set", state: level > 0, brightness: level })
-            }
-          }}
-          aria-label={`${entity.name} brightness`}
-        />
+        <div className="flex items-center gap-3">
+          <Slider
+            value={[shownBrightness]}
+            max={100}
+            step={5}
+            disabled={rowDisabled || control.isPending}
+            onValueChange={(value) => {
+              const level = value[0]
+              if (level !== undefined) setPendingBrightness(level)
+            }}
+            onValueCommit={(value) => {
+              const level = value[0]
+              if (level === undefined) return
+              control.mutate(
+                {
+                  entityId: entity.entity_id,
+                  command: { command: "set", state: level > 0, brightness: level },
+                },
+                {
+                  onSuccess: (result) => {
+                    if (result.status !== "success") setPendingBrightness(null)
+                    reportCommandResult(result, entity.name)
+                  },
+                  onError: (error) => {
+                    setPendingBrightness(null)
+                    reportCommandError(error, entity.name)
+                  },
+                }
+              )
+            }}
+            aria-label={`${entity.name} brightness`}
+          />
+          <output className="w-10 text-right text-xs tabular-nums text-muted-foreground">
+            {shownBrightness}%
+          </output>
+        </div>
       )}
     </div>
   )

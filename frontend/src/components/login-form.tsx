@@ -13,6 +13,7 @@ import {
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Separator } from "@/components/ui/separator"
+import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group"
 import { useAuth } from "@/contexts"
 import { cn } from "@/lib/utils"
 
@@ -93,7 +94,7 @@ function AuthLoadingCard({
               <p className="text-sm text-muted-foreground">
                 The coach may be restarting or unavailable. You can retry without losing this page.
               </p>
-              <Button variant="outline" className="w-full" onClick={() => window.location.reload()}>
+              <Button className="w-full" onClick={() => window.location.reload()}>
                 Retry connection
               </Button>
             </div>
@@ -283,7 +284,6 @@ export function LoginForm({
               {isOidcMode && (
                 <Button
                   type="button"
-                  variant="outline"
                   onClick={handlePocketIdLogin}
                   className="w-full"
                   disabled={isSubmitting || isSendingMagicLink}
@@ -293,30 +293,33 @@ export function LoginForm({
                 </Button>
               )}
 
-              {isOidcMode && hasLocalLoginMode && <Separator />}
-
-              {/* Mode toggle buttons if both modes are available */}
-              {isPasswordMode && isMagicLinkMode && (
-                <div className="flex gap-2 p-1 bg-muted rounded-md">
-                  <Button
-                    type="button"
-                    variant={loginMode === "password" ? "default" : "ghost"}
-                    size="sm"
-                    onClick={() => setLoginMode("password")}
-                    className="flex-1"
-                  >
-                    Username & Password
-                  </Button>
-                  <Button
-                    type="button"
-                    variant={loginMode === "magic" ? "default" : "ghost"}
-                    size="sm"
-                    onClick={() => setLoginMode("magic")}
-                    className="flex-1"
-                  >
-                    Magic Link
-                  </Button>
+              {isOidcMode && hasLocalLoginMode && (
+                <div className="flex items-center gap-3" aria-label="Alternative sign-in methods">
+                  <Separator className="flex-1" />
+                  <span className="text-xs font-medium uppercase text-muted-foreground">or</span>
+                  <Separator className="flex-1" />
                 </div>
+              )}
+
+              {/* Mode selector if both local methods are available */}
+              {isPasswordMode && isMagicLinkMode && (
+                <ToggleGroup
+                  type="single"
+                  value={loginMode}
+                  onValueChange={(value) => {
+                    if (value === "password" || value === "magic") setLoginMode(value)
+                  }}
+                  variant="outline"
+                  className="w-full"
+                  aria-label="Local sign-in method"
+                >
+                  <ToggleGroupItem value="password" className="whitespace-normal">
+                    Username & Password
+                  </ToggleGroupItem>
+                  <ToggleGroupItem value="magic" className="whitespace-normal">
+                    Magic Link
+                  </ToggleGroupItem>
+                </ToggleGroup>
               )}
 
               {/* Password login form */}
@@ -348,7 +351,12 @@ export function LoginForm({
                       disabled={isSubmitting}
                     />
                   </div>
-                  <Button type="submit" className="w-full" disabled={isSubmitting}>
+                  <Button
+                    type="submit"
+                    variant={isOidcMode ? "outline" : "default"}
+                    className="w-full"
+                    disabled={isSubmitting}
+                  >
                     {isSubmitting && <IconLoader2 className="mr-2 h-4 w-4 animate-spin" />}
                     Sign in
                   </Button>
@@ -371,7 +379,12 @@ export function LoginForm({
                       disabled={isSendingMagicLink}
                     />
                   </div>
-                  <Button type="submit" className="w-full" disabled={isSendingMagicLink}>
+                  <Button
+                    type="submit"
+                    variant={isOidcMode ? "outline" : "default"}
+                    className="w-full"
+                    disabled={isSendingMagicLink}
+                  >
                     {isSendingMagicLink && <IconLoader2 className="mr-2 h-4 w-4 animate-spin" />}
                     Send Magic Link
                   </Button>

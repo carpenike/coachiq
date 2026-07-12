@@ -69,7 +69,7 @@ export function AuthGuard({ children }: Readonly<IAuthGuardProps>): ReactElement
               <p className="text-sm text-muted-foreground">
                 The coach may be restarting or temporarily unavailable. Retry when the network is ready.
               </p>
-              <Button variant="outline" className="w-full" onClick={() => window.location.reload()}>
+              <Button className="w-full" onClick={() => window.location.reload()}>
                 Retry connection
               </Button>
             </div>

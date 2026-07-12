@@ -33,6 +33,8 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
+import { Label } from "@/components/ui/label"
+import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group"
 import { toast } from "@/hooks/use-toast"
 import { entitiesQueryKeys, useEntities } from "@/hooks/useEntities"
 import { cn } from "@/lib/utils"
@@ -123,7 +125,39 @@ interface IControlsProps {
   controlsDisabled: boolean
 }
 
-function InverterModeCard({ inverter, controlsDisabled }: Readonly<IControlsProps>) {
+function RadioChoice({
+  value,
+  label,
+  selected,
+  disabled,
+}: Readonly<{
+  value: string
+  label: string
+  selected: boolean
+  disabled: boolean
+}>) {
+  return (
+    <Label
+      className={cn(
+        "flex min-h-11 cursor-pointer items-center justify-center rounded-md border px-3 py-2 text-center text-sm font-medium shadow-xs transition-[color,background-color,border-color,box-shadow,transform] active:scale-[0.97] focus-within:ring-3 focus-within:ring-ring/50 motion-reduce:transform-none",
+        selected
+          ? "border-primary bg-primary text-primary-foreground"
+          : "bg-background hover:bg-accent hover:text-accent-foreground",
+        disabled && "pointer-events-none opacity-50"
+      )}
+    >
+      <RadioGroupItem
+        value={value}
+        disabled={disabled}
+        className="sr-only"
+        aria-label={label}
+      />
+      {label}
+    </Label>
+  )
+}
+
+export function InverterModeCard({ inverter, controlsDisabled }: Readonly<IControlsProps>) {
   const queryClient = useQueryClient()
   const [pendingMode, setPendingMode] = useState<(typeof MODE_OPTIONS)[number] | null>(null)
 
@@ -155,23 +189,29 @@ function InverterModeCard({ inverter, controlsDisabled }: Readonly<IControlsProp
         <CardTitle className="text-base">Inverter/charger mode</CardTitle>
       </CardHeader>
       <CardContent className="space-y-3">
-        <div className="grid grid-cols-2 gap-2">
+        <RadioGroup
+          value={MODE_OPTIONS.find((option) => option.code === currentCode)?.mode ?? ""}
+          disabled={controlsDisabled || !modeAdjustable || mutation.isPending}
+          onValueChange={(value) => {
+            const option = MODE_OPTIONS.find((candidate) => candidate.mode === value)
+            if (option && option.code !== currentCode) setPendingMode(option)
+          }}
+          className="grid grid-cols-2 gap-2"
+          aria-label="Inverter charger mode"
+        >
           {MODE_OPTIONS.map((option) => {
             const isCurrent = currentCode === option.code
             return (
-              <Button
+              <RadioChoice
                 key={option.mode}
-                variant={isCurrent ? "default" : "outline"}
-                disabled={
-                  controlsDisabled || !modeAdjustable || mutation.isPending || isCurrent
-                }
-                onClick={() => setPendingMode(option)}
-              >
-                {option.label}
-              </Button>
+                value={option.mode}
+                label={option.label}
+                selected={isCurrent}
+                disabled={controlsDisabled || !modeAdjustable || mutation.isPending}
+              />
             )
           })}
-        </div>
+        </RadioGroup>
         {!modeAdjustable && (
           <p className="text-xs text-muted-foreground">
             The Cerbo reports the mode as not adjustable (check the physical switch
@@ -206,7 +246,7 @@ function InverterModeCard({ inverter, controlsDisabled }: Readonly<IControlsProp
   )
 }
 
-function ShoreLimitCard({ inverter, controlsDisabled }: Readonly<IControlsProps>) {
+export function ShoreLimitCard({ inverter, controlsDisabled }: Readonly<IControlsProps>) {
   const queryClient = useQueryClient()
   const [customAmps, setCustomAmps] = useState("")
 
@@ -249,19 +289,23 @@ function ShoreLimitCard({ inverter, controlsDisabled }: Readonly<IControlsProps>
           Match this to the pedestal breaker. The Quattros draw at most this much from
           shore and make up the difference from the batteries.
         </p>
-        <div className="flex flex-wrap gap-2">
+        <RadioGroup
+          value={LIMIT_PRESETS.includes(currentLimit ?? -1) ? String(currentLimit) : ""}
+          disabled={disabled}
+          onValueChange={(value) => mutation.mutate(Number(value))}
+          className="flex flex-wrap gap-2"
+          aria-label="Shore input current limit presets"
+        >
           {LIMIT_PRESETS.map((amps) => (
-            <Button
+            <RadioChoice
               key={amps}
-              variant={currentLimit === amps ? "default" : "outline"}
-              size="sm"
-              disabled={disabled || currentLimit === amps}
-              onClick={() => mutation.mutate(amps)}
-            >
-              {amps} A
-            </Button>
+              value={String(amps)}
+              label={`${amps} A`}
+              selected={currentLimit === amps}
+              disabled={disabled}
+            />
           ))}
-        </div>
+        </RadioGroup>
         <div className="flex items-center gap-2">
           <Input
             type="number"

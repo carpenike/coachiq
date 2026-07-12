@@ -39,6 +39,7 @@ import {
   SheetTitle,
 } from "@/components/ui/sheet"
 import { Skeleton } from "@/components/ui/skeleton"
+import { Switch } from "@/components/ui/switch"
 import {
   Table,
   TableBody,
@@ -140,10 +141,10 @@ function derivedCapabilities(entity: EntitySchema): string[] {
 }
 
 function isControllable(entity: EntitySchema): boolean {
-  // Only `light` has a working generic on/off/toggle path. The backend's
+  // Only `light` has a working generic power-control path. The backend's
   // control_entity dispatches light / climate / ac_load, but climate and
   // ac_load are parameterized and live on their own pages — the generic
-  // on/off/toggle buttons here only fit a light. switch / fan / lock have no
+  // power switch here only fits a light. switch / fan / lock have no
   // service-layer handler, so rendering their buttons sent commands the
   // backend rejects (e.g. the read-only entrance door lock 500'd on press).
   // Re-add a type here only once control_entity actually dispatches it.
@@ -294,29 +295,35 @@ interface IDeviceDetailSheetProps {
   readonly onClose: () => void
 }
 
-/** On/Off/Toggle button row for a controllable device. */
-function DeviceControlButtons({
+/** Persistent power-state control for a controllable device. */
+function devicePowerStateLabel(checked: boolean | null): string {
+  if (checked === null) return "State unavailable"
+  return checked ? "On" : "Off"
+}
+
+export function DevicePowerControl({
   disabled,
-  onSetOn,
-  onSetOff,
-  onToggle,
+  checked,
+  entityName,
+  onCheckedChange,
 }: Readonly<{
   disabled: boolean
-  onSetOn: () => void
-  onSetOff: () => void
-  onToggle: () => void
+  checked: boolean | null
+  entityName: string
+  onCheckedChange: (checked: boolean) => void
 }>) {
   return (
-    <div className="flex items-center gap-2">
-      <Button variant="outline" size="sm" disabled={disabled} onClick={onSetOn}>
-        Turn On
-      </Button>
-      <Button variant="outline" size="sm" disabled={disabled} onClick={onSetOff}>
-        Turn Off
-      </Button>
-      <Button variant="outline" size="sm" disabled={disabled} onClick={onToggle}>
-        Toggle
-      </Button>
+    <div className="flex min-h-11 items-center justify-between gap-3 rounded-md border px-3">
+      <div>
+        <p className="text-sm font-medium">Power</p>
+        <p className="text-xs text-muted-foreground">{devicePowerStateLabel(checked)}</p>
+      </div>
+      <Switch
+        checked={checked ?? false}
+        disabled={disabled || checked === null}
+        onCheckedChange={onCheckedChange}
+        aria-label={`${entityName} power`}
+      />
     </div>
   )
 }
@@ -384,6 +391,7 @@ function DeviceDetailSheet({ entity, config, onClose }: IDeviceDetailSheetProps)
   const disabledReason = controlsDisabledReason(isAvailable, coach, reason)
   const capabilities = derivedCapabilities(entity)
   const stateEntries = Object.entries(entity.state ?? {})
+  const powerState = entityOnOff(entity)
 
   const sendCommand = (command: Parameters<typeof control.mutate>[0]["command"]) => {
     control.mutate(
@@ -395,13 +403,15 @@ function DeviceDetailSheet({ entity, config, onClose }: IDeviceDetailSheetProps)
     )
   }
 
-  const controlsAreDisabled = controlsDisabled || control.isPending
-  const controlButtons = (
-    <DeviceControlButtons
+  const controlsAreDisabled = controlsDisabled || control.isPending || powerState === null
+  const powerDisabledReason =
+    powerState === null ? "Device has not reported a power state" : disabledReason
+  const powerControl = (
+    <DevicePowerControl
       disabled={controlsAreDisabled}
-      onSetOn={() => sendCommand({ command: "set", state: true })}
-      onSetOff={() => sendCommand({ command: "set", state: false })}
-      onToggle={() => sendCommand({ command: "toggle" })}
+      checked={powerState}
+      entityName={entity.name}
+      onCheckedChange={(checked) => sendCommand({ command: "set", state: checked })}
     />
   )
 
@@ -426,15 +436,15 @@ function DeviceDetailSheet({ entity, config, onClose }: IDeviceDetailSheetProps)
           {isControllable(entity) && (
             <div className="space-y-2">
               <h3 className="text-sm font-medium">Controls</h3>
-              {controlsDisabled ? (
+              {controlsDisabled || powerState === null ? (
                 <Tooltip>
                   <TooltipTrigger asChild>
-                    <span className="inline-block">{controlButtons}</span>
+                    <span className="block">{powerControl}</span>
                   </TooltipTrigger>
-                  <TooltipContent>{disabledReason}</TooltipContent>
+                  <TooltipContent>{powerDisabledReason}</TooltipContent>
                 </Tooltip>
               ) : (
-                controlButtons
+                powerControl
               )}
             </div>
           )}

@@ -40,11 +40,6 @@ import {
   SidebarTrigger,
   useSidebar,
 } from "@/components/ui/sidebar"
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipTrigger,
-} from "@/components/ui/tooltip"
 import { useAuth } from "@/contexts"
 import { useCoachConnection, type CoachState } from "@/contexts/coach-connection-context"
 import { findRouteByPath, routesForSection, titleForPath, type IAppRoute } from "@/lib/routes"
@@ -89,29 +84,23 @@ const PILL_STYLES = new Map<CoachState, IPillStyle>([
 export function CoachConnectionPill() {
   const { coach, reason, lastDataAt } = useCoachConnection()
   const style = PILL_STYLES.get(coach) ?? OFFLINE_PILL
+  const lastDataLabel =
+    lastDataAt && coach !== "LIVE"
+      ? ` Last data ${lastDataAt.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}.`
+      : ""
 
   return (
-    <Tooltip>
-      <TooltipTrigger asChild>
-        <span
-          className={cn(
-            "inline-flex items-center gap-1.5 rounded-full border px-2.5 py-0.5 text-xs font-medium",
-            style.text
-          )}
-        >
-          <span className={cn("size-2 rounded-full", style.dot)} aria-hidden />
-          {style.label}
-        </span>
-      </TooltipTrigger>
-      <TooltipContent side="bottom">
-        <p>{reason}</p>
-        {lastDataAt && coach !== "LIVE" && (
-          <p className="text-muted-foreground">
-            Last data {lastDataAt.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}
-          </p>
-        )}
-      </TooltipContent>
-    </Tooltip>
+    <span
+      role="status"
+      aria-label={`${style.label}. ${reason}.${lastDataLabel}`}
+      className={cn(
+        "inline-flex items-center gap-1.5 rounded-full border px-2.5 py-0.5 text-xs font-medium",
+        style.text
+      )}
+    >
+      <span className={cn("size-2 rounded-full", style.dot)} aria-hidden />
+      {style.label}
+    </span>
   )
 }
 
@@ -183,9 +172,9 @@ function AppShellSidebar(props: React.ComponentProps<typeof Sidebar>) {
       <SidebarHeader>
         <SidebarMenu>
           <SidebarMenuItem>
-            <SidebarMenuButton asChild className="data-[slot=sidebar-menu-button]:!p-1.5">
+            <SidebarMenuButton asChild className="data-[slot=sidebar-menu-button]:p-1.5!">
               <Link to="/">
-                <IconInnerShadowTop className="!size-5" />
+                <IconInnerShadowTop className="size-5!" />
                 <span className="text-base font-semibold">CoachIQ</span>
               </Link>
             </SidebarMenuButton>

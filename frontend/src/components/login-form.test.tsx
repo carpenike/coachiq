@@ -49,6 +49,16 @@ describe("LoginForm authentication methods", () => {
     expect(screen.queryByRole("textbox", { name: "Email" })).not.toBeInTheDocument();
   });
 
+  it("makes PocketID primary and separates local sign-in as an alternative", () => {
+    useAuthMock.mockReturnValue(authContext("single"));
+
+    render(<LoginForm />);
+
+    expect(screen.getByRole("button", { name: "Sign in with PocketID" })).toHaveClass("bg-primary");
+    expect(screen.getByRole("button", { name: "Sign in" })).toHaveClass("border");
+    expect(screen.getByText("or")).toBeInTheDocument();
+  });
+
   it("shows a branded connection state while authentication is loading", () => {
     useAuthMock.mockReturnValue({
       ...authContext("single"),

@@ -175,7 +175,7 @@ test("home is responsive and only renders real controls", async ({ page, isMobil
     scrollWidth: body.scrollWidth
   }))
   expect(dimensions.scrollWidth).toBe(dimensions.clientWidth)
-  await expect(page.getByRole("switch", { name: "Toggle Living Ceiling" })).toBeVisible()
+  await expect(page.getByRole("switch", { name: "Living Ceiling" })).toBeVisible()
   await expect(page.getByRole("switch", { name: /Fresh Water/ })).toHaveCount(0)
 
   if (isMobile) {

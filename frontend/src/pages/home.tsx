@@ -22,7 +22,7 @@ import {
   IconTruck,
 } from "@tabler/icons-react"
 import { useQuery } from "@tanstack/react-query"
-import { useState } from "react"
+import { useEffect, useState } from "react"
 import { Link } from "react-router-dom"
 
 import { fetchActiveDTCs } from "@/api/domains/diagnostics"
@@ -276,10 +276,13 @@ function SceneButton({
       variant="outline"
       disabled={disabled || runningScene !== null}
       onClick={onRun}
-      className="h-auto w-full flex-col gap-1.5 py-3"
+      className="h-auto min-h-24 w-full flex-col gap-1.5 whitespace-normal py-3"
     >
       <SceneIcon className={cn("size-5", runningScene === sceneKey && "animate-pulse")} />
-      <span className="text-xs">{scene.name}</span>
+      <span className="text-sm font-medium">{scene.name}</span>
+      {scene.description && (
+        <span className="text-xs font-normal text-muted-foreground">{scene.description}</span>
+      )}
     </Button>
   )
   if (!disabled) return button
@@ -358,12 +361,19 @@ interface IDeviceRowProps {
   showTimestamps: boolean
 }
 
-function ToggleDeviceRow({ entity, controlsDisabled, disabledReason, showTimestamps }: Readonly<IDeviceRowProps>) {
+export function ToggleDeviceRow({ entity, controlsDisabled, disabledReason, showTimestamps }: Readonly<IDeviceRowProps>) {
   const control = useControlEntity()
   const isOn = entityIsOn(entity)
   const isAvailable = entity.available !== false
   const dimmable = entityIsDimmable(entity)
   const brightness = entityBrightnessPct(entity)
+  const [pendingBrightness, setPendingBrightness] = useState<number | null>(null)
+  useEffect(() => {
+    if (pendingBrightness !== null && brightness === pendingBrightness) {
+      setPendingBrightness(null)
+    }
+  }, [pendingBrightness, brightness])
+  const shownBrightness = pendingBrightness ?? brightness
   const rowDisabled = controlsDisabled || !isAvailable
   const rowReason = !isAvailable
     ? "Device is not responding on the CAN bus"
@@ -401,8 +411,8 @@ function ToggleDeviceRow({ entity, controlsDisabled, disabledReason, showTimesta
       <Switch
         checked={isOn}
         disabled={rowDisabled || control.isPending}
-        onCheckedChange={() => sendCommand({ command: "toggle" })}
-        aria-label={`Toggle ${entity.name}`}
+        onCheckedChange={(checked) => sendCommand({ command: "set", state: checked })}
+        aria-label={entity.name}
       />
     </div>
   )
@@ -430,19 +440,42 @@ function ToggleDeviceRow({ entity, controlsDisabled, disabledReason, showTimesta
         )}
       </div>
       {dimmable && isOn && (
-        <Slider
-          value={[brightness]}
-          max={100}
-          step={5}
-          disabled={rowDisabled || control.isPending}
-          onValueCommit={(value) => {
-            const level = value[0]
-            if (level !== undefined) {
-              sendCommand({ command: "set", state: level > 0, brightness: level })
-            }
-          }}
-          aria-label={`${entity.name} brightness`}
-        />
+        <div className="flex items-center gap-3">
+          <Slider
+            value={[shownBrightness]}
+            max={100}
+            step={5}
+            disabled={rowDisabled || control.isPending}
+            onValueChange={(value) => {
+              const level = value[0]
+              if (level !== undefined) setPendingBrightness(level)
+            }}
+            onValueCommit={(value) => {
+              const level = value[0]
+              if (level === undefined) return
+              control.mutate(
+                {
+                  entityId: entity.entity_id,
+                  command: { command: "set", state: level > 0, brightness: level },
+                },
+                {
+                  onSuccess: (result) => {
+                    if (result.status !== "success") setPendingBrightness(null)
+                    reportCommandResult(result, entity.name)
+                  },
+                  onError: (error) => {
+                    setPendingBrightness(null)
+                    reportCommandError(error, entity.name)
+                  },
+                }
+              )
+            }}
+            aria-label={`${entity.name} brightness`}
+          />
+          <output className="w-10 text-right text-xs tabular-nums text-muted-foreground">
+            {shownBrightness}%
+          </output>
+        </div>
       )}
     </div>
   )
@@ -493,13 +526,14 @@ function ZoneCard({ zone, controlsDisabled, disabledReason, showTimestamps }: Re
   const allOffButton = (
     <Button
       variant="ghost"
-      size="icon"
+      size="sm"
       disabled={allOffDisabled}
       onClick={handleAllOff}
-      className="size-11 text-muted-foreground"
+      className="h-11 gap-1.5 px-2 text-muted-foreground"
       aria-label={`Turn all lights off in ${zone.displayName}`}
     >
       <IconSunOff className="size-4" />
+      <span>All off</span>
     </Button>
   )
 
