@@ -37,6 +37,7 @@ import { Label } from "@/components/ui/label"
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group"
 import { toast } from "@/hooks/use-toast"
 import { entitiesQueryKeys, useEntities } from "@/hooks/useEntities"
+import { useOptimisticValue } from "@/hooks/useOptimisticValue"
 import { cn } from "@/lib/utils"
 
 const MODE_OPTIONS: {
@@ -164,6 +165,11 @@ export function InverterModeCard({ inverter, controlsDisabled }: Readonly<IContr
   const state = inverter?.state ?? {}
   const currentCode = num(state.mode)
   const modeAdjustable = num(state.mode_adjustable) !== 0
+  // Victron endpoints sit outside the entity command lifecycle, so echo the
+  // chosen mode locally until the Cerbo state round-trips.
+  const modeEcho = useOptimisticValue(
+    MODE_OPTIONS.find((option) => option.code === currentCode)?.mode ?? ""
+  )
 
   const mutation = useMutation({
     mutationFn: (mode: InverterMode) => setInverterMode(mode),
@@ -190,24 +196,24 @@ export function InverterModeCard({ inverter, controlsDisabled }: Readonly<IContr
       </CardHeader>
       <CardContent className="space-y-3">
         <RadioGroup
-          value={MODE_OPTIONS.find((option) => option.code === currentCode)?.mode ?? ""}
-          disabled={controlsDisabled || !modeAdjustable || mutation.isPending}
+          value={modeEcho.shown}
+          disabled={controlsDisabled || !modeAdjustable}
           onValueChange={(value) => {
             const option = MODE_OPTIONS.find((candidate) => candidate.mode === value)
-            if (option && option.code !== currentCode) setPendingMode(option)
+            if (option && option.mode !== modeEcho.shown) setPendingMode(option)
           }}
           className="grid grid-cols-2 gap-2"
           aria-label="Inverter charger mode"
         >
           {MODE_OPTIONS.map((option) => {
-            const isCurrent = currentCode === option.code
+            const isCurrent = modeEcho.shown === option.mode
             return (
               <RadioChoice
                 key={option.mode}
                 value={option.mode}
                 label={option.label}
                 selected={isCurrent}
-                disabled={controlsDisabled || !modeAdjustable || mutation.isPending}
+                disabled={controlsDisabled || !modeAdjustable}
               />
             )
           })}
@@ -235,7 +241,11 @@ export function InverterModeCard({ inverter, controlsDisabled }: Readonly<IContr
             </Button>
             <Button
               disabled={mutation.isPending}
-              onClick={() => pendingMode && mutation.mutate(pendingMode.mode)}
+              onClick={() => {
+                if (!pendingMode) return
+                modeEcho.setPending(pendingMode.mode)
+                mutation.mutate(pendingMode.mode, { onError: modeEcho.clearPending })
+              }}
             >
               {mutation.isPending ? "Sending…" : `Switch to ${pendingMode?.label}`}
             </Button>
@@ -253,6 +263,8 @@ export function ShoreLimitCard({ inverter, controlsDisabled }: Readonly<IControl
   const state = inverter?.state ?? {}
   const currentLimit = num(state.input_current_limit)
   const limitAdjustable = num(state.input_current_limit_adjustable) !== 0
+  // Same as the mode card: echo the chosen limit until the Cerbo reports it.
+  const limitEcho = useOptimisticValue(currentLimit)
 
   const mutation = useMutation({
     mutationFn: (amps: number) => setInputCurrentLimit(amps),
@@ -270,9 +282,14 @@ export function ShoreLimitCard({ inverter, controlsDisabled }: Readonly<IControl
     },
   })
 
-  const disabled = controlsDisabled || !limitAdjustable || mutation.isPending
+  const disabled = controlsDisabled || !limitAdjustable
   const customValue = Number(customAmps)
   const customValid = customAmps !== "" && Number.isFinite(customValue) && customValue >= 0
+
+  const applyLimit = (amps: number) => {
+    limitEcho.setPending(amps)
+    mutation.mutate(amps, { onError: limitEcho.clearPending })
+  }
 
   return (
     <Card>
@@ -280,7 +297,7 @@ export function ShoreLimitCard({ inverter, controlsDisabled }: Readonly<IControl
         <CardTitle className="flex items-center justify-between text-base">
           Shore input limit
           <Badge variant="secondary" className="tabular-nums">
-            {currentLimit === null ? "—" : `${currentLimit} A`}
+            {limitEcho.shown === null ? "—" : `${limitEcho.shown} A`}
           </Badge>
         </CardTitle>
       </CardHeader>
@@ -290,9 +307,9 @@ export function ShoreLimitCard({ inverter, controlsDisabled }: Readonly<IControl
           shore and make up the difference from the batteries.
         </p>
         <RadioGroup
-          value={LIMIT_PRESETS.includes(currentLimit ?? -1) ? String(currentLimit) : ""}
+          value={LIMIT_PRESETS.includes(limitEcho.shown ?? -1) ? String(limitEcho.shown) : ""}
           disabled={disabled}
-          onValueChange={(value) => mutation.mutate(Number(value))}
+          onValueChange={(value) => applyLimit(Number(value))}
           className="flex flex-wrap gap-2"
           aria-label="Shore input current limit presets"
         >
@@ -301,7 +318,7 @@ export function ShoreLimitCard({ inverter, controlsDisabled }: Readonly<IControl
               key={amps}
               value={String(amps)}
               label={`${amps} A`}
-              selected={currentLimit === amps}
+              selected={limitEcho.shown === amps}
               disabled={disabled}
             />
           ))}
@@ -321,7 +338,7 @@ export function ShoreLimitCard({ inverter, controlsDisabled }: Readonly<IControl
           <Button
             size="sm"
             disabled={disabled || !customValid}
-            onClick={() => mutation.mutate(customValue)}
+            onClick={() => applyLimit(customValue)}
           >
             Apply
           </Button>

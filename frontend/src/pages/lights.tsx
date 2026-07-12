@@ -164,7 +164,7 @@ export function LightRow({
       )}
       <Switch
         checked={isOn}
-        disabled={rowDisabled || control.isPending}
+        disabled={rowDisabled}
         onCheckedChange={(checked) => sendCommand({ command: "set", state: checked })}
         aria-label={entity.name}
       />
@@ -199,7 +199,7 @@ export function LightRow({
             value={[shownBrightness]}
             max={100}
             step={5}
-            disabled={rowDisabled || control.isPending}
+            disabled={rowDisabled}
             onValueChange={(value) => {
               const level = value[0]
               if (level !== undefined) setPendingBrightness(level)
@@ -280,8 +280,7 @@ function ZoneLightsCard({
     )
   }
 
-  const zoneButtonsDisabled =
-    controlsDisabled || switchableIds.length === 0 || bulkControl.isPending
+  const zoneButtonsDisabled = controlsDisabled || switchableIds.length === 0
   const zoneButtonsReason = controlsDisabled
     ? disabledReason
     : "No lights in this zone are responding"
@@ -392,7 +391,7 @@ function MasterBar({ lights, controlsDisabled, disabledReason }: Readonly<IMaste
     )
   }
 
-  const masterDisabled = controlsDisabled || available.length === 0 || bulkControl.isPending
+  const masterDisabled = controlsDisabled || available.length === 0
   const masterReason = controlsDisabled ? disabledReason : "No lights are responding"
 
   const buttons = (
