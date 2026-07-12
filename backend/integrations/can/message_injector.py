@@ -12,9 +12,10 @@ The OEM Firefly MIRA panel owns the actual vehicle safety case. See
 
 import asyncio
 import contextlib
+import inspect
 import logging
 import time
-from collections.abc import Callable
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any, Optional
@@ -138,7 +139,8 @@ class CANMessageInjector(GuardrailParticipant):
     def __init__(
         self,
         safety_level: SafetyLevel = SafetyLevel.MODERATE,
-        audit_callback: Callable[[InjectionRequest, InjectionResult], None] | None = None,
+        audit_callback: Callable[[InjectionRequest, InjectionResult], None | Awaitable[None]]
+        | None = None,
     ):
         """
         Initialize CAN message injector service.
@@ -172,6 +174,17 @@ class CANMessageInjector(GuardrailParticipant):
         }
 
         logger.info("CANMessageInjector initialized: safety_level=%s", safety_level.value)
+
+    async def _run_audit_callback(self, request: InjectionRequest, result: InjectionResult) -> None:
+        """Invoke the audit callback, awaiting it if it is a coroutine function."""
+        if not self.audit_callback:
+            return
+        try:
+            outcome = self.audit_callback(request, result)
+            if inspect.isawaitable(outcome):
+                await outcome
+        except Exception as e:
+            logger.error("Audit callback failed: %s", e)
 
     async def start(self) -> None:
         """Start the CAN message injector service."""
@@ -241,23 +254,20 @@ class CANMessageInjector(GuardrailParticipant):
 
         # Audit the command halt
         if self.audit_callback:
-            try:
-                # Create a special command halt audit record
-                command_halt_request = InjectionRequest(
-                    user="SYSTEM",
-                    interface="ALL",
-                    can_id=0x000,
-                    data=b"",
-                    mode=InjectionMode.SINGLE,
-                    reason=f"COMMAND_HALT: {reason}",
-                    description="Command halt of all injection operations",
-                )
-                command_halt_result = InjectionResult(
-                    success=True, messages_sent=0, error=f"Command halt executed: {reason}"
-                )
-                self.audit_callback(command_halt_request, command_halt_result)
-            except Exception as e:
-                logger.error("Error during command halt audit: %s", e)
+            # Create a special command halt audit record
+            command_halt_request = InjectionRequest(
+                user="SYSTEM",
+                interface="ALL",
+                can_id=0x000,
+                data=b"",
+                mode=InjectionMode.SINGLE,
+                reason=f"COMMAND_HALT: {reason}",
+                description="Command halt of all injection operations",
+            )
+            command_halt_result = InjectionResult(
+                success=True, messages_sent=0, error=f"Command halt executed: {reason}"
+            )
+            await self._run_audit_callback(command_halt_request, command_halt_result)
 
         logger.critical("CAN message injector command halt completed")
 
@@ -466,11 +476,7 @@ class CANMessageInjector(GuardrailParticipant):
         self._stats["total_failed"] += result.messages_failed
 
         # Audit logging
-        if self.audit_callback:
-            try:
-                self.audit_callback(request, result)
-            except Exception as e:
-                logger.error("Audit callback failed: %s", e)
+        await self._run_audit_callback(request, result)
 
         return result
 
