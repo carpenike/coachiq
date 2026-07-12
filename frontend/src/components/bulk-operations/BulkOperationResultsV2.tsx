@@ -165,19 +165,19 @@ export function BulkOperationResultsV2({
             {/* Statistics */}
             <div className="grid grid-cols-4 gap-4 text-center">
               <div className="space-y-1">
-                <p className="text-2xl font-bold text-green-600">{success_count}</p>
+                <p className="text-2xl font-bold tracking-tight text-green-600">{success_count}</p>
                 <p className="text-xs text-muted-foreground">Succeeded</p>
               </div>
               <div className="space-y-1">
-                <p className="text-2xl font-bold text-red-600">{failed_count}</p>
+                <p className="text-2xl font-bold tracking-tight text-red-600">{failed_count}</p>
                 <p className="text-xs text-muted-foreground">Failed</p>
               </div>
               <div className="space-y-1">
-                <p className="text-2xl font-bold">{total_count}</p>
+                <p className="text-2xl font-bold tracking-tight">{total_count}</p>
                 <p className="text-xs text-muted-foreground">Total</p>
               </div>
               <div className="space-y-1">
-                <p className="text-2xl font-bold text-blue-600">
+                <p className="text-2xl font-bold tracking-tight text-blue-600">
                   {(total_execution_time_ms / 1000).toFixed(1)}s
                 </p>
                 <p className="text-xs text-muted-foreground">Duration</p>

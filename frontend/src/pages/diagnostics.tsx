@@ -308,7 +308,7 @@ function HealthVerdictCard({
         <div className="flex items-baseline gap-3">
           <span
             className={cn(
-              "text-2xl font-semibold",
+              "text-2xl font-semibold tracking-tight",
               verdict.tone === "healthy" && "text-green-700 dark:text-green-400",
               verdict.tone === "warning" && "text-amber-700 dark:text-amber-400",
               verdict.tone === "critical" && "text-red-700 dark:text-red-400"

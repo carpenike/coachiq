@@ -146,7 +146,7 @@ function BatteryCard({ entity }: Readonly<{ entity: EntitySchema }>) {
   return (
     <PowerCard entity={entity} icon={IconBattery}>
       <div className="mb-2 space-y-1.5">
-        <p className="text-2xl font-semibold tabular-nums">
+        <p className="text-2xl font-semibold tracking-tight tabular-nums">
           {soc === null ? "—" : `${Math.round(soc)}%`}
         </p>
         <Progress value={soc ?? 0} aria-label="Battery state of charge" />
@@ -163,7 +163,7 @@ function SolarCard({ entity }: Readonly<{ entity: EntitySchema }>) {
   return (
     <PowerCard entity={entity} icon={IconSun}>
       <div className="mb-2">
-        <p className="text-2xl font-semibold tabular-nums">
+        <p className="text-2xl font-semibold tracking-tight tabular-nums">
           {fmtWatts(num(state.pv_power))}
         </p>
       </div>
@@ -197,7 +197,7 @@ function DcLoadsCard({ entity }: Readonly<{ entity: EntitySchema }>) {
   return (
     <PowerCard entity={entity} icon={IconTopologyStar3}>
       <div className="mb-2">
-        <p className="text-2xl font-semibold tabular-nums">{fmtWatts(num(state.power))}</p>
+        <p className="text-2xl font-semibold tracking-tight tabular-nums">{fmtWatts(num(state.power))}</p>
       </div>
       <StatRow label="Voltage" value={fmtNumber(num(state.voltage), "V")} />
       <StatRow label="Current" value={fmtNumber(num(state.current), "A")} />
