@@ -187,7 +187,13 @@ export async function apiRequest<T>(
     },
   });
 
-  await ensureFreshAccessToken();
+  // Token-management endpoints are themselves part of the refresh lifecycle.
+  // Proactively refreshing before /api/auth/refresh would re-enter the same
+  // in-flight promise, so the request would never be sent and the cross-tab
+  // Web Lock would remain held indefinitely.
+  if (!bypassesProactiveTokenRefresh(url)) {
+    await ensureFreshAccessToken();
+  }
 
   const response = await fetch(fullUrl, buildInit());
 
@@ -216,12 +222,25 @@ export async function apiRequest<T>(
 }
 
 /**
- * Token-management endpoints must not trigger the request-time 401 refresh:
- * they either manage the token lifecycle themselves or would recurse into the
- * in-flight refresh they are part of.
+ * Token-management endpoints must not trigger proactive or response-time
+ * refresh: they either manage the token lifecycle themselves or would recurse
+ * into the in-flight refresh they are part of.
  */
 function isAuthEndpoint(url: string): boolean {
   return url.includes('/api/auth/');
+}
+
+const PROACTIVE_REFRESH_BYPASS_PATHS = new Set([
+  '/api/auth/status',
+  '/api/auth/refresh',
+  '/api/auth/revoke',
+  '/api/auth/magic-link',
+  '/api/v1/auth/oidc/callback',
+]);
+
+function bypassesProactiveTokenRefresh(url: string): boolean {
+  const [path] = url.split('?', 1);
+  return path !== undefined && PROACTIVE_REFRESH_BYPASS_PATHS.has(path);
 }
 
 /**

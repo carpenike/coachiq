@@ -23,7 +23,7 @@ vi.mock('@/api/endpoints', () => ({
 }))
 
 // Import AFTER the mock so the modules under test bind to the mocked endpoints.
-const { apiGet } = await import('@/api/client')
+const { apiGet, apiPost } = await import('@/api/client')
 const { tokenStorage } = await import('@/lib/token-storage')
 
 /** A live (not near-expiry) access token so the proactive refresh stays a no-op. */
@@ -113,6 +113,62 @@ describe('apiRequest 401 refresh-and-retry', () => {
     await expect(apiGet('/api/auth/refresh')).rejects.toMatchObject({ status: 401 })
     expect(fetchMock).toHaveBeenCalledTimes(1)
     expect(refreshTokenAPI).not.toHaveBeenCalled()
+  })
+})
+
+describe('apiRequest proactive auth refresh boundaries', () => {
+  beforeEach(() => {
+    localStorage.clear()
+    refreshTokenAPI.mockReset()
+    fetchMock.mockReset()
+    vi.stubGlobal('fetch', fetchMock)
+    tokenStorage.setRefreshCallbacks({})
+  })
+
+  afterEach(() => {
+    localStorage.clear()
+    tokenStorage.cleanup()
+    vi.unstubAllGlobals()
+  })
+
+  it('sends token-management requests directly when the access token is stale', async () => {
+    seedLiveTokens()
+    localStorage.setItem('token_expiry', String(Date.now() - 1_000))
+    fetchMock.mockResolvedValueOnce(jsonResponse(200, { refreshed: true }))
+
+    const result = await apiPost<{ refreshed: boolean }>(
+      '/api/auth/refresh',
+      { refresh_token: 'refresh-original' }
+    )
+
+    expect(result).toEqual({ refreshed: true })
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+    expect(refreshTokenAPI).not.toHaveBeenCalled()
+  })
+
+  it('loads public auth status without waiting for a stale session refresh', async () => {
+    seedLiveTokens()
+    localStorage.setItem('token_expiry', String(Date.now() - 1_000))
+    fetchMock.mockResolvedValueOnce(jsonResponse(200, { enabled: true }))
+
+    const result = await apiGet<{ enabled: boolean }>('/api/auth/status')
+
+    expect(result).toEqual({ enabled: true })
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+    expect(refreshTokenAPI).not.toHaveBeenCalled()
+  })
+
+  it('still proactively refreshes authenticated auth endpoints', async () => {
+    seedLiveTokens()
+    localStorage.setItem('token_expiry', String(Date.now() - 1_000))
+    refreshTokenAPI.mockResolvedValue(refreshResponse('auth-user'))
+    fetchMock.mockResolvedValueOnce(jsonResponse(200, { authenticated: true }))
+
+    const result = await apiGet<{ authenticated: boolean }>('/api/auth/me')
+
+    expect(result).toEqual({ authenticated: true })
+    expect(refreshTokenAPI).toHaveBeenCalledTimes(1)
+    expect(authHeaderOf(fetchMock.mock.calls[0])).toBe('Bearer access-auth-user')
   })
 
   it('does not retry when no valid refresh token is available', async () => {
