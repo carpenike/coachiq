@@ -7,7 +7,7 @@ from types import SimpleNamespace
 import pytest
 from fastapi.testclient import TestClient
 
-from backend.core.http_navigation import safe_spa_file_path
+from backend.core.http_navigation import is_hashed_spa_javascript_path, safe_spa_file_path
 from backend.main import _SPA_FALLBACK_ROUTE_NAME, app, configure_spa_fallback, create_app
 
 
@@ -23,6 +23,10 @@ def spa_client(tmp_path) -> Generator[TestClient, None, None]:
     (tmp_path / "assets" / "app.js").write_text("console.log('coachiq');", encoding="utf-8")
     (tmp_path / "coachiq-sw.js").write_text("self.skipWaiting();", encoding="utf-8")
     (tmp_path / "manifest.webmanifest").write_text("{}", encoding="utf-8")
+    (tmp_path / "stale-asset-recovery.js").write_text(
+        "registration.update(); resetServiceWorker(); window.location.reload();",
+        encoding="utf-8",
+    )
 
     original_routes = list(app.router.routes)
     previous_state = {
@@ -78,9 +82,49 @@ def test_spa_fallback_serves_static_assets(spa_client: TestClient) -> None:
     assert "no-store" not in response.headers.get("cache-control", "")
 
 
+def test_spa_missing_hashed_javascript_repairs_stale_worker(spa_client: TestClient) -> None:
+    """A removed Vite entry chunk returns an executable, non-cacheable recovery module."""
+    response = spa_client.get("/assets/index-Byawxoz2.js")
+
+    assert response.status_code == 200
+    assert response.headers["content-type"].startswith("text/javascript")
+    assert response.headers["cache-control"] == "no-cache, no-store, must-revalidate"
+    assert "registration.update()" in response.text
+    assert "resetServiceWorker" in response.text
+    assert "window.location.reload()" in response.text
+
+
+def test_spa_missing_unhashed_javascript_stays_not_found(spa_client: TestClient) -> None:
+    """Arbitrary missing scripts retain the normal 404 response."""
+    response = spa_client.get("/assets/missing.js")
+
+    assert response.status_code == 404
+    assert response.json()["error"]["code"] == "HTTP_404"
+
+
+@pytest.mark.parametrize(
+    ("path", "expected"),
+    [
+        ("/assets/index-Byawxoz2.js", True),
+        ("/assets/use-toast-DJc4iltM.js", True),
+        ("/assets/missing.js", False),
+        ("/api/index-Byawxoz2.js", False),
+    ],
+)
+def test_hashed_spa_javascript_path_detection(path: str, expected: bool) -> None:
+    """Only Vite-style JavaScript assets qualify for automatic recovery."""
+    assert is_hashed_spa_javascript_path(path) is expected
+
+
 @pytest.mark.parametrize(
     "path",
-    ["/", "/settings", "/manifest.webmanifest", "/coachiq-sw.js"],
+    [
+        "/",
+        "/settings",
+        "/manifest.webmanifest",
+        "/coachiq-sw.js",
+        "/stale-asset-recovery.js",
+    ],
 )
 def test_spa_mutable_shell_files_require_revalidation(spa_client: TestClient, path: str) -> None:
     """HTML, manifest, and worker revisions cannot be pinned by browser or edge caches."""

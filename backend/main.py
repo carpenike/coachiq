@@ -26,7 +26,12 @@ from slowapi.middleware import SlowAPIMiddleware
 from backend.api.router_config import configure_routers
 from backend.core.composition_root import CompositionRoot
 from backend.core.config import Settings, get_settings, is_real_secret, resolve_project_path
-from backend.core.http_navigation import accepts_html, route_family, safe_spa_file_path
+from backend.core.http_navigation import (
+    accepts_html,
+    is_hashed_spa_javascript_path,
+    route_family,
+    safe_spa_file_path,
+)
 from backend.core.logging_config import setup_early_logging
 from backend.core.metrics import initialize_backend_metrics
 from backend.core.security_config_validator import validate_security_config
@@ -62,7 +67,13 @@ SERVER_START_TIME = time.time()
 _DEVELOPMENT_CSRF_SECRET = "development-only-csrf-secret-do-not-use-in-production"  # noqa: S105
 _SPA_FALLBACK_ROUTE_NAME = "spa_fallback"
 _SPA_REVALIDATE_FILENAMES = frozenset(
-    {"index.html", "manifest.webmanifest", "coachiq-sw.js", "sw.js"}
+    {
+        "index.html",
+        "manifest.webmanifest",
+        "coachiq-sw.js",
+        "sw.js",
+        "stale-asset-recovery.js",
+    }
 )
 _SERVICE_WORKER_FILENAMES = frozenset({"coachiq-sw.js", "sw.js"})
 
@@ -100,6 +111,7 @@ def configure_spa_fallback(app: FastAPI, settings: Settings | None = None) -> bo
     active_settings = settings or get_settings()
     spa_dir = resolve_project_path(active_settings.static_dir)
     index_path = spa_dir / "index.html"
+    recovery_path = spa_dir / "stale-asset-recovery.js"
 
     if not index_path.is_file():
         logger.info("SPA fallback not mounted; index.html not found at %s", index_path)
@@ -116,7 +128,7 @@ def configure_spa_fallback(app: FastAPI, settings: Settings | None = None) -> bo
     app.state.spa_static_dir = spa_dir
     app.state.spa_reserved_route_families = reserved_families
 
-    async def spa_fallback(request: Request, spa_path: str) -> FileResponse:
+    async def spa_fallback(request: Request, spa_path: str) -> Response:
         request_path = f"/{spa_path}" if spa_path else "/"
         route_family_value = route_family(request_path)
 
@@ -126,6 +138,10 @@ def configure_spa_fallback(app: FastAPI, settings: Settings | None = None) -> bo
         asset_path = safe_spa_file_path(spa_dir, request_path)
         if asset_path:
             return _spa_file_response(asset_path)
+
+        if is_hashed_spa_javascript_path(request_path) and recovery_path.is_file():
+            logger.warning("Serving stale SPA asset recovery for %s", request_path)
+            return _spa_file_response(recovery_path)
 
         if accepts_html(request):
             return _spa_file_response(index_path)

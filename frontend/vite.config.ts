@@ -43,7 +43,8 @@ export default defineConfig({
       workbox: {
         clientsClaim: true,
         skipWaiting: true,
-        navigateFallback: "/index.html",
+        navigateFallback: null,
+        navigationPreload: true,
         globPatterns: ["**/*.{js,css,html,png,svg,woff2}"],
         runtimeCaching: [
           {
@@ -75,6 +76,15 @@ export default defineConfig({
               url.pathname.startsWith("/api/") || url.pathname.startsWith("/ws/"),
             handler: "NetworkOnly",
             method: "DELETE"
+          },
+          {
+            urlPattern: ({ request }) => request.mode === "navigate",
+            handler: "NetworkFirst",
+            options: {
+              cacheName: "coachiq-navigation-v1",
+              cacheableResponse: { statuses: [200] },
+              precacheFallback: { fallbackURL: "/index.html" }
+            }
           }
         ]
       },
