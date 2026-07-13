@@ -2,7 +2,7 @@ import { act, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { EntitySchema, OperationResultSchema } from "@/api/types/domains";
-import { SetpointStepper } from "./climate";
+import { HeatZoneCard, SetpointStepper } from "./climate";
 
 const { mutateMock, toastMock } = vi.hoisted(() => ({
   mutateMock: vi.fn(),
@@ -25,6 +25,22 @@ const climateEntity: EntitySchema = {
     operating_mode: 1,
     setpoint_cool_f: 70
   },
+  last_updated: "2026-07-11T12:00:00Z",
+  available: true
+};
+
+const heatLoopEntity: EntitySchema = {
+  entity_id: "climate_bay_heat",
+  name: "Bay Heat (Aqua-Hot)",
+  device_type: "climate",
+  protocol: "rvc",
+  state: {
+    operating_mode: 0,
+    current_temp_f: 79,
+    setpoint_heat_f: 70
+  },
+  capabilities: ["heat_only", "setpoint"],
+  supported_commands: ["set"],
   last_updated: "2026-07-11T12:00:00Z",
   available: true
 };
@@ -109,6 +125,36 @@ describe("SetpointStepper", () => {
     expect(screen.queryByText(/setpoint 71 degrees/i)).not.toBeInTheDocument();
     expect(toastMock).toHaveBeenCalledWith(
       expect.objectContaining({ title: "Command failed: Front climate" })
+    );
+  });
+});
+
+describe("HeatZoneCard", () => {
+  beforeEach(() => {
+    mutateMock.mockReset();
+    toastMock.mockReset();
+  });
+
+  it("separates loop power from setpoint and sends an explicit heat mode", () => {
+    render(
+      <HeatZoneCard
+        entity={heatLoopEntity}
+        controlsDisabled={false}
+        disabledReason=""
+      />
+    );
+
+    expect(screen.getByText("Loop heat")).toBeInTheDocument();
+    expect(screen.getByText("Setpoint")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("switch", { name: "Bay Heat (Aqua-Hot) heat" }));
+
+    expect(mutateMock).toHaveBeenCalledWith(
+      {
+        entityId: "climate_bay_heat",
+        command: { command: "set", parameters: { mode: "heat" } }
+      },
+      expect.any(Object)
     );
   });
 });

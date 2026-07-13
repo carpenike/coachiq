@@ -570,7 +570,11 @@ function ThermostatZoneCard({
   )
 }
 
-function HeatZoneCard({ entity, controlsDisabled, disabledReason }: Readonly<IZoneCardProps>) {
+export function HeatZoneCard({
+  entity,
+  controlsDisabled,
+  disabledReason,
+}: Readonly<IZoneCardProps>) {
   const control = useControlEntity()
   const isAvailable = entity.available !== false
   const cardDisabled = controlsDisabled || !isAvailable
@@ -597,7 +601,7 @@ function HeatZoneCard({ entity, controlsDisabled, disabledReason }: Readonly<IZo
   else if (heatOn) heatStatus = "Heating"
 
   return (
-    <Card className={cn(!isAvailable && "opacity-60")}>
+    <Card className={cn("min-w-0", !isAvailable && "opacity-60")}>
       <ZoneCardHeader
         entity={entity}
         icon={heatOn ? <IconFlame className="size-4 text-orange-500" aria-hidden /> : null}
@@ -605,17 +609,25 @@ function HeatZoneCard({ entity, controlsDisabled, disabledReason }: Readonly<IZo
       />
       <CardContent>
         <DisabledTooltip disabled={cardDisabled} reason={cardReason}>
-          <div className="flex items-center justify-between gap-2">
-            <div className="flex items-center gap-2">
+          <div className="divide-y">
+            <div className="flex min-h-11 items-center justify-between gap-4 pb-3">
+              <div className="min-w-0">
+                <p className="text-sm font-medium">Loop heat</p>
+                <p className="text-xs text-muted-foreground">{heatStatus}</p>
+              </div>
               <Switch
                 checked={heatOn}
                 disabled={cardDisabled || mode === "unknown"}
                 onCheckedChange={setHeat}
-                aria-label={`Toggle ${entity.name}`}
+                aria-label={`${entity.name} heat`}
               />
-              <span className="text-xs text-muted-foreground">{heatStatus}</span>
             </div>
-            <SetpointStepper entity={entity} heatOnly disabled={cardDisabled} />
+            <div className="space-y-1.5 pt-3">
+              <p className="text-xs font-medium text-muted-foreground">Setpoint</p>
+              <div className="flex min-w-0 justify-center">
+                <SetpointStepper entity={entity} heatOnly disabled={cardDisabled} />
+              </div>
+            </div>
           </div>
         </DisabledTooltip>
       </CardContent>
@@ -950,7 +962,7 @@ function HeatLoopSection({
   return (
     <div className="space-y-3">
       <h2 className="text-sm font-medium text-muted-foreground">{title}</h2>
-      <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
         {zones.map((entity) => (
           <HeatZoneCard
             key={entity.entity_id}

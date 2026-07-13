@@ -36,12 +36,50 @@ const entities = [
   }
 ]
 
+const climateEntities = [
+  {
+    entity_id: "climate_bay_heat",
+    name: "Bay Heat (Aqua-Hot)",
+    device_type: "climate",
+    protocol: "rvc",
+    state: { operating_mode: 0, current_temp_f: 79, setpoint_heat_f: 70 },
+    available: true,
+    capabilities: ["heat_only", "setpoint"],
+    supported_commands: ["set"],
+    last_updated: now,
+    last_seen_at: now,
+    data_received_at: now,
+    state_changed_at: now
+  },
+  {
+    entity_id: "climate_floor_heat",
+    name: "Floor Heat",
+    device_type: "climate",
+    protocol: "rvc",
+    state: { operating_mode: 0, current_temp_f: 78, setpoint_heat_f: 70 },
+    available: true,
+    capabilities: ["heat_only", "setpoint"],
+    supported_commands: ["set"],
+    last_updated: now,
+    last_seen_at: now,
+    data_received_at: now,
+    state_changed_at: now
+  }
+]
+
+function entitiesForDeviceType(requestedType: string | null) {
+  if (requestedType === "climate") return climateEntities
+  if (requestedType === null) return entities
+  return []
+}
+
 async function mockCoachApi(page: Page) {
   const json = (route: Parameters<Parameters<Page["route"]>[1]>[0], body: unknown) =>
     route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(body) })
 
   await page.route("**/*", async (route) => {
-    const path = new URL(route.request().url()).pathname
+    const requestUrl = new URL(route.request().url())
+    const path = requestUrl.pathname
     if (!path.startsWith("/api/")) return route.continue()
     if (route.request().method() !== "GET") {
       return route.fulfill({ status: 503, contentType: "application/json", body: "{}" })
@@ -95,9 +133,11 @@ async function mockCoachApi(page: Page) {
       })
     }
     if (path === "/api/v1/entities") {
+      const requestedType = requestUrl.searchParams.get("device_type")
+      const responseEntities = entitiesForDeviceType(requestedType)
       return json(route, {
-        entities,
-        total_count: entities.length,
+        entities: responseEntities,
+        total_count: responseEntities.length,
         page: 1,
         page_size: 100,
         has_next: false,
@@ -234,6 +274,44 @@ test("critical diagnostics remain visible without horizontal scrolling", async (
   expect(dimensions.scrollWidth).toBe(dimensions.clientWidth)
   await expect(page).toHaveScreenshot("diagnostics.png", {
     fullPage: true,
+    animations: "disabled"
+  })
+})
+
+test("Aqua-Hot loop controls stay inside narrow cards", async ({ page }) => {
+  await page.setViewportSize({ width: 640, height: 900 })
+  await page.goto("/climate")
+  const section = page.getByText("Aqua-Hot Loops").locator("..")
+  await expect(section).toBeVisible()
+
+  const cards = page.locator("[data-slot=card]").filter({
+    has: page.getByText(/Bay Heat \(Aqua-Hot\)|Floor Heat/)
+  })
+  await expect(cards).toHaveCount(2)
+
+  const overflow = await cards.evaluateAll((cardNodes) =>
+    cardNodes.flatMap((card, cardIndex) => {
+      const cardRect = card.getBoundingClientRect()
+      return Array.from(card.querySelectorAll("button, [role=switch]"))
+        .map((control) => ({
+          cardIndex,
+          label: control.getAttribute("aria-label") ?? control.textContent?.trim(),
+          rect: control.getBoundingClientRect()
+        }))
+        .filter(({ rect }) => rect.left < cardRect.left || rect.right > cardRect.right)
+        .map(({ cardIndex: index, label, rect }) => ({
+          cardIndex: index,
+          label,
+          left: rect.left,
+          right: rect.right,
+          cardLeft: cardRect.left,
+          cardRight: cardRect.right
+        }))
+    })
+  )
+
+  expect(overflow).toEqual([])
+  await expect(section).toHaveScreenshot("climate-aqua-hot-loops.png", {
     animations: "disabled"
   })
 })
