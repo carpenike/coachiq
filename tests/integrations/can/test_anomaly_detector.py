@@ -127,10 +127,10 @@ async def test_unknown_pgn_keeps_default_rate_guardrail() -> None:
 
 
 @pytest.mark.asyncio
-async def test_rate_limited_action_does_not_block_can_message_processing(
+async def test_inbound_anomaly_detector_is_not_on_authoritative_rx_path(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """CANBusService continues processing messages after rate-limit alerts."""
+    """CANBusService decodes traffic without invoking advisory anomaly logic."""
     anomaly_detector = AsyncMock()
     anomaly_detector.analyze_message = AsyncMock(
         return_value={"actions_taken": ["rate_limited"], "anomalies_detected": [object()]}
@@ -153,5 +153,5 @@ async def test_rate_limited_action_does_not_block_can_message_processing(
     process_received_message = service._process_received_message  # pyright: ignore[reportPrivateUsage]
     await process_received_message(message, "can0")
 
-    anomaly_detector.analyze_message.assert_awaited_once()
+    anomaly_detector.analyze_message.assert_not_awaited()
     process_message.assert_awaited_once()

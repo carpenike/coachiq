@@ -128,9 +128,18 @@ acknowledgement chain:
   analysis had been awaited before authoritative decoding for every frame.
   Protocol analysis now runs through a bounded 256-sample, 50 Hz worker; overload
   discards stale analyzer samples instead of delaying or losing entity status.
-  Explicitly mapped frames also bypass inbound anomaly and filter vetoes; those
-  tools remain available for unmapped diagnostics, while command injection,
-  validation, and outbound rate/safety guardrails remain active.
+  Explicitly mapped frames also bypass inbound filter vetoes. Live deployment
+  then showed the anomaly detector continuously flagging normal source `0x4F`
+  traffic while its API remained unavailable, so anomaly analysis was removed
+  from the live RX path entirely. Command injection, validation, and outbound
+  rate/safety guardrails remain active.
+- Post-deployment acceptance on July 15 cycled Porch On then Off at the Mira.
+  Owner-interface status changed from raw `200` to `0` at
+  `2026-07-15T17:36:28.723535Z`; the API persisted raw `0` with
+  `last_seen_at=2026-07-15T17:36:28.723536Z` and received it 26 ms later. This
+  closed the stale-On failure. The still-deployed anomaly detector generated
+  193 normal-traffic rate-limit alerts in the surrounding three minutes while
+  CoachIQ remained near 73% CPU, providing the live basis for its RX removal.
 
 ### Retained light evidence replay — 2026-07-10
 

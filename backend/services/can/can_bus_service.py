@@ -201,15 +201,6 @@ class CANBusService(GuardrailParticipant):
                 logger.warning("Failed to initialize pattern recognition engine", error=str(e))
                 self.pattern_engine = None
 
-            # Start anomaly detector if provided
-            if self.anomaly_detector:
-                try:
-                    await self.anomaly_detector.start()
-                    logger.info("CAN anomaly detector started")
-                except Exception as e:
-                    logger.warning("Failed to start anomaly detector", error=str(e))
-                    self.anomaly_detector = None
-
             # Start the per-frame tool services. Every received frame is
             # dispatched to these; leaving them stopped made each one log a
             # "blocked: service not running" warning PER FRAME (~29k journal
@@ -289,14 +280,6 @@ class CANBusService(GuardrailParticipant):
             except Exception as e:
                 logger.error("Error stopping pattern recognition engine: %s", e)
 
-        # Stop anomaly detector
-        if self.anomaly_detector:
-            try:
-                await self.anomaly_detector.stop()
-                logger.info("CAN anomaly detector stopped")
-            except Exception as e:
-                logger.error("Error stopping anomaly detector: %s", e)
-
         # Cleanup CAN bus listeners
         await self._cleanup_can_listeners()
 
@@ -320,9 +303,6 @@ class CANBusService(GuardrailParticipant):
 
         if self.pattern_engine:
             await self.pattern_engine.stop()
-
-        if self.anomaly_detector:
-            await self.anomaly_detector.stop()
 
     @override
     async def get_guardrail_status(self) -> GuardrailStatus:
@@ -897,31 +877,6 @@ class CANBusService(GuardrailParticipant):
                 "dlc": message.dlc,
                 "is_extended": message.is_extended_id,
             }
-
-            # Run anomaly detection first (security check)
-            if self.anomaly_detector and entity_frame_ownership is None:
-                try:
-                    anomaly_result = await self.anomaly_detector.analyze_message(
-                        message.arbitration_id, message.data, msg_dict["timestamp"]
-                    )
-
-                    # Check if message should be blocked due to security concerns
-                    if "message_blocked" in anomaly_result.get("actions_taken", []):
-                        logger.warning(
-                            "Blocked message due to security policy: %08X", message.arbitration_id
-                        )
-                        return  # Don't process blocked messages further
-
-                    # Log any anomalies detected
-                    if anomaly_result.get("anomalies_detected"):
-                        logger.debug(
-                            "Anomalies detected in message %08X: %d alerts",
-                            message.arbitration_id,
-                            len(anomaly_result["anomalies_detected"]),
-                        )
-
-                except Exception as e:
-                    logger.debug("Error in anomaly detection: %s", e)
 
             # Process the message through the RV-C decoder
             await self._process_message(msg_dict)
