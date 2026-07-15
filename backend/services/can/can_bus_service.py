@@ -949,7 +949,7 @@ class CANBusService(GuardrailParticipant):
 
                         if device_config:
                             entity_id = device_config.get("entity_id")
-                            if entity_id:
+                            if entity_id and self._entity_interface_matches(device_config, msg):
                                 logger.debug("Mapped to entity: %s", entity_id)
                                 decoded_data, raw_data = self._normalize_entity_source_signals(
                                     device_config.get("device_type"),
@@ -1289,6 +1289,18 @@ class CANBusService(GuardrailParticipant):
 
         except Exception:
             logger.exception("Error updating entity %s from CAN message", entity_id)
+
+    def _entity_interface_matches(self, device_config: dict[str, Any], msg: dict[str, Any]) -> bool:
+        """Return whether this frame arrived on the entity's configured interface."""
+        logical_interface = device_config.get("interface")
+        observed_interface = msg.get("interface")
+        mappings = self.settings.can.interface_mappings
+        if not isinstance(logical_interface, str) or not isinstance(observed_interface, str):
+            return True
+        if not isinstance(mappings, dict):
+            return True
+        expected_interface = mappings.get(logical_interface, logical_interface)
+        return observed_interface == expected_interface
 
     @staticmethod
     def _normalize_entity_source_signals(

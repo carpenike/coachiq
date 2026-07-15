@@ -111,6 +111,25 @@ class TestDeviceLookupKeyNormalization:
         assert _device_lookup_key("0x1feda", "25") == ("1FEDA", "25")
 
 
+class TestEntityInterfaceOwnership:
+    def test_logical_interface_accepts_configured_physical_bus(self):
+        service = _make_service(None)
+        service.settings.can.interface_mappings = {"house": "can1", "chassis": "can0"}
+
+        assert service._entity_interface_matches({"interface": "house"}, {"interface": "can1"})
+
+    def test_logical_interface_rejects_bridged_copy(self):
+        service = _make_service(None)
+        service.settings.can.interface_mappings = {"house": "can1", "chassis": "can0"}
+
+        assert not service._entity_interface_matches({"interface": "house"}, {"interface": "can0"})
+
+    def test_missing_interface_metadata_preserves_legacy_processing(self):
+        service = _make_service(None)
+
+        assert service._entity_interface_matches({"interface": "house"}, {})
+
+
 class TestCompositeClimateSourceMerging:
     def test_auxiliary_sources_preserve_canonical_thermostat_state(self):
         """Ambient and load sources must not replace the thermostat mode or instance."""
