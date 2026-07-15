@@ -67,12 +67,6 @@ CAN_GUARDRAIL_STATUS = Gauge(
     "Current CAN guardrail status (0=SAFE, 1=DEGRADED, 2=UNSAFE, 3=COMMAND_HALTED)",
 )
 
-CAN_MESSAGE_LATENCY_SECONDS = Gauge(
-    "coachiq_can_message_latency_seconds",
-    "Average CAN message processing latency",
-    labelnames=["operation"],
-)
-
 
 class CANFacade(GuardrailParticipant):
     """

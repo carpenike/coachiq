@@ -16,7 +16,7 @@ from collections import defaultdict, deque
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Any, Dict, List, Optional, Set, Tuple
+from typing import Any
 
 from backend.core.guardrail_interfaces import (
     CommandHaltAction,
@@ -26,7 +26,6 @@ from backend.core.guardrail_interfaces import (
 )
 
 logger = logging.getLogger(__name__)
-SEQUENCE_HISTORY_CAPACITY = 100
 
 
 class CANProtocol(str, Enum):
@@ -166,9 +165,6 @@ class ProtocolAnalyzer(GuardrailParticipant):
 
         # Pattern detection
         self.detected_patterns: list[CommunicationPattern] = []
-        self.sequence_tracker: dict[int, deque[tuple[float, bytes]]] = defaultdict(
-            lambda: deque(maxlen=SEQUENCE_HISTORY_CAPACITY)
-        )
 
         # Callbacks
         self.message_callback: Callable[[AnalyzedMessage], None] | None = None
@@ -223,7 +219,6 @@ class ProtocolAnalyzer(GuardrailParticipant):
         self.protocol_hints.clear()
         self.detected_protocols.clear()
         self.detected_patterns.clear()
-        self.sequence_tracker.clear()
 
         # Reset statistics
         self.total_messages = 0
@@ -368,9 +363,6 @@ class ProtocolAnalyzer(GuardrailParticipant):
 
         # Add to buffer
         self.message_buffer.append(message)
-
-        # Track for pattern detection
-        self.sequence_tracker[can_id].append((timestamp, data))
 
         # Detect patterns periodically
         if self.total_messages % 100 == 0:

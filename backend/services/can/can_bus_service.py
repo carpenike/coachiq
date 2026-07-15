@@ -117,7 +117,6 @@ class CANBusService(GuardrailParticipant):
 
         # CAN bus related attributes
         self._listeners: list[Any] = []  # Will store CAN listeners or notifiers
-        self._task: asyncio.Task[None] | None = None
         self._simulation_task: asyncio.Task[None] | None = None
         self._writer_task: asyncio.Task[None] | None = None
         self._analyzer_task: asyncio.Task[None] | None = None

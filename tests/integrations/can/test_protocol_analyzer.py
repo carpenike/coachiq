@@ -33,5 +33,4 @@ async def test_pattern_detection_cadence_survives_full_buffer() -> None:
         )
 
         assert len(analyzer.message_buffer) == 100
-        assert len(analyzer.sequence_tracker[0x19FEDA8E]) == 100
         detect_patterns.assert_awaited_once()

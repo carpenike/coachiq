@@ -352,7 +352,6 @@ async def clear_analyzer(analyzer: Annotated[ProtocolAnalyzer, Depends(get_can_p
     analyzer.detected_patterns.clear()
     analyzer.protocol_hints.clear()
     analyzer.detected_protocols.clear()
-    analyzer.sequence_tracker.clear()
 
     # Reset statistics
     analyzer.start_time = datetime.now().timestamp()

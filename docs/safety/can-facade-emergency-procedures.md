@@ -84,7 +84,8 @@
 
 2. **MONITOR** Prometheus metrics:
    - `coachiq_can_guardrail_status`
-   - `coachiq_can_message_latency_seconds`
+   - `coachiq_can_message_queue_depth`
+   - `coachiq_can_bus_load_percent`
    - `coachiq_can_error_frames_total`
 
 3. **PREPARE** for emergency stop if conditions worsen
@@ -192,8 +193,8 @@ curl -s http://localhost:8080/api/can/status | jq .
 
 ### Performance Monitoring
 ```bash
-# Check message latency
-curl -s http://localhost:9090/api/v1/query?query=coachiq_can_message_latency_seconds
+# Check bus load
+curl -s http://localhost:9090/api/v1/query?query=coachiq_can_bus_load_percent
 
 # Check queue depth
 curl -s http://localhost:9090/api/v1/query?query=coachiq_can_message_queue_depth

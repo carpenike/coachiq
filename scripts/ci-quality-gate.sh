@@ -19,7 +19,7 @@ RESET="\033[0m"
 # gate's job is to stop the count from going UP (a ratchet); fixing actual
 # pyright errors lower the count and the script will print a green message
 # nudging you to update the baseline downward.
-EXPECTED_PYRIGHT_ERRORS=1164  # Ratcheted 2026-07-15: removed dead anomaly subsystem (1192 -> 1164).
+EXPECTED_PYRIGHT_ERRORS=1149  # Ratcheted 2026-07-15: removed dead CAN tooling (1164 -> 1149).
 EXPECTED_FRONTEND_TS_ERRORS=0  # Ratcheted 2026-05-12 to 0 by PR #110 (DatabaseManagementTab + can-sniffer + useCANScanWebSocket generic). Any new TS error is a hard fail.
 EXPECTED_FRONTEND_ESLINT_ERRORS=214  # Ratcheted 2026-07-15: entity command lifecycle query lint fixes (216 -> 214).
 

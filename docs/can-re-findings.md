@@ -150,9 +150,8 @@ acknowledgement chain:
   samples (20%) directly to `_detect_patterns`; perf independently showed
   `dequeiter_next` at 6.1% with zero lost samples. Pattern cadence now keys off
   the monotonic `total_messages` counter, so a full deque cannot retrigger the
-  scan continuously. The analyzer's otherwise unread per-CAN-ID sequence
-  history is also capped at 100 samples instead of retaining every frame for
-  the lifetime of the process.
+  scan continuously. The analyzer's unread per-CAN-ID sequence history was
+  removed entirely instead of retaining frames for the lifetime of the process.
 
 ### Retained light evidence replay — 2026-07-10
 
