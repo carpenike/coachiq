@@ -756,10 +756,18 @@ class CANBusService(GuardrailParticipant):
             if self._deduplicator and self._deduplicator.is_duplicate(
                 message.arbitration_id, message.data
             ):
+                if not self._duplicate_is_owned_entity_frame(message, interface_name):
+                    logger.debug(
+                        "Ignoring duplicate message %08X on %s",
+                        message.arbitration_id,
+                        interface_name,
+                    )
+                    return
                 logger.debug(
-                    "Ignoring duplicate message %08X on %s", message.arbitration_id, interface_name
+                    "Processing duplicate message %08X on canonical entity interface %s",
+                    message.arbitration_id,
+                    interface_name,
                 )
-                return
 
             # Log the received message
             logger.debug(
@@ -813,6 +821,29 @@ class CANBusService(GuardrailParticipant):
 
         except Exception:
             logger.exception("Error processing received CAN message")
+
+    def _duplicate_is_owned_entity_frame(self, message: Any, interface_name: str) -> bool:
+        """Return whether a duplicate is the canonical copy for a mapped entity."""
+        arbitration_id = message.arbitration_id
+        pgn = (arbitration_id >> 8) & 0x3FFFF
+        entry = self._get_decoder_entry(arbitration_id, pgn)
+        if entry is None:
+            return False
+        decoded_results, _decode_errors = decode_payload(entry, bytes(message.data))
+        _decoded_data, raw_data = self._split_decoded_payload(decoded_results)
+        dgn_hex = entry.get("dgn_hex")
+        instance = raw_data.get("instance")
+        if not isinstance(dgn_hex, str) or instance is None:
+            return False
+        device_config = self.device_lookup.get(_device_lookup_key(dgn_hex, instance))
+        return bool(
+            device_config
+            and device_config.get("entity_id")
+            and self._entity_interface_matches(
+                device_config,
+                {"interface": interface_name},
+            )
+        )
 
     async def _add_sniffer_entry(self, message: Any, interface_name: str, direction: str) -> None:
         """Add a CAN message to the sniffer entries for monitoring."""

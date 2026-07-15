@@ -129,6 +129,52 @@ class TestEntityInterfaceOwnership:
 
         assert service._entity_interface_matches({"interface": "house"}, {})
 
+    def test_duplicate_owner_detection_uses_decoded_instance(self):
+        service = _make_service(None)
+        service.settings.can.interface_mappings = {"house": "can1", "chassis": "can0"}
+        entry = {
+            "dgn_hex": "1FEDA",
+            "signals": [
+                {"name": "instance", "start_bit": 0, "length": 8},
+                {"name": "operating_status", "start_bit": 16, "length": 8},
+            ],
+        }
+        service.decoder_pgn_map = {0x1FEDA: entry}
+        service.device_lookup = {("1FEDA", "38"): {"entity_id": "courtesy", "interface": "house"}}
+        message = _make_message(
+            arbitration_id=0x19FEDA8E,
+            data=bytes.fromhex("267C00FCFF0500FF"),
+        )
+
+        assert service._duplicate_is_owned_entity_frame(message, "can1")
+        assert not service._duplicate_is_owned_entity_frame(message, "can0")
+
+    @pytest.mark.asyncio
+    async def test_duplicate_on_owner_interface_reaches_decoder(self):
+        service = _make_service(None)
+        service._deduplicator = MagicMock()
+        service._deduplicator.is_duplicate.return_value = True
+        service._duplicate_is_owned_entity_frame = MagicMock(return_value=True)
+        service._add_sniffer_entry = AsyncMock()
+        service._process_message = AsyncMock()
+
+        await service._process_received_message(_make_message(), "can1")
+
+        service._process_message.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    async def test_duplicate_on_non_owner_interface_stays_filtered(self):
+        service = _make_service(None)
+        service._deduplicator = MagicMock()
+        service._deduplicator.is_duplicate.return_value = True
+        service._duplicate_is_owned_entity_frame = MagicMock(return_value=False)
+        service._add_sniffer_entry = AsyncMock()
+        service._process_message = AsyncMock()
+
+        await service._process_received_message(_make_message(), "can0")
+
+        service._process_message.assert_not_awaited()
+
 
 class TestCompositeClimateSourceMerging:
     def test_auxiliary_sources_preserve_canonical_thermostat_state(self):
