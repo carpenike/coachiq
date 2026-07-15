@@ -140,6 +140,19 @@ acknowledgement chain:
   closed the stale-On failure. The still-deployed anomaly detector generated
   193 normal-traffic rate-limit alerts in the surrounding three minutes while
   CoachIQ remained near 73% CPU, providing the live basis for its RX removal.
+- Follow-up profiling found a separate post-warmup analyzer defect. With the
+  10,000-entry message deque full, the `len(message_buffer) % 100 == 0`
+  cadence condition remained true for every subsequent sample. Pattern analysis
+  therefore scanned the full deque on every analyzer iteration instead of every
+  100 messages. At capture time the analyzer had 79,611 messages, 1,778 detected
+  patterns, and only 20.2 messages/second throughput while CoachIQ used 92% CPU
+  and 379 MB RSS. A 20-second py-spy profile attributed 361 of 1,766 main-thread
+  samples (20%) directly to `_detect_patterns`; perf independently showed
+  `dequeiter_next` at 6.1% with zero lost samples. Pattern cadence now keys off
+  the monotonic `total_messages` counter, so a full deque cannot retrigger the
+  scan continuously. The analyzer's otherwise unread per-CAN-ID sequence
+  history is also capped at 100 samples instead of retaining every frame for
+  the lifetime of the process.
 
 ### Retained light evidence replay — 2026-07-10
 
