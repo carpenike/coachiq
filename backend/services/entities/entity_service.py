@@ -322,6 +322,7 @@ class EntityService:
         Returns:
             List of entity history entries or None if entity not found
         """
+        del entity_id, since, limit
         return []
 
     async def get_unmapped_entries(self) -> dict[str, UnmappedEntryModel]:
@@ -333,23 +334,23 @@ class EntityService:
         """
         # Use diagnostics repository for unmapped entries
         result = {}
-        for key, entry in self._diagnostics_repo.get_unmapped_entries().items():
+        for key, source_entry in self._diagnostics_repo.get_unmapped_entries().items():
             # Fill missing fields with dummy/test values for API contract
-            entry = {
-                "pgn_hex": entry.get("pgn_hex", "0xFF00"),
-                "pgn_name": entry.get("pgn_name", "Unknown"),
-                "dgn_hex": entry.get("dgn_hex", "0xFF00"),
-                "dgn_name": entry.get("dgn_name", "Unknown"),
-                "instance": entry.get("instance", "1"),
-                "last_data_hex": entry.get("last_data_hex", "00"),
-                "decoded_signals": entry.get("decoded_signals", {}),
-                "first_seen_timestamp": entry.get("first_seen_timestamp", 0.0),
-                "last_seen_timestamp": entry.get("last_seen_timestamp", 0.0),
-                "count": entry.get("count", 1),
-                "suggestions": entry.get("suggestions", []),
-                "spec_entry": entry.get("spec_entry", {}),
+            normalized_entry = {
+                "pgn_hex": source_entry.get("pgn_hex", "0xFF00"),
+                "pgn_name": source_entry.get("pgn_name", "Unknown"),
+                "dgn_hex": source_entry.get("dgn_hex", "0xFF00"),
+                "dgn_name": source_entry.get("dgn_name", "Unknown"),
+                "instance": source_entry.get("instance", "1"),
+                "last_data_hex": source_entry.get("last_data_hex", "00"),
+                "decoded_signals": source_entry.get("decoded_signals", {}),
+                "first_seen_timestamp": source_entry.get("first_seen_timestamp", 0.0),
+                "last_seen_timestamp": source_entry.get("last_seen_timestamp", 0.0),
+                "count": source_entry.get("count", 1),
+                "suggestions": source_entry.get("suggestions", []),
+                "spec_entry": source_entry.get("spec_entry", {}),
             }
-            result[key] = UnmappedEntryModel(**entry)
+            result[key] = UnmappedEntryModel(**normalized_entry)
         return result
 
     async def get_unknown_pgns(self) -> dict[str, UnknownPGNEntry]:
@@ -360,15 +361,15 @@ class EntityService:
             Dictionary of unknown PGN entries
         """
         result = {}
-        for key, entry in self._diagnostics_repo.get_unknown_pgns().items():
-            entry = {
-                "arbitration_id_hex": entry.get("arbitration_id_hex", "0x1FFFF"),
-                "first_seen_timestamp": entry.get("first_seen_timestamp", 0.0),
-                "last_seen_timestamp": entry.get("last_seen_timestamp", 0.0),
-                "count": entry.get("count", 1),
-                "last_data_hex": entry.get("last_data_hex", "00"),
+        for key, source_entry in self._diagnostics_repo.get_unknown_pgns().items():
+            normalized_entry = {
+                "arbitration_id_hex": source_entry.get("arbitration_id_hex", "0x1FFFF"),
+                "first_seen_timestamp": source_entry.get("first_seen_timestamp", 0.0),
+                "last_seen_timestamp": source_entry.get("last_seen_timestamp", 0.0),
+                "count": source_entry.get("count", 1),
+                "last_data_hex": source_entry.get("last_data_hex", "00"),
             }
-            result[key] = UnknownPGNEntry(**entry)
+            result[key] = UnknownPGNEntry(**normalized_entry)
         return result
 
     async def get_metadata(self) -> dict[str, Any]:
@@ -423,7 +424,7 @@ class EntityService:
 
         # Convert sets to lists for JSON serialization
         for protocol_data in protocol_summary.values():
-            protocol_data["device_types"] = sorted(list(protocol_data["device_types"]))
+            protocol_data["device_types"] = sorted(protocol_data["device_types"])
 
         return protocol_summary
 
@@ -490,7 +491,7 @@ class EntityService:
             # Get entity data to return
             entity_data = entity_config
 
-            logger.info(f"Successfully created entity mapping: {request.entity_id}")
+            logger.info("Successfully created entity mapping: %s", request.entity_id)
 
             await self.event_broker.publish(
                 "entity_created",
@@ -505,7 +506,7 @@ class EntityService:
             )
 
         except Exception as e:
-            logger.error(f"Failed to create entity mapping for {request.entity_id}: {e}")
+            logger.error("Failed to create entity mapping for %s: %s", request.entity_id, e)
             return CreateEntityMappingResponse(
                 status="error",
                 entity_id=request.entity_id,
@@ -971,9 +972,12 @@ class EntityService:
         can_settings = get_can_settings()
         physical_interface = can_settings.interface_mappings.get(logical_interface)
         if not physical_interface:
+            warning_message = (
+                "No mapping found for logical interface '%s'; "
+                "falling back to first available interface"
+            )
             logger.warning(
-                "No mapping found for logical interface '%s', "
-                "falling back to first available interface",
+                warning_message,
                 logical_interface,
             )
             physical_interface = (
@@ -1137,36 +1141,8 @@ class EntityService:
         logical_interface = entity_config.get("interface", "house")
         physical_interface = self._resolve_physical_interface(entity_config)
 
-        # Create optimistic update payload
-        ts = time.time()
-        optimistic_state_str = "on" if target_brightness_ui > 0 else "off"
-        optimistic_raw_val = int((target_brightness_ui / 100.0) * 200)
-
-        optimistic_payload = {
-            "entity_id": entity_id,
-            "timestamp": ts,
-            "state": optimistic_state_str,
-            # Keep the seeded dict shape: the v2 API adapter and history
-            # consumers read raw/value as signal dicts, not scalars.
-            "raw": {"operating_status": optimistic_raw_val},
-            "value": {"operating_status": str(optimistic_raw_val)},
-            "brightness_pct": target_brightness_ui,
-            "suggested_area": entity_config.get("suggested_area", "unknown"),
-            "device_type": entity_config.get("device_type", "unknown"),
-            "capabilities": entity_config.get("capabilities", []),
-            "friendly_name": entity_config.get("friendly_name", entity_id),
-            "groups": entity_config.get("groups", []),
-        }
-
-        # Update entity state optimistically
-        entity.update(optimistic_payload)
-        await self._entity_state_repo.save_entity_state(entity_id, entity)
-        persisted_entity = await self._entity_state_repo.get_entity_state(entity_id)
-
-        await self.event_broker.publish(
-            "entity_update",
-            {"entity_id": entity_id, "entity_data": persisted_entity or entity},
-        )
+        target_state = "on" if target_brightness_ui > 0 else "off"
+        target_raw_level = int((target_brightness_ui / 100.0) * 200)
 
         # Create and send CAN message(s). A light may map to several dimmer
         # instances that must all be commanded (e.g. the bedroom ceiling is
@@ -1186,7 +1162,7 @@ class EntityService:
                 can_message = create_light_can_message(
                     pgn=0x1FEDB,  # DC_DIMMER_COMMAND_2
                     instance=int(cmd_instance),
-                    brightness_can_level=optimistic_raw_val,
+                    brightness_can_level=target_raw_level,
                 )
                 await can_tx_queue.put((can_message, can_interface))
 
@@ -1194,21 +1170,16 @@ class EntityService:
             # This could be added as another dependency if needed
             logger.debug("Successfully sent CAN command")
 
-            await self.event_broker.publish(
-                "entity_update",
-                {"entity_id": entity_id, "entity_data": persisted_entity or entity},
-            )
-
             return ControlEntityResponse(
                 status="success",
                 entity_id=entity_id,
                 command=action_description,
-                state=optimistic_state_str,
+                state=target_state,
                 brightness=target_brightness_ui,
                 action=action_description,
             )
         except Exception as e:
-            logger.error(f"CAN command failed for {entity_id}: {e}")
+            logger.error("CAN command failed for %s: %s", entity_id, e)
             msg = f"CAN command failed: {e}"
             raise RuntimeError(msg) from e
 

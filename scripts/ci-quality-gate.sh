@@ -19,7 +19,7 @@ RESET="\033[0m"
 # gate's job is to stop the count from going UP (a ratchet); fixing actual
 # pyright errors lower the count and the script will print a green message
 # nudging you to update the baseline downward.
-EXPECTED_PYRIGHT_ERRORS=1200  # Ratcheted 2026-07-12: security_audit_service unused-import cleanup (1204 -> 1200; verify against Linux CI's printed count).
+EXPECTED_PYRIGHT_ERRORS=1192  # Ratcheted 2026-07-15: entity service typing cleanup (1200 -> 1192).
 EXPECTED_FRONTEND_TS_ERRORS=0  # Ratcheted 2026-05-12 to 0 by PR #110 (DatabaseManagementTab + can-sniffer + useCANScanWebSocket generic). Any new TS error is a hard fail.
 EXPECTED_FRONTEND_ESLINT_ERRORS=214  # Ratcheted 2026-07-15: entity command lifecycle query lint fixes (216 -> 214).
 

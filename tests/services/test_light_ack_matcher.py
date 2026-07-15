@@ -5,6 +5,10 @@ logic and always timed out, so working commands surfaced as errors. These
 tests pin the target derivation and the status match.
 """
 
+from types import SimpleNamespace
+from typing import Any
+from unittest.mock import AsyncMock, MagicMock
+
 import pytest
 
 from backend.services.entities.entity_domain_service import (
@@ -15,7 +19,7 @@ from backend.services.entities.entity_domain_service import (
 pytestmark = [pytest.mark.unit]
 
 
-def _cmd(**kw) -> SafetyControlCommandV2:
+def _cmd(**kw: Any) -> SafetyControlCommandV2:
     return SafetyControlCommandV2(**kw)
 
 
@@ -31,7 +35,10 @@ def _cmd(**kw) -> SafetyControlCommandV2:
     ],
 )
 def test_expected_operating_status(command: SafetyControlCommandV2, expected: int | None) -> None:
-    assert EntityDomainService._expected_operating_status(command) == expected
+    actual = EntityDomainService._expected_operating_status(  # pyright: ignore[reportPrivateUsage]
+        command
+    )
+    assert actual == expected
 
 
 @pytest.mark.parametrize(
@@ -49,4 +56,44 @@ def test_expected_operating_status(command: SafetyControlCommandV2, expected: in
     ],
 )
 def test_status_acknowledged(current: int | None, expected: int | None, ok: bool) -> None:
-    assert EntityDomainService._status_acknowledged(current, expected) is ok
+    actual = EntityDomainService._status_acknowledged(  # pyright: ignore[reportPrivateUsage]
+        current,
+        expected,
+    )
+    assert actual is ok
+
+
+@pytest.mark.asyncio
+async def test_control_uses_pi_acknowledgment_timeout_floor() -> None:
+    """A caller's five-second timeout is raised above measured Pi RX backlog."""
+    entity_service = MagicMock()
+    entity_service.control_entity = AsyncMock(return_value=SimpleNamespace(status="success"))
+    service = EntityDomainService(
+        config_service=MagicMock(),
+        auth_manager=MagicMock(),
+        entity_service=entity_service,
+        event_broker=MagicMock(),
+        entity_manager=MagicMock(),
+    )
+    await_command_ack = AsyncMock(return_value=(True, 5500.0))
+    service._await_command_ack = await_command_ack  # pyright: ignore[reportPrivateUsage]
+    command = SafetyControlCommandV2(
+        command="set",
+        state=False,
+        brightness=None,
+        parameters=None,
+        safety_confirmation=True,
+        timeout_seconds=5.0,
+    )
+
+    result = await service.control_entity_safe(
+        "bedroom_ceiling_light",
+        command,
+        user_context={"role": "user"},
+    )
+
+    assert result.status == "success"
+    assert result.acknowledged is True
+    await_args = await_command_ack.await_args
+    assert await_args is not None
+    assert await_args.args[2] == 10.0

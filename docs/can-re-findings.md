@@ -85,6 +85,14 @@ acknowledgement chain:
   non-owner interface before physical ownership was applied. Frames with an
   explicit mapped interface now bypass global bridge dedup; the canonical
   interface updates state and the bridged copy is rejected during routing.
+- Final backend acceptance reached raw `0`, but the UI still briefly rebounded
+  On. The light command path was publishing optimistic command intent into the
+  same runtime repository and SSE stream used for physical status, so it could
+  acknowledge Off before the command reached the wire, then surface a queued
+  25% status before the real zero. Light commands now enqueue intent without
+  mutating authoritative state; only `DC_DIMMER_STATUS_3` updates/publishes the
+  entity. Physical acknowledgement has a 10-second Pi floor to cover the
+  measured receive backlog without inventing state.
 
 ### Retained light evidence replay — 2026-07-10
 
