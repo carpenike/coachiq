@@ -152,7 +152,6 @@ class CompositionServices:
     oidc_session_code_store: Any = None
     security_event_manager: Any = None
     command_guardrail_service: Any = None
-    can_anomaly_detector: Any = None
     can_bus_recorder: Any = None
     can_interface_service: Any = None
     can_message_filter: Any = None
@@ -248,7 +247,6 @@ class CompositionRoot:
     )
     _A4_SERVICE_ORDER = (
         "event_broker",
-        "can_anomaly_detector",
         "can_bus_recorder",
         "can_interface_service",
         "can_message_filter",
@@ -754,13 +752,12 @@ class CompositionRoot:
                     message_filter=self.require_service("can_message_filter"),
                     recorder=self.require_service("can_bus_recorder"),
                     analyzer=self.require_service("can_protocol_analyzer"),
-                    anomaly_detector=self.require_service("can_anomaly_detector"),
                     interface_service=self.require_service("can_interface_service"),
                     performance_monitor=performance_monitor,
                 ),
             )
 
-    async def _construct_a3_services(self) -> None:  # noqa: C901
+    async def _construct_a3_services(self) -> None:  # noqa: C901, PLR0912, PLR0915
         """Construct A3 auth/security/guardrail services with typed constructors."""
         if not any(self._should_construct(name) for name in self._A3_SERVICE_ORDER):
             return
@@ -1072,9 +1069,8 @@ class CompositionRoot:
             await time_sync_service.start()
             self._set_root_constructed_service("time_sync_service", time_sync_service)
 
-    async def _construct_lower_can_services(self) -> None:  # noqa: C901, PLR0915
+    async def _construct_lower_can_services(self) -> None:  # noqa: C901
         """Construct lower-CAN prerequisites before CANFacade."""
-        from backend.integrations.can.anomaly_detector import CANAnomalyDetector
         from backend.integrations.can.can_bus_recorder import CANBusRecorder
         from backend.integrations.can.message_filter import MessageFilter
         from backend.integrations.can.message_injector import CANMessageInjector, SafetyLevel
@@ -1083,9 +1079,6 @@ class CompositionRoot:
         from backend.services.can.can_bus_service import CANBusService
         from backend.services.can.can_interface_service import CANInterfaceService
         from backend.services.can.can_network_telemetry_service import CANNetworkTelemetryService
-
-        if self._should_construct("can_anomaly_detector"):
-            self._set_root_constructed_service("can_anomaly_detector", CANAnomalyDetector())
 
         if self._should_construct("diagnostic_handler"):
             diagnostic_handler = DiagnosticHandler(self.require_service("app_settings"))
@@ -1173,7 +1166,6 @@ class CompositionRoot:
             can_bus_service = CANBusService(
                 can_tracking_repository=self.require_service("can_tracking_repository"),
                 system_state_repository=self.require_service("system_state_repository"),
-                can_anomaly_detector=self.require_service("can_anomaly_detector"),
                 diagnostic_handler=self.require_service("diagnostic_handler"),
                 can_bus_recorder=self.get_optional_service("can_bus_recorder"),
                 can_protocol_analyzer=self.get_optional_service("can_protocol_analyzer"),

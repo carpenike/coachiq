@@ -45,9 +45,6 @@ def can_facade_dependencies() -> dict[str, Any]:
     analyzer.get_health_status = Mock(return_value={"healthy": True})
     analyzer.get_statistics = AsyncMock(return_value={"decoded": 4})
 
-    anomaly_detector = AsyncMock()
-    anomaly_detector.stop = AsyncMock()
-
     interface_service = Mock()
     interface_service.resolve_interface = Mock(return_value="can0")
     interface_service.get_health_status = Mock(return_value={"healthy": True})
@@ -76,7 +73,6 @@ def can_facade_dependencies() -> dict[str, Any]:
         "message_filter": message_filter,
         "recorder": recorder,
         "analyzer": analyzer,
-        "anomaly_detector": anomaly_detector,
         "interface_service": interface_service,
         "performance_monitor": performance_monitor,
     }

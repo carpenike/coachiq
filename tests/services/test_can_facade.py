@@ -45,9 +45,6 @@ class TestCANFacade:
         mock_analyzer = AsyncMock()
         mock_analyzer.stop = AsyncMock()
 
-        mock_anomaly_detector = AsyncMock()
-        mock_anomaly_detector.stop = AsyncMock()
-
         mock_interface_service = Mock()
         mock_interface_service.resolve_logical_interface = Mock(return_value="can0")
 
@@ -60,7 +57,6 @@ class TestCANFacade:
             "message_filter": mock_message_filter,
             "recorder": mock_recorder,
             "analyzer": mock_analyzer,
-            "anomaly_detector": mock_anomaly_detector,
             "interface_service": mock_interface_service,
             "performance_monitor": mock_performance_monitor,
         }
@@ -79,7 +75,6 @@ class TestCANFacade:
         assert can_facade._filter == mock_dependencies["message_filter"]
         assert can_facade._recorder == mock_dependencies["recorder"]
         assert can_facade._analyzer == mock_dependencies["analyzer"]
-        assert can_facade._anomaly_detector == mock_dependencies["anomaly_detector"]
         assert can_facade._interface_service == mock_dependencies["interface_service"]
         assert can_facade._performance_monitor == mock_dependencies["performance_monitor"]
 
@@ -108,7 +103,6 @@ class TestCANFacade:
 
         # Verify operational services received stop call
         mock_dependencies["analyzer"].stop.assert_awaited_once()
-        mock_dependencies["anomaly_detector"].stop.assert_awaited_once()
 
         # Verify emergency stop state is set
         assert can_facade._command_halt_active is True
@@ -276,9 +270,6 @@ class TestCANFacadeIntegration:
             return_value={"healthy": True, "status": "operational"}
         )
 
-        mock_anomaly_detector = AsyncMock()
-        mock_anomaly_detector.stop = AsyncMock()
-
         mock_interface_service = Mock()
         mock_interface_service.resolve_logical_interface = Mock(return_value="can0")
         mock_interface_service.get_health_status = AsyncMock(
@@ -298,7 +289,6 @@ class TestCANFacadeIntegration:
             "message_filter": mock_message_filter,
             "recorder": mock_recorder,
             "analyzer": mock_analyzer,
-            "anomaly_detector": mock_anomaly_detector,
             "interface_service": mock_interface_service,
             "performance_monitor": mock_performance_monitor,
         }
@@ -474,7 +464,6 @@ class TestSendRawMessage:
             message_filter=AsyncMock(),
             recorder=AsyncMock(),
             analyzer=AsyncMock(),
-            anomaly_detector=AsyncMock(),
             interface_service=interface_service,
             performance_monitor=performance_monitor,
         )

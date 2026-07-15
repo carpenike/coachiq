@@ -90,7 +90,6 @@ class CANFacade(GuardrailParticipant):
         message_filter: Any,
         recorder: Any,
         analyzer: Any,
-        anomaly_detector: Any,
         interface_service: Any,
         performance_monitor: Any,
     ):
@@ -105,7 +104,6 @@ class CANFacade(GuardrailParticipant):
         self._filter = message_filter
         self._recorder = recorder
         self._analyzer = analyzer
-        self._anomaly_detector = anomaly_detector
         self._interface_service = interface_service
         self._performance_monitor = performance_monitor
 
@@ -213,7 +211,6 @@ class CANFacade(GuardrailParticipant):
             self._injector.halt_command_emission(reason),
             self._recorder.halt_command_emission(reason),
             self._analyzer.stop(),  # Operational analyzer stops observing during halt.
-            self._anomaly_detector.stop(),
         ]
 
         results = await asyncio.gather(*stop_tasks, return_exceptions=True)

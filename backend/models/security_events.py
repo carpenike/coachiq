@@ -9,7 +9,7 @@ import time
 import uuid
 from datetime import datetime
 from enum import Enum
-from typing import Any, Dict, Optional
+from typing import Any, ClassVar
 
 from pydantic import BaseModel, Field
 
@@ -105,12 +105,12 @@ class SecurityEvent(BaseModel):
         """Pydantic configuration."""
 
         use_enum_values = True
-        json_encoders = {
+        json_encoders: ClassVar[dict[Any, Any]] = {
             datetime: lambda v: v.isoformat(),
         }
 
     @classmethod
-    def create_can_event(
+    def create_can_event(  # noqa: PLR0913
         cls,
         event_type: SecurityEventType,
         severity: SecuritySeverity,
@@ -118,7 +118,7 @@ class SecurityEvent(BaseModel):
         description: str,
         source_address: int | None = None,
         pgn: int | None = None,
-        **payload_data,
+        **payload_data: Any,
     ) -> "SecurityEvent":
         """
         Factory method for creating CAN bus security events.
@@ -144,7 +144,7 @@ class SecurityEvent(BaseModel):
         }
 
         return cls(
-            source_component="can_anomaly_detector",
+            source_component="can_security",
             event_type=event_type,
             severity=severity,
             title=title,
@@ -153,7 +153,7 @@ class SecurityEvent(BaseModel):
         )
 
     @classmethod
-    def create_auth_event(
+    def create_auth_event(  # noqa: PLR0913
         cls,
         event_type: SecurityEventType,
         severity: SecuritySeverity,
@@ -161,7 +161,7 @@ class SecurityEvent(BaseModel):
         description: str,
         user_id: str | None = None,
         ip_address: str | None = None,
-        **payload_data,
+        **payload_data: Any,
     ) -> "SecurityEvent":
         """
         Factory method for creating authentication security events.
@@ -197,7 +197,7 @@ class SecurityEvent(BaseModel):
         title: str,
         description: str,
         component: str | None = None,
-        **payload_data,
+        **payload_data: Any,
     ) -> "SecurityEvent":
         """
         Factory method for creating system security events.

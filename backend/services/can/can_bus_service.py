@@ -77,7 +77,6 @@ class CANBusService(GuardrailParticipant):
         self,
         can_tracking_repository: CANTrackingRepository,
         system_state_repository: SystemStateRepository,
-        can_anomaly_detector: Any | None = None,
         diagnostic_handler: DiagnosticHandler | None = None,
         can_bus_recorder: Any | None = None,
         can_protocol_analyzer: Any | None = None,
@@ -95,7 +94,6 @@ class CANBusService(GuardrailParticipant):
         Args:
             can_tracking_repository: Repository for CAN message tracking
             system_state_repository: Repository for system state management
-            can_anomaly_detector: Optional CAN anomaly detector for security monitoring
             diagnostic_handler: Optional diagnostic DTC handler for DM_RV ingestion
         """
         super().__init__(
@@ -147,9 +145,6 @@ class CANBusService(GuardrailParticipant):
         # Pattern recognition engine for unknown messages
         self.pattern_engine = None
 
-        # Anomaly detector for security monitoring (injected)
-        self.anomaly_detector = can_anomaly_detector
-
         # Diagnostic handler for DTC ingestion (injected)
         self._diagnostic_handler = diagnostic_handler
         self._can_bus_recorder = can_bus_recorder
@@ -167,7 +162,6 @@ class CANBusService(GuardrailParticipant):
             interfaces=self.config["interfaces"],
             bustype=self.config["bustype"],
             bitrate=self.config["bitrate"],
-            has_anomaly_detector=bool(can_anomaly_detector),
             has_diagnostic_handler=bool(diagnostic_handler),
         )
 

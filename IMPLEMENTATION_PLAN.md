@@ -158,6 +158,12 @@ continuing after `rate_limited` actions.
 **Files.** `backend/integrations/can/anomaly_detector.py`,
 `tests/integrations/can/test_anomaly_detector.py`.
 
+**Retired 2026-07-15.** Live coach profiling later showed that the calibrated
+detector still produced only advisory false positives, had no working consumer
+API, and duplicated protections already enforced on outbound commands. The
+detector, its tests, and its always-503 monitoring routes were removed; this
+entry remains as historical context for why calibration was attempted first.
+
 ### HOF-043 — Pyroute2 Selector Loop Without Global Policy Mutation
 
 - [shipped] same commit as this entry · 2026-06-29
@@ -838,15 +844,6 @@ router is proven fully covered by v2 in this pass.
   `POST /api/security/dashboard/test/event`,
   `GET /api/security/dashboard/websocket/info`; v2 coverage: none; frontend
   callers: `frontend/src/api/endpoints.ts`; gate: security dashboard v2 design.
-- `security_monitoring` — routes: `POST /api/security/acl/policy`,
-  `POST /api/security/acl/source`,
-  `DELETE /api/security/acl/source/{source_address}`,
-  `GET /api/security/acl/sources`, `GET /api/security/alerts`,
-  `GET /api/security/alerts/summary`, `GET /api/security/rate-limiting`,
-  `POST /api/security/reset`, `GET /api/security/status`,
-  `GET /api/security/storm-status`, `GET /api/security/test/simulate-attack`;
-  v2 coverage: none; frontend callers: none found; gate: security monitoring
-  v2 design or admin-only retirement.
 - `startup_monitoring` — routes: `GET /api/startup/baseline-comparison`,
   `GET /api/startup/health`, `GET /api/startup/metrics`,
   `GET /api/startup/report`, `GET /api/startup/services`; v2 coverage: none;

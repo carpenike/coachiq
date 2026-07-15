@@ -139,19 +139,14 @@ class TestAnalyzerIsolation:
 
 class TestMappedEntityToolIsolation:
     @pytest.mark.asyncio
-    async def test_mapped_status_bypasses_filter_and_anomaly_blocking(self):
-        """Optional RX tools cannot block an explicitly mapped entity frame."""
+    async def test_mapped_status_bypasses_filter_blocking(self):
+        """Optional filtering cannot block an explicitly mapped entity frame."""
         message_filter = MagicMock()
         message_filter._is_running = True
         message_filter.process_message = AsyncMock(return_value=False)
-        anomaly_detector = MagicMock()
-        anomaly_detector.analyze_message = AsyncMock(
-            return_value={"actions_taken": ["message_blocked"]}
-        )
         service = CANBusService(
             can_tracking_repository=MagicMock(),
             system_state_repository=MagicMock(),
-            can_anomaly_detector=anomaly_detector,
             can_message_filter=message_filter,
         )
         service._running = True
@@ -165,7 +160,6 @@ class TestMappedEntityToolIsolation:
         await service._can_listener_task("can1", reader)
 
         message_filter.process_message.assert_not_awaited()
-        anomaly_detector.analyze_message.assert_not_awaited()
         service._process_message.assert_awaited_once()
 
     @pytest.mark.asyncio

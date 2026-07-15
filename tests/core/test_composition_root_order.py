@@ -12,6 +12,7 @@ def test_root_baked_order_contains_expected_services_once() -> None:
 
     assert len(service_order) == len(set(service_order))
     assert set(service_order) == root._service_catalog
+    assert "can_anomaly_detector" not in service_order
 
 
 def test_root_baked_order_preserves_required_edges() -> None:
@@ -29,7 +30,6 @@ def test_root_baked_order_preserves_required_edges() -> None:
         ("can_message_filter", "can_facade"),
         ("can_bus_recorder", "can_facade"),
         ("can_protocol_analyzer", "can_facade"),
-        ("can_anomaly_detector", "can_facade"),
         ("can_interface_service", "can_facade"),
         ("credential_repository", "auth_manager"),
         ("session_repository", "auth_manager"),

@@ -19,7 +19,8 @@ without coordinating with each other:
 - `CANMessageFilter` (subscription filtering).
 - `CANBusRecorder` (recording / replay).
 - `CANProtocolAnalyzer` (protocol analysis).
-- `CANAnomalyDetector` (security monitoring).
+- An inbound anomaly detector (retired in July 2026 after live profiling showed
+  only false-positive advisory alerts and no effective API-side protection).
 
 Several of these duplicated state (e.g. multiple components owned an
 in-flight statistics counter), and there was no single place where an

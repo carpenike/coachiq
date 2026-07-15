@@ -168,12 +168,12 @@ constructed by `CompositionRoot`. Use `Any` only for a documented import-cycle
 break, and leave a comment naming that cycle.
 
 **The CAN facade (ADR-0002).** All CAN operations go through a single
-`CANFacade` (`backend/services/can_facade.py`), which coordinates the
+`CANFacade` (`backend/services/can/can_facade.py`), which coordinates the
 lower-level CAN services (bus service, message injector, filter, recorder,
-protocol analyzer, anomaly detector) and enforces TX rate-limiting and
-emergency-stop coordination. **Routers must never import `CANBusService` or
-the lower-level CAN modules directly** — go through the facade. This is the
-chokepoint that keeps CoachIQ a well-behaved bus citizen.
+protocol analyzer) and enforces TX rate-limiting and emergency-stop
+coordination. **Routers must never import `CANBusService` or the lower-level
+CAN modules directly** — go through the facade. This is the chokepoint that
+keeps CoachIQ a well-behaved bus citizen.
 
 **Domain API v1 only (ADR-0003).** New endpoints land under `/api/v1/*` in
 `backend/api/domains/`. Legacy `/api/*` routers are retired as v2 replacements

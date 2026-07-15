@@ -30,8 +30,8 @@ from backend.api.routers import (
     health,
     location,
     logs,
-    multi_network,
     mcp_oauth,
+    multi_network,
     notification_analytics,
     notification_dashboard,
     pattern_analysis,
@@ -41,7 +41,6 @@ from backend.api.routers import (
     schemas,
     security_config,
     security_dashboard,
-    security_monitoring,
     startup_monitoring,
     victron,
 )
@@ -101,9 +100,6 @@ def configure_routers(app: FastAPI) -> None:
 
     # Include pattern analysis router
     app.include_router(pattern_analysis.router)
-
-    # Include security monitoring router
-    app.include_router(security_monitoring.router)
 
     # Include startup monitoring router
     app.include_router(startup_monitoring.router)

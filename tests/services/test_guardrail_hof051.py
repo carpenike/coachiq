@@ -88,9 +88,6 @@ async def test_can_facade_halts_command_emitters_once() -> None:
     analyzer.start = AsyncMock()
     analyzer.stop = AsyncMock()
 
-    anomaly_detector = Mock()
-    anomaly_detector.stop = AsyncMock()
-
     interface_service = Mock()
     facade = CANFacade(
         bus_service=bus_service,
@@ -98,7 +95,6 @@ async def test_can_facade_halts_command_emitters_once() -> None:
         message_filter=message_filter,
         recorder=recorder,
         analyzer=analyzer,
-        anomaly_detector=anomaly_detector,
         interface_service=interface_service,
         performance_monitor=_Monitor(),
     )
@@ -110,7 +106,6 @@ async def test_can_facade_halts_command_emitters_once() -> None:
     recorder.halt_command_emission.assert_awaited_once_with("test")
     message_filter.halt_command_emission.assert_not_called()
     analyzer.stop.assert_awaited_once()
-    anomaly_detector.stop.assert_awaited_once()
 
 
 @pytest.mark.asyncio
