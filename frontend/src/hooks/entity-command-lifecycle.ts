@@ -522,11 +522,12 @@ export function reconcileEntityCommandLifecycle(
   client: QueryClient,
   entity: EntitySchema,
   source: EntityCommandConfirmationSource
-): void {
+): boolean {
   const expectations = lifecycleExpectations.get(client);
   const lifecycles = client.getQueriesData<IEntityCommandLifecycle>({
     queryKey: entityCommandQueryKeys.entity(entity.entity_id)
   });
+  let shouldApplyUpdate = true;
   lifecycles.forEach(([, lifecycle]) => {
     if (!lifecycle || !["pending", "accepted"].includes(lifecycle.phase)) return;
     const item: IEntityCommandTransactionItem = {
@@ -536,9 +537,14 @@ export function reconcileEntityCommandLifecycle(
       expectation: { command: { command: "set" } }
     };
     const transactionItem = expectations?.get(lifecycle.requestId);
-    if (!transactionItem || !entityMatchesExpectation(entity, transactionItem.expectation)) return;
+    if (!transactionItem) return;
+    if (!entityMatchesExpectation(entity, transactionItem.expectation)) {
+      shouldApplyUpdate = false;
+      return;
+    }
     clearConfirmationTimer(client, lifecycle.entityId, lifecycle.operation);
     setLifecycle(client, item, "confirmed", { confirmationSource: source });
     expectations?.delete(lifecycle.requestId);
   });
+  return shouldApplyUpdate;
 }

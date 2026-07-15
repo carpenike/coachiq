@@ -93,7 +93,7 @@ export function applyEntityUpdate(client: QueryClient, payload: IEntityUpdatePay
     entitiesQueryKeys.entity(payload.entity_id)
   )
   const updatedEntity = toEntitySchema(payload.entity_data, previousEntity)
-  reconcileEntityCommandLifecycle(client, updatedEntity, 'sse')
+  if (!reconcileEntityCommandLifecycle(client, updatedEntity, 'sse')) return
   client.setQueryData<EntitySchema>(entitiesQueryKeys.entity(payload.entity_id), updatedEntity)
   client.setQueriesData<EntityCollectionSchema>(
     { queryKey: entitiesQueryKeys.collections() },

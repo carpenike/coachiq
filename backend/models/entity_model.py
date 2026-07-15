@@ -156,7 +156,9 @@ class Entity:
 
         # Update type-specific properties
         if self.config.get("device_type") == "light" and "brightness" in new_state:
-            self.last_known_brightness = new_state["brightness"]
+            brightness = new_state["brightness"]
+            if isinstance(brightness, int | float) and brightness > 0:
+                self.last_known_brightness = int(brightness)
 
     def _prune_history(self) -> None:
         """Remove history entries older than history_duration."""
@@ -200,4 +202,7 @@ class Entity:
         Returns:
             Dictionary representation of the entity's current state
         """
-        return self.current_state.model_dump()
+        state = self.current_state.model_dump()
+        if self.last_known_brightness is not None:
+            state["last_known_brightness"] = self.last_known_brightness
+        return state

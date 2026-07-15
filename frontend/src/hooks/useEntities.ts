@@ -56,6 +56,30 @@ export const entitiesQueryKeys = {
   schemas: () => [...entitiesQueryKeys.all, 'schemas'] as const,
 };
 
+function reconcileFetchedEntity(
+  queryClient: QueryClient,
+  fetched: EntitySchema,
+  cached: EntitySchema | undefined
+): EntitySchema {
+  return reconcileEntityCommandLifecycle(queryClient, fetched, 'refetch')
+    ? fetched
+    : (cached ?? fetched);
+}
+
+function reconcileFetchedCollection(
+  queryClient: QueryClient,
+  fetched: EntityCollectionSchema,
+  cached: EntityCollectionSchema | undefined
+): EntityCollectionSchema {
+  const cachedById = new Map(cached?.entities.map((entity) => [entity.entity_id, entity]) ?? []);
+  return {
+    ...fetched,
+    entities: fetched.entities.map((entity) =>
+      reconcileFetchedEntity(queryClient, entity, cachedById.get(entity.entity_id))
+    ),
+  };
+}
+
 //
 // ===== SAFETY HOOKS =====
 //
@@ -91,15 +115,15 @@ export function useEntitiesDomainAPIAvailability(): UseQueryResult<boolean, Erro
 export function useEntities(
   params?: EntitiesQueryParams
 ): UseQueryResult<EntityCollectionSchema, Error> {
-  const queryClient = useQueryClient();
   return useQuery({
     queryKey: entitiesQueryKeys.collection(params),
-    queryFn: async () => {
+    queryFn: async ({ client, queryKey }) => {
       const collection = await fetchEntitiesV2(params);
-      collection.entities.forEach((entity) => {
-        reconcileEntityCommandLifecycle(queryClient, entity, 'refetch');
-      });
-      return collection;
+      return reconcileFetchedCollection(
+        client,
+        collection,
+        client.getQueryData<EntityCollectionSchema>(queryKey)
+      );
     },
     staleTime: 30000, // Consider data fresh for 30 seconds
     refetchOnWindowFocus: false,
@@ -117,13 +141,15 @@ export function useEntity(
   entityId: string,
   enabled = true
 ): UseQueryResult<EntitySchema, Error> {
-  const queryClient = useQueryClient();
   return useQuery({
     queryKey: entitiesQueryKeys.entity(entityId),
-    queryFn: async () => {
+    queryFn: async ({ client, queryKey }) => {
       const entity = await fetchEntityV2(entityId);
-      reconcileEntityCommandLifecycle(queryClient, entity, 'refetch');
-      return entity;
+      return reconcileFetchedEntity(
+        client,
+        entity,
+        client.getQueryData<EntitySchema>(queryKey)
+      );
     },
     enabled: enabled && !!entityId,
     staleTime: 30000,
@@ -522,15 +548,15 @@ export function useEntityCommandState(
 export function useEntitiesWithValidation(
   params?: EntitiesQueryParams
 ): UseQueryResult<EntityCollectionSchema, Error> {
-  const queryClient = useQueryClient();
   return useQuery({
     queryKey: [...entitiesQueryKeys.collection(params), 'validated'],
-    queryFn: async () => {
+    queryFn: async ({ client, queryKey }) => {
       const collection = await fetchEntitiesV2WithValidation(params);
-      collection.entities.forEach((entity) => {
-        reconcileEntityCommandLifecycle(queryClient, entity, 'refetch');
-      });
-      return collection;
+      return reconcileFetchedCollection(
+        client,
+        collection,
+        client.getQueryData<EntityCollectionSchema>(queryKey)
+      );
     },
     staleTime: 30000,
     refetchOnWindowFocus: false,
@@ -548,13 +574,15 @@ export function useEntityWithValidation(
   entityId: string,
   enabled = true
 ): UseQueryResult<EntitySchema, Error> {
-  const queryClient = useQueryClient();
   return useQuery({
     queryKey: [...entitiesQueryKeys.entity(entityId), 'validated'],
-    queryFn: async () => {
+    queryFn: async ({ client, queryKey }) => {
       const entity = await fetchEntityV2WithValidation(entityId);
-      reconcileEntityCommandLifecycle(queryClient, entity, 'refetch');
-      return entity;
+      return reconcileFetchedEntity(
+        client,
+        entity,
+        client.getQueryData<EntitySchema>(queryKey)
+      );
     },
     enabled: enabled && !!entityId,
     staleTime: 30000,

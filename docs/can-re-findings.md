@@ -50,16 +50,37 @@ The implemented CoachIQ encoder uses this dialect:
 
 - Frame `0x19FEDBF9` (DC_DIMMER_COMMAND_2, prio 6, SA `0xF9`), payload
   `[instance, 0xFF group, level 0-200, 0x00 set-level, 0xFF duration, 0x00,
-  `0xFF, 0xFF]`. Unit tests pin this frame shape. No retained July 4 capture
-  contains a dimmer command from source address 0xF9, so acceptance of this
-  exact frame by the live coach must be revalidated rather than inferred from
-  the historical note.
+  `0xFF, 0xFF]`. Unit tests pin this frame shape. The July 4 captures did not
+  contain source `0xF9`, but live acceptance was subsequently wire-verified on
+  July 15 as described below.
 - The bedroom ceiling is wire-verified as multi-channel instances 25 (`0x19`)
   **and** 26 (`0x1A`). The command fans out to each (`command.instances` in the
   coach mapping).
-- The other named light-instance assignments remain provisional. They were
-  carried forward from the June 2025 coach mapping and do not have retained
-  per-light action captures.
+- Bedroom Accent 27 (`0x1B`), Vanity 28 (`0x1C`), Mira `Bed OVHD` 29 (`0x1D`,
+  represented as `bedroom_reading_light`), and Courtesy 38 (`0x26`) were each
+  wire-verified on July 15. Non-bedroom light assignments remain provisional;
+  they were carried forward from the June 2025 coach mapping and do not yet
+  have retained per-light action captures.
+
+### Live bedroom control acceptance — 2026-07-15
+
+Dual-interface captures on the deployed coach established the sender and
+acknowledgement chain:
+
+- The Mira panel commands from source `0x95`; the physical bedroom wall panel
+  commands from source `0x9A`; output status comes from module `0x8E`.
+- CoachIQ source `0xF9` successfully commanded both bedroom-ceiling channels.
+  Full On used raw level `0xC8` (200), 25% used `0x32` (50), and Off used
+  `0x00`. Module `0x8E` acknowledged the same level for both instances.
+- Canonical captures are under
+  `/home/ryan/canre-captures/audit-2026-07-15/`:
+  `bedroom-ceiling-coachiq-on-50-dedup-fix.candump`,
+  `bedroom-ceiling-coachiq-slider-25-dedup-fix.candump`, and
+  `bedroom-ceiling-coachiq-off-dedup-fix.candump`.
+- A wall-panel Off capture exposed asynchronous bridged-interface ordering:
+  dequeue-time timestamps could let an older On status overwrite a newer Off.
+  The RX pipeline now preserves python-can receive timestamps and applies
+  newest-wins ordering per entity, source DGN, and instance.
 
 ### Retained light evidence replay — 2026-07-10
 

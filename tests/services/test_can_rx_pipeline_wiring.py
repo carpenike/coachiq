@@ -29,7 +29,9 @@ pytestmark = [pytest.mark.unit]
 
 
 def _make_message(
-    arbitration_id: int = 0x19FEDA80, data: bytes = b"\x01\x02\x03\x04"
+    arbitration_id: int = 0x19FEDA80,
+    data: bytes = b"\x01\x02\x03\x04",
+    timestamp: float = 100.0,
 ) -> SimpleNamespace:
     """Build a minimal python-can-like message stub for the sniffer path."""
     return SimpleNamespace(
@@ -38,6 +40,7 @@ def _make_message(
         dlc=len(data),
         is_extended_id=True,
         is_error_frame=False,
+        timestamp=timestamp,
     )
 
 
@@ -174,6 +177,82 @@ class TestEntityInterfaceOwnership:
         await service._process_received_message(_make_message(), "can0")
 
         service._process_message.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_receive_timestamp_is_preserved_for_entity_ordering(self):
+        """The decoder must receive the kernel timestamp instead of dequeue time."""
+        service = _make_service(None)
+        service._deduplicator = None
+        service._add_sniffer_entry = AsyncMock()
+        service._process_message = AsyncMock()
+
+        await service._process_received_message(_make_message(timestamp=123.456), "can1")
+
+        msg = service._process_message.await_args.args[0]
+        assert msg["timestamp"] == 123.456
+
+
+class TestEntitySourceOrdering:
+    @staticmethod
+    def _service_with_light_decoder() -> CANBusService:
+        service = _make_service(None)
+        entry = {
+            "dgn_hex": "1FEDA",
+            "signals": [
+                {"name": "instance", "start_bit": 0, "length": 8},
+                {"name": "operating_status", "start_bit": 16, "length": 8},
+            ],
+        }
+        service.decoder_map = {1: entry}
+        service.decoder_pgn_map = {0x1FEDA: entry}
+        service.device_lookup = {
+            ("1FEDA", "25"): {
+                "entity_id": "bedroom_ceiling_light",
+                "device_type": "light",
+            }
+        }
+        service._update_entity_from_can_message = AsyncMock()
+        return service
+
+    @pytest.mark.asyncio
+    async def test_older_same_source_cannot_overwrite_newer_entity_state(self):
+        """A delayed older status must not reach the mapped entity update path."""
+        service = self._service_with_light_decoder()
+        base_msg = {
+            "arbitration_id": 0x19FEDA8E,
+            "interface": "can1",
+        }
+
+        await service._process_message(
+            {**base_msg, "data": bytes.fromhex("197C00FCFF0500FF"), "timestamp": 200.0}
+        )
+        await service._process_message(
+            {**base_msg, "data": bytes.fromhex("197C0CFCFF0504FF"), "timestamp": 199.0}
+        )
+
+        service._update_entity_from_can_message.assert_awaited_once()
+        raw_data = service._update_entity_from_can_message.await_args.args[3]
+        msg = service._update_entity_from_can_message.await_args.args[4]
+        assert raw_data["operating_status"] == 0
+        assert msg["timestamp"] == 200.0
+
+    def test_source_dgns_have_independent_ordering(self):
+        """Composite entity sources must maintain independent freshness clocks."""
+        service = _make_service(None)
+
+        thermostat_timestamp = service._accept_entity_source_timestamp(
+            "climate_mid",
+            {"instance": 1},
+            {"timestamp": 200.0, "source_dgn": "1FFE2"},
+        )
+        ambient_timestamp = service._accept_entity_source_timestamp(
+            "climate_mid",
+            {"instance": 5},
+            {"timestamp": 199.0, "source_dgn": "1FF9C"},
+        )
+
+        assert thermostat_timestamp == 200.0
+        assert ambient_timestamp == 199.0
 
 
 class TestCompositeClimateSourceMerging:

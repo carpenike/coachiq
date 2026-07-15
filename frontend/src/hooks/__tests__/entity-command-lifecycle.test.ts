@@ -125,6 +125,53 @@ describe("entity command lifecycle", () => {
     ).toMatchObject({ phase: "rejected", error: "Device rejected the command." });
   });
 
+  it("holds optimistic off through stale on SSE until zero status confirms", async () => {
+    const entity = makeEntity("light_1", { operating_status: 200 });
+    const collectionKey = entitiesQueryKeys.collection({ device_type: "light" });
+    const detailKey = entitiesQueryKeys.entity(entity.entity_id);
+    client.setQueryData(collectionKey, makeCollection([entity]));
+    client.setQueryData(detailKey, entity);
+
+    await beginEntityCommandLifecycle(
+      client,
+      [entity.entity_id],
+      { command: "set", state: false }
+    );
+
+    applyEntityUpdate(client, {
+      entity_id: entity.entity_id,
+      entity_data: {
+        entity_id: entity.entity_id,
+        device_type: "light",
+        raw: { operating_status: 200 },
+        timestamp: 1783792800
+      }
+    });
+
+    expect(client.getQueryData<EntitySchema>(detailKey)?.state).toMatchObject({ state: "off" });
+    expect(
+      client.getQueryData<EntityCollectionSchema>(collectionKey)?.entities[0]?.state
+    ).toMatchObject({ state: "off" });
+    expect(
+      client.getQueryData(entityCommandQueryKeys.operation(entity.entity_id, "power"))
+    ).toMatchObject({ phase: "pending" });
+
+    applyEntityUpdate(client, {
+      entity_id: entity.entity_id,
+      entity_data: {
+        entity_id: entity.entity_id,
+        device_type: "light",
+        raw: { operating_status: 0 },
+        timestamp: 1783792801
+      }
+    });
+
+    expect(client.getQueryData<EntitySchema>(detailKey)?.state).toEqual({ operating_status: 0 });
+    expect(
+      client.getQueryData(entityCommandQueryKeys.operation(entity.entity_id, "power"))
+    ).toMatchObject({ phase: "confirmed", confirmationSource: "sse" });
+  });
+
   it("rolls back only failed entities in a partial bulk result", async () => {
     const accepted = makeEntity("light_1", { state: "off" });
     const rejected = makeEntity("light_2", { state: "off" });

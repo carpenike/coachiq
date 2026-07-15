@@ -134,6 +134,7 @@ class CANBusService(GuardrailParticipant):
         # BAM handler for multi-packet messages
         self.bam_handler: BAMHandler | None = None
         self._component_identity_seen: set[tuple[int, bytes]] = set()
+        self._entity_source_timestamps: dict[tuple[str, str, str], float] = {}
 
         # Pattern recognition engine for unknown messages
         self.pattern_engine = None
@@ -782,10 +783,13 @@ class CANBusService(GuardrailParticipant):
             await self._add_sniffer_entry(message, interface_name, "rx")
 
             # Convert python-can Message to dictionary format expected by _process_message
+            message_timestamp = getattr(message, "timestamp", None)
+            if not isinstance(message_timestamp, int | float) or message_timestamp <= 0:
+                message_timestamp = time.time()
             msg_dict = {
                 "arbitration_id": message.arbitration_id,
                 "data": message.data,
-                "timestamp": time.time(),
+                "timestamp": float(message_timestamp),
                 "interface": interface_name,
                 "dlc": message.dlc,
                 "is_extended": message.is_extended_id,
@@ -988,14 +992,20 @@ class CANBusService(GuardrailParticipant):
                                     decoded_data,
                                     raw_data,
                                 )
-                                # Update entity state with the decoded CAN message
-                                await self._update_entity_from_can_message(
-                                    entity_id,
-                                    device_config,
-                                    decoded_data,
-                                    raw_data,
-                                    msg,
-                                )
+                                entity_msg = {**msg, "source_dgn": dgn_hex}
+                                if (
+                                    self._accept_entity_source_timestamp(
+                                        entity_id, raw_data, entity_msg
+                                    )
+                                    is not None
+                                ):
+                                    await self._update_entity_from_can_message(
+                                        entity_id,
+                                        device_config,
+                                        decoded_data,
+                                        raw_data,
+                                        entity_msg,
+                                    )
                         else:
                             logger.debug("Unmapped device: %s:%s", dgn_hex, instance)
                             self._record_unmapped_device(dgn_hex, instance, entry, data, msg)
@@ -1254,8 +1264,8 @@ class CANBusService(GuardrailParticipant):
                 logger.warning("Entity %s not found in entity manager", entity_id)
                 return
 
-            # Build state update payload
-            timestamp = msg.get("timestamp", time.time())
+            # Build state update payload from the frame's receive timestamp.
+            timestamp = float(msg.get("timestamp", time.time()))
 
             merged_value, merged_raw = self._merged_signal_dicts(entity, decoded_data, raw_data)
 
@@ -1320,6 +1330,36 @@ class CANBusService(GuardrailParticipant):
 
         except Exception:
             logger.exception("Error updating entity %s from CAN message", entity_id)
+
+    def _accept_entity_source_timestamp(
+        self,
+        entity_id: str,
+        raw_data: dict[str, Any],
+        msg: dict[str, Any],
+    ) -> float | None:
+        """Accept a newest source observation and return its frame timestamp."""
+        timestamp_value = msg.get("timestamp")
+        timestamp = (
+            float(timestamp_value) if isinstance(timestamp_value, int | float) else time.time()
+        )
+        source_dgn = str(msg.get("source_dgn", ""))
+        source_key = (
+            entity_id,
+            source_dgn.upper().removeprefix("0X"),
+            str(raw_data.get("instance", "")),
+        )
+        previous_timestamp = self._entity_source_timestamps.get(source_key)
+        if previous_timestamp is not None and timestamp < previous_timestamp:
+            logger.debug(
+                "Ignoring stale entity update for %s from DGN %s: %.6f < %.6f",
+                entity_id,
+                source_dgn,
+                timestamp,
+                previous_timestamp,
+            )
+            return None
+        self._entity_source_timestamps[source_key] = timestamp
+        return timestamp
 
     def _entity_interface_matches(self, device_config: dict[str, Any], msg: dict[str, Any]) -> bool:
         """Return whether this frame arrived on the entity's configured interface."""
