@@ -132,7 +132,7 @@ class TestEntityInterfaceOwnership:
 
         assert service._entity_interface_matches({"interface": "house"}, {})
 
-    def test_duplicate_owner_detection_uses_decoded_instance(self):
+    def test_mapped_owner_detection_uses_decoded_instance(self):
         service = _make_service(None)
         service.settings.can.interface_mappings = {"house": "can1", "chassis": "can0"}
         entry = {
@@ -149,28 +149,43 @@ class TestEntityInterfaceOwnership:
             data=bytes.fromhex("267C00FCFF0500FF"),
         )
 
-        assert service._duplicate_is_owned_entity_frame(message, "can1")
-        assert not service._duplicate_is_owned_entity_frame(message, "can0")
+        assert service._mapped_entity_frame_ownership(message, "can1") is True
+        assert service._mapped_entity_frame_ownership(message, "can0") is False
 
     @pytest.mark.asyncio
-    async def test_duplicate_on_owner_interface_reaches_decoder(self):
+    async def test_mapped_owner_bypasses_global_dedup(self):
         service = _make_service(None)
         service._deduplicator = MagicMock()
         service._deduplicator.is_duplicate.return_value = True
-        service._duplicate_is_owned_entity_frame = MagicMock(return_value=True)
+        service._mapped_entity_frame_ownership = MagicMock(return_value=True)
         service._add_sniffer_entry = AsyncMock()
         service._process_message = AsyncMock()
 
         await service._process_received_message(_make_message(), "can1")
 
+        service._deduplicator.is_duplicate.assert_not_called()
         service._process_message.assert_awaited_once()
 
     @pytest.mark.asyncio
-    async def test_duplicate_on_non_owner_interface_stays_filtered(self):
+    async def test_mapped_non_owner_cannot_poison_global_dedup(self):
         service = _make_service(None)
         service._deduplicator = MagicMock()
         service._deduplicator.is_duplicate.return_value = True
-        service._duplicate_is_owned_entity_frame = MagicMock(return_value=False)
+        service._mapped_entity_frame_ownership = MagicMock(return_value=False)
+        service._add_sniffer_entry = AsyncMock()
+        service._process_message = AsyncMock()
+
+        await service._process_received_message(_make_message(), "can0")
+
+        service._deduplicator.is_duplicate.assert_not_called()
+        service._process_message.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    async def test_unmapped_duplicate_stays_filtered(self):
+        service = _make_service(None)
+        service._deduplicator = MagicMock()
+        service._deduplicator.is_duplicate.return_value = True
+        service._mapped_entity_frame_ownership = MagicMock(return_value=None)
         service._add_sniffer_entry = AsyncMock()
         service._process_message = AsyncMock()
 

@@ -753,22 +753,21 @@ class CANBusService(GuardrailParticipant):
             interface_name: Name of the interface that received the message
         """
         try:
-            # Check for duplicate messages when using bridged interfaces
-            if self._deduplicator and self._deduplicator.is_duplicate(
-                message.arbitration_id, message.data
+            # Mapped entities with explicit physical ownership bypass global
+            # bridge dedup. Their non-owner copy is rejected during routing,
+            # so it must not consume the cache slot before the owner arrives.
+            entity_frame_ownership = self._mapped_entity_frame_ownership(message, interface_name)
+            if (
+                entity_frame_ownership is None
+                and self._deduplicator
+                and self._deduplicator.is_duplicate(message.arbitration_id, message.data)
             ):
-                if not self._duplicate_is_owned_entity_frame(message, interface_name):
-                    logger.debug(
-                        "Ignoring duplicate message %08X on %s",
-                        message.arbitration_id,
-                        interface_name,
-                    )
-                    return
                 logger.debug(
-                    "Processing duplicate message %08X on canonical entity interface %s",
+                    "Ignoring duplicate message %08X on %s",
                     message.arbitration_id,
                     interface_name,
                 )
+                return
 
             # Log the received message
             logger.debug(
@@ -826,27 +825,29 @@ class CANBusService(GuardrailParticipant):
         except Exception:
             logger.exception("Error processing received CAN message")
 
-    def _duplicate_is_owned_entity_frame(self, message: Any, interface_name: str) -> bool:
-        """Return whether a duplicate is the canonical copy for a mapped entity."""
+    def _mapped_entity_frame_ownership(self, message: Any, interface_name: str) -> bool | None:
+        """Return explicit ownership for a mapped frame, or None when unknown."""
         arbitration_id = message.arbitration_id
         pgn = (arbitration_id >> 8) & 0x3FFFF
         entry = self._get_decoder_entry(arbitration_id, pgn)
         if entry is None:
-            return False
+            return None
         decoded_results, _decode_errors = decode_payload(entry, bytes(message.data))
         _decoded_data, raw_data = self._split_decoded_payload(decoded_results)
         dgn_hex = entry.get("dgn_hex")
         instance = raw_data.get("instance")
         if not isinstance(dgn_hex, str) or instance is None:
-            return False
+            return None
         device_config = self.device_lookup.get(_device_lookup_key(dgn_hex, instance))
-        return bool(
-            device_config
-            and device_config.get("entity_id")
-            and self._entity_interface_matches(
-                device_config,
-                {"interface": interface_name},
-            )
+        if not device_config or not device_config.get("entity_id"):
+            return None
+        logical_interface = device_config.get("interface")
+        mappings = self.settings.can.interface_mappings
+        if not isinstance(logical_interface, str) or not isinstance(mappings, dict):
+            return None
+        return self._entity_interface_matches(
+            device_config,
+            {"interface": interface_name},
         )
 
     async def _add_sniffer_entry(self, message: Any, interface_name: str, direction: str) -> None:

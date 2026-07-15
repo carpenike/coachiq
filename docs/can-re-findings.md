@@ -80,7 +80,11 @@ acknowledgement chain:
 - A wall-panel Off capture exposed asynchronous bridged-interface ordering:
   dequeue-time timestamps could let an older On status overwrite a newer Off.
   The RX pipeline now preserves python-can receive timestamps and applies
-  newest-wins ordering per entity, source DGN, and instance.
+  newest-wins ordering per entity, source DGN, and instance. Live acceptance
+  then showed that global dedup could still consume a mapped frame on the
+  non-owner interface before physical ownership was applied. Frames with an
+  explicit mapped interface now bypass global bridge dedup; the canonical
+  interface updates state and the bridged copy is rejected during routing.
 
 ### Retained light evidence replay — 2026-07-10
 
