@@ -12,8 +12,10 @@ from backend.core.config import get_settings
 from backend.integrations.rvc.decode import load_config_data_v2
 from backend.models.can_message import CANMessage
 from backend.models.entity import ControlCommand
+from backend.models.rvc_config import RVCConfiguration
 
 logger = logging.getLogger(__name__)
+MAX_BRIGHTNESS = 100
 
 
 class EncodingError(Exception):
@@ -37,9 +39,22 @@ class RVCEncoder:
         """
         self.settings = settings or get_settings()
         self._config_loaded = False
-        self._load_configuration()
+        self.rvc_config = self._load_configuration()
 
-    def _load_configuration(self) -> None:
+        # Backward-compatible aliases used by existing callers and methods.
+        self.dgn_dict = self.rvc_config.dgn_dict
+        self.spec_meta = self.rvc_config.spec_meta
+        self.mapping_dict = self.rvc_config.mapping_dict
+        self.entity_map = self.rvc_config.entity_map
+        self.entity_ids = self.rvc_config.entity_ids
+        self.inst_map = self.rvc_config.inst_map
+        self.unique_instances = self.rvc_config.unique_instances
+        self.pgn_hex_to_name_map = self.rvc_config.pgn_hex_to_name_map
+        self.dgn_pairs = self.rvc_config.dgn_pairs
+        self.coach_info = self.rvc_config.coach_info
+        self._config_loaded = True
+
+    def _load_configuration(self) -> RVCConfiguration:
         """Load RVC configuration data using the same system as the decoder."""
         try:
             # Use the same configuration loading as the RVC feature
@@ -53,29 +68,15 @@ class RVCEncoder:
                 map_path_override = str(self.settings.rvc_coach_mapping_path)
 
             # Load configuration using the new structured version
-            self.rvc_config = load_config_data_v2(
+            rvc_config = load_config_data_v2(
                 rvc_spec_path_override=spec_path_override,
                 device_mapping_path_override=map_path_override,
             )
-
-            # For backward compatibility with existing methods
-            self.dgn_dict = self.rvc_config.dgn_dict
-            self.spec_meta = self.rvc_config.spec_meta
-            self.mapping_dict = self.rvc_config.mapping_dict
-            self.entity_map = self.rvc_config.entity_map
-            self.entity_ids = self.rvc_config.entity_ids
-            self.inst_map = self.rvc_config.inst_map
-            self.unique_instances = self.rvc_config.unique_instances
-            self.pgn_hex_to_name_map = self.rvc_config.pgn_hex_to_name_map
-            self.dgn_pairs = self.rvc_config.dgn_pairs
-            self.coach_info = self.rvc_config.coach_info
-
-            self._config_loaded = True
-            logger.info(f"RVC encoder configuration loaded - coach: {self.rvc_config.coach_info}")
+            logger.info("RVC encoder configuration loaded - coach: %s", rvc_config.coach_info)
+            return rvc_config
 
         except Exception as e:
-            logger.error(f"Failed to load RVC encoder configuration: {e}")
-            self._config_loaded = False
+            logger.error("Failed to load RVC encoder configuration: %s", e)
             msg = f"Configuration loading failed: {e}"
             raise EncodingError(msg) from e
 
@@ -117,13 +118,16 @@ class RVCEncoder:
         # list; fall back to the single primary instance otherwise.
         command_instances = self._resolve_command_instances(entity_config, instance)
 
-        # Get the device configuration for this entity
-        device_key = (dgn_hex, str(instance))
-        if device_key not in self.entity_map:
+        # entity_map contains status routes only; command DGNs are deliberately
+        # excluded so command intent cannot mutate RX state. Resolve metadata
+        # by entity identity instead of looking up the command DGN as an RX key.
+        device_config = next(
+            (config for config in self.entity_map.values() if config.get("entity_id") == entity_id),
+            None,
+        )
+        if device_config is None:
             msg = f"No device mapping found for entity {entity_id}"
             raise EncodingError(msg)
-
-        device_config = self.entity_map[device_key]
 
         # Determine command DGN based on the dgn_pairs mapping
         command_dgn_hex = self._get_command_dgn(dgn_hex)
@@ -149,9 +153,7 @@ class RVCEncoder:
 
         # Encode the command based on device type and command, fanning out over
         # every command instance the entity maps to.
-        return self._encode_command_payload(
-            command_spec, command, device_config, command_instances
-        )
+        return self._encode_command_payload(command_spec, command, device_config, command_instances)
 
     @staticmethod
     def _resolve_command_instances(
@@ -278,7 +280,7 @@ class RVCEncoder:
         return messages
 
     def _encode_light_command(
-        self, payload: bytearray, command: ControlCommand, spec: dict[str, Any]
+        self, payload: bytearray, command: ControlCommand, _spec: dict[str, Any]
     ) -> None:
         """Encode a DC_DIMMER_COMMAND_2 (DGN 0x1FEDB) light control command.
 
@@ -324,7 +326,7 @@ class RVCEncoder:
         payload[2] = level & 0xFF
 
     def _encode_switch_command(
-        self, payload: bytearray, command: ControlCommand, spec: dict[str, Any]
+        self, payload: bytearray, command: ControlCommand, _spec: dict[str, Any]
     ) -> None:
         """Encode switch control command."""
         # Standard switch encoding
@@ -337,7 +339,7 @@ class RVCEncoder:
             payload[1] = 0xFE  # Toggle command
 
     def _encode_fan_command(
-        self, payload: bytearray, command: ControlCommand, spec: dict[str, Any]
+        self, payload: bytearray, command: ControlCommand, _spec: dict[str, Any]
     ) -> None:
         """Encode fan control command."""
         # Fan speed control
@@ -411,7 +413,7 @@ class RVCEncoder:
         new_bytes = current_int.to_bytes(len(data), byteorder="little")
         data[:] = new_bytes
 
-    def _build_can_id(self, spec: dict[str, Any], instance: int) -> int:
+    def _build_can_id(self, spec: dict[str, Any], _instance: int) -> int:
         """
         Build CAN ID for the message.
 
@@ -433,8 +435,26 @@ class RVCEncoder:
         source_addr = int(self.settings.controller_source_addr, 16)
 
         # Build 29-bit CAN ID
-        # Format: [Priority(3)] [Reserved(1)] [Data Page(1)] [PDU Format(8)] [PDU Specific(8)] [Source Address(8)]
+        # Format: priority, reserved, data page, PDU format/specific, source address.
         return (priority << 26) | (pgn << 8) | source_addr
+
+    @staticmethod
+    def _validate_command_fields(command: ControlCommand) -> str | None:
+        """Return a validation error for command fields, if any."""
+        if not command.command:
+            return "Command field is required"
+
+        valid_commands = {"set", "toggle", "brightness_up", "brightness_down"}
+        if command.command not in valid_commands:
+            return f"Invalid command: {command.command}. Must be one of {valid_commands}"
+
+        if command.command != "set":
+            return None
+        if command.state not in {"on", "off"}:
+            return "State must be 'on' or 'off' for 'set' command"
+        if command.brightness is not None and not 0 <= command.brightness <= MAX_BRIGHTNESS:
+            return f"Brightness must be between 0 and {MAX_BRIGHTNESS}"
+        return None
 
     def validate_command(self, entity_id: str, command: ControlCommand) -> tuple[bool, str]:
         """
@@ -454,23 +474,9 @@ class RVCEncoder:
         if entity_id not in self.inst_map:
             return False, f"Unknown entity ID: {entity_id}"
 
-        # Validate command structure
-        if not command.command:
-            return False, "Command field is required"
-
-        # Validate command types
-        valid_commands = {"set", "toggle", "brightness_up", "brightness_down"}
-        if command.command not in valid_commands:
-            return False, f"Invalid command: {command.command}. Must be one of {valid_commands}"
-
-        # Validate state for 'set' command
-        if command.command == "set":
-            if command.state not in {"on", "off"}:
-                return False, "State must be 'on' or 'off' for 'set' command"
-
-            # Validate brightness
-            if command.brightness is not None and not 0 <= command.brightness <= 100:
-                return False, "Brightness must be between 0 and 100"
+        field_error = self._validate_command_fields(command)
+        if field_error:
+            return False, field_error
 
         # Check if entity supports commands
         entity_config = self.inst_map[entity_id]

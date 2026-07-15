@@ -50,6 +50,9 @@ LIGHT_STATUS_SIMULATION_TYPE = 2
 SIMULATION_ERROR_SLEEP_SECONDS = 5
 THERMOSTAT_AMBIENT_STATUS_DGN = "1FF9C"
 AC_LOAD_STATUS_DGN = "1FFBF"
+ANALYZER_QUEUE_CAPACITY = 256
+ANALYZER_MAX_RATE_HZ = 50.0
+ANALYZER_SAMPLE_INTERVAL_SECONDS = 1.0 / ANALYZER_MAX_RATE_HZ
 
 
 def _device_lookup_key(dgn_hex: str, instance: Any) -> tuple[str, str]:
@@ -119,6 +122,11 @@ class CANBusService(GuardrailParticipant):
         self._task: asyncio.Task[None] | None = None
         self._simulation_task: asyncio.Task[None] | None = None
         self._writer_task: asyncio.Task[None] | None = None
+        self._analyzer_task: asyncio.Task[None] | None = None
+        self._analyzer_queue: asyncio.Queue[tuple[int, bytes, str]] = asyncio.Queue(
+            maxsize=ANALYZER_QUEUE_CAPACITY
+        )
+        self._analyzer_samples_dropped = 0
         self._deduplicator = None  # Will be initialized in startup
 
         # RVC decoder data - will be loaded on startup
@@ -218,6 +226,8 @@ class CANBusService(GuardrailParticipant):
                 except Exception as e:
                     logger.warning("Failed to start CAN %s: %s", tool_name, e)
 
+            self._start_analyzer_worker()
+
             # Load RVC decoder configuration
             await self._load_rvc_configuration()
 
@@ -269,6 +279,8 @@ class CANBusService(GuardrailParticipant):
             with contextlib.suppress(asyncio.CancelledError):
                 await self._writer_task
 
+        await self._stop_analyzer_worker()
+
         # Stop pattern recognition engine
         if self.pattern_engine:
             try:
@@ -304,6 +316,8 @@ class CANBusService(GuardrailParticipant):
         if self._simulation_task:
             self._simulation_task.cancel()
 
+        await self._stop_analyzer_worker()
+
         if self.pattern_engine:
             await self.pattern_engine.stop()
 
@@ -336,6 +350,9 @@ class CANBusService(GuardrailParticipant):
                     "interfaces": self.config["interfaces"],
                     "decoders_loaded": len(self.decoder_map),
                     "device_mappings": len(self.device_lookup),
+                    "analyzer_queue_depth": self._analyzer_queue.qsize(),
+                    "analyzer_queue_capacity": ANALYZER_QUEUE_CAPACITY,
+                    "analyzer_samples_dropped": self._analyzer_samples_dropped,
                 }
             return {
                 "service": "CANBusService",
@@ -374,8 +391,70 @@ class CANBusService(GuardrailParticipant):
                 "decoders_loaded": len(self.decoder_map),
                 "device_mappings": len(self.device_lookup),
                 "active_listeners": len(self._listeners),
+                "analyzer_queue_depth": self._analyzer_queue.qsize(),
+                "analyzer_samples_dropped": self._analyzer_samples_dropped,
             },
         }
+
+    def _start_analyzer_worker(self) -> None:
+        """Start the best-effort protocol analyzer worker when available."""
+        analyzer = self._can_protocol_analyzer
+        if analyzer is None or not getattr(analyzer, "_is_running", True):
+            return
+        self._analyzer_task = asyncio.create_task(
+            self._analyzer_worker(),
+            name="can_protocol_analyzer_worker",
+        )
+
+    async def _stop_analyzer_worker(self) -> None:
+        """Stop the best-effort protocol analyzer worker."""
+        if self._analyzer_task is None:
+            return
+        self._analyzer_task.cancel()
+        with contextlib.suppress(asyncio.CancelledError):
+            await self._analyzer_task
+        self._analyzer_task = None
+
+    def _enqueue_analyzer_sample(self, message: Any, interface_name: str) -> None:
+        """Queue a best-effort analyzer sample without delaying authoritative RX."""
+        analyzer = self._can_protocol_analyzer
+        if analyzer is None or not getattr(analyzer, "_is_running", True):
+            return
+
+        sample = (message.arbitration_id, bytes(message.data), interface_name)
+        try:
+            self._analyzer_queue.put_nowait(sample)
+            return
+        except asyncio.QueueFull:
+            self._analyzer_samples_dropped += 1
+
+        # Prefer current traffic over stale diagnostics when analysis falls behind.
+        with contextlib.suppress(asyncio.QueueEmpty):
+            self._analyzer_queue.get_nowait()
+            self._analyzer_queue.task_done()
+        with contextlib.suppress(asyncio.QueueFull):
+            self._analyzer_queue.put_nowait(sample)
+
+    async def _analyzer_worker(self) -> None:
+        """Analyze sampled frames outside the authoritative receive path."""
+        analyzer = self._can_protocol_analyzer
+        if analyzer is None:
+            return
+
+        while True:
+            can_id, data, interface_name = await self._analyzer_queue.get()
+            try:
+                await analyzer.analyze_message(
+                    can_id=can_id,
+                    data=data,
+                    interface=interface_name,
+                )
+            except Exception as error:
+                logger.debug("CAN analyzer sample failed: %s", error)
+            finally:
+                self._analyzer_queue.task_done()
+
+            await asyncio.sleep(ANALYZER_SAMPLE_INTERVAL_SECONDS)
 
     @log_execution_time(threshold_ms=500)
     async def _load_rvc_configuration(self) -> None:
@@ -637,12 +716,24 @@ class CANBusService(GuardrailParticipant):
                     message = await reader.get_message()
 
                     if message is not None:
+                        entity_frame_ownership = self._mapped_entity_frame_ownership(
+                            message, interface_name
+                        )
                         # Send to CAN tools first (filter may block the message)
-                        should_process = await self._send_to_can_tools(message, interface_name)
+                        should_process = await self._send_to_can_tools(
+                            message,
+                            interface_name,
+                            entity_frame_ownership,
+                        )
 
                         # Process the received message if not blocked by filter
                         if should_process is not False:
-                            await self._process_received_message(message, interface_name)
+                            await self._process_received_message(
+                                message,
+                                interface_name,
+                                entity_frame_ownership,
+                                ownership_resolved=True,
+                            )
 
                 except Exception as e:
                     if self._running:  # Only log errors if we're still supposed to be running
@@ -660,7 +751,10 @@ class CANBusService(GuardrailParticipant):
             logger.info("CAN listener stopped", interface=interface_name)
 
     async def _send_to_can_tools(  # noqa: C901
-        self, message: Any, interface_name: str
+        self,
+        message: Any,
+        interface_name: str,
+        entity_frame_ownership: bool | None,
     ) -> bool:
         """
         Send CAN message to optional analysis tools through composition root.
@@ -695,11 +789,7 @@ class CANBusService(GuardrailParticipant):
             try:
                 analyzer = self._can_protocol_analyzer
                 if analyzer and getattr(analyzer, "_is_running", True):
-                    await analyzer.analyze_message(
-                        can_id=message.arbitration_id,
-                        data=message.data,
-                        interface=interface_name,
-                    )
+                    self._enqueue_analyzer_sample(message, interface_name)
             except Exception as e:
                 logger.debug("Failed to send to protocol analyzer: %s", e)
 
@@ -717,7 +807,11 @@ class CANBusService(GuardrailParticipant):
             # the analyzer above).
             try:
                 message_filter = self._can_message_filter
-                if message_filter and getattr(message_filter, "_is_running", True):
+                if (
+                    entity_frame_ownership is None
+                    and message_filter
+                    and getattr(message_filter, "_is_running", True)
+                ):
                     # Prepare message dict for filter
                     filter_msg = {
                         "can_id": message.arbitration_id,
@@ -744,7 +838,14 @@ class CANBusService(GuardrailParticipant):
             logger.debug("Error sending to CAN tools: %s", e)
             return True  # Don't block message processing on tool errors
 
-    async def _process_received_message(self, message: Any, interface_name: str) -> None:
+    async def _process_received_message(
+        self,
+        message: Any,
+        interface_name: str,
+        entity_frame_ownership: bool | None = None,
+        *,
+        ownership_resolved: bool = False,
+    ) -> None:
         """
         Process a received CAN message.
 
@@ -756,7 +857,10 @@ class CANBusService(GuardrailParticipant):
             # Mapped entities with explicit physical ownership bypass global
             # bridge dedup. Their non-owner copy is rejected during routing,
             # so it must not consume the cache slot before the owner arrives.
-            entity_frame_ownership = self._mapped_entity_frame_ownership(message, interface_name)
+            if not ownership_resolved:
+                entity_frame_ownership = self._mapped_entity_frame_ownership(
+                    message, interface_name
+                )
             if (
                 entity_frame_ownership is None
                 and self._deduplicator
@@ -795,7 +899,7 @@ class CANBusService(GuardrailParticipant):
             }
 
             # Run anomaly detection first (security check)
-            if self.anomaly_detector:
+            if self.anomaly_detector and entity_frame_ownership is None:
                 try:
                     anomaly_result = await self.anomaly_detector.analyze_message(
                         message.arbitration_id, message.data, msg_dict["timestamp"]

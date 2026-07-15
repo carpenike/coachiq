@@ -58,9 +58,32 @@ The implemented CoachIQ encoder uses this dialect:
   coach mapping).
 - Bedroom Accent 27 (`0x1B`), Vanity 28 (`0x1C`), Mira `Bed OVHD` 29 (`0x1D`,
   represented as `bedroom_reading_light`), and Courtesy 38 (`0x26`) were each
-  wire-verified on July 15. Non-bedroom light assignments remain provisional;
-  they were carried forward from the June 2025 coach mapping and do not yet
-  have retained per-light action captures.
+  wire-verified on July 15.
+- Master Bath `Bathroom Ceiling` is wire-verified as paired channels 30
+  (`0x1E`) and 31 (`0x1F`); both ceiling fixture groups follow one Mira
+  control. Master Bath `Bathroom Accent` is instance 32 (`0x20`). The former
+  standalone `master_bath_lav_light` assignment at instance 31 was a phantom
+  entity and has been removed.
+- Mid Bath Ceiling 33 (`0x21`), Mid Bath Accent 34 (`0x22`), Entrance Ceiling
+  35 (`0x23`), and Main Living Ceiling 37 (`0x25`) are wire-verified. Main
+  Ceiling Accent is a paired logical light on channels 39 (`0x27`) and 40
+  (`0x28`); both channels follow one Mira control and illuminate only the
+  Accent fixtures.
+- Mira `D/S Sofa` is wire-verified as instance 43 (`0x2B`). The previous
+  `main_driver_side_slide_light` label was inaccurate; the entity is now
+  `main_driver_side_sofa_light` with display name `D/S Sofa Light`.
+- Main Driver Side Ceiling 41 (`0x29`), Main Passenger Side Ceiling 42
+  (`0x2A`), Main Dinette 45 (`0x2D`), Main Sink 46 (`0x2E`), and Main Midship
+  47 (`0x2F`) are wire-verified against isolated Mira actions and module
+  `0x8E` status echoes.
+- Exterior Driver Awning 51 (`0x33`), Passenger Awning 52 (`0x34`), Basement
+  Cargo 53 (`0x35`), Under Slide 54 (`0x36`), Driver Security 57 (`0x39`),
+  Passenger Security 58 (`0x3A`), Motion 59 (`0x3B`), and Porch 60 (`0x3C`)
+  are wire-verified. Security and Motion are separate logical lights: turning
+  either Security fixture On forces Motion Off, while turning Motion On forces
+  both Security fixtures Off.
+- Every light entity currently retained in the coach mapping now has an
+  isolated Mira action and matching module `0x8E` status echo.
 
 ### Live bedroom control acceptance — 2026-07-15
 
@@ -93,6 +116,21 @@ acknowledgement chain:
   mutating authoritative state; only `DC_DIMMER_STATUS_3` updates/publishes the
   entity. Physical acknowledgement has a 10-second Pi floor to cover the
   measured receive backlog without inventing state.
+- The completed mapped-light audit exposed a second, broader RX throughput
+  failure: 19 of 27 light entities remained nonzero in the API after their
+  physical Off tests. The retained Porch capture is the clearest discriminator.
+  Module `0x8E` emitted instance 60 status raw `0` at
+  `2026-07-15T16:55:44.713847Z`, but the API remained raw `200` with
+  `last_seen_at=2026-07-15T16:55:42.805709Z`, the preceding periodic On frame.
+  The filter reported zero blocked messages and interface counters reported zero
+  drops. The CoachIQ process was consuming approximately one full CPU core while
+  the inline protocol analyzer's 10,000-frame buffer was saturated. Optional
+  analysis had been awaited before authoritative decoding for every frame.
+  Protocol analysis now runs through a bounded 256-sample, 50 Hz worker; overload
+  discards stale analyzer samples instead of delaying or losing entity status.
+  Explicitly mapped frames also bypass inbound anomaly and filter vetoes; those
+  tools remain available for unmapped diagnostics, while command injection,
+  validation, and outbound rate/safety guardrails remain active.
 
 ### Retained light evidence replay — 2026-07-10
 

@@ -181,16 +181,8 @@ entities:
     protocol: firefly
     capabilities: [on_off, brightness]
     sources: [{ dgn: 1FEDA, instance: 30 }]
-    command: { dgn: 1FEDB, instances: [30] }
-
-  master_bath_lav_light:
-    name: "Master Bath Lavatory Light"
-    type: light
-    area: interior.bathroom_master
-    protocol: firefly
-    capabilities: [on_off, brightness]
-    sources: [{ dgn: 1FEDA, instance: 31 }]
-    command: { dgn: 1FEDB, instances: [31] }
+    # Mira's Bathroom Ceiling control drives both physical dimmer channels.
+    command: { dgn: 1FEDB, instances: [30, 31] }
 
   master_bath_accent_light:
     name: "Master Bath Accent Light"
@@ -253,7 +245,8 @@ entities:
     protocol: firefly
     capabilities: [on_off, brightness]
     sources: [{ dgn: 1FEDA, instance: 39 }]
-    command: { dgn: 1FEDB, instances: [39] }
+    # Mira's Main Ceiling Accent control drives two physical dimmer channels.
+    command: { dgn: 1FEDB, instances: [39, 40] }
 
   main_driver_side_ceiling_light:
     name: "Main Driver Side Ceiling Light"
@@ -273,8 +266,8 @@ entities:
     sources: [{ dgn: 1FEDA, instance: 42 }]
     command: { dgn: 1FEDB, instances: [42] }
 
-  main_driver_side_slide_light:
-    name: "Main Driver Side Slide Light"
+  main_driver_side_sofa_light:
+    name: "D/S Sofa Light"
     type: light
     area: interior.living_main
     protocol: firefly

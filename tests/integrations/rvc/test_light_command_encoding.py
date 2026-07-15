@@ -25,7 +25,7 @@ from unittest.mock import Mock
 import pytest
 
 from backend.integrations.rvc import decode
-from backend.integrations.rvc.encoder import RVCEncoder
+from backend.integrations.rvc.encoder import EncodingError, RVCEncoder
 from backend.models.entity import ControlCommand
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
@@ -36,7 +36,7 @@ EXPECTED_CAN_ID = 0x19FEDBF9  # priority 6, PGN 0x1FEDB, SA 0xF9
 
 
 @pytest.fixture
-def encoder():
+def encoder() -> RVCEncoder:
     """Build an encoder from the real coach config (SA 0xF9)."""
     # load_config_data_v2 is @functools.cache'd; clear it so edits to the
     # config between test runs are always reflected.
@@ -50,10 +50,10 @@ def encoder():
 
 
 @pytest.mark.unit
-def test_set_on_full_emits_level_c8(encoder):
+def test_set_on_full_emits_level_c8(encoder: RVCEncoder) -> None:
     """set on (no brightness) => level 0xC8 with the verified layout."""
     messages = encoder.encode_entity_command(
-        "bedroom_accent_light", ControlCommand(command="set", state="on")
+        "bedroom_accent_light", ControlCommand(command="set", state="on", brightness=None)
     )
     assert len(messages) == 1
     msg = messages[0]
@@ -65,7 +65,7 @@ def test_set_on_full_emits_level_c8(encoder):
 
 
 @pytest.mark.unit
-def test_set_on_50pct_emits_level_64(encoder):
+def test_set_on_50pct_emits_level_64(encoder: RVCEncoder) -> None:
     """set on brightness=50 => level 0x64 (100 on the 0-200 scale)."""
     messages = encoder.encode_entity_command(
         "bedroom_accent_light", ControlCommand(command="set", state="on", brightness=50)
@@ -75,20 +75,20 @@ def test_set_on_50pct_emits_level_64(encoder):
 
 
 @pytest.mark.unit
-def test_set_off_emits_level_00(encoder):
+def test_set_off_emits_level_00(encoder: RVCEncoder) -> None:
     """set off => level 0x00."""
     messages = encoder.encode_entity_command(
-        "bedroom_accent_light", ControlCommand(command="set", state="off")
+        "bedroom_accent_light", ControlCommand(command="set", state="off", brightness=None)
     )
     assert len(messages) == 1
     assert messages[0].data == bytes([0x1B, 0xFF, 0x00, 0x00, 0xFF, 0x00, 0xFF, 0xFF])
 
 
 @pytest.mark.unit
-def test_multi_instance_fan_out(encoder):
+def test_multi_instance_fan_out(encoder: RVCEncoder) -> None:
     """bedroom_ceiling_light fans out to instances 0x19 AND 0x1A."""
     messages = encoder.encode_entity_command(
-        "bedroom_ceiling_light", ControlCommand(command="set", state="on")
+        "bedroom_ceiling_light", ControlCommand(command="set", state="on", brightness=None)
     )
     assert len(messages) == 2
 
@@ -105,10 +105,10 @@ def test_multi_instance_fan_out(encoder):
 
 
 @pytest.mark.unit
-def test_multi_instance_off_fan_out(encoder):
+def test_multi_instance_off_fan_out(encoder: RVCEncoder) -> None:
     """Off also fans out to both ceiling instances with level 0x00."""
     messages = encoder.encode_entity_command(
-        "bedroom_ceiling_light", ControlCommand(command="set", state="off")
+        "bedroom_ceiling_light", ControlCommand(command="set", state="off", brightness=None)
     )
     assert len(messages) == 2
     assert messages[0].data == bytes([0x19, 0xFF, 0x00, 0x00, 0xFF, 0x00, 0xFF, 0xFF])
@@ -116,7 +116,55 @@ def test_multi_instance_off_fan_out(encoder):
 
 
 @pytest.mark.unit
-def test_brightness_clamped_to_200(encoder):
+@pytest.mark.parametrize(
+    ("entity_id", "instances"),
+    [
+        ("master_bath_ceiling_light", [0x1E, 0x1F]),
+        ("main_ceiling_accent_light", [0x27, 0x28]),
+    ],
+)
+def test_live_verified_paired_light_fan_out(
+    encoder: RVCEncoder,
+    entity_id: str,
+    instances: list[int],
+) -> None:
+    """Paired Mira controls emit one command for each verified physical channel."""
+    messages = encoder.encode_entity_command(
+        entity_id,
+        ControlCommand(command="set", state="on", brightness=None),
+    )
+
+    assert [message.data[0] for message in messages] == instances
+
+
+@pytest.mark.unit
+def test_ds_sofa_replaces_inaccurate_slide_entity(encoder: RVCEncoder) -> None:
+    """Instance 43 uses Mira's D/S Sofa identity and the old slide ID is absent."""
+    messages = encoder.encode_entity_command(
+        "main_driver_side_sofa_light",
+        ControlCommand(command="set", state="on", brightness=None),
+    )
+
+    assert [message.data[0] for message in messages] == [0x2B]
+    with pytest.raises(EncodingError, match="Unknown entity ID"):
+        encoder.encode_entity_command(
+            "main_driver_side_slide_light",
+            ControlCommand(command="set", state="on", brightness=None),
+        )
+
+
+@pytest.mark.unit
+def test_phantom_master_bath_lavatory_entity_is_absent(encoder: RVCEncoder) -> None:
+    """Instance 31 belongs to paired Bathroom Ceiling, not a Lavatory entity."""
+    with pytest.raises(EncodingError, match="Unknown entity ID"):
+        encoder.encode_entity_command(
+            "master_bath_lav_light",
+            ControlCommand(command="set", state="on", brightness=None),
+        )
+
+
+@pytest.mark.unit
+def test_brightness_clamped_to_200(encoder: RVCEncoder) -> None:
     """Brightness 100% clamps to 0xC8 (200), never overflowing byte2."""
     messages = encoder.encode_entity_command(
         "bedroom_accent_light", ControlCommand(command="set", state="on", brightness=100)

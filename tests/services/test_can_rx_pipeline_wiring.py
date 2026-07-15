@@ -16,6 +16,7 @@ Covers the root-cause fixes for live-data gaps in the RX pipeline:
   29-bit ids so simulated frames round-trip through the RX decode path.
 """
 
+import asyncio
 from types import SimpleNamespace
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -83,6 +84,89 @@ class TestSnifferBroadcastWiring:
         await service._add_sniffer_entry(_make_message(), "can0", "rx")
 
         service._can_tracking_repository.add_can_sniffer_entry.assert_called_once()
+
+
+class TestAnalyzerIsolation:
+    def test_full_analyzer_queue_keeps_newest_sample(self):
+        """Analyzer overload drops stale diagnostics, never current traffic."""
+        analyzer = MagicMock()
+        analyzer._is_running = True
+        service = CANBusService(
+            can_tracking_repository=MagicMock(),
+            system_state_repository=MagicMock(),
+            can_protocol_analyzer=analyzer,
+        )
+        service._analyzer_queue = asyncio.Queue(maxsize=1)
+
+        service._enqueue_analyzer_sample(_make_message(arbitration_id=1), "can1")
+        service._enqueue_analyzer_sample(_make_message(arbitration_id=2), "can1")
+
+        assert service._analyzer_samples_dropped == 1
+        assert service._analyzer_queue.get_nowait()[0] == 2
+
+    @pytest.mark.asyncio
+    async def test_blocked_analyzer_does_not_delay_entity_rx(self):
+        """Optional protocol analysis must not block authoritative entity decoding."""
+        analyzer_release = asyncio.Event()
+
+        async def block_analysis(**_kwargs: Any) -> None:
+            await analyzer_release.wait()
+
+        analyzer = MagicMock()
+        analyzer._is_running = True
+        analyzer.analyze_message = AsyncMock(side_effect=block_analysis)
+        service = CANBusService(
+            can_tracking_repository=MagicMock(),
+            system_state_repository=MagicMock(),
+            can_protocol_analyzer=analyzer,
+        )
+        service._running = True
+        service._process_received_message = AsyncMock()
+        service._analyzer_task = asyncio.create_task(service._analyzer_worker())
+
+        reader = MagicMock()
+        reader.get_message = AsyncMock(side_effect=[_make_message(), RuntimeError("stop listener")])
+
+        try:
+            await service._can_listener_task("can1", reader)
+            service._process_received_message.assert_awaited_once()
+            await asyncio.sleep(0)
+            analyzer.analyze_message.assert_awaited_once()
+        finally:
+            analyzer_release.set()
+            await service._stop_analyzer_worker()
+
+
+class TestMappedEntityToolIsolation:
+    @pytest.mark.asyncio
+    async def test_mapped_status_bypasses_filter_and_anomaly_blocking(self):
+        """Optional RX tools cannot block an explicitly mapped entity frame."""
+        message_filter = MagicMock()
+        message_filter._is_running = True
+        message_filter.process_message = AsyncMock(return_value=False)
+        anomaly_detector = MagicMock()
+        anomaly_detector.analyze_message = AsyncMock(
+            return_value={"actions_taken": ["message_blocked"]}
+        )
+        service = CANBusService(
+            can_tracking_repository=MagicMock(),
+            system_state_repository=MagicMock(),
+            can_anomaly_detector=anomaly_detector,
+            can_message_filter=message_filter,
+        )
+        service._running = True
+        service._mapped_entity_frame_ownership = MagicMock(return_value=True)
+        service._add_sniffer_entry = AsyncMock()
+        service._process_message = AsyncMock()
+
+        reader = MagicMock()
+        reader.get_message = AsyncMock(side_effect=[_make_message(), RuntimeError("stop listener")])
+
+        await service._can_listener_task("can1", reader)
+
+        message_filter.process_message.assert_not_awaited()
+        anomaly_detector.analyze_message.assert_not_awaited()
+        service._process_message.assert_awaited_once()
 
     @pytest.mark.asyncio
     async def test_broadcast_failure_does_not_break_rx_path(self):
