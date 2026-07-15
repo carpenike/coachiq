@@ -137,10 +137,10 @@ def compile_entity_mapping(
 ]:
     """Compile an entity-first mapping into the legacy runtime lookups.
 
-    Every RX source *and* every command instance registers an
-    ``entity_map[(dgn, instance)]`` entry — command registration preserves
-    the legacy behavior where the Firefly G6's own command re-broadcasts
-    (e.g. DC_DIMMER_COMMAND_2) update entity state.
+    Only declared RX sources register an ``entity_map[(dgn, instance)]``
+    entry. Command frames are intent, not authoritative device state; routing
+    them back into entities allows delayed command processing to overwrite a
+    newer status frame.
 
     ``inst_map[entity_id]`` always carries the entity's COMMAND addressing
     (primary instance + fan-out list); entities without a command fall back
@@ -176,11 +176,7 @@ def compile_entity_mapping(
         if entity.command:
             device["command_dgn"] = entity.command.dgn
 
-        rx_keys = [(s.dgn, str(s.instance)) for s in entity.sources]
-        if entity.command:
-            rx_keys.extend((entity.command.dgn, str(i)) for i in entity.command.instances)
-
-        for key in rx_keys:
+        for key in ((source.dgn, str(source.instance)) for source in entity.sources):
             mapping_dict.setdefault(key, []).append(device)
             entity_map[key] = device
             unique_instances.setdefault(key[0], {})[key[1]] = device

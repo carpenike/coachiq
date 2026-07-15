@@ -53,17 +53,20 @@ def test_sources_and_command_instances_are_independent() -> None:
     assert inst_map["climate_mid"] == {"dgn_hex": "1FEF9", "instance": 1}
 
 
-def test_command_instances_register_for_rx_and_fan_out() -> None:
+def test_command_instances_only_register_for_tx_fan_out() -> None:
     light = {
         "name": "Bedroom Ceiling Light",
         "type": "light",
         "sources": [{"dgn": "1FEDA", "instance": 25}],
         "command": {"dgn": "1FEDB", "instances": [25, 26]},
     }
-    _, entity_map, _, inst_map, _ = compile_entity_mapping(_mapping({"bedroom": light}))
-    # The G6's own command re-broadcasts must still route to the entity
-    assert entity_map[("1FEDB", "25")]["entity_id"] == "bedroom"
-    assert entity_map[("1FEDB", "26")]["entity_id"] == "bedroom"
+    mapping_dict, entity_map, _, inst_map, unique = compile_entity_mapping(
+        _mapping({"bedroom": light})
+    )
+    assert ("1FEDB", "25") not in entity_map
+    assert ("1FEDB", "26") not in entity_map
+    assert ("1FEDB", "25") not in mapping_dict
+    assert "1FEDB" not in unique
     assert inst_map["bedroom"]["instance"] == 25
     assert inst_map["bedroom"]["command_instances"] == [25, 26]
 
