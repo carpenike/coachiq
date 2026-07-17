@@ -1279,64 +1279,99 @@
       ],
       "pgn": "0x1FEDA"
     },
-    "436204701": {
+    "436204700": {
       "name": "CHASSIS_MOBILITY_STATUS",
-      "id": 436204701,
+      "id": 436204700,
       "extended": true,
       "length": 8,
-      "source_address": "0x9D",
+      "source_address": "0x9C",
       "description": "Chassis Mobility Status",
       "pdf_reference": "Sec. 6.11.2 (DGN 1FFF4)",
       "signals": [
         {
-          "name": "instance",
+          "name": "engine_rpm",
           "start_bit": 0,
-          "length": 2,
-          "byte_order": "big_endian"
+          "length": 16,
+          "scale": 0.125,
+          "unit": "rpm",
+          "unavailable_raw_values": [
+            65534,
+            65535
+          ],
+          "byte_order": "little_endian"
         },
         {
-          "name": "position",
-          "start_bit": 2,
-          "length": 2,
-          "byte_order": "big_endian"
-        },
-        {
-          "name": "movement_in_progress",
-          "start_bit": 4,
-          "length": 2,
-          "byte_order": "big_endian"
-        },
-        {
-          "name": "unsuitable_surface",
-          "start_bit": 6,
-          "length": 2,
-          "byte_order": "big_endian"
-        },
-        {
-          "name": "roll_mode_status",
-          "start_bit": 8,
-          "length": 4,
-          "byte_order": "big_endian"
-        },
-        {
-          "name": "rate",
+          "name": "vehicle_speed",
           "start_bit": 16,
           "length": 16,
-          "byte_order": "big_endian",
-          "scale": 0.1,
-          "unit": "deg/s"
+          "scale": 0.00390625,
+          "unit": "kph",
+          "unavailable_raw_values": [
+            65534,
+            65535
+          ],
+          "byte_order": "little_endian"
         },
         {
-          "name": "max_rate",
+          "name": "park_brake_status",
           "start_bit": 32,
-          "length": 16,
+          "length": 2,
+          "description": "00 = released, 01 = engaged, 10 = error, 11 = unknown",
+          "byte_order": "big_endian"
+        },
+        {
+          "name": "transmission_lock_status",
+          "start_bit": 34,
+          "length": 2,
+          "description": "00 = transmission not locked, 01 = transmission locked, 10 = error, 11 = unknown",
+          "byte_order": "big_endian"
+        },
+        {
+          "name": "engine_lock_status",
+          "start_bit": 36,
+          "length": 2,
+          "description": "00 = engine free to start, 01 = engine locked, 10 = error, 11 = unknown",
+          "byte_order": "big_endian"
+        },
+        {
+          "name": "ignition_switch_status",
+          "start_bit": 40,
+          "length": 2,
+          "description": "00 = off, 01 = on, 10 = error, 11 = unknown",
+          "byte_order": "big_endian"
+        },
+        {
+          "name": "accessory_switch_status",
+          "start_bit": 42,
+          "length": 3,
+          "description": "000 = off, 001 = on, 110 = error, 111 = unknown",
+          "byte_order": "big_endian"
+        },
+        {
+          "name": "transmission_current_gear",
+          "start_bit": 48,
+          "length": 8,
+          "description": "124 = reverse 1, 125 = neutral, 126 = forward 1 through 251 = park",
           "byte_order": "big_endian",
-          "scale": 0.1,
-          "unit": "deg/s"
+          "unavailable_raw_values": [
+            254,
+            255
+          ]
+        },
+        {
+          "name": "transmission_selected_gear",
+          "start_bit": 56,
+          "length": 8,
+          "description": "Same encoding as transmission_current_gear",
+          "byte_order": "big_endian",
+          "unavailable_raw_values": [
+            254,
+            255
+          ]
         }
       ],
       "pgn": "0x1FFF4",
-      "notes": "Wire-confirmed (19FFF49C) in 2026-07-05 live census (nixpi can1)."
+      "notes": "Verified directly against RV-C 2023-11 Table 6.11.2b (printed pages 100-101); wire-confirmed from Firefly source 0x9C in the 2026-07-16 chassis survey."
     },
     "436180476": {
       "name": "CHARGER_CONFIGURATION_COMMAND_2",

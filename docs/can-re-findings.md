@@ -13,10 +13,13 @@ the method for mapping anything new (awnings, generator, Aqua-Hot commands).
 
 ## Bus topology
 
-- Two SocketCAN interfaces, `can0` and `can1`, are **bridged** — both carry the
-  same ~250 frames/s (they showed identical PGN/SA distributions in a 20 s
-  census). This is the known nixpi bridge; it is why the app runs a message
-  deduplicator. Capture from either; `can1` is fine.
+- `can0` is the **Spartan K2 chassis** side and `can1` is the **Firefly house**
+  side. nixpi bridges them bidirectionally with SocketCAN gateway rules; the
+  only filtered arbitration ID is `19FFAA4F`.
+- Both interfaces consequently see nearly the same traffic after the bridge,
+  which is why the app runs a message deduplicator. Sub-millisecond arrival
+  order reveals physical origin: chassis gateway source `0x9F` arrives first on
+  `can0`, while Firefly sources such as `0x9C` arrive first on `can1`.
 - ~62–77 distinct `(PGN, source-address)` pairs are live at idle.
 
 ## Who's talking
@@ -26,7 +29,8 @@ the method for mapping anything new (awnings, generator, Aqua-Hot commands).
 | `0x9C` | **Firefly G6 controller** (the master) | `15F00`, `1FEDB` DC_DIMMER_COMMAND_2, `1FACE`, many `1FFxx` |
 | `0x8E`, `0x8F` | Dimmer/output modules (status reporters) | `1FEDA` DC_DIMMER_STATUS_3, `E800` |
 | `0x4F` | **Energy / ATS node** (not lighting) | `1FFAB/1FFAC/1FFAD/1FF85` = `ATS_AC_STATUS_1..4`, `1FFBF` = `AC_LOAD_STATUS` |
-| `0xFC` | Chassis diagnostics | `FECA` DM_RV / DM1 |
+| `0x9F` | **Chassis gateway** (physical origin `can0`) | unresolved `1FFED`, J1939 `FEF5`/`FEFC`, DM1 |
+| `0xFC` | House-side diagnostic node (physical origin `can1`) | `FECA` DM1, proprietary `1FACE` |
 
 The RV-C name lookup resolving the `0x4F` proprietary frames to `ATS_AC_STATUS_*`
 means a large slice of the "proprietary" traffic is **AC power management, not
@@ -194,6 +198,134 @@ coachiq-can-re diff captures/idle.jsonl captures/action.jsonl --noise captures/i
 A live `candump -ta can1,<id>:<mask>` watch during single presses is even
 better for instance identification — that is how the thermostat zone order,
 the ambient sensor channels, and the Bay/Floor zones were pinned.
+
+## Slide-room relay mapping — retract survey 2026-07-16
+
+A labeled 125-second dual-interface capture identified source `0x94` as the
+slide control module. It emitted `DC_DIMMER_COMMAND_2` (`1FEDB`) only while a
+slide switch was held, and output module `0x8F` acknowledged the same instance
+through `DC_DIMMER_STATUS_3` (`1FEDA`) within 2.2–2.3 ms. The command dialect is:
+
+- active direction: `[instance, FF, C8, 01, FF, 00, FF, FF]`, repeated once
+  per second while the switch is held;
+- stop direction: `[instance, FF, 00, 03, FF, 00, FF, FF]`;
+- status: byte 2 reports `C8` while the relay is energized and `00` after it
+  stops. Source `0x8F` acknowledged stops within 1.4–3.2 ms.
+
+Each room owns a mutually exclusive odd/even direction pair. Source `0x94`
+sends the stop payload to the opposite direction at the start of every action:
+
+| Room | Extend instance | Retract instance | Labeled capture evidence |
+| --- | ---: | ---: | --- |
+| Kitchen | `B5` | `B6` | Retract held 25.723 s |
+| Super slide | `B7` | `B8` | Extend held 6.301 s, then retract |
+| Vanity | `B9` | `BA` | Retract held 24.011 s |
+| Bed | `BB` | `BC` | Retract held 35.677 s |
+
+The main capture ended while Super retract instance `B8` was still active. A
+12-second post-operation capture confirmed its final status at level `00`.
+Retained evidence is on nixpi under
+`/home/ryan/canre-captures/audit-2026-07-16/`:
+
+- `slide-retract-survey-20260716T215231Z.candump` (raw SHA-256
+  `03f393256bd44ae4c24c2c396af9449b6b96b871b652a2248aa6f19f09539204`);
+- `slide-retract-post-idle-20260716T215659Z.candump`.
+
+Although these frames use the standard dimmer DGN, they drive momentary slide
+relays rather than lights. Do not model them as ordinary dimmers or send a
+latched level command; slide control needs a dedicated momentary operation that
+preserves the observed opposite-direction stop interlock.
+
+## Awning relay mapping — extension survey 2026-07-16
+
+A labeled 240-second dual-interface capture started with every awning fully
+retracted, then extended the rear, front, and entry-door awnings to their
+physical stops in that order. Source `0xFC` emitted `DC_DIMMER_COMMAND_2`
+(`1FEDB`), and output module `0x8E` acknowledged each output through
+`DC_DIMMER_STATUS_3` (`1FEDA`) within 1.2–1.3 ms.
+
+| Awning | Verified extend | Other group channels | Physical active span |
+| --- | ---: | --- | ---: |
+| Rear | `13` (decimal 19) | `14`, `15` | 44.999 s |
+| Front | `16` (decimal 22) | `17`, `18` | 75.479 s |
+| Entry door | `32` (decimal 50) | `31` | 44.999 s |
+
+The full-extension payload was
+`[instance, FF, C8, 01, 2D, 00, FF, FF]`, where `2D` requests a 45-second
+duration. At the start of each extension, the controller sent
+`[instance, FF, 00, 03, FF, 00, FF, FF]` to every other channel in that
+awning's group. Status used group `7C`, reported level `C8` while energized,
+and counted the remaining duration down in byte 4 before returning to level
+`00`. The front controller refreshed its 45-second command six times while the
+awning continued extending, producing its longer physical span.
+
+This matches the physical-panel inventory: rear/front use decimal channels
+19–24 as two three-channel EXT/RET/STOP groups, while entry door uses decimal
+49–50 as a RET/EXT pair. The extension members above are wire-verified. Command
+timing strongly suggests `15` and `18` are the two-second STOP channels,
+`14` and `17` are retract, and door `31` is retract; those counterpart meanings
+remain provisional until an operator-labeled retraction capture.
+
+A 12-second post-operation capture confirmed all three verified extension
+outputs at level `00`. Retained evidence is on nixpi under
+`/home/ryan/canre-captures/audit-2026-07-16/`:
+
+- `awning-extend-survey-20260716T222115Z.candump` (raw SHA-256
+  `7626a0672951c81f21a651a3af590af0231b9a51e04992c8410a168fc4edffb9`);
+- `awning-extend-post-idle-20260716T222735Z.candump`.
+
+Like the slide channels, these use standard dimmer DGNs to drive momentary
+motor relays. They need a dedicated operation with cancellation and explicit
+STOP behavior, not a latched light command.
+
+## Chassis-to-Firefly movement interlock — survey 2026-07-16
+
+The 125-second engine/selector survey did carry real chassis-origin traffic even
+though standard Allison ETC1 (`F003`) and engine EEC1 (`F004`) were absent.
+Arrival-order analysis identifies source `0x9F` as the physical `can0` chassis
+gateway. Its unresolved `19FFED9F` stream began at `+6.2 s`, continued through
+the capture, and was absent in an engine-off spot check the next day. The frame
+uses six repeating payload patterns whose high-bit duty cycle changed sharply
+near `+35 s`. The original RV-C 2023-11 PDF assigns DGN `1FFED` to
+`LEVELING_CONTROL_STATUS` on printed pages 124–125, and the payload shape is
+compatible with that canonical layout (inactive operating mode followed by
+two-bit statuses). Treat it as unresolved leveling status, not as the
+drivetrain interlock source, until its fields are decoded against Section
+6.13.2.
+
+The operative signal is canonical `CHASSIS_MOBILITY_STATUS` (`1FFF4`) from
+Firefly source `0x9C`. The original RV-C 2023-11 PDF defines this layout on
+printed pages 100–101; the extracted reference corpus under `resources/`, the
+retained wire sequence, and the operator timeline independently corroborate it:
+
+- engine start: `00 00 00 00 FF 01 00 00` reports ignition on while leaving
+  unrelated fields unknown;
+- `+47.8 s`: `00 00 00 00 00 FF 00 00` reports park brake released;
+- `+89.0 s`: `00 00 00 00 01 FF 00 00` reports park brake engaged.
+
+At the park-brake release, both output modules immediately changed
+`DC_DIMMER_STATUS_3.lock_status` from 0 to 1 across the slide relays
+(`B5`–`BC`, source `0x8F`) and awning relays (`13`, `16`, `32`, source `0x8E`).
+Raw status byte 3 changed from `FC` to `FD`; the current decoder confirms that
+the only decoded change is `lock_status: 0 -> 1`. The lock remained set while
+the operator waited in Neutral, selected Forward, selected Reverse, and
+returned to Neutral. It cleared only when the parking brake was engaged again.
+
+For this coach, the observed Firefly movement interlock therefore follows the
+parking brake, not individual gear transitions. Trip recording can use an
+explicit park-brake release to arm the journey, with the first trustworthy GPS
+movement starting persistence. Park-brake engagement must not automatically
+end the trip: the driver may leave the engine running at a rest area or fuel
+stop. Unknown/error values must leave the current state unchanged. The Firefly
+lock bit remains a useful corroborating signal, but direct Allison `F003` gear
+decoding is not required.
+
+**TODO (next live coach session):** capture engine-running plus park-brake-set,
+then engine-off, to verify the terminal ignition event. After that evidence is
+retained, add nested stop records: brake engagement begins a stop, brake release
+ends it, and confirmed ignition-off closes the overall trip. Until then, retain
+the existing GPS stationary-gap closure as the fallback rather than splitting
+trips solely on parking-brake engagement.
 
 ## Climate (heating / cooling) — survey 2026-07-04
 

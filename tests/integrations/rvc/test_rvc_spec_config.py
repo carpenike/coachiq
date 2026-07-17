@@ -15,19 +15,21 @@ invariants the runtime decoder depends on:
 
 import json
 from pathlib import Path
+from typing import Any
 
 import pytest
 
 CONFIG_PATH = Path(__file__).resolve().parents[3] / "config" / "rvc.json"
+type SpecEntries = dict[str, dict[str, Any]]
 
 
 @pytest.fixture(scope="module")
-def spec_entries() -> dict:
+def spec_entries() -> SpecEntries:
     with CONFIG_PATH.open() as f:
         return json.load(f)["pgns"]
 
 
-def test_pgn_field_matches_arbitration_id(spec_entries):
+def test_pgn_field_matches_arbitration_id(spec_entries: SpecEntries) -> None:
     """entry['pgn'] must equal the PGN the decoder derives from a wire frame."""
     mismatches = []
     for key, entry in spec_entries.items():
@@ -40,18 +42,18 @@ def test_pgn_field_matches_arbitration_id(spec_entries):
     assert not mismatches, "pgn field contradicts the entry's own CAN id:\n" + "\n".join(mismatches)
 
 
-def test_keys_match_ids(spec_entries):
+def test_keys_match_ids(spec_entries: SpecEntries) -> None:
     for key, entry in spec_entries.items():
         assert int(key) == entry["id"], f"{entry['name']}: key {key} != id {entry['id']}"
 
 
-def test_entry_names_unique(spec_entries):
+def test_entry_names_unique(spec_entries: SpecEntries) -> None:
     names = [e["name"] for e in spec_entries.values()]
     dupes = {n for n in names if names.count(n) > 1}
     assert not dupes, f"Duplicate entry names: {dupes}"
 
 
-def test_no_duplicate_dgn_keys(spec_entries):
+def test_no_duplicate_dgn_keys(spec_entries: SpecEntries) -> None:
     """Two entries on the same (priority << 18) | pgn key shadow each other."""
     seen: dict[int, str] = {}
     for entry in spec_entries.values():
@@ -63,7 +65,7 @@ def test_no_duplicate_dgn_keys(spec_entries):
         seen[dgn] = entry["name"]
 
 
-def test_unknown_entries_are_quarantined(spec_entries):
+def test_unknown_entries_are_quarantined(spec_entries: SpecEntries) -> None:
     """UNKNOWN_* placeholders must be named after their captured CAN id so a
     fabricated pgn cannot hide under a plausible-looking label."""
     for entry in spec_entries.values():
@@ -73,7 +75,7 @@ def test_unknown_entries_are_quarantined(spec_entries):
             )
 
 
-def test_dm_entries_cover_both_dialects(spec_entries):
+def test_dm_entries_cover_both_dialects(spec_entries: SpecEntries) -> None:
     """The bus carries J1939 DM1 (FECA) and RV-C DM_RV (1FECA); both must
     decode with the shared DM payload layout the diagnostic handler reads."""
     by_name = {e["name"]: e for e in spec_entries.values()}
@@ -96,7 +98,51 @@ def test_dm_entries_cover_both_dialects(spec_entries):
         assert (signals["SPN_LSB"]["start_bit"], signals["SPN_LSB"]["length"]) == (37, 3)
 
 
-def test_16bit_temperatures_use_table_5_3_scale(spec_entries):
+def test_chassis_mobility_decodes_captured_interlock_transitions(
+    spec_entries: SpecEntries,
+) -> None:
+    """Live 1FFF4 frames expose ignition and parking-brake transitions."""
+    from backend.integrations.rvc.decoder_core import DecodedValue, decode_payload
+
+    entry = next(e for e in spec_entries.values() if e["name"] == "CHASSIS_MOBILITY_STATUS")
+    cases = {
+        "0000000001FF0000": {
+            "park_brake_status": 1,
+            "ignition_switch_status": 3,
+        },
+        "00000000FF010000": {
+            "park_brake_status": 3,
+            "ignition_switch_status": 1,
+        },
+        "0000000000FF0000": {
+            "park_brake_status": 0,
+            "ignition_switch_status": 3,
+        },
+        "401F000101017D7D": {
+            "engine_rpm": 1000.0,
+            "vehicle_speed": 1.0,
+            "park_brake_status": 1,
+            "ignition_switch_status": 1,
+            "transmission_current_gear": 125,
+            "transmission_selected_gear": 125,
+        },
+    }
+
+    for payload_hex, expected in cases.items():
+        decoded, errors = decode_payload(entry, bytes.fromhex(payload_hex))
+        assert errors == []
+        if payload_hex != "401F000101017D7D":
+            assert isinstance(decoded["engine_rpm"], DecodedValue)
+            assert decoded["engine_rpm"].value == 0.0
+            assert isinstance(decoded["vehicle_speed"], DecodedValue)
+            assert decoded["vehicle_speed"].value == 0.0
+        for signal_name, value in expected.items():
+            signal = decoded[signal_name]
+            assert isinstance(signal, DecodedValue)
+            assert signal.value == value
+
+
+def test_16bit_temperatures_use_table_5_3_scale(spec_entries: SpecEntries) -> None:
     """Any 16-bit deg-C signal must carry the Table 5.3 scale (0.03125, -273)."""
     bad = []
     for entry in spec_entries.values():
@@ -110,7 +156,10 @@ def test_16bit_temperatures_use_table_5_3_scale(spec_entries):
     assert not bad, f"16-bit temperature signals missing Table 5.3 scale/offset: {bad}"
 
 
-def test_loader_warns_on_duplicate_dgn_key(tmp_path, caplog):
+def test_loader_warns_on_duplicate_dgn_key(
+    tmp_path: Path,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
     """The loader must not silently accept two entries on the same DGN key."""
     import warnings
 
