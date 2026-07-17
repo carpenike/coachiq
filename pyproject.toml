@@ -475,7 +475,7 @@ pyyaml = "^6.0.2"
 run-in-subdirectory = "^1.0.1"
 pyright = "^1.1.401"
 toml = "^0.10.2"
-deptry = {version = "^0.23.0", python = ">=3.9"}
+deptry = {version = "^0.25.0", python = ">=3.9"}
 pytest-cov = {version = "^6.1.1", python = ">=3.9"}
 bandit = {version = "^1.7.7", extras = ["toml"], python = ">=3.9"}
 pip-audit = "^2.7.3"
