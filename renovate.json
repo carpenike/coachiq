@@ -17,7 +17,9 @@
     "dependencies"
   ],
   "rebaseWhen": "behind-base-branch",
-  "dependencyDashboard": true,
+  "dependencyDashboard": {
+    "enabled": true
+  },
   "vulnerabilityAlerts": {
     "enabled": true,
     "labels": [
